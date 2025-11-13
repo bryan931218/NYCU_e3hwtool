@@ -83,4 +83,4 @@
 
 ## 網站連結
 
-👉 **https://www.e3hwtool.space**
+👉 **https://e3hwtool.space**
