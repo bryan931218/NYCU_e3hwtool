@@ -55,7 +55,7 @@
    ![Google日曆](images/calendar.png)
 
 4. **輸出待繳清單**  
-   ![待繳清單](images/todo.png)
+   ![待繳清單](images/output.png)
    
 ---
 
