@@ -45,14 +45,18 @@
 ## 介面截圖
 
 1. **登入頁**  
-   ![登入頁](docs/images/login.png)
+   ![登入頁](images/login.png)
 
 2. **作業總覽（課程視圖）**  
-   ![作業總覽](docs/images/dashboard.png)
+   ![作業總覽](images/dashboard1.png)
+   ![作業總覽](images/dashboard2.png)
 
 3. **Google 日曆導入彈窗**  
-   ![Google Day Modal](docs/images/google-modal.png)
+   ![Google日曆](images/calendar.png)
 
+4. **輸出待繳清單**  
+   ![待繳清單](images/todo.png)
+   
 ---
 
 ## 安全與隱私建議
