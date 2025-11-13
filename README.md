@@ -1,163 +1,96 @@
-# E3 作業追蹤器
+# E3 作業追蹤器（Web）
 
-一個專門為陽明交通大學（NYCU）學生設計的 E3 作業整理工具，提供 CLI 與 Web 介面。使用者可以快速檢視所有課程作業、導出 Excel / Google 日曆、分享給同學共同使用。
+👉 https://www.e3hwtool.space
 
-- 網站連結：https://www.e3hwtool.space
-- 備註：本工具僅供教育用途，請勿濫用。
+幫助 NYCU 學生統整 E3 平台上的所有作業。只要貼上自己的 MoodleSession，系統就會列出所有課程作業、狀態、截止日期，還能導出 Excel 或同步到 Google 日曆。
+
+> **注意**：僅供學習用途，請勿濫用；請確保遵守學校與 E3 系統的使用規範。
 
 ---
 
 ## 功能一覽
 
-- **作業自動蒐集**：輸入（或貼上） E3 的 `MoodleSession`，系統會爬取所有課程作業，包含截止、狀態、連結。
-- **圖形化介面**：Web 版提供「依課程」與「依截止日」兩種視圖，可篩選逾期/已完成作業。
-- **Excel / Google 日曆**：可將篩選後的作業導出為 Excel 檔或同步至 Google Calendar（桃紅色標籤、兩天前提醒）。
-- **多使用者支援**：登入後每位使用者具有獨立快取，適合多人協作。
-- **CLI 工具**：仍保留原始命令列模式，方便自動化或個人使用。
+| 功能                           | 說明                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| 作業蒐集                       | 會將所有課程作業抓成列表，並顯示逾期 / 已完成標記。                                   |
+| 視圖切換                       | Web 介面提供「依課程」與「依截止日」兩種視圖，可用複選框篩選條件。                    |
+| Excel 導出                     | 一鍵輸出 `pending_assignments.xlsx`，可供自行整理或分享。                             |
+| Google 日曆同步                | 以桃紅色事件、兩天前提醒的方式加入 Google Calendar，且可在彈窗中勾選要同步的作業。     |
+| 緩存與背景更新                 | 登入後會快取作業結果，背景定時刷新並提示使用者。                                      |
+| 多人協作                       | 每個使用者登入後有獨立快取與設定，可分享給同學共同使用。                              |
 
 ---
 
-## 目錄結構
+## 操作流程
 
-```
-.
-├─ e3/
-│  ├─ web.py               # Flask Web 應用
-│  ├─ cli.py               # CLI 入口
-│  ├─ google_calendar.py
-│  ├─ http.py / collector.py / parsing.py / utils.py ...
-│  └─ templates/
-│     ├─ web.html          # 主頁面模板
-│     └─ login.html        # 登入頁模板
-├─ requirements.txt
-├─ e3.py                   # 方便執行的 wrapper
-└─ README.md               # 本檔案
-```
+1. **登入網站**  
+   - 進入 https://www.e3hwtool.space  
+   - 初次登入可輸入 E3 帳密，或貼入 `MoodleSession` cookie。  
+   - 管理者亦可設定預設帳號（`.env` 內的 `E3_USERNAME/E3_PASSWORD`）。
 
----
+2. **檢視作業**  
+   - 預設顯示依課程排序，可改為「到期日排序」。  
+   - 勾選「顯示逾期作業」、「顯示已完成作業」便可即時篩選。  
+   - 每筆作業都會列出狀態與直接連結。
 
-## 環境需求
+3. **導出 Excel**  
+   - 工具列按下「導出作業資訊」，會下載 `pending_assignments.xlsx`。  
+   - Excel 內容會依目前篩選條件整理，方便另存或分享。
 
-| 項目                     | 版本建議                             |
-| ------------------------ | ------------------------------------ |
-| Python                   | 3.11 (與 EB AL2023 相容)             |
-| 套件                     | `pip install -r requirements.txt`    |
-| Elastic Beanstalk 平台   | Python 3.11 / 64bit Amazon Linux 2023|
-| AWS 服務                 | Route 53、ACM、ALB、RDS(可選)        |
-| Google API               | OAuth Client + Calendar API          |
+4. **導入 Google 日曆**  
+   - 在工具列點「導入至 Google 日曆」。  
+   - 第一次需要完成 OAuth 授權，之後再按此按鈕會跳出一個彈窗。  
+   - 彈窗會列出「目前視圖與篩選條件下」所有有截止日的作業，可任意勾選後按「導入」。  
+   - 導入過程會顯示進度動畫；導入完成後會有 Toast 通知。
+   - 每個事件會帶 `[作業]` 標籤、桃紅色（Google Calendar colorId 4）、並設定兩天前提醒。
+
+5. **背景更新 / 快取**  
+   - 系統會將最新結果儲存在伺服器暫存資料夾（僅限登入者自己可見）。  
+   - 若背景更新成功，介面右下角會提示「已成功更新」；失敗時也會顯示錯誤訊息。
 
 ---
 
-## 快速開始
+## 介面截圖
 
-### 1. Clone & 安裝
-
-```bash
-git clone https://github.com/<your-name>/nycu-e3-tracker.git
-cd nycu-e3-tracker
-python -m venv .venv
-. .venv/Scripts/activate  # Windows
-pip install -r requirements.txt
-cp .env.example .env      # 依需求修改
-```
-
-### 2. CLI 使用
-
-```bash
-python e3.py \
-  --username 1125xxxx \
-  --password <YOUR_PASS> \
-  --all-courses \
-  --include-completed
-```
-
-或輸入 `python e3.py -h` 查看所有參數。
-
-### 3. Web 介面（本地）
-
-```bash
-set FLASK_APP=e3/web.py
-python -m flask run
-```
-
-- 進入 `http://127.0.0.1:5000`
-- 首次登入可輸入 E3 帳密或貼上 `MoodleSession`。
-- 登入後即可查看作業、匯出 Excel、導入 Google 日曆。
-
----
-
-## 主要畫面
-
-> 請把實際截圖放到 `docs/images`，並更新下列連結。
+> 請將實際截圖放在 `docs/images` 後再更新以下路徑。
 
 1. **登入頁**  
    ![登入頁](docs/images/login.png)
 
-2. **主控台 / 作業列表**  
-   ![主控台](docs/images/dashboard.png)
+2. **作業總覽（課程視圖）**  
+   ![作業總覽](docs/images/dashboard.png)
 
-3. **Google 日曆導入選單**  
-   ![導入 Google 日曆](docs/images/google-modal.png)
-
----
-
-## Google Calendar 導入說明
-
-1. 前往 Google Cloud Console → APIs & Services → Credentials → 建立 OAuth 2.0 Client (Web Application)。  
-   - Redirect URI 設為 `https://www.e3hwtool.space/google/callback`（或本地測試用 `http://127.0.0.1:5000/google/callback`）。
-2. 在 `.env` 設定：
-   ```
-   E3_GOOGLE_CLIENT_ID=xxx
-   E3_GOOGLE_CLIENT_SECRET=xxx
-   E3_GOOGLE_REDIRECT_URI=https://www.e3hwtool.space/google/callback
-   ```
-3. Web 版登入後，點「連結 Google 日曆」進行授權。
-4. 在彈出視窗中勾選要導入的作業 → 按「導入至 Google 日曆」。  
-   - 事件會統一以 **桃紅色** 顯示，標題前會加 `[作業]`，並設定 **兩天前** 的提醒。
+3. **Google 日曆導入彈窗**  
+   ![Google Day Modal](docs/images/google-modal.png)
 
 ---
 
 ## 安全與隱私建議
 
-- **Cookie 模式**：若不想讓使用者輸入密碼，請在 UI 引導他們於 E3 網站登入後，手動貼 `MoodleSession`。  
-- **HTTPS 必須啟用**：請使用 AWS ACM 憑證並綁定 ALB，也要在 nginx 加上 HTTP→HTTPS 轉址。  
-- **Google OAuth 只用於識別**：目前仍需使用 MoodleSession 抓作業；若未來 E3 開放 API，再改成純 OAuth。
-
----
-
-## 部署到 Elastic Beanstalk
-
-1. `eb init -p python-3.11 nycu-e3-tracker`（首次設定）  
-2. `eb config save --cfg backup-YYYYMMDD` 備份設定  
-3. 使用 AL2023 平台建立新環境：`eb create e3-web-prod --cfg backup-YYYYMMDD`  
-4. `eb deploy e3-web-prod`  
-5. Route 53（A/CNAME）指向新 ALB，ACM 憑證綁在 HTTPS Listener  
-6. SSL Labs 驗證：https://www.ssllabs.com/ssltest/analyze.html?d=www.e3hwtool.space  
+- **使用 Cookie**：如果不想輸入密碼，可在瀏覽器登入 E3 後，從開發者工具複製 `MoodleSession` 貼到網頁即可。
+- **HTTPS**：整站使用 AWS ACM 憑證，請務必透過 `https://www.e3hwtool.space` 連線。
+- **OAuth 限制**：NYCU OAuth 只能取得基本身分，無法自動產生 MoodleSession，因此仍需使用 Cookie 來抓作業。未來若學校提供正式 API，再改為純 OAuth。
 
 ---
 
 ## 常見問題
 
-1. **瀏覽器顯示不安全**：  
-   - 確認 `https://www.e3hwtool.space` / `https://e3hwtool.space` 都指向同一個 ALB。  
-   - SSL Labs 憑證須同時包含兩個網域，並重整頁面（或清除快取）。
-
-2. **Google 授權後沒變化**：  
-   - 確認 Google Console 與 `.env` 的 Redirect URI 完全一致。  
-   - 在 `/tmp/e3_tracker_cache/<username>.google.json` 會存 refresh token。
-
-3. **Launch Configuration 失敗**：  
-   - AWS 新帳號不支援舊的 Launch Configuration，請換成 Amazon Linux 2023 平台，或在 AWS Support 開 ticket 啟用。
+| 問題                                             | 解法                                                                                                  |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| 瀏覽器顯示「連線不安全」                        | 請確認使用的是 `https://www.e3hwtool.space`，若瀏覽器緩存舊憑證請清除快取或使用無痕模式再試。          |
+| Google 授權後沒有任何反應                        | 確認 Google Console 與 `.env` 的 `E3_GOOGLE_REDIRECT_URI` 一致，且 `/tmp/e3_tracker_cache` 有產生 token |
+| 彈窗沒有作業可勾選                              | 目前視圖沒有「尚有截止時間」的作業，請放寬篩選或切換視圖。                                             |
+| 需要重新登入                                     | 如果快取過期或 `MoodleSession` 失效，系統會提示重新登入；貼上新的 Cookie 即可。                         |
 
 ---
 
-## 授權 & 免責
+## 聯絡 / 貢獻
 
-- 僅供學習與個人使用，請勿在未獲授權的情況下蒐集或洩漏他人課程資訊。
-- 請遵守 NYCU 及 E3 系統的使用規範，避免高頻率請求導致服務異常。
+- 若有建議或功能需求，歡迎開 Issue 或 Pull Request。
+- 任何與隱私、安全相關的疑慮，也可透過 GitHub Issue 私訊討論。
 
 ---
 
 ## 網站連結
 
-👉 https://www.e3hwtool.space
+👉 **https://www.e3hwtool.space**
