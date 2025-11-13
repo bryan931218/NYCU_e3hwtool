@@ -1,6 +1,6 @@
 # E3 作業追蹤器（Web）
 
-👉 https://www.e3hwtool.space
+👉 https://e3hwtool.space
 
 幫助 NYCU 學生統整 E3 平台上的所有作業。只要貼上自己的 MoodleSession，系統就會列出所有課程作業、狀態、截止日期，還能導出 Excel 或同步到 Google 日曆。
 
