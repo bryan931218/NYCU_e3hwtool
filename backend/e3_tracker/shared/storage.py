@@ -58,37 +58,13 @@ courses_table = Table(
     Column("updated_at", String(64), nullable=False),
     UniqueConstraint("user_id", "course_code", name="uq_courses_user_course"),
 )
-fetch_runs_table = Table(
-    "fetch_runs",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("user_id", Integer, nullable=False),
-    Column("fetched_at", String(64), nullable=False),
-    Column("fetched_ts", Integer, nullable=False),
-    Column("base_url", Text),
-    Column("scope", String(32)),
-    Column("login_method", String(32)),
-    Column("excel_data", Text),
-    Column("error_count", Integer, nullable=False, default=0),
-)
 
-course_snapshots_table = Table(
-    "course_snapshots",
+assignments_table = Table(
+    "assignments",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("run_id", Integer, nullable=False),
     Column("course_id", Integer, nullable=False),
-    Column("title", Text, nullable=False),
-    Column("url", Text),
-    Column("detected_assign_links", Integer, nullable=False, default=0),
-)
-
-assignment_snapshots_table = Table(
-    "assignment_snapshots",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("run_id", Integer, nullable=False),
-    Column("course_id", Integer, nullable=False),
+    Column("uid", String(255), nullable=False),
     Column("title", Text, nullable=False),
     Column("url", Text),
     Column("due_at", String(64)),
@@ -96,13 +72,25 @@ assignment_snapshots_table = Table(
     Column("overdue", Integer, nullable=False, default=0),
     Column("completed", Integer, nullable=False, default=0),
     Column("raw_status_text", Text),
+    Column("updated_at", String(64), nullable=False),
+    UniqueConstraint("course_id", "uid", name="uq_assignments_course_uid"),
+)
+
+user_fetch_state_table = Table(
+    "user_fetch_state",
+    metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("fetched_at", String(64)),
+    Column("fetched_ts", Integer),
+    Column("excel_data", Text),
+    Column("error_count", Integer, nullable=False, default=0),
 )
 
 fetch_errors_table = Table(
     "fetch_errors",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("run_id", Integer, nullable=False),
+    Column("user_id", Integer, nullable=False),
     Column("course_code", Integer),
     Column("course_title", Text),
     Column("assignment_title", Text),
@@ -167,7 +155,7 @@ traffic_events_table = Table(
 )
 
 class PersistentStorage:
-    """Database-backed persistence with normalized storage and snapshots."""
+    """Database-backed persistence with normalized storage."""
 
     def __init__(self, database_url: str) -> None:
         if not database_url:
@@ -245,6 +233,9 @@ class PersistentStorage:
             return (item.get("course_title", ""), 1, float("inf"))
         return (item.get("course_title", ""), 0, due_ts)
 
+    def _assignment_uid(self, course_code: int, title: str, url: Optional[str]) -> str:
+        return f"{course_code}|{title}|{url or ''}"
+
     # -- user preferences -------------------------------------------------
     def load_user_preferences(self, username: str) -> Dict[str, Any]:
         if not username:
@@ -289,7 +280,7 @@ class PersistentStorage:
                 )
             )
 
-    # -- assignments snapshots -------------------------------------------
+    # -- assignments ------------------------------------------------------
     def save_user_cache(self, username: str, payload: Dict[str, Any]) -> None:
         if not username:
             return
@@ -312,19 +303,24 @@ class PersistentStorage:
         fetched_at = datetime.utcfromtimestamp(fetched_ts).isoformat()
         with self._lock, self._engine.begin() as conn:
             user_id = self._ensure_user(conn, username)
-            run_result = conn.execute(
-                insert(fetch_runs_table).values(
+            conn.execute(delete(user_fetch_state_table).where(user_fetch_state_table.c.user_id == user_id))
+            conn.execute(
+                insert(user_fetch_state_table).values(
                     user_id=user_id,
                     fetched_at=fetched_at,
                     fetched_ts=fetched_ts,
-                    base_url=None,
-                    scope=None,
-                    login_method=None,
                     excel_data=excel_data,
                     error_count=len(errors),
                 )
             )
-            run_id = int(run_result.inserted_primary_key[0])
+            conn.execute(delete(fetch_errors_table).where(fetch_errors_table.c.user_id == user_id))
+
+            course_ids = conn.execute(
+                select(courses_table.c.id).where(courses_table.c.user_id == user_id)
+            ).scalars().all()
+            if course_ids:
+                conn.execute(delete(assignments_table).where(assignments_table.c.course_id.in_(course_ids)))
+            conn.execute(delete(courses_table).where(courses_table.c.user_id == user_id))
 
             now = self._now_iso()
             for course in courses:
@@ -336,52 +332,17 @@ class PersistentStorage:
                 if not title:
                     title = f"Course {course_code}"
                 url = course.get("url")
-                row = conn.execute(
-                    select(courses_table.c.id)
-                    .where(courses_table.c.user_id == user_id)
-                    .where(courses_table.c.course_code == course_code)
-                ).fetchone()
-                if row:
-                    course_pk = int(row.id)
-                    conn.execute(
-                        update(courses_table)
-                        .where(courses_table.c.id == course_pk)
-                        .values(title=title, url=url, updated_at=now)
-                    )
-                else:
-                    try:
-                        insert_result = conn.execute(
-                            insert(courses_table).values(
-                                user_id=user_id,
-                                course_code=course_code,
-                                title=title,
-                                url=url,
-                                created_at=now,
-                                updated_at=now,
-                            )
-                        )
-                        course_pk = int(insert_result.inserted_primary_key[0])
-                    except IntegrityError:
-                        row = conn.execute(
-                            select(courses_table.c.id)
-                            .where(courses_table.c.user_id == user_id)
-                            .where(courses_table.c.course_code == course_code)
-                        ).fetchone()
-                        if not row:
-                            continue
-                        course_pk = int(row.id)
-                detected_links = course.get("detected_assign_links")
-                if detected_links is None:
-                    detected_links = len(course.get("assignments") or [])
-                conn.execute(
-                    insert(course_snapshots_table).values(
-                        run_id=run_id,
-                        course_id=course_pk,
+                insert_result = conn.execute(
+                    insert(courses_table).values(
+                        user_id=user_id,
+                        course_code=course_code,
                         title=title,
                         url=url,
-                        detected_assign_links=int(detected_links),
+                        created_at=now,
+                        updated_at=now,
                     )
                 )
+                course_pk = int(insert_result.inserted_primary_key[0])
                 for item in course.get("assignments") or []:
                     title_val = str(item.get("title") or "").strip()
                     if not title_val:
@@ -395,9 +356,9 @@ class PersistentStorage:
                         except (TypeError, ValueError):
                             due_ts_val = None
                     conn.execute(
-                        insert(assignment_snapshots_table).values(
-                            run_id=run_id,
+                        insert(assignments_table).values(
                             course_id=course_pk,
+                            uid=self._assignment_uid(course_code, title_val, item.get("url")),
                             title=title_val,
                             url=item.get("url"),
                             due_at=item.get("due_at"),
@@ -405,6 +366,7 @@ class PersistentStorage:
                             overdue=self._coerce_bool_int(item.get("overdue")),
                             completed=self._coerce_bool_int(item.get("completed")),
                             raw_status_text=item.get("raw_status_text"),
+                            updated_at=now,
                         )
                     )
 
@@ -418,7 +380,7 @@ class PersistentStorage:
                     course_code_val = None
                 conn.execute(
                     insert(fetch_errors_table).values(
-                        run_id=run_id,
+                        user_id=user_id,
                         course_code=course_code_val,
                         course_title=err.get("course_title"),
                         assignment_title=err.get("assignment_title"),
@@ -435,32 +397,25 @@ class PersistentStorage:
             ).fetchone()
             if not user_row:
                 return None
-            run_row = conn.execute(
+            state_row = conn.execute(
                 select(
-                    fetch_runs_table.c.id,
-                    fetch_runs_table.c.fetched_ts,
-                    fetch_runs_table.c.excel_data,
+                    user_fetch_state_table.c.fetched_ts,
+                    user_fetch_state_table.c.excel_data,
                 )
-                .where(fetch_runs_table.c.user_id == user_row.id)
-                .order_by(fetch_runs_table.c.fetched_ts.desc(), fetch_runs_table.c.id.desc())
+                .where(user_fetch_state_table.c.user_id == user_row.id)
                 .limit(1)
             ).fetchone()
-            if not run_row:
+            if not state_row:
                 return None
-            run_id = int(run_row.id)
 
             course_rows = conn.execute(
                 select(
-                    course_snapshots_table.c.course_id,
-                    course_snapshots_table.c.title,
-                    course_snapshots_table.c.url,
-                    course_snapshots_table.c.detected_assign_links,
+                    courses_table.c.id,
                     courses_table.c.course_code,
+                    courses_table.c.title,
+                    courses_table.c.url,
                 )
-                .select_from(
-                    course_snapshots_table.join(courses_table, course_snapshots_table.c.course_id == courses_table.c.id)
-                )
-                .where(course_snapshots_table.c.run_id == run_id)
+                .where(courses_table.c.user_id == user_row.id)
             ).fetchall()
 
             courses: List[Dict[str, Any]] = []
@@ -471,57 +426,46 @@ class PersistentStorage:
                     "title": row.title,
                     "url": row.url,
                     "assignments": [],
-                    "detected_assign_links": row.detected_assign_links or 0,
+                    "detected_assign_links": 0,
                 }
                 courses.append(entry)
-                course_map[int(row.course_id)] = entry
+                course_map[int(row.id)] = entry
 
-            assignment_rows = conn.execute(
-                select(
-                    assignment_snapshots_table.c.course_id,
-                    assignment_snapshots_table.c.title,
-                    assignment_snapshots_table.c.url,
-                    assignment_snapshots_table.c.due_at,
-                    assignment_snapshots_table.c.due_ts,
-                    assignment_snapshots_table.c.overdue,
-                    assignment_snapshots_table.c.completed,
-                    assignment_snapshots_table.c.raw_status_text,
-                    courses_table.c.course_code,
-                )
-                .select_from(
-                    assignment_snapshots_table.join(courses_table, assignment_snapshots_table.c.course_id == courses_table.c.id)
-                )
-                .where(assignment_snapshots_table.c.run_id == run_id)
-            ).fetchall()
-
+            course_ids = [row.id for row in course_rows]
             all_assignments: List[Dict[str, Any]] = []
-            for row in assignment_rows:
-                course_entry = course_map.get(int(row.course_id))
-                course_title = course_entry["title"] if course_entry else f"Course {row.course_code}"
-                item = {
-                    "course_id": row.course_code,
-                    "course_title": course_title,
-                    "title": row.title,
-                    "url": row.url,
-                    "due_at": row.due_at,
-                    "due_ts": row.due_ts,
-                    "overdue": bool(row.overdue),
-                    "completed": bool(row.completed),
-                    "raw_status_text": row.raw_status_text,
-                }
-                if course_entry is None:
-                    fallback = {
-                        "id": row.course_code,
-                        "title": course_title,
-                        "url": None,
-                        "assignments": [],
-                        "detected_assign_links": 0,
+            if course_ids:
+                assignment_rows = conn.execute(
+                    select(
+                        assignments_table.c.course_id,
+                        assignments_table.c.title,
+                        assignments_table.c.url,
+                        assignments_table.c.due_at,
+                        assignments_table.c.due_ts,
+                        assignments_table.c.overdue,
+                        assignments_table.c.completed,
+                        assignments_table.c.raw_status_text,
+                    )
+                    .where(assignments_table.c.course_id.in_(course_ids))
+                ).fetchall()
+                for row in assignment_rows:
+                    course_entry = course_map.get(int(row.course_id))
+                    if not course_entry:
+                        continue
+                    course_title = course_entry["title"]
+                    item = {
+                        "course_id": course_entry["id"],
+                        "course_title": course_title,
+                        "title": row.title,
+                        "url": row.url,
+                        "due_at": row.due_at,
+                        "due_ts": row.due_ts,
+                        "overdue": bool(row.overdue),
+                        "completed": bool(row.completed),
+                        "raw_status_text": row.raw_status_text,
                     }
-                    courses.append(fallback)
-                    course_map[int(row.course_id)] = fallback
-                    course_entry = fallback
-                course_entry["assignments"].append(item)
-                all_assignments.append(item)
+                    course_entry["assignments"].append(item)
+                    course_entry["detected_assign_links"] += 1
+                    all_assignments.append(item)
 
             for course_entry in courses:
                 course_entry["assignments"].sort(key=self._course_sort_key)
@@ -533,7 +477,7 @@ class PersistentStorage:
                     fetch_errors_table.c.course_title,
                     fetch_errors_table.c.assignment_title,
                     fetch_errors_table.c.message,
-                ).where(fetch_errors_table.c.run_id == run_id)
+                ).where(fetch_errors_table.c.user_id == user_row.id)
             ).fetchall()
             errors = [
                 {
@@ -551,8 +495,8 @@ class PersistentStorage:
                 "all_assignments": all_assignments,
                 "errors": errors,
             },
-            "excel_data": run_row.excel_data,
-            "ts": run_row.fetched_ts,
+            "excel_data": state_row.excel_data,
+            "ts": state_row.fetched_ts,
         }
         prefs = self.load_user_preferences(username)
         if prefs:
@@ -569,15 +513,14 @@ class PersistentStorage:
             if not user_row:
                 return
             user_id = int(user_row.id)
-            run_ids = conn.execute(
-                select(fetch_runs_table.c.id).where(fetch_runs_table.c.user_id == user_id)
+            course_ids = conn.execute(
+                select(courses_table.c.id).where(courses_table.c.user_id == user_id)
             ).scalars().all()
-            if run_ids:
-                conn.execute(delete(assignment_snapshots_table).where(assignment_snapshots_table.c.run_id.in_(run_ids)))
-                conn.execute(delete(course_snapshots_table).where(course_snapshots_table.c.run_id.in_(run_ids)))
-                conn.execute(delete(fetch_errors_table).where(fetch_errors_table.c.run_id.in_(run_ids)))
-            conn.execute(delete(fetch_runs_table).where(fetch_runs_table.c.user_id == user_id))
+            if course_ids:
+                conn.execute(delete(assignments_table).where(assignments_table.c.course_id.in_(course_ids)))
             conn.execute(delete(courses_table).where(courses_table.c.user_id == user_id))
+            conn.execute(delete(user_fetch_state_table).where(user_fetch_state_table.c.user_id == user_id))
+            conn.execute(delete(fetch_errors_table).where(fetch_errors_table.c.user_id == user_id))
             conn.execute(delete(user_preferences_table).where(user_preferences_table.c.user_id == user_id))
             conn.execute(delete(google_tokens_table).where(google_tokens_table.c.user_id == user_id))
 

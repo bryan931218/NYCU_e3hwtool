@@ -883,9 +883,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         user = current_user()
         if not user:
             return prefs
-        cache = load_cache_from_disk(user["username"]) or {}
-        cache["preferences"] = prefs
-        save_cache_to_disk(user["username"], cache)
+        storage.save_user_preferences(user["username"], prefs)
         return prefs
 
     def get_assign_cache() -> Optional[Dict[str, Any]]:
