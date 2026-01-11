@@ -872,9 +872,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         user = current_user()
         if not user:
             return prefs
-        cache = load_cache_from_disk(user["username"]) or {}
-        stored = _sanitize_preferences(cache.get("preferences"))
-        prefs.update(stored)
+        stored = storage.load_user_preferences(user["username"])
+        prefs.update(_sanitize_preferences(stored))
         return prefs
 
     def update_user_preferences(partial: Dict[str, Any]) -> Dict[str, Any]:
