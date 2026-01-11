@@ -1,0 +1,738 @@
+{
+  "mode": "guest_export_v1",
+  "generated_at": "2025-11-23T18:19:24.248424+08:00",
+  "base_url": "https://e3p.nycu.edu.tw",
+  "scope": "assignment",
+  "include_completed": true,
+  "result": {
+    "courses": [
+      {
+        "id": 17267,
+        "title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=17267",
+        "assignments": [
+          {
+            "course_id": 17267,
+            "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+            "title": "[OS概論] 程式作業五 : Page Replacement Simulation: LRU and CFLRU",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=168512&scope=assignment",
+            "due_at": "2025-11-26 00:00",
+            "due_ts": 1764086400,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "剩餘 2天 5小時"
+          },
+          {
+            "course_id": 17267,
+            "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+            "title": "[OS概論] 程式作業一 : A simple shell",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=146774&scope=assignment",
+            "due_at": "2025-09-24 00:00",
+            "due_ts": 1758643200,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 60天 18小時"
+          },
+          {
+            "course_id": 17267,
+            "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+            "title": "[OS概論] 程式作業二 : Multi-Process Matrix",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=152692&scope=assignment",
+            "due_at": "2025-10-01 00:00",
+            "due_ts": 1759248000,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 53天 18小時"
+          },
+          {
+            "course_id": 17267,
+            "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+            "title": "[OS概論] 程式作業三 : Parallel Merge Sort with Threads",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=157145&scope=assignment",
+            "due_at": "2025-10-15 00:00",
+            "due_ts": 1760457600,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 39天 18小時"
+          },
+          {
+            "course_id": 17267,
+            "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+            "title": "[OS概論] 程式作業四 : malloc() Replacement",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=159049&scope=assignment",
+            "due_at": "2025-11-13 00:00",
+            "due_ts": 1762963200,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 10天 18小時"
+          }
+        ],
+        "detected_assign_links": 5
+      },
+      {
+        "id": 17271,
+        "title": "【114 Autumn】515519網路程式設計概論 Intro. to Network Programming",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=17271",
+        "assignments": [
+          {
+            "course_id": 17271,
+            "course_title": "【114 Autumn】515519網路程式設計概論 Intro. to Network Programming",
+            "title": "Network Programming Final - 遊戲商城系統",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=140459&scope=assignment",
+            "due_at": "2025-12-11 23:59",
+            "due_ts": 1765468740,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "剩餘 18天 5小時"
+          },
+          {
+            "course_id": 17271,
+            "course_title": "【114 Autumn】515519網路程式設計概論 Intro. to Network Programming",
+            "title": "HW1",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=140452&scope=assignment",
+            "due_at": "2025-10-17 23:59",
+            "due_ts": 1760716740,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 36天 18小時"
+          },
+          {
+            "course_id": 17271,
+            "course_title": "【114 Autumn】515519網路程式設計概論 Intro. to Network Programming",
+            "title": "HW2",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=140455&scope=assignment",
+            "due_at": "2025-11-13 23:59",
+            "due_ts": 1763049540,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 9天 18小時"
+          }
+        ],
+        "detected_assign_links": 3
+      },
+      {
+        "id": 17274,
+        "title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=17274",
+        "assignments": [
+          {
+            "course_id": 17274,
+            "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+            "title": "Final_project",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=153297&scope=assignment",
+            "due_at": "2025-12-21 23:59",
+            "due_ts": 1766332740,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "剩餘 28天 5小時"
+          },
+          {
+            "course_id": 17274,
+            "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+            "title": "HW4_to-do_list",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=173402&scope=assignment",
+            "due_at": "2025-12-04 23:59",
+            "due_ts": 1764863940,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "剩餘 11天 5小時"
+          },
+          {
+            "course_id": 17274,
+            "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+            "title": "Homework1_self_introduction",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=153291&scope=assignment",
+            "due_at": "2025-10-02 23:59",
+            "due_ts": 1759420740,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 51天 18小時"
+          },
+          {
+            "course_id": 17274,
+            "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+            "title": "HW2_Javascript_1",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=158043&scope=assignment",
+            "due_at": "2025-10-23 23:59",
+            "due_ts": 1761235140,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 30天 18小時"
+          },
+          {
+            "course_id": 17274,
+            "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+            "title": "HW3_blackjack",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165745&scope=assignment",
+            "due_at": "2025-11-13 23:59",
+            "due_ts": 1763049540,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 9天 18小時"
+          }
+        ],
+        "detected_assign_links": 5
+      },
+      {
+        "id": 17280,
+        "title": "【114 Autumn】515607資訊工程專題(一) Computer Science and Engineering Projects (I)",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=17280",
+        "assignments": [],
+        "detected_assign_links": 0
+      },
+      {
+        "id": 17844,
+        "title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=17844",
+        "assignments": [
+          {
+            "course_id": 17844,
+            "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+            "title": "Final Project",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165252&scope=assignment",
+            "due_at": "2025-12-25 13:19",
+            "due_ts": 1766639940,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "剩餘 31天 18小時"
+          },
+          {
+            "course_id": 17844,
+            "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+            "title": "Lab1-DDPM",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=153107&scope=assignment",
+            "due_at": "2025-10-02 23:59",
+            "due_ts": 1759420740,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 51天 18小時"
+          },
+          {
+            "course_id": 17844,
+            "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+            "title": "Lab2-DDIM-LoRA",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=157122&scope=assignment",
+            "due_at": "2025-10-16 23:59",
+            "due_ts": 1760630340,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 37天 18小時"
+          },
+          {
+            "course_id": 17844,
+            "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+            "title": "Lab3-Distillation",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=161792&scope=assignment",
+            "due_at": "2025-10-30 23:59",
+            "due_ts": 1761839940,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 23天 18小時"
+          },
+          {
+            "course_id": 17844,
+            "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+            "title": "Final Project Proposal",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165250&scope=assignment",
+            "due_at": "2025-11-13 13:19",
+            "due_ts": 1763011140,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 10天 5小時"
+          },
+          {
+            "course_id": 17844,
+            "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+            "title": "Lab4-Flow Matching",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=167632&scope=assignment",
+            "due_at": "2025-11-20 23:59",
+            "due_ts": 1763654340,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 2天 18小時"
+          },
+          {
+            "course_id": 17844,
+            "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+            "title": "Paper Presentation",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165251&scope=assignment",
+            "due_at": "2025-11-20 13:19",
+            "due_ts": 1763615940,
+            "overdue": true,
+            "completed": false,
+            "raw_status_text": "已逾期 3天 5小時"
+          }
+        ],
+        "detected_assign_links": 7
+      },
+      {
+        "id": 18686,
+        "title": "【114 Autumn】563105體育－排球校隊(男) Volleyball team(Male)",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=18686",
+        "assignments": [],
+        "detected_assign_links": 0
+      },
+      {
+        "id": 18842,
+        "title": "【114 Autumn】574007HTML & CSS網頁設計 HTML & CSS Webpage Design",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=18842",
+        "assignments": [
+          {
+            "course_id": 18842,
+            "course_title": "【114 Autumn】574007HTML & CSS網頁設計 HTML & CSS Webpage Design",
+            "title": "Homework 1 Resume",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=163079&scope=assignment",
+            "due_at": "2025-11-18 10:00",
+            "due_ts": 1763431200,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 5天 8小時"
+          },
+          {
+            "course_id": 18842,
+            "course_title": "【114 Autumn】574007HTML & CSS網頁設計 HTML & CSS Webpage Design",
+            "title": "Homework 2 Module 6 Project",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=168652&scope=assignment",
+            "due_at": "2025-11-18 10:00",
+            "due_ts": 1763431200,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 5天 8小時"
+          }
+        ],
+        "detected_assign_links": 2
+      },
+      {
+        "id": 19513,
+        "title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "url": "https://e3p.nycu.edu.tw/course/view.php?id=19513",
+        "assignments": [
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Week 1 Attendance / Participation / In-class Quizzes (Bonus: 0.5%)",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=146544&scope=assignment",
+            "due_at": "",
+            "due_ts": null,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "No submissions have been made yet"
+          },
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Week 2 Attendance / Participation / In-class Quizzes",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=150005&scope=assignment",
+            "due_at": "",
+            "due_ts": null,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "No submissions have been made yet"
+          },
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Week 3 Attendance / Participation / In-class Quizzes",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=152364&scope=assignment",
+            "due_at": "",
+            "due_ts": null,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "No submissions have been made yet"
+          },
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Week 10 HW#5: Build & Compare NN vs CNN (Image Classification)",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=167347&scope=assignment",
+            "due_at": "2025-12-04 23:59",
+            "due_ts": 1764863940,
+            "overdue": false,
+            "completed": false,
+            "raw_status_text": "剩餘 11天 5小時"
+          },
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Week 1 Homework: Dataset Splitting & Avoiding Data Leakage",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=145823&scope=assignment",
+            "due_at": "2025-09-12 11:59",
+            "due_ts": 1757649540,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 72天 6小時"
+          },
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Week 2 Homework: Linear Regression by hand",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=151258&scope=assignment",
+            "due_at": "2025-09-28 11:59",
+            "due_ts": 1759031940,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 56天 6小時"
+          },
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Week 4 Homework: Regression Kaggle competition",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=154414&scope=assignment",
+            "due_at": "2025-10-06 23:59",
+            "due_ts": 1759766340,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 47天 18小時"
+          },
+          {
+            "course_id": 19513,
+            "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+            "title": "Project proposal (1-page dataset and task description)",
+            "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=163086&scope=assignment",
+            "due_at": "2025-10-27 23:59",
+            "due_ts": 1761580740,
+            "overdue": true,
+            "completed": true,
+            "raw_status_text": "已逾期 26天 18小時"
+          }
+        ],
+        "detected_assign_links": 8
+      }
+    ],
+    "all_assignments": [
+      {
+        "course_id": 17267,
+        "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+        "title": "[OS概論] 程式作業五 : Page Replacement Simulation: LRU and CFLRU",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=168512&scope=assignment",
+        "due_at": "2025-11-26 00:00",
+        "due_ts": 1764086400,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "剩餘 2天 5小時"
+      },
+      {
+        "course_id": 17267,
+        "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+        "title": "[OS概論] 程式作業一 : A simple shell",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=146774&scope=assignment",
+        "due_at": "2025-09-24 00:00",
+        "due_ts": 1758643200,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 60天 18小時"
+      },
+      {
+        "course_id": 17267,
+        "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+        "title": "[OS概論] 程式作業二 : Multi-Process Matrix",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=152692&scope=assignment",
+        "due_at": "2025-10-01 00:00",
+        "due_ts": 1759248000,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 53天 18小時"
+      },
+      {
+        "course_id": 17267,
+        "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+        "title": "[OS概論] 程式作業三 : Parallel Merge Sort with Threads",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=157145&scope=assignment",
+        "due_at": "2025-10-15 00:00",
+        "due_ts": 1760457600,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 39天 18小時"
+      },
+      {
+        "course_id": 17267,
+        "course_title": "【114 Autumn】515515作業系統概論 Introduction to Operating Systems",
+        "title": "[OS概論] 程式作業四 : malloc() Replacement",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=159049&scope=assignment",
+        "due_at": "2025-11-13 00:00",
+        "due_ts": 1762963200,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 10天 18小時"
+      },
+      {
+        "course_id": 17271,
+        "course_title": "【114 Autumn】515519網路程式設計概論 Intro. to Network Programming",
+        "title": "Network Programming Final - 遊戲商城系統",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=140459&scope=assignment",
+        "due_at": "2025-12-11 23:59",
+        "due_ts": 1765468740,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "剩餘 18天 5小時"
+      },
+      {
+        "course_id": 17271,
+        "course_title": "【114 Autumn】515519網路程式設計概論 Intro. to Network Programming",
+        "title": "HW1",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=140452&scope=assignment",
+        "due_at": "2025-10-17 23:59",
+        "due_ts": 1760716740,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 36天 18小時"
+      },
+      {
+        "course_id": 17271,
+        "course_title": "【114 Autumn】515519網路程式設計概論 Intro. to Network Programming",
+        "title": "HW2",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=140455&scope=assignment",
+        "due_at": "2025-11-13 23:59",
+        "due_ts": 1763049540,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 9天 18小時"
+      },
+      {
+        "course_id": 17274,
+        "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+        "title": "Final_project",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=153297&scope=assignment",
+        "due_at": "2025-12-21 23:59",
+        "due_ts": 1766332740,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "剩餘 28天 5小時"
+      },
+      {
+        "course_id": 17274,
+        "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+        "title": "HW4_to-do_list",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=173402&scope=assignment",
+        "due_at": "2025-12-04 23:59",
+        "due_ts": 1764863940,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "剩餘 11天 5小時"
+      },
+      {
+        "course_id": 17274,
+        "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+        "title": "Homework1_self_introduction",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=153291&scope=assignment",
+        "due_at": "2025-10-02 23:59",
+        "due_ts": 1759420740,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 51天 18小時"
+      },
+      {
+        "course_id": 17274,
+        "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+        "title": "HW2_Javascript_1",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=158043&scope=assignment",
+        "due_at": "2025-10-23 23:59",
+        "due_ts": 1761235140,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 30天 18小時"
+      },
+      {
+        "course_id": 17274,
+        "course_title": "【114 Autumn】515601動態網頁程式設計 Dynamic web programming",
+        "title": "HW3_blackjack",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165745&scope=assignment",
+        "due_at": "2025-11-13 23:59",
+        "due_ts": 1763049540,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 9天 18小時"
+      },
+      {
+        "course_id": 17844,
+        "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "title": "Final Project",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165252&scope=assignment",
+        "due_at": "2025-12-25 13:19",
+        "due_ts": 1766639940,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "剩餘 31天 18小時"
+      },
+      {
+        "course_id": 17844,
+        "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "title": "Lab1-DDPM",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=153107&scope=assignment",
+        "due_at": "2025-10-02 23:59",
+        "due_ts": 1759420740,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 51天 18小時"
+      },
+      {
+        "course_id": 17844,
+        "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "title": "Lab2-DDIM-LoRA",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=157122&scope=assignment",
+        "due_at": "2025-10-16 23:59",
+        "due_ts": 1760630340,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 37天 18小時"
+      },
+      {
+        "course_id": 17844,
+        "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "title": "Lab3-Distillation",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=161792&scope=assignment",
+        "due_at": "2025-10-30 23:59",
+        "due_ts": 1761839940,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 23天 18小時"
+      },
+      {
+        "course_id": 17844,
+        "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "title": "Final Project Proposal",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165250&scope=assignment",
+        "due_at": "2025-11-13 13:19",
+        "due_ts": 1763011140,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 10天 5小時"
+      },
+      {
+        "course_id": 17844,
+        "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "title": "Lab4-Flow Matching",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=167632&scope=assignment",
+        "due_at": "2025-11-20 23:59",
+        "due_ts": 1763654340,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 2天 18小時"
+      },
+      {
+        "course_id": 17844,
+        "course_title": "【114 Autumn】535522影像與視訊生成 Image and Video Generations",
+        "title": "Paper Presentation",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=165251&scope=assignment",
+        "due_at": "2025-11-20 13:19",
+        "due_ts": 1763615940,
+        "overdue": true,
+        "completed": false,
+        "raw_status_text": "已逾期 3天 5小時"
+      },
+      {
+        "course_id": 18842,
+        "course_title": "【114 Autumn】574007HTML & CSS網頁設計 HTML & CSS Webpage Design",
+        "title": "Homework 1 Resume",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=163079&scope=assignment",
+        "due_at": "2025-11-18 10:00",
+        "due_ts": 1763431200,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 5天 8小時"
+      },
+      {
+        "course_id": 18842,
+        "course_title": "【114 Autumn】574007HTML & CSS網頁設計 HTML & CSS Webpage Design",
+        "title": "Homework 2 Module 6 Project",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=168652&scope=assignment",
+        "due_at": "2025-11-18 10:00",
+        "due_ts": 1763431200,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 5天 8小時"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Week 1 Attendance / Participation / In-class Quizzes (Bonus: 0.5%)",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=146544&scope=assignment",
+        "due_at": "",
+        "due_ts": null,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "No submissions have been made yet"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Week 2 Attendance / Participation / In-class Quizzes",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=150005&scope=assignment",
+        "due_at": "",
+        "due_ts": null,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "No submissions have been made yet"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Week 3 Attendance / Participation / In-class Quizzes",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=152364&scope=assignment",
+        "due_at": "",
+        "due_ts": null,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "No submissions have been made yet"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Week 10 HW#5: Build & Compare NN vs CNN (Image Classification)",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=167347&scope=assignment",
+        "due_at": "2025-12-04 23:59",
+        "due_ts": 1764863940,
+        "overdue": false,
+        "completed": false,
+        "raw_status_text": "剩餘 11天 5小時"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Week 1 Homework: Dataset Splitting & Avoiding Data Leakage",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=145823&scope=assignment",
+        "due_at": "2025-09-12 11:59",
+        "due_ts": 1757649540,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 72天 6小時"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Week 2 Homework: Linear Regression by hand",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=151258&scope=assignment",
+        "due_at": "2025-09-28 11:59",
+        "due_ts": 1759031940,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 56天 6小時"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Week 4 Homework: Regression Kaggle competition",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=154414&scope=assignment",
+        "due_at": "2025-10-06 23:59",
+        "due_ts": 1759766340,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 47天 18小時"
+      },
+      {
+        "course_id": 19513,
+        "course_title": "【114 Autumn】515521機器學習概論 Introduction to Machine Learning",
+        "title": "Project proposal (1-page dataset and task description)",
+        "url": "https://e3p.nycu.edu.tw/mod/assign/view.php?id=163086&scope=assignment",
+        "due_at": "2025-10-27 23:59",
+        "due_ts": 1761580740,
+        "overdue": true,
+        "completed": true,
+        "raw_status_text": "已逾期 26天 18小時"
+      }
+    ],
+    "errors": [],
+    "login_method": "guest_export"
+  },
+  "excel_data": null
+}

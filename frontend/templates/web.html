@@ -1,0 +1,1587 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+{% set site_description = "E3作業追蹤系統可以幫助交大學生統整 E3 平台上的所有作業。系統會列出所有課程作業、狀態、截止日期，也能導出 Excel 或同步到 Google 日曆。" %}
+<meta name="description" content="{{ site_description }}" />
+<meta property="og:title" content="交大作業追蹤系統" />
+<meta property="og:description" content="{{ site_description }}" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%233730a3'/%3E%3Cpath fill='%23fff' d='M20 18h24v8H28v6h14v8H28v8h16v8H20z'/%3E%3C/svg%3E" />
+<meta name="theme-color" content="#3730a3" />
+<title>交大作業追蹤系統</title>
+<script>
+(function(){
+    try{
+        const stored = localStorage.getItem('e3_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const choice = stored || (prefersDark ? 'dark' : 'light');
+        const normalized = choice === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', normalized);
+        document.documentElement.style.colorScheme = normalized;
+        window.__initialTheme = normalized;
+    }catch(err){
+        document.documentElement.setAttribute('data-theme','light');
+        document.documentElement.style.colorScheme = 'light';
+        window.__initialTheme = 'light';
+    }
+})();
+</script>
+<style>
+    :root {
+    color-scheme: light dark;
+    --bg:#f5f7ff; --fg:#0f172a; --muted:#64748b;
+    --card:#ffffff; --card-2:#f8fafc; --border:#e2e8f0;
+    --primary:#3730a3; --primary-2:#312e81; --ring:#c7d2fe;
+    --ok-bg:#dcfce7; --ok-fg:#166534; --err-bg:#fee2e2; --err-fg:#b91c1c;
+    --warn-bg:#fff7ed; --warn-fg:#9a3412; --info-bg:#e0f2fe; --info-fg:#0f172a;
+    --shadow:0 20px 60px rgba(15,23,42,.08);
+    }
+html[data-theme="dark"]{
+        --bg:#080f1f; --fg:#f4f6ff; --muted:#b7c2f5;
+        --card:#131a2f; --card-2:#192243; --border:#2c365d;
+        --primary:#7c83ff; --primary-2:#5f6af0; --ring:#4d57c9;
+        --ok-bg:#134e4a; --ok-fg:#bbf7d0; --err-bg:#4c1d1d; --err-fg:#fecaca;
+        --warn-bg:#4a2509; --warn-fg:#fed7aa; --info-bg:#14284a; --info-fg:#cfd9ff;
+        --shadow:0 25px 70px rgba(0,0,0,.55);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft JhengHei","Inter","Noto Sans TC",sans-serif}
+    .container{max-width:1200px;margin:0 auto;padding:20px 16px 48px}
+    .site-footer{margin-top:32px;padding:24px 16px;border-top:1px solid var(--border);color:var(--muted);font-size:13px;text-align:center}
+    .site-footer a{color:var(--primary);text-decoration:none;font-weight:600;margin:0 8px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}
+    .header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    h1{margin:0;font-size:26px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow)}
+    .panel{padding:14px 16px}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;border:1px solid var(--border);background:var(--card-2);cursor:pointer;transition:all .2s ease}
+    .btn.primary{background:var(--primary);color:#fff;border-color:transparent}
+    .btn.accent{background:linear-gradient(135deg,#6366f1,#4338ca);color:#fff;border-color:transparent;box-shadow:0 8px 18px rgba(99,102,241,.35)}
+    .btn.accent:hover{filter:brightness(1.05);transform:translateY(-1px)}
+    .btn.ghost.outline{border:1px solid rgba(67,56,202,.4);color:#4338ca;background:rgba(99,102,241,.08)}
+    .btn.ghost.outline:hover{background:rgba(99,102,241,.15)}
+    .btn.google{background:linear-gradient(135deg,#4285f4,#1a73e8);color:#fff;border-color:#1a73e8;box-shadow:0 6px 16px rgba(26,115,232,.3)}
+    .btn.google:hover{filter:brightness(1.05);transform:translateY(-1px)}
+    .btn.ghost{background:transparent;border:1px dashed var(--border);color:var(--muted)}
+    .btn.disabled{opacity:.6;cursor:not-allowed;background:var(--card-2);border-style:dashed}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .btn .inline-spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+    .icon-button{width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--card-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:background .2s ease}
+    .icon-button svg{width:18px;height:18px}
+    .icon-button .dot{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:#f97316}
+    .icon-button:hover{background:var(--card)}
+    html[data-theme="dark"] .icon-button{border-color:#404a75;background:#1f2744;color:#e4e8ff}
+    @media (max-width:640px){
+        header{flex-direction:column;align-items:flex-start}
+        .header-actions{width:100%;justify-content:flex-start}
+        .header-actions .btn{flex:1 1 auto;min-width:140px;text-align:center;justify-content:center}
+        .header-actions .icon-button{flex:0 0 auto}
+        .header-actions .user-meta{width:100%;margin-bottom:4px}
+    }
+    .stats{display:flex;gap:10px;flex-wrap:wrap}
+    .chip{display:inline-flex;gap:8px;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--card-2);font-weight:700;font-size:13px}
+    .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700}
+    .badge.done{background:var(--ok-bg);color:var(--ok-fg)}
+    .badge.overdue{background:var(--err-bg);color:var(--err-fg)}
+    .badge.nodue{background:var(--warn-bg);color:var(--warn-fg)}
+    .remaining-text{display:inline-block;font-size:13px;margin-top:4px}
+    .remaining-text.neutral{color:var(--muted)}
+    .remaining-text.normal{color:var(--primary)}
+    .remaining-text.warning{color:var(--warn-fg)}
+    .remaining-text.overdue{color:var(--err-fg)}
+    .remaining-text.done{color:var(--ok-fg)}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    thead th{font-size:13px;color:var(--muted);text-transform:uppercase}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+    .hidden{display:none!important}
+
+    .toolbar-compact{
+    position: sticky; top: 0; z-index: 20;
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: 12px; padding: 10px 16px;
+    }
+    .tc-left{ display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+    .tc-center{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap }
+    .tc-right{ display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap }
+    label.cb{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:10px;background:var(--card-2);user-select:none}
+    input[type="checkbox"]{transform:translateY(1px)}
+    .excel-btn {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: none;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    }
+    .excel-btn:hover {
+    background: var(--primary-2);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .excel-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .excel-btn svg {
+    flex-shrink: 0;
+    }
+    .seg{ display:inline-flex; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--card-2) }
+    .seg-btn{ padding:8px 12px; border:0; background:transparent; cursor:pointer; font-weight:600; color:var(--fg) }
+    .seg-btn.active{ background:var(--primary); color:#fff }
+    html[data-theme="dark"] .btn{background:#222b4c;border-color:#3e4872;color:#f4f6ff}
+    html[data-theme="dark"] .btn:hover{background:#2c3560}
+    html[data-theme="dark"] .btn.primary{background:var(--primary);border-color:transparent;box-shadow:0 8px 20px rgba(99,102,241,.35)}
+    html[data-theme="dark"] .btn.google{background:linear-gradient(135deg,#4285f4,#1a73e8);border-color:#1a73e8;box-shadow:0 6px 16px rgba(26,115,232,.45)}
+    html[data-theme="dark"] .btn.ghost{border-color:#4a5686;color:#dfe4ff}
+    html[data-theme="dark"] .btn.ghost:hover{background:#262f53}
+    html[data-theme="dark"] .site-footer{border-color:#2c365d;color:#b8c5ff}
+    html[data-theme="dark"] .site-footer a{color:#a5b4fc}
+    html[data-theme="dark"] .btn.accent{background:linear-gradient(135deg,#8b5cf6,#5b21b6);box-shadow:0 12px 24px rgba(91,33,182,.45)}
+    html[data-theme="dark"] .btn.ghost.outline{border-color:rgba(124,94,238,.6);color:#dfe4ff;background:rgba(124,94,238,.15)}
+    html[data-theme="dark"] .btn.ghost.outline:hover{background:rgba(124,94,238,.25)}
+    html[data-theme="dark"] .status-item{border-color:#3d4770;background:#1b2142}
+    html[data-theme="dark"] #flatTable a.btn{color:#fff;background:#374291;border-color:#5862c0}
+    html[data-theme="dark"] .seg{border-color:#3a466f;background:#1e294b}
+    html[data-theme="dark"] .seg-btn{color:#c6cff8}
+    html[data-theme="dark"] .seg-btn.active{background:#5f67f0;color:#fff}
+
+    .loader-wrap{position:fixed;inset:0;display:grid;place-items:center;background:rgba(2,6,23,.45);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:60}
+    .loader-wrap.active{opacity:1;pointer-events:auto}
+    .loader-content{display:flex;flex-direction:column;align-items:center;gap:12px;padding:24px 32px;border-radius:18px;background:var(--card);border:1px solid var(--border);box-shadow:0 20px 60px rgba(15,23,42,.2)}
+    .loader{width:56px;height:56px;border-radius:50%;border:6px solid #cbd5e1;border-top-color:var(--primary);animation:spin .8s linear infinite}
+    .loader-message{margin:0;font-weight:600;color:var(--fg)}
+    body.ui-locked{overflow:hidden}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    .course-card h2{margin:0;font-size:20px}
+    .course-meta{color:var(--muted);font-size:13px}
+
+    .bg-refresh-indicator {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    box-shadow: var(--shadow);
+    opacity: 0;
+    transition: opacity 0.3s;
+    }
+    .bg-refresh-indicator.active {
+    opacity: 1;
+    }
+    
+    .toast-container {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: min(450px, 90vw);
+    pointer-events: none;
+    }
+    
+    .toast {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: toast-in 0.3s ease forwards;
+    pointer-events: auto;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+    }
+    
+    .toast.closing {
+    animation: toast-out 0.3s ease forwards;
+    }
+    
+    .toast-icon {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    }
+    
+    .toast-content {
+    flex: 1;
+    font-weight: 500;
+    }
+    
+    .toast-close {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: none;
+    background: var(--card-2);
+    color: var(--muted);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    }
+    
+    .toast-close:hover {
+    background: var(--border);
+    color: var(--fg);
+    }
+    
+    .toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: var(--primary);
+    animation: toast-progress 5s linear forwards;
+    }
+    
+    .toast.success .toast-icon {
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+    }
+    
+    .toast.error .toast-icon {
+    background: var(--err-bg);
+    color: var(--err-fg);
+    }
+    
+    .toast.warning .toast-icon {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+    }
+    
+    .toast.info .toast-icon {
+    background: var(--info-bg);
+    color: var(--info-fg);
+    }
+    
+    .toast.success .toast-progress {
+    background: var(--ok-fg);
+    }
+    
+    .toast.error .toast-progress {
+    background: var(--err-fg);
+    }
+    
+    .toast.warning .toast-progress {
+    background: var(--warn-fg);
+    }
+    
+    .toast.info .toast-progress {
+    background: var(--info-fg);
+    }
+
+    .modal-root{position:fixed;inset:0;z-index:120;}
+    .modal-root.hidden{display:none!important;}
+    .modal-backdrop{
+        position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);
+        opacity:0;pointer-events:none;transition:opacity .2s ease;
+    }
+    .modal-backdrop.show{opacity:1;pointer-events:auto;}
+    .modal-panel{
+        position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);
+        background:var(--card);border-radius:18px;box-shadow:0 30px 80px rgba(15,23,42,.25);
+        width:min(520px,90vw);max-height:80vh;display:flex;flex-direction:column;
+        border:1px solid var(--border);padding:20px;opacity:0;transition:opacity .2s ease,transform .2s ease;
+    }
+    .modal-panel.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
+    .modal-list{margin-top:16px;flex:1;overflow:auto;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--card-2);}
+    .modal-item{display:flex;gap:10px;align-items:flex-start;padding:10px;border-bottom:1px solid var(--border);}
+    .modal-item:last-child{border-bottom:0;}
+    .modal-item input{margin-top:4px;}
+    .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
+    .modal-empty{color:var(--muted);text-align:center;padding:24px;}
+    .announcement-list{margin-top:12px;display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow:auto}
+    .announcement-card{border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--card-2)}
+    .announcement-card h4{margin:0 0 6px;font-size:17px}
+    .announcement-card p{margin:0 0 8px;white-space:pre-wrap}
+    
+    @keyframes toast-in {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    }
+    
+    @keyframes toast-out {
+    from {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    }
+    
+    @keyframes toast-progress {
+    from {
+        width: 100%;
+    }
+    to {
+        width: 0%;
+    }
+    }
+
+    @media (max-width: 780px){
+    .toolbar-compact{ 
+        grid-template-columns: 1fr; 
+        row-gap: 10px;
+        background: var(--card);
+        border-bottom: 1px solid var(--border);
+        padding: 12px;
+    }
+    .tc-right, .tc-center { 
+        justify-content: flex-start;
+        margin-top: 6px;
+    }
+    header{
+        flex-direction: column; 
+        align-items: flex-start; 
+        gap: 8px;
+    }
+    .container {
+        padding: 16px 12px 32px;
+    }
+    
+    table {
+        font-size: 14px;
+    }
+    th, td {
+        padding: 8px 10px;
+    }
+    
+    .badge {
+        font-size: 11px;
+        padding: 2px 6px;
+    }
+    
+    .btn {
+        padding: 8px 12px;
+        font-size: 14px;
+    }
+    
+    .stats {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .chip {
+        font-size: 12px;
+        padding: 4px 10px;
+    }
+    
+    .toast {
+        padding: 12px 14px;
+    }
+    
+    .toast-content {
+        font-size: 14px;
+    }
+    }
+    
+    @media (max-width: 480px) {
+    h1 {
+        font-size: 22px;
+    }
+    
+    thead th {
+        font-size: 11px;
+    }
+    
+    .course-card h2 {
+        font-size: 18px;
+    }
+    
+    #flatTable th:nth-child(1), #flatTable td:nth-child(1) { width: 30% !important; }
+    #flatTable th:nth-child(2), #flatTable td:nth-child(2) { width: 40% !important; }
+    #flatTable th:nth-child(3), #flatTable td:nth-child(3) { width: 20% !important; }
+    #flatTable th:nth-child(4), #flatTable td:nth-child(4) { width: 10% !important; }
+    #flatTable th:nth-child(5), #flatTable td:nth-child(5) { 
+        width: auto !important;
+        text-align: center;
+    }
+    
+    .courseTable th:nth-child(1), .courseTable td:nth-child(1) { width: 45% !important; }
+    .courseTable th:nth-child(2), .courseTable td:nth-child(2) { width: 25% !important; }
+    .courseTable th:nth-child(3), .courseTable td:nth-child(3) { width: 15% !important; }
+    .courseTable th:nth-child(4), .courseTable td:nth-child(4) { 
+        width: 15% !important;
+        text-align: center;
+    }
+    
+    .seg-btn {
+        padding: 6px 10px;
+        font-size: 13px;
+    }
+    
+    label.cb {
+        padding: 5px 8px;
+        font-size: 13px;
+    }
+    
+    .excel-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+    
+    td .btn {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+    
+    .toast {
+        padding: 10px 12px;
+    }
+    
+    .toast-icon {
+        width: 20px;
+        height: 20px;
+    }
+    
+    .toast-content {
+        font-size: 13px;
+    }
+    }
+    
+    @media (min-width: 481px) and (max-width: 780px) {
+    #flatTable th:nth-child(1), #flatTable td:nth-child(1) { width: 25% !important; }
+    #flatTable th:nth-child(2), #flatTable td:nth-child(2) { width: 35% !important; }
+    #flatTable th:nth-child(3), #flatTable td:nth-child(3) { width: 18% !important; }
+    #flatTable th:nth-child(4), #flatTable td:nth-child(4) { width: 12% !important; }
+    #flatTable th:nth-child(5), #flatTable td:nth-child(5) { width: 10% !important; }
+    }
+    
+    @media (max-width: 600px) {
+    .panel {
+        padding: 10px;
+        overflow-x: auto;
+    }
+    
+    table {
+        min-width: 480px;
+        min-width: 480px;
+    }
+    }
+</style>
+</head>
+<body data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}">
+{% set server_now_ts = now_ts if now_ts is defined else none %}
+{% macro format_time_diff(seconds) -%}
+    {% if seconds is none %}
+        -
+    {% else %}
+        {% set total_minutes = (seconds + 59) // 60 %}
+        {% set days = total_minutes // 1440 %}
+        {% set hours = (total_minutes % 1440) // 60 %}
+        {% set minutes = total_minutes % 60 %}
+        {% set parts = [] %}
+        {% if days %}
+            {% set parts = parts + [days ~ '日'] %}
+        {% endif %}
+        {% if hours %}
+            {% set parts = parts + [hours ~ '小時'] %}
+        {% endif %}
+        {% if not parts and minutes %}
+            {% set parts = parts + [minutes ~ '分鐘'] %}
+        {% endif %}
+        {% if not parts %}
+            {% set parts = ['不足1分鐘'] %}
+        {% endif %}
+        {{ parts | join(' ') }}
+    {% endif %}
+{%- endmacro %}
+{% macro render_remaining_text(item, now_ts) -%}
+    {% if item.completed %}
+        <span class="remaining-text done">已完成</span>
+    {% elif not item.due_ts or now_ts is none %}
+        <span class="remaining-text neutral">{{ item.raw_status_text or "無截止資訊" }}</span>
+    {% else %}
+        {% set diff = item.due_ts - now_ts %}
+        {% if diff <= 0 %}
+            <span class="remaining-text overdue">已逾期 {{ format_time_diff(-diff) }}</span>
+        {% elif diff < 86400 %}
+            <span class="remaining-text warning">剩下 {{ format_time_diff(diff) }}</span>
+        {% else %}
+            <span class="remaining-text normal">剩下 {{ format_time_diff(diff) }}</span>
+        {% endif %}
+    {% endif %}
+{%- endmacro %}
+<div class="loader-wrap" id="loader">
+    <div class="loader-content">
+        <div class="loader" aria-label="載入中"></div>
+        <p class="loader-message">載入中...</p>
+    </div>
+</div>
+<div class="bg-refresh-indicator" id="bgRefreshIndicator">背景更新中...</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="container">
+    <header>
+    <h1>E3 作業追蹤系統</h1>
+    <div class="header-actions">
+        {% if user %}
+        <span class="user-meta" style="color:var(--muted);font-size:14px">已登入：<strong>{{ user.username }}</strong>{% if user.is_admin %} <span style="background:var(--primary);color:#fff;font-size:11px;padding:1px 6px;border-radius:10px;margin-left:4px">管理員</span>{% endif %}</span>
+        {% endif %}
+        <button type="button" class="icon-button" id="announcementToggle" title="查看公告" onclick="if(window.__openAnnouncementModal){window.__openAnnouncementModal();}">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V4a2 2 0 10-4 0v1.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+            {% if announcements %}
+            <span class="dot"></span>
+            {% endif %}
+        </button>
+        <button type="button" class="icon-button" id="themeToggle" title="切換主題">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-9H21m-17 0H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+        </button>
+        {% if user %}
+            {% if user.is_admin %}
+            <a class="btn" href="{{ url_for('admin_announcements') }}">公告管理</a>
+            <a class="btn" href="{{ url_for('admin_traffic') }}">流量監控</a>
+            {% endif %}
+            <a class="btn" href="{{ url_for('logout') }}">登出</a>
+        {% else %}
+            <a class="btn primary" href="{{ url_for('login') }}">登入</a>
+        {% endif %}
+    </div>
+    </header>
+    <section class="stats" aria-live="polite" style="margin-bottom:12px">
+        <span class="chip" title="最近 5 分鐘內仍有操作的唯一帳號數">線上人數：<strong>{{ stats.online }}</strong></span>
+        <span class="chip" title="自服務啟動以來的總頁面載入次數">累積訪問次數：<strong>{{ stats.total }}</strong> 次</span>
+        <span class="chip" title="最後一次成功更新作業清單的時間">上次更新：<strong>{{ last_updated_label or "尚未更新" }}</strong></span>
+    </section>
+
+    {% with messages = get_flashed_messages(with_categories=True) %}
+    {% if messages %}
+        <div id="flashMessages" class="hidden">
+        {% for category, msg in messages %}
+            <div data-category="{{ category }}" data-message="{{ msg }}"></div>
+        {% endfor %}
+        </div>
+    {% endif %}
+    {% endwith %}
+
+    {% if not user %}
+    <section class="card panel"><div style="color:var(--muted)">請先登入才能使用。</div></section>
+    {% else %}
+
+    {% if guest_mode %}
+    <section class="card panel" style="margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div>
+                <h3 style="margin:0 0 4px;font-size:18px">訪客模式資料匯入</h3>
+                <p class="muted" style="margin:0;font-size:13px">
+                    先下載匯出工具（guest_export.exe）產生 JSON，再上傳即可使用所有功能（不會自動從 E3 抓資料）。
+                </p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a class="btn accent" href="{{ url_for('guest_tool') }}" download>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3v12"></path>
+                        <path d="M8 11l4 4 4-4"></path>
+                        <path d="M4 19h16"></path>
+                    </svg>
+                    下載匯出工具
+                </a>
+                <a class="btn ghost outline" href="{{ url_for('guest_tool_source') }}" download>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 18l6-6-6-6"></path>
+                        <path d="M8 6l-6 6 6 6"></path>
+                    </svg>
+                    下載 Python 原始碼
+                </a>
+            </div>
+        </div>
+        <form method="post" action="{{ url_for('guest_import') }}" enctype="multipart/form-data" style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+            <input id="guestFile" name="guest_file" type="file" accept="application/json" required style="flex:1" />
+            <button class="btn primary" type="submit">匯入 JSON</button>
+        </form>
+    </section>
+    {% endif %}
+
+    <section class="card panel toolbar-compact">
+        <div class="tc-left">
+        <label class="cb"><input type="checkbox" id="showOverdue"{% if preferences.show_overdue %} checked{% endif %}> 顯示逾期作業</label>
+        <label class="cb"><input type="checkbox" id="showCompleted"{% if preferences.show_completed %} checked{% endif %}> 顯示已完成作業</label>
+        <div class="seg">
+            <button id="viewDueBtn" class="seg-btn" data-view="due">到期日排序</button>
+            <button id="viewCourseBtn" class="seg-btn" data-view="course">依課程排序</button>
+        </div>
+        </div>
+        <div class="tc-center">
+            {% if result and excel_data %}
+                <a class="btn primary excel-btn" data-log-action="download_excel" download="待繳作業.xlsx"
+                href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+                導出作業資訊
+                </a>
+            {% endif %}
+            {% if google_ready %}
+                {% if google_linked %}
+                    <button class="btn google" type="button" id="googleSyncBtn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 3h4v4"></path>
+                            <path d="M3 17h4v4"></path>
+                            <path d="m21 3-6 6"></path>
+                            <path d="m3 21 6-6"></path>
+                            <path d="M3 9V5a2 2 0 0 1 2-2h4"></path>
+                            <path d="M15 21h4a2 2 0 0 0 2-2v-4"></path>
+                        </svg>
+                        導入至 Google 日曆
+                    </button>
+                    <form method="post" action="{{ url_for('google_unlink') }}" style="display:inline">
+                        <button class="btn" type="submit">解除 Google 連結</button>
+                    </form>
+                {% else %}
+                    <a class="btn google" href="{{ url_for('google_authorize') }}">
+                        連結 Google 日曆
+                    </a>
+                {% endif %}
+            {% else %}
+                <span class="btn disabled">尚未啟用 Google 日曆整合</span>
+            {% endif %}
+        </div>
+        {% if google_ready and google_linked %}
+        <form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none">
+            <input type="hidden" name="selected_uids" id="googleSyncInput">
+        </form>
+        {% endif %}
+        <div class="tc-right stats">
+        <span class="chip">總筆數：<strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong></span>
+        <span class="chip">逾期：<strong id="overdueCount" style="color:var(--err-fg)">{{ (result.all_assignments | selectattr('overdue') | rejectattr('completed') | list | length) if result else 0 }}</strong></span>
+        <span class="chip">未完成：<strong id="incompleteCount">{{ (result.all_assignments | rejectattr('completed') | list | length) if result else 0 }}</strong></span>
+        </div>
+    </section>
+
+    {% if result and result.errors %}
+        <section class="card panel">
+        <div class="flash error"><strong>部分項目解析失敗：</strong>
+            <ul style="margin:8px 0 0 18px;">
+            {% for err in result.errors %}
+                <li>{{ err.course_title }}{% if err.assignment_title %} - {{ err.assignment_title }}{% endif %}：{{ err.message }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+        </section>
+    {% endif %}
+
+    {% if result %}
+        <section id="viewDue" class="card panel hidden">
+        <table id="flatTable">
+            <thead>
+            <tr>
+                <th style="width:26%">課程</th>
+                <th style="width:40%">作業名稱</th>
+                <th style="width:18%">截止時間</th>
+                <th style="width:8%">狀態</th>
+                <th style="width:8%">連結</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for item in result.all_assignments %}
+            <tr
+                data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
+                data-overdue="{{ 1 if item.overdue else 0 }}"
+                data-completed="{{ 1 if item.completed else 0 }}"
+                data-uid="{{ item.course_id }}|{{ item.title }}|{{ item.url }}"
+                data-course="{{ item.course_title }}"
+                data-title="{{ item.title }}"
+                data-due="{{ item.due_at or '無截止' }}"
+                data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
+            >
+                <td>{{ item.course_title }}</td>
+                <td>
+                <div style="font-weight:600">{{ item.title }}</div>
+                <div>{{ render_remaining_text(item, server_now_ts)|safe }}</div>
+                </td>
+                <td>{{ item.due_at or "無截止" }}</td>
+                <td>
+                {% if item.completed %}<span class="badge done">已完成</span>
+                {% elif item.overdue %}<span class="badge overdue">逾期</span>
+                {% else %}<span class="badge nodue">未完成</span>{% endif %}
+                </td>
+                <td><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </section>
+
+        <section id="viewCourse">
+        {% for course in result.courses %}
+            <section class="card course-card">
+            <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div>
+                <h2>{{ course.title }} <span style="color:var(--muted);font-size:14px">#{{ course.id }}</span></h2>
+                </div>
+                {% if course.url %}<a class="btn" href="{{ course.url }}" target="_blank" rel="noopener">前往課程</a>{% endif %}
+            </div>
+            <div class="panel">
+                <table class="courseTable">
+                <thead><tr><th style="width:50%">作業名稱</th><th style="width:20%">截止時間</th><th style="width:12%">狀態</th><th style="width:10%">連結</th></tr></thead>
+                <tbody>
+                    {% for item in course.assignments %}
+                    <tr
+                    data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
+                    data-overdue="{{ 1 if item.overdue else 0 }}"
+                    data-completed="{{ 1 if item.completed else 0 }}"
+                    data-uid="{{ item.course_id }}|{{ item.title }}|{{ item.url }}"
+                    data-course="{{ course.title }}"
+                    data-title="{{ item.title }}"
+                    data-due="{{ item.due_at or '無截止' }}"
+                    data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
+                    >
+                    <td>
+                        <div style="font-weight:600">{{ item.title }}</div>
+                        <div>{{ render_remaining_text(item, server_now_ts)|safe }}</div>
+                    </td>
+                    <td>{{ item.due_at or "無截止" }}</td>
+                    <td>
+                        {% if item.completed %}<span class="badge done">已完成</span>
+                        {% elif item.overdue %}<span class="badge overdue">逾期</span>
+                        {% else %}<span class="badge nodue">未完成</span>{% endif %}
+                    </td>
+                    <td><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                </table>
+            </div>
+            </section>
+        {% endfor %}
+        </section>
+    {% else %}
+        <section class="card panel"><div style="color:var(--muted)">尚未取得課程資訊</div></section>
+    {% endif %}
+    {% endif %}
+{% if google_ready and google_linked %}
+<div id="googleModal" class="modal-root hidden" style="display:none">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div>
+                <h3 style="margin:0;font-size:20px">選擇要導入的作業</h3>
+                <p class="muted" style="margin:4px 0 0">僅顯示目前篩選條件下的作業。</p>
+            </div>
+            <button class="btn ghost" type="button" id="googleModalClose" aria-label="關閉">×</button>
+        </div>
+        <label class="cb" style="margin-top:12px;"><input type="checkbox" id="googleModalSelectAll" checked> 全選</label>
+        <div id="googleModalList" class="modal-list"></div>
+        <div class="modal-actions">
+            <button class="btn ghost" type="button" id="googleModalCancel">取消</button>
+            <button class="btn google" type="button" id="googleModalSubmit">導入</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div id="announcementModal" class="modal-root hidden" style="display:none">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div>
+                <h3 style="margin:0;font-size:20px">系統公告</h3>
+                <p class="muted" style="margin:4px 0 0">最新公告會顯示在這裡，請留意最新資訊。</p>
+            </div>
+            <button class="btn ghost" type="button" id="announcementClose" aria-label="關閉公告">關閉</button>
+        </div>
+        <div class="announcement-list" id="announcementList">
+            {% if announcements %}
+                {% for ann in announcements %}
+                <article class="announcement-card">
+                    <h4>{{ ann.title }}</h4>
+                    <p style="white-space: pre-wrap;">{{ ann.content }}</p>
+                    <p class="muted" style="margin:0">{{ ann.created_label or ann.created_at }}</p>
+                </article>
+                {% endfor %}
+            {% else %}
+                <div class="announcement-card">
+                    <p class="muted" style="margin:0">目前沒有公告。</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+</div>
+
+</div>
+
+<footer class="site-footer">
+    <div>
+        <a href="{{ url_for('privacy_policy') }}">隱私權政策</a>｜
+        <a href="{{ url_for('terms_of_service') }}">服務條款</a>｜ 
+        <a href="{{ url_for('feedback') }}">回報問題</a>
+    </div>
+</footer>
+
+<script>
+const USER_PREFERENCES = {{ preferences | tojson | safe }} || {};
+const PREFERENCES_ENDPOINT = "{{ url_for('save_preferences') }}";
+const CACHE_SYNC_ENDPOINT = "{{ url_for('api_cache') }}";
+const CACHE_SYNC_INTERVAL = 60000;
+let currentCacheTs = Number(document.body.dataset.cacheTs || '0');
+if (Number.isNaN(currentCacheTs)) {
+    currentCacheTs = 0;
+}
+const IS_GUEST = {{ 'true' if guest_mode else 'false' }};
+const loader = document.getElementById('loader');
+const loaderMessageEl = loader ? loader.querySelector('.loader-message') : null;
+const bgRefreshIndicator = document.getElementById('bgRefreshIndicator');
+const showOverdue = document.getElementById('showOverdue');
+const showCompleted = document.getElementById('showCompleted');
+const viewDue = document.getElementById('viewDue');
+const viewCourse = document.getElementById('viewCourse');
+const viewCourseBtn = document.getElementById('viewCourseBtn');
+const viewDueBtn = document.getElementById('viewDueBtn');
+const hasCache = document.body.dataset.hasCache === '1';
+const toastContainer = document.getElementById('toastContainer');
+const UI_EVENT_ENDPOINT = "{{ url_for('ui_event') }}";
+const themeToggle = document.getElementById('themeToggle');
+
+const totalCountEl = document.getElementById('totalCount');
+const overdueCountEl = document.getElementById('overdueCount');
+const incompleteCountEl = document.getElementById('incompleteCount');
+
+const TOAST_ICONS = {
+    success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
+    error: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>',
+    warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+    info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'
+};
+const googleSyncBtn = document.getElementById('googleSyncBtn');
+const googleModal = document.getElementById('googleModal');
+const googleModalList = document.getElementById('googleModalList');
+const googleModalSelectAll = document.getElementById('googleModalSelectAll');
+const googleModalSubmit = document.getElementById('googleModalSubmit');
+const googleModalCancel = document.getElementById('googleModalCancel');
+const googleModalClose = document.getElementById('googleModalClose');
+const googleSyncInput = document.getElementById('googleSyncInput');
+const googleSyncForm = document.getElementById('googleSyncForm');
+if (googleModalSubmit && !googleModalSubmit.dataset.defaultText) {
+    googleModalSubmit.dataset.defaultText = googleModalSubmit.textContent.trim();
+}
+
+function applyTheme(theme) {
+    const target = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', target);
+    document.documentElement.style.colorScheme = target;
+    try {
+        localStorage.setItem('e3_theme', target);
+    } catch (err) {}
+    if (themeToggle) {
+        themeToggle.setAttribute('title', target === 'dark' ? '切換至淺色模式' : '切換至深色模式');
+    }
+}
+if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        applyTheme(current === 'dark' ? 'light' : 'dark');
+    });
+}
+const startupTheme = (typeof window !== 'undefined' && window.__initialTheme) ? window.__initialTheme : (document.documentElement.getAttribute('data-theme') || 'light');
+applyTheme(startupTheme);
+
+function logUiEvent(action, status = 'success', meta) {
+    if (!action || !UI_EVENT_ENDPOINT) return;
+    const payload = JSON.stringify({ action, status, meta });
+    if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(UI_EVENT_ENDPOINT, blob);
+    } else {
+        fetch(UI_EVENT_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true,
+        }).catch(() => {});
+    }
+}
+
+function showLoader(message = '載入中...') {
+    if (!loader) return;
+    if (loaderMessageEl) {
+        loaderMessageEl.textContent = message;
+    }
+    loader.classList.add('active');
+    document.body.classList.add('ui-locked');
+}
+
+function hideLoader() {
+    if (!loader) return;
+    loader.classList.remove('active');
+    document.body.classList.remove('ui-locked');
+    if (loaderMessageEl) {
+        loaderMessageEl.textContent = '載入中...';
+    }
+}
+
+function showToast(message, type = 'info', duration = 5000) {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    toast.innerHTML = `
+    <div class="toast-icon">${TOAST_ICONS[type] || TOAST_ICONS.info}</div>
+    <div class="toast-content">${message}</div>
+    <button class="toast-close" aria-label="關閉">×</button>
+    <div class="toast-progress"></div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    const timeout = setTimeout(() => {
+    closeToast(toast);
+    }, duration);
+    
+    const closeBtn = toast.querySelector('.toast-close');
+    closeBtn.addEventListener('click', () => {
+    clearTimeout(timeout);
+    closeToast(toast);
+    });
+    
+    if (toastContainer.children.length > 3) {
+    closeToast(toastContainer.children[0]);
+    }
+    
+    return toast;
+}
+
+function closeToast(toast) {
+    if (!toast || toast.classList.contains('closing')) return;
+    
+    toast.classList.add('closing');
+    toast.addEventListener('animationend', () => {
+    toast.remove();
+    });
+}
+
+function processFlashMessages() {
+    const flashMessages = document.getElementById('flashMessages');
+    if (flashMessages) {
+    const messages = flashMessages.querySelectorAll('div');
+    messages.forEach(msg => {
+        const category = msg.dataset.category || 'info';
+        const message = msg.dataset.message;
+        if (message) {
+        showToast(message, category);
+        }
+    });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', processFlashMessages);
+
+async function fetchAndSwapContent() {
+    const contentResponse = await fetch(window.location.href);
+    if (!contentResponse.ok) {
+        throw new Error("無法獲取更新後的內容");
+    }
+
+    const html = await contentResponse.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    const docBody = doc.querySelector('body');
+    if (docBody) {
+        const nextTs = Number(docBody.dataset.cacheTs || '0');
+        if (!Number.isNaN(nextTs)) {
+            currentCacheTs = nextTs;
+        }
+    }
+
+    const newViewDue = doc.getElementById('viewDue');
+    if (newViewDue && viewDue) {
+        viewDue.innerHTML = newViewDue.innerHTML;
+    }
+
+    const newViewCourse = doc.getElementById('viewCourse');
+    if (newViewCourse && viewCourse) {
+        viewCourse.innerHTML = newViewCourse.innerHTML;
+    }
+
+    const newTotalCount = doc.getElementById('totalCount');
+    const newOverdueCount = doc.getElementById('overdueCount');
+    const newIncompleteCount = doc.getElementById('incompleteCount');
+
+    if (newTotalCount && totalCountEl) totalCountEl.textContent = newTotalCount.textContent;
+    if (newOverdueCount && overdueCountEl) overdueCountEl.textContent = newOverdueCount.textContent;
+    if (newIncompleteCount && incompleteCountEl) incompleteCountEl.textContent = newIncompleteCount.textContent;
+
+    const excelLink = document.querySelector('.tc-center a[download]');
+    const newExcelLink = doc.querySelector('.tc-center a[download]');
+    if (excelLink && newExcelLink) {
+        excelLink.href = newExcelLink.href;
+    } else if (newExcelLink) {
+        const tcCenter = document.querySelector('.tc-center');
+        if (tcCenter) {
+            tcCenter.innerHTML = doc.querySelector('.tc-center').innerHTML;
+        }
+    }
+
+    sortFlatTableAsc();
+    applyFilters();
+}
+
+async function fetchCacheTs() {
+    const resp = await fetch("{{ url_for('api_cache') }}", { credentials: "same-origin" });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || "cache error");
+    return Number(data.ts || 0);
+}
+
+async function waitForCacheUpdate(prevTs, timeoutMs = 30000, intervalMs = 2000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const ts = await fetchCacheTs();
+            if (!Number.isNaN(ts) && ts > prevTs) {
+                return ts;
+            }
+        } catch (err) {
+            console.error("poll cache failed:", err.message);
+        }
+        await new Promise(res => setTimeout(res, intervalMs));
+    }
+    throw new Error("等待更新逾時");
+}
+
+async function refreshAssignments(background = true){
+    try{
+    if (background) {
+        bgRefreshIndicator.classList.add('active');
+    } else {
+        showLoader('資料更新中，請稍候...');
+    }
+    
+    const r = await fetch("{{ url_for('api_assignments') }}", {
+        method:"POST",
+        credentials:"same-origin"
+    });
+    
+    if(!r.ok){ throw new Error("HTTP " + r.status); }
+    
+    const response = await r.json();
+    if (response.ok) {
+        const prevTs = Number(currentCacheTs || 0);
+        if (response.background) {
+            const nextTs = await waitForCacheUpdate(prevTs, 40000, 2000);
+            currentCacheTs = nextTs;
+        }
+        await fetchAndSwapContent();
+        showToast("資料已成功更新", "success");
+    } else {
+        throw new Error("更新失敗");
+    }
+    } catch(e) {
+    if (background) {
+        bgRefreshIndicator.classList.remove('active');
+        console.error("背景更新失敗：", e.message);
+        showToast("背景更新失敗：" + e.message, "error");
+    } else {
+        hideLoader();
+        showToast("更新失敗：" + e.message, "error");
+    }
+    } finally {
+    if (background) {
+        bgRefreshIndicator.classList.remove('active');
+    } else {
+        hideLoader();
+    }
+    }
+}
+
+function sortFlatTableAsc(){
+    const tbody = document.querySelector('#flatTable tbody');
+    if(!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a,b)=>{
+    const A = parseInt(a.dataset.dueTs || '9999999999', 10);
+    const B = parseInt(b.dataset.dueTs || '9999999999', 10);
+    return A - B;
+    });
+    rows.forEach(r=>tbody.appendChild(r));
+}
+
+let currentViewMode = (USER_PREFERENCES && USER_PREFERENCES.view_mode === 'course') ? 'course' : 'due';
+
+function updateCounts() {
+    const currentView = currentViewMode === 'due' ? viewDue : viewCourse;
+    
+    const visibleRows = currentView.querySelectorAll('tbody tr:not(.hidden)');
+    const totalVisible = visibleRows.length;
+    
+    let overdueCount = 0;
+    let incompleteCount = 0;
+    
+    visibleRows.forEach(row => {
+    const isOverdue = row.dataset.overdue === '1';
+    const isCompleted = row.dataset.completed === '1';
+    
+    if (isOverdue && !isCompleted) {
+        overdueCount++;
+    }
+    
+    if (!isCompleted) {
+        incompleteCount++;
+    }
+    });
+    
+    if (totalCountEl) totalCountEl.textContent = totalVisible;
+    if (overdueCountEl) overdueCountEl.textContent = overdueCount;
+    if (incompleteCountEl) incompleteCountEl.textContent = incompleteCount;
+}
+
+function applyFilters(){
+const showO = !!(showOverdue && showOverdue.checked);
+const showC = !!(showCompleted && showCompleted.checked);
+
+    document.querySelectorAll('#flatTable tbody tr').forEach(tr=>{
+    const overdue = tr.dataset.overdue === '1';
+    const completed = tr.dataset.completed === '1';
+    let visible = (!completed || showC) && (!overdue || showO);
+    tr.classList.toggle('hidden', !visible);
+    });
+
+    document.querySelectorAll('.courseTable tbody tr').forEach(tr=>{
+    const overdue = tr.dataset.overdue === '1';
+    const completed = tr.dataset.completed === '1';
+    let visible = (!completed || showC) && (!overdue || showO);
+    tr.classList.toggle('hidden', !visible);
+    });
+    
+    updateCounts();
+}
+
+function persistPreferences(partial = {}){
+    if (!PREFERENCES_ENDPOINT) return;
+    const payload = {};
+    if (Object.prototype.hasOwnProperty.call(partial, 'viewMode')) {
+        const mode = partial.viewMode === 'due' ? 'due' : 'course';
+        USER_PREFERENCES.view_mode = mode;
+        payload.viewMode = mode;
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'showOverdue')) {
+        const val = !!partial.showOverdue;
+        USER_PREFERENCES.show_overdue = val;
+        payload.showOverdue = val;
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'showCompleted')) {
+        const val = !!partial.showCompleted;
+        USER_PREFERENCES.show_completed = val;
+        payload.showCompleted = val;
+    }
+    if (!Object.keys(payload).length) return;
+    fetch(PREFERENCES_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).catch(() => {});
+}
+
+function applyServerPreferenceState(nextPrefs){
+    if (!nextPrefs || typeof nextPrefs !== 'object') return;
+    const incoming = {
+        view_mode: nextPrefs.view_mode === 'due' ? 'due' : 'course',
+        show_overdue: !!nextPrefs.show_overdue,
+        show_completed: !!nextPrefs.show_completed,
+    };
+    let viewChanged = false;
+    if (incoming.view_mode && incoming.view_mode !== currentViewMode) {
+        viewChanged = true;
+        setView(incoming.view_mode, { skipPersist: true });
+    }
+    if (showOverdue) {
+        showOverdue.checked = incoming.show_overdue;
+    }
+    if (showCompleted) {
+        showCompleted.checked = incoming.show_completed;
+    }
+    USER_PREFERENCES.view_mode = incoming.view_mode;
+    USER_PREFERENCES.show_overdue = incoming.show_overdue;
+    USER_PREFERENCES.show_completed = incoming.show_completed;
+    if (!viewChanged) {
+        applyFilters();
+    }
+}
+
+function collectVisibleAssignments(){
+    const mode = currentViewMode === 'due' ? 'due' : 'course';
+    const selector = mode === 'due' ? '#flatTable tbody tr' : '.courseTable tbody tr';
+    const rows = document.querySelectorAll(selector);
+    return Array.from(rows)
+        .filter((row) => row.dataset.uid && row.dataset.hasDue === '1' && !row.classList.contains('hidden') && row.offsetParent !== null)
+        .map((row) => ({
+            uid: row.dataset.uid,
+            course: row.dataset.course || '',
+            title: row.dataset.title || '',
+            due: row.dataset.due || '',
+            status:
+                row.dataset.completed === '1'
+                    ? '已完成'
+                    : row.dataset.overdue === '1'
+                    ? '逾期'
+                    : '未完成',
+        }));
+}
+
+function openGoogleModal(){
+    if (!googleModal || !googleModalList) return;
+    const items = collectVisibleAssignments();
+    googleModalList.innerHTML = '';
+    if (googleModalSelectAll) {
+        googleModalSelectAll.disabled = items.length === 0;
+        googleModalSelectAll.checked = items.length > 0;
+    }
+    if (googleModalSubmit) {
+        googleModalSubmit.disabled = items.length === 0;
+        googleModalSubmit.textContent = googleModalSubmit.dataset.defaultText || '導入';
+    }
+    hideLoader();
+    if (!items.length) {
+        googleModalList.innerHTML = '<div class="modal-empty">目前視圖沒有可導入的作業，請調整篩選後再試。</div>';
+    } else {
+        items.forEach((item) => {
+            const wrapper = document.createElement('label');
+            wrapper.className = 'modal-item';
+            wrapper.innerHTML = `
+                <input type="checkbox" value="${item.uid}" checked>
+                <div>
+                    <div style="font-weight:600">${item.course}</div>
+                    <div>${item.title}</div>
+                    <div class="muted" style="font-size:12px;margin-top:4px">${item.due} ｜ ${item.status}</div>
+                </div>
+            `;
+            googleModalList.appendChild(wrapper);
+        });
+    }
+    googleModal.style.display = 'block';
+    googleModal.classList.remove('hidden');
+    const backdrop = googleModal.querySelector('.modal-backdrop');
+    const panel = googleModal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.add('show');
+    panel && panel.classList.add('show');
+}
+
+function closeGoogleModal(){
+    if (!googleModal) return;
+    const backdrop = googleModal.querySelector('.modal-backdrop');
+    const panel = googleModal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.remove('show');
+    panel && panel.classList.remove('show');
+    setTimeout(() => {
+        googleModal.classList.add('hidden');
+        googleModal.style.display = 'none';
+    }, 150);
+}
+
+function setView(mode, options = {}){
+    const nextMode = mode === 'due' ? 'due' : 'course';
+    currentViewMode = nextMode;
+    if(nextMode === 'due'){
+    viewDue.classList.remove('hidden');
+    viewCourse.classList.add('hidden');
+    viewDueBtn.classList.add('active');
+    viewCourseBtn.classList.remove('active');
+    }else{
+    viewCourse.classList.remove('hidden');
+    viewDue.classList.add('hidden');
+    viewCourseBtn.classList.add('active');
+    viewDueBtn.classList.remove('active');
+    }
+    if(!options.skipPersist){
+        persistPreferences({ viewMode: nextMode });
+    }
+    applyFilters();
+}
+
+sortFlatTableAsc();
+setView(currentViewMode, { skipPersist: true });
+
+if(showOverdue) {
+    showOverdue.addEventListener('change', ()=>{
+        applyFilters();
+        persistPreferences({ showOverdue: !!showOverdue.checked });
+    });
+}
+if(showCompleted) {
+    showCompleted.addEventListener('change', ()=>{
+        applyFilters();
+        persistPreferences({ showCompleted: !!showCompleted.checked });
+    });
+}
+
+if (viewCourseBtn) {
+    viewCourseBtn.addEventListener('click', ()=>setView('course'));
+}
+if (viewDueBtn) {
+    viewDueBtn.addEventListener('click', ()=>setView('due'));
+}
+
+applyFilters();
+
+document.querySelectorAll('[data-log-action]').forEach((el) => {
+    el.addEventListener('click', () => {
+        const action = el.getAttribute('data-log-action');
+        if (action) {
+            logUiEvent(action);
+        }
+    });
+});
+
+(function () {
+    if (IS_GUEST) {
+        return;
+    }
+    const HEARTBEAT_INTERVAL = 60000;
+    let heartbeatTimer = null;
+    function sendHeartbeat() {
+        logUiEvent('heartbeat', 'info');
+    }
+    function scheduleHeartbeat() {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+    }
+    sendHeartbeat();
+    scheduleHeartbeat();
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            sendHeartbeat();
+            scheduleHeartbeat();
+        }
+    });
+    window.addEventListener('focus', () => {
+        sendHeartbeat();
+        scheduleHeartbeat();
+    });
+})();
+
+(function () {
+    if (!CACHE_SYNC_ENDPOINT) {
+        return;
+    }
+    async function pollCacheSync() {
+        try {
+            const resp = await fetch(CACHE_SYNC_ENDPOINT, { cache: 'no-store', credentials: 'same-origin' });
+            if (!resp.ok) return;
+            const payload = await resp.json();
+            if (!payload.ok) return;
+            const nextTs = Number(payload.ts || '0');
+            if (!Number.isNaN(nextTs) && nextTs > currentCacheTs) {
+                currentCacheTs = nextTs;
+                if (typeof refreshAssignments === 'function') {
+                    await refreshAssignments(true);
+                }
+                return;
+            }
+            if (payload.preferences) {
+                applyServerPreferenceState(payload.preferences);
+            }
+        } catch (err) {
+            console.debug('cache sync failed', err);
+        }
+    }
+    setInterval(pollCacheSync, CACHE_SYNC_INTERVAL);
+    setTimeout(pollCacheSync, 5000);
+})();
+
+if (googleSyncBtn && googleModal) {
+    googleSyncBtn.addEventListener('click', openGoogleModal);
+if (googleModalCancel) {
+    googleModalCancel.addEventListener('click', closeGoogleModal);
+}
+if (googleModalClose) {
+    googleModalClose.addEventListener('click', closeGoogleModal);
+}
+    googleModal.addEventListener('click', (evt) => {
+        if (evt.target.classList.contains('modal-backdrop')) {
+            closeGoogleModal();
+        }
+    });
+    document.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape' && !googleModal.classList.contains('hidden')) {
+            closeGoogleModal();
+        }
+    });
+if (googleModalSelectAll && googleModalList) {
+    googleModalSelectAll.addEventListener('change', (evt) => {
+        const checked = evt.target.checked;
+        googleModalList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+            input.checked = checked;
+        });
+    });
+}
+if (googleModalSubmit && googleModalList) {
+    googleModalSubmit.addEventListener('click', () => {
+        if (!googleSyncForm || !googleSyncInput) {
+            showToast("系統設定錯誤，請重新整理頁面。", "error");
+            return;
+        }
+        if (googleSyncForm.dataset.submitting === '1') {
+            return;
+        }
+        const selected = Array.from(googleModalList.querySelectorAll('input[type="checkbox"]:checked')).map((el) => el.value);
+        if (!selected.length) {
+            showToast("請至少選擇一個作業再導入日曆。", "warning");
+            return;
+        }
+        googleSyncForm.dataset.submitting = '1';
+        if (googleModalSubmit) {
+            googleModalSubmit.disabled = true;
+            googleModalSubmit.innerHTML = '<span class="inline-spinner"></span><span style="margin-left:8px">導入中...</span>';
+        }
+        showLoader('正在匯入 Google 日曆，請稍候...');
+        closeGoogleModal();
+        googleSyncInput.value = JSON.stringify(selected);
+        logUiEvent('google_sync_submit', 'info', { count: selected.length });
+        googleSyncForm.submit();
+    });
+}
+}
+
+if (!IS_GUEST) {
+    setTimeout(() => refreshAssignments(true), 1000);
+}
+
+window.addEventListener('orientationchange', function() {
+    setTimeout(() => {
+    applyFilters();
+    }, 300);
+});
+</script>
+<script>
+(function () {
+    try {
+    const toggle = document.getElementById('announcementToggle');
+    const modal = document.getElementById('announcementModal');
+    if (!toggle || !modal) return;
+    const announcementVersion = "{{ announcement_version or '' }}";
+    const hasAnnouncements = !!announcementVersion;
+    const storeKey = 'e3_seen_announcements';
+    const backdrop = modal.querySelector('.modal-backdrop');
+    const panel = modal.querySelector('.modal-panel');
+    const closeBtn = document.getElementById('announcementClose');
+    const dot = toggle.querySelector('.dot');
+    try {
+        const seenVersion = localStorage.getItem(storeKey);
+        if (announcementVersion && seenVersion === announcementVersion && dot) {
+            dot.remove();
+        }
+    } catch (err) {}
+    function markSeen() {
+        try {
+            if (announcementVersion) {
+                localStorage.setItem(storeKey, announcementVersion);
+            }
+            if (dot) {
+                dot.remove();
+            }
+        } catch (err) {
+            if (dot) {
+                dot.remove();
+            }
+        }
+    }
+    function openModal() {
+        modal.classList.remove('hidden');
+        modal.style.display = 'block';
+        if (backdrop) {
+            backdrop.classList.add('show');
+        }
+        if (panel) {
+            panel.classList.add('show');
+        }
+        markSeen();
+    }
+    window.__openAnnouncementModal = openModal;
+    function closeModal() {
+        if (backdrop) {
+            backdrop.classList.remove('show');
+        }
+        if (panel) {
+            panel.classList.remove('show');
+        }
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }, 150);
+    }
+    toggle.addEventListener('click', openModal);
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeModal);
+    }
+    modal.addEventListener('click', (evt) => {
+        if (backdrop && evt.target === backdrop) {
+            closeModal();
+        }
+    });
+    try {
+        const seenVersion = localStorage.getItem(storeKey);
+        if (announcementVersion && seenVersion === announcementVersion && dot) {
+            dot.remove();
+        }
+    } catch (err) {}
+    } catch (err) {
+        console.error('announcement modal init failed', err);
+    }
+})();
+</script>
+<script>
+(function () {
+    const initialVersion = Number({{ stats_version or 0 }});
+    const pollUrl = "{{ url_for('traffic_stats') }}";
+    if (Number.isNaN(initialVersion)) {
+        return;
+    }
+    let latest = initialVersion;
+    async function poll() {
+        try {
+            const resp = await fetch(pollUrl, { cache: 'no-store' });
+            if (!resp.ok) {
+                return;
+            }
+            const data = await resp.json();
+            if (typeof data.version === 'number' && data.version > latest) {
+                latest = data.version;
+                window.location.reload();
+            }
+        } catch (err) {
+            console.debug('traffic poll failed', err);
+        }
+    }
+    setInterval(poll, 45000);
+})();
+
+</script>
+</body>
+</html>

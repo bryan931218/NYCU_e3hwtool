@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>公告管理</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+  (function(){
+      try{
+          const stored = localStorage.getItem('e3_theme');
+          const prefers = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const theme = stored || (prefers ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+          document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
+      }catch(err){
+          document.documentElement.setAttribute('data-theme','dark');
+          document.documentElement.style.colorScheme = 'dark';
+      }
+  })();
+  </script>
+  <style>
+  body{font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft JhengHei","Segoe UI",sans-serif;background:#050816;color:#e2e8f0;margin:0;padding:24px;line-height:1.5}
+.card{background:#11142d;border:1px solid rgba(99,102,241,.4);border-radius:18px;padding:22px;margin-bottom:22px;box-shadow:0 18px 45px rgba(2,6,23,.55)}
+h1{margin:0 0 12px;font-size:28px}
+.top-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:10px;text-decoration:none;font-weight:600;border:1px solid rgba(255,255,255,.25);color:#f8fafc;background:transparent;cursor:pointer}
+.btn:hover{background:rgba(255,255,255,.08)}
+.btn.danger{border-color:#fb7185;color:#fecdd3}
+.btn.danger:hover{background:rgba(251,113,133,.15)}
+form{margin:0}
+label{display:block;font-weight:600;margin:12px 0 6px}
+input,textarea{width:100%;box-sizing:border-box;border-radius:12px;border:1px solid rgba(148,163,184,.35);background:rgba(15,23,42,.65);color:#f8fafc;padding:10px 12px;font-family:inherit;font-size:15px}
+textarea{min-height:120px;resize:vertical}
+.muted{color:#94a3b8;font-size:13px;margin:0}
+.list{display:flex;flex-direction:column;gap:14px;margin-top:18px}
+.item{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.25);border-radius:16px;padding:16px}
+.item h3{margin:0 0 6px;font-size:18px}
+.item p{margin:0 0 8px;white-space:pre-wrap}
+.empty{color:#94a3b8;text-align:center;padding:32px;border:1px dashed rgba(148,163,184,.4);border-radius:16px}
+  @media (max-width:700px){
+      body{padding:16px}
+      .top-row{flex-direction:column;align-items:flex-start}
+      .actions,.actions a,.actions button{width:100%}
+      .btn{justify-content:center}
+  }
+  html[data-theme="light"] body{background:#f5f7ff;color:#1f2a44}
+  html[data-theme="light"] .card{background:#ffffff;border:1px solid #d7dbf6;box-shadow:0 18px 30px rgba(15,23,42,.18)}
+  html[data-theme="light"] input,html[data-theme="light"] textarea{background:#f8f9ff;color:#14203b;border-color:#cfd4f1}
+  html[data-theme="light"] .btn{border-color:#cfd4f1;color:#1d2552;background:#f0f3ff}
+  html[data-theme="light"] .btn:hover{background:#e2e7ff}
+  html[data-theme="light"] .btn.danger{border-color:#f87171;color:#b91c1c;background:#fff4f4}
+  html[data-theme="light"] .btn.danger:hover{background:#ffe0e0}
+  html[data-theme="light"] .muted{color:#4f5a84}
+  html[data-theme="light"] .list .item{background:#f9f9ff;border-color:#dfe2f7;color:#1e264a}
+  html[data-theme="light"] .empty{color:#6b7198;border-color:#dfe2f7}
+  </style>
+  </head>
+<body>
+    <div class="card">
+        <div class="top-row">
+            <div>
+                <h1>公告管理</h1>
+                <p class="muted">登入：{{ admin_user.username }} · 目前共有 {{ announcements|length }} 則公告</p>
+            </div>
+            <div class="actions">
+                <a class="btn" href="{{ url_for('index') }}">返回主頁</a>
+            </div>
+        </div>
+        <form method="post">
+            <label for="title">公告標題</label>
+            <input id="title" name="title" type="text" placeholder="輸入公告主題" required>
+            <label for="content">公告內容</label>
+            <textarea id="content" name="content" placeholder="輸入公告主要內容" required></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:14px">
+                <button type="submit" class="btn">發布公告</button>
+            </div>
+        </form>
+    </div>
+    <div class="card">
+        <h2 style="margin:0 0 10px;font-size:22px">已發布公告</h2>
+        {% if announcements %}
+        <div class="list">
+            {% for item in announcements %}
+            <article class="item">
+                <div style="flex:1">
+                    <h3>{{ item.title }}</h3>
+                    <p>{{ item.content }}</p>
+                    <p class="muted">{{ item.created_label or item.created_at }} · {{ item.author or "系統" }}</p>
+                </div>
+                <form method="post" action="{{ url_for('delete_announcement', announcement_id=item.id) }}" onsubmit="return confirm('確定要刪除這則公告嗎？');">
+                    <button type="submit" class="btn danger">刪除</button>
+                </form>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">目前尚未發布任何公告。</div>
+        {% endif %}
+    </div>
+</body>
+</html>

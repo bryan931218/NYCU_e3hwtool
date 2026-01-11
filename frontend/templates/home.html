@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>E3 作業追蹤系統</title>
+<meta name="description" content="E3 作業追蹤系統協助交大學生整合所有 E3 課程作業、截止時間並可同步至 Google 日曆。" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23225677'/%3E%3Cpath fill='%23fff' d='M20 18h24v8H28v6h14v8H28v8h16v8H20z'/%3E%3C/svg%3E" />
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+.container { max-width:1100px; margin:0 auto; padding:0 20px; }
+:root { color-scheme: light dark; font-family:"Space Grotesk","Inter","Noto Sans TC",sans-serif; --bg:#050816; --fg:#e2e8f0; --muted:#a0b6d4; --card:#0b1224; --border:rgba(255,255,255,.12); --accent:#4ade80; --accent-2:#22d3ee; --accent-3:#6366f1; }
+body { margin:0; background:radial-gradient(circle at 15% 18%,rgba(34,211,238,.18),transparent 26%),radial-gradient(circle at 82% 12%,rgba(99,102,241,.18),transparent 22%),radial-gradient(circle at 50% 80%,rgba(74,222,128,.14),transparent 32%),var(--bg); color:var(--fg); min-height:100vh; }
+.hero { padding:78px 0 32px; display:grid; grid-template-columns:1.1fr 0.9fr; gap:18px; align-items:center; opacity:0; transform:translateY(12px); animation: heroIn .7s ease forwards; }
+.hero h1 { margin:0; font-size:44px; line-height:1.05; letter-spacing:-0.5px; }
+.hero p { margin:10px 0 18px; color:var(--muted); font-size:18px; max-width:720px; line-height:1.6; }
+.cta-row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+.btn { display:inline-flex; align-items:center; gap:10px; padding:14px 20px; border-radius:12px; text-decoration:none; font-weight:800; border:1px solid var(--border); color:var(--fg); background:transparent; }
+.btn.primary { background:linear-gradient(135deg,#4ade80,#22d3ee 55%,#6366f1); color:#041021; border:none; box-shadow:0 16px 44px rgba(34,211,238,.32); }
+.btn.ghost { border:1px solid rgba(255,255,255,.22); }
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-top:12px; }
+.metric { position:relative; overflow:hidden; background:linear-gradient(145deg,rgba(11,18,36,.92),rgba(11,18,36,.82)); border:1px solid var(--border); border-radius:16px; padding:16px 18px; box-shadow:0 18px 50px rgba(2,6,23,.5); }
+.metric:before { content:""; position:absolute; inset:0; background:radial-gradient(circle at 20% 20%,rgba(34,211,238,.15),transparent 38%),radial-gradient(circle at 80% 10%,rgba(99,102,241,.14),transparent 36%); pointer-events:none; }
+.metric .label { color:var(--muted); letter-spacing:.05em; text-transform:uppercase; font-size:12px; display:flex; align-items:center; gap:8px; }
+.metric .label .dot { width:10px; height:10px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-3)); box-shadow:0 0 0 6px rgba(34,211,238,.1); }
+.metric .value { display:flex; align-items:baseline; gap:6px; margin-top:10px; }
+.metric .value strong { font-size:36px; line-height:1; }
+.metric .value span { color:var(--muted); font-size:13px; }
+.section { padding:38px 0 60px; }
+.section h2 { margin:0 0 14px; font-size:28px; letter-spacing:-0.3px; }
+.feature-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; opacity:0; transform:translateY(16px); animation: fadeUp .8s ease .15s forwards; }
+.feature { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 18px 50px rgba(2,6,23,.45); }
+.feature h3 { margin:0 0 8px; font-size:18px; }
+.feature p { margin:0; color:var(--muted); line-height:1.6; }
+.footer { padding:26px 0 36px; border-top:1px solid rgba(255,255,255,.1); display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:14px; }
+.footer a { color:var(--fg); text-decoration:none; }
+.floating-feedback { position:fixed; right:22px; bottom:22px; z-index:20; }
+.floating-feedback .btn { background:linear-gradient(135deg,#22d3ee,#0ea5e9); color:#0b1026; border:none; box-shadow:0 12px 30px rgba(14,165,233,.4); }
+@media(max-width:1024px){ .hero{grid-template-columns:1fr} .hero h1{font-size:38px;} }
+@keyframes heroIn { from { opacity:0; transform:translateY(12px) scale(.98);} to { opacity:1; transform:translateY(0) scale(1);} }
+@keyframes fadeUp { from { opacity:0; transform:translateY(16px);} to { opacity:1; transform:translateY(0);} }
+html[data-theme="light"] body{background:#f7f8ff;color:#0f172a}
+html[data-theme="light"] .metric,html[data-theme="light"] .feature{background:#ffffff;border-color:#e2e8f0;box-shadow:0 18px 38px rgba(15,23,42,.08)}
+html[data-theme="light"] .btn{border-color:#d9e1ff;color:#0f172a}
+html[data-theme="light"] .btn.ghost{border-color:#d9e1ff}
+html[data-theme="light"] .footer{border-color:#e2e8f0;color:#475569}
+</style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <div>
+                <h1>E3 作業追蹤系統</h1>
+                <p>集中檢視作業、導入 Google 日曆、快速掌握你的所有作業狀態。</p>
+                <div class="cta-row">
+                    <a class="btn primary" href="{{ url_for('login') }}">立即登入</a>
+                </div>
+            </div>
+            <div class="metrics">
+                <div class="metric">
+                    <div class="label"><span class="dot"></span>今日使用人數</div>
+                    <div class="value">
+                        <strong>{{ stats.daily_users if stats and stats.daily_users is not none else 0 }}</strong>
+                    </div>
+                </div>
+                <div class="metric">
+                    <div class="label"><span class="dot"></span>目前在線</div>
+                    <div class="value">
+                        <strong>{{ stats.online_users if stats and stats.online_users is not none else 0 }}</strong>
+                    </div>
+                </div>
+                <div class="metric">
+                    <div class="label"><span class="dot"></span>總用戶數</div>
+                    <div class="value">
+                        <strong>{{ stats.total_users if stats and stats.total_users is not none else 0 }}</strong>
+                    </div>
+                </div>
+                <div class="metric">
+                    <div class="label"><span class="dot"></span>累積訪問次數</div>
+                    <div class="value">
+                        <strong>{{ stats.total if stats and stats.total is not none else 0 }}</strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>網站功能</h2>
+            <div class="feature-grid">
+                <div class="feature">
+                    <h3>作業儀表板</h3>
+                    <p>所有課程作業與截止時間一頁掌握，一鍵跳至作業繳交畫面。</p>
+                </div>
+                <div class="feature">
+                    <h3>Google 日曆同步</h3>
+                    <p>授權後能夠直接將所有作業截止日記入日曆中</p>
+                </div>
+                <div class="feature">
+                    <h3>Excel 匯出</h3>
+                    <p>批次匯出作業清單，方便備份與分享。</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="footer">
+            <div class="cta-row" style="gap:10px">
+                <a href="{{ url_for('privacy_policy') }}">隱私權政策</a>
+                <a href="{{ url_for('terms_of_service') }}">服務條款</a>
+                <a href="{{ url_for('feedback') }}">回報問題</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

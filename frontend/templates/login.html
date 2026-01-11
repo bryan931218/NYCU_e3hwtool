@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+{% set site_description = "E3作業追蹤系統可以幫助交大學生統整 E3 平台上的所有作業。系統會列出所有課程作業、狀態、截止日期，也能導出 Excel 或同步到 Google 日曆。" %}
+<meta name="description" content="{{ site_description }}">
+<meta property="og:title" content="登入 E3 作業追蹤系統" />
+<meta property="og:description" content="{{ site_description }}">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%233730a3'/%3E%3Cpath fill='%23fff' d='M20 18h24v8H28v6h14v8H28v8h16v8H20z'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#3730a3" />
+<title>登入 E3 帳號</title>
+<script>
+(function(){
+    try{
+        const stored=localStorage.getItem('e3_theme');
+        const prefersDark=window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const choice=stored || (prefersDark ? 'dark' : 'light');
+        const normalized = choice === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', normalized);
+        document.documentElement.style.colorScheme = normalized;
+    }catch(err){
+        document.documentElement.setAttribute('data-theme','light');
+        document.documentElement.style.colorScheme = 'light';
+    }
+})();
+</script>
+<style>
+:root{color-scheme:light dark}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft JhengHei",sans-serif;background:#f5f7ff;margin:0;display:grid;place-items:center;min-height:100vh;padding:36px 20px;box-sizing:border-box}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 20px 60px rgba(15,23,42,.08);width:min(520px,96vw);padding:36px 32px;display:flex;flex-direction:column;gap:20px}
+label{display:block;font-weight:700;margin:10px 0 6px}
+input,textarea{width:100%;max-width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid #c7d2fe;background:#f8fafc;font-family:inherit}
+textarea{min-height:90px;resize:vertical}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 22px;border-radius:999px;border:0;background:#3730a3;color:#fff;font-weight:700;cursor:pointer;text-decoration:none}
+.btn.primary{width:100%;margin-top:4px}
+.btn.ghost{background:transparent;color:#4338ca;border:1px dashed #c7d2fe}
+.legal-footer{margin-top:18px;text-align:center;font-size:13px;color:#64748b;display:flex;flex-direction:column;gap:4px}
+.legal-footer a{color:#4338ca;text-decoration:none;font-weight:600}
+.muted{color:#64748b;font-size:13px;line-height:1.5;margin:0}
+.cb{display:inline-flex;align-items:center;gap:6px;font-size:14px;user-select:none;padding:0;white-space:nowrap}
+.cb input{margin:0}
+.remember-row{display:flex;align-items:center;margin-top:6px}
+.title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.title-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.stats{display:flex;gap:8px;flex-wrap:wrap}
+.login-stats{justify-content:flex-end;text-align:right;flex:1;min-width:220px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#eef2ff;color:#312e81;font-weight:600;font-size:13px;border:1px solid #c7d2fe}
+.icon-btn{width:28px;height:28px;border-radius:50%;border:1px solid #94a3b8;background:#fff;color:#0f172a;font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.icon-btn:hover{background:#e0e7ff}
+.toggle-wrap{display:flex;flex-direction:column;gap:8px}
+.toggle-group{display:flex;border:1px solid #c7d2fe;border-radius:16px;overflow:hidden;width:100%;background:#f8fafc}
+.toggle-btn{border:0;padding:12px 14px;background:transparent;color:#4338ca;font-weight:600;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;min-width:0;transition:background .2s,color .2s}
+.toggle-btn.active{background:#4338ca;color:#fff}
+.toggle-session-option{flex:1;position:relative;display:flex}
+.toggle-session-option .toggle-btn{width:100%;padding-right:46px}
+.toggle-session-option .help-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;border:1px solid #c7d2fe;background:#fff;color:#4338ca;font-weight:700;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.toggle-session-option .help-btn:hover{background:#eef2ff}
+.toggle-session-option .help-btn:focus{outline:2px solid #4338ca}
+.mode-section{display:none;flex-direction:column;gap:4px}
+.mode-section.active{display:flex}
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.5);opacity:0;pointer-events:none;transition:opacity .2s ease}
+.modal.active{opacity:1;pointer-events:auto}
+.modal-content{background:#fff;border-radius:18px;padding:28px;max-width:420px;width:92vw;box-shadow:0 20px 80px rgba(15,23,42,.2);display:flex;flex-direction:column;gap:14px;line-height:1.5}
+.modal-content h3{margin:0;font-size:20px}
+.modal-content ul{padding-left:18px;margin:0;display:flex;flex-direction:column;gap:8px;font-size:14px;color:#475569}
+.modal-content button{align-self:flex-end}
+.icon-button{width:38px;height:38px;border-radius:50%;border:1px solid #c7d2fe;background:#f0f2ff;color:#4338ca;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s ease;position:relative}
+.icon-button svg{width:18px;height:18px}
+.icon-button:hover{background:#e3e6ff}
+.title-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+html[data-theme="dark"] body{background:#080f1f;color:#f4f6ff}
+html[data-theme="dark"] .card{background:#151b2f;border:1px solid #2d3658;box-shadow:0 25px 60px rgba(0,0,0,.45)}
+html[data-theme="dark"] input,html[data-theme="dark"] textarea{background:#1b2344;border-color:#3a446b;color:#e8edff}
+html[data-theme="dark"] .muted{color:#c1caf1}
+html[data-theme="dark"] .chip{background:#222b4f;border-color:#3a4570;color:#dfe4ff}
+html[data-theme="dark"] .btn{background:#2b3458;border:1px solid #424c76;color:#f4f6ff}
+html[data-theme="dark"] .btn.primary{background:#5f67f0;border-color:transparent}
+html[data-theme="dark"] .btn.ghost{border-color:#3f4a75;color:#dfe4ff}
+html[data-theme="dark"] .icon-button{border-color:#3f4a75;background:#1f2644;color:#e4e8ff}
+html[data-theme="dark"] .toggle-group{border-color:#3a4570;background:#151c35}
+html[data-theme="dark"] .toggle-btn{color:#c2c8ff}
+html[data-theme="dark"] .toggle-btn.active{background:#5f67f0;color:#fff}
+html[data-theme="dark"] .toggle-session-option .help-btn{border-color:#414b76;background:#1d2442;color:#dfe4ff}
+html[data-theme="dark"] .toggle-session-option .help-btn:hover{background:#262f53}
+html[data-theme="dark"] .modal{background:rgba(1,4,12,.85)}
+html[data-theme="dark"] .modal-content{background:#131a2f;border:1px solid #2d3658;box-shadow:0 25px 80px rgba(0,0,0,.6)}
+html[data-theme="dark"] .modal-content ul{color:#c7cff8}
+html[data-theme="dark"] .toast{background:#141b30;border-color:#2d3658;box-shadow:0 16px 40px rgba(0,0,0,.55)}
+html[data-theme="dark"] .toast-content{color:#f4f6ff}
+html[data-theme="dark"] .toast-close{color:#9aa0c8}
+html[data-theme="dark"] .toast-close:hover{color:#fff}
+html[data-theme="dark"] .toast-icon{background:#1c2344;color:#b3bbff}
+html[data-theme="dark"] .toast-progress{background:#5f67f0}
+.hidden{display:none!important}
+.toast-container{position:fixed;top:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:10px;z-index:50;width:min(420px,92vw)}
+.toast{display:flex;align-items:center;gap:10px;background:#fff;border-radius:12px;padding:12px 16px;box-shadow:0 8px 30px rgba(15,23,42,.18);border:1px solid #e2e8f0;animation:toast-in .25s ease}
+.toast.closing{animation:toast-out .2s ease forwards}
+.toast-icon{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#eef2ff;color:#4338ca}
+.toast-content{flex:1;font-weight:600;color:#0f172a}
+.toast-close{border:0;background:transparent;font-size:18px;cursor:pointer;color:#94a3b8}
+.toast-close:hover{color:#0f172a}
+.toast-progress{position:absolute;left:0;bottom:0;height:3px;background:#4338ca;animation:toast-progress 5s linear forwards}
+.toast.success .toast-icon{background:#dcfce7;color:#15803d}
+.toast.error .toast-icon{background:#fee2e2;color:#b91c1c}
+.toast.warning .toast-icon{background:#fff7ed;color:#c2410c}
+.toast.info .toast-icon{background:#e0f2fe;color:#0369a1}
+.toast.success .toast-progress{background:#15803d}
+.toast.error .toast-progress{background:#b91c1c}
+.toast.warning .toast-progress{background:#c2410c}
+.toast.info .toast-progress{background:#0369a1}
+@keyframes toast-in{from{opacity:0;transform:translate(-50%,-20px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes toast-out{from{opacity:1;transform:translate(-50%,0)}to{opacity:0;transform:translate(-50%,-10px)}}
+@keyframes toast-progress{from{width:100%}to{width:0}}
+@media (max-width:800px){
+    body{place-items:flex-start;padding:20px 12px}
+    .card{width:100%;padding:26px;gap:16px}
+    .title-row{flex-direction:column;align-items:flex-start;gap:12px}
+    .login-stats{justify-content:flex-start;text-align:left;min-width:auto}
+    .toggle-group{flex-direction:column;border-radius:18px}
+    .toggle-session-option{width:100%}
+    .toggle-session-option{display:block}
+    .toggle-session-option .toggle-btn{width:100%;padding-right:42px}
+    .toggle-session-option .help-btn{width:32px;height:32px}
+}
+</style>
+</head>
+<body>
+<div class="toast-container" id="toastContainer"></div>
+<div class="card">
+    <div class="title-row">
+        <div>
+            <h2 style="margin:0">登入 E3 帳號</h2>
+            <p class="muted" style="margin-top:4px">選擇使用帳密或貼上 MoodleSession Cookie 登入。</p>
+        </div>
+        <div class="title-controls">
+            <div class="stats login-stats" aria-live="polite">
+                <span class="chip" title="最近 5 分鐘內仍有操作的唯一帳號數">線上人數：<strong>{{ stats.online }}</strong></span>
+                <span class="chip" title="自服務啟動以來的總頁面載入次數">累積訪問次數：<strong>{{ stats.total }}</strong> 次</span>
+            </div>
+            <button type="button" class="icon-button" id="loginThemeToggle" title="切換深色模式">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-9H21m-17 0H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            </button>
+        </div>
+    </div>
+    {% with messages = get_flashed_messages(with_categories=True) %}
+    {% if messages %}
+        <div id="flashMessages" class="hidden">
+        {% for category, msg in messages %}
+            <div data-category="{{ category }}" data-message="{{ msg }}"></div>
+        {% endfor %}
+        </div>
+    {% endif %}
+    {% endwith %}
+    <div class="toggle-wrap">
+        <div class="toggle-group" role="group" aria-label="登入方式切換">
+            <button type="button" class="toggle-btn active" data-mode="password">帳號 / 密碼</button>
+            <div class="toggle-session-option">
+                <button type="button" class="toggle-btn" data-mode="session">MoodleSession</button>
+                <button type="button" class="help-btn" id="sessionHelpButton" aria-label="了解 MoodleSession">?</button>
+            </div>
+        </div>
+    </div>
+    <form method="post" id="loginForm">
+        <input type="hidden" name="login_type" id="loginTypeInput" value="password" />
+        <div class="mode-section active" data-mode-section="password">
+            <label for="username">帳號（學號）</label>
+            <input id="username" name="username" type="text" placeholder="3125xxxx" autocomplete="username" />
+            <label for="password">密碼</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" />
+            <div class="remember-row">
+                <label class="cb remember">
+                    <input id="rememberMe" name="remember_me" type="checkbox" />
+                    記住帳密
+                </label>
+            </div>
+        </div>
+        <div class="mode-section" data-mode-section="session">
+            <label for="moodle_session">MoodleSession Cookie</label>
+            <textarea id="moodle_session" name="moodle_session" placeholder="貼上值，例如：6h1abcdefgxyz..."></textarea>
+            <div class="remember-row">
+                <label class="cb remember">
+                    <input id="rememberSession" type="checkbox" />
+                    記住 MoodleSession
+                </label>
+            </div>
+        </div>
+        <button class="btn primary" type="submit" id="submitButton">登入</button>
+    </form>
+    <div style="text-align:center;margin-top:12px;display:flex;flex-direction:column;gap:10px">
+        <form method="post" action="{{ url_for('guest_login') }}">
+            <button class="btn ghost" type="submit" style="width:100%">以訪客模式試用</button>
+        </form>
+        <p class="muted" style="margin:0">訪客模式不會連線至 E3，請先使用匯出工具產生 JSON，再回到訪客頁匯入即可瀏覽作業。</p>
+    </div>
+</div>
+<div class="modal" id="sessionHelpModal" aria-hidden="true">
+    <div class="modal-content">
+        <h3>什麼是 MoodleSession？</h3>
+        <p class="muted">MoodleSession 是 E3 系統核發的登入 Cookie。貼上該值即可讓本工具以相同身份抓取作業，無需輸入密碼。</p>
+        <p class="muted"><strong>為什麼要用？</strong>：如果帳號啟用雙重驗證或不想透露密碼時，可直接複製瀏覽器中的 Session。</p>
+        <p class="muted"><strong>取得方式</strong>：</p>
+        <ul>
+            <li>在瀏覽器登入 <code>https://e3p.nycu.edu.tw</code>。</li>
+            <li>開啟開發者工具 → Application/Storage → Cookies，找到 <code>MoodleSession</code>。</li>
+            <li>複製 Value 欄位貼回此頁，即可使用 Session 登入。</li>
+        </ul>
+        <button type="button" class="btn primary" data-modal-close>了解了</button>
+    </div>
+</div>
+<div class="legal-footer">
+    <div>
+        <a href="{{ app_home_url }}">回到首頁</a> ｜ 
+        <a href="{{ url_for('privacy_policy') }}">隱私權政策</a> ｜ 
+        <a href="{{ url_for('terms_of_service') }}">服務條款</a> ｜ 
+        <a href="{{ url_for('feedback') }}">回報問題</a>
+    </div>
+</div>
+<script>
+(function () {
+    const toastContainer = document.getElementById('toastContainer');
+    const flashMessages = document.getElementById('flashMessages');
+    const TOAST_ICONS = {
+        success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
+        error: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>',
+        warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+        info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>',
+    };
+
+    function closeToast(toast) {
+        if (!toast || toast.classList.contains('closing')) return;
+        toast.classList.add('closing');
+        toast.addEventListener('animationend', () => toast.remove());
+    }
+
+    function showToast(message, type = 'info', duration = 4000) {
+        if (!toastContainer) return;
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `
+            <div class="toast-icon">${TOAST_ICONS[type] || TOAST_ICONS.info}</div>
+            <div class="toast-content">${message}</div>
+            <button class="toast-close" aria-label="關閉">×</button>
+            <div class="toast-progress"></div>
+        `;
+        toastContainer.appendChild(toast);
+        const timer = setTimeout(() => closeToast(toast), duration);
+        toast.querySelector('.toast-close')?.addEventListener('click', () => {
+            clearTimeout(timer);
+            closeToast(toast);
+        });
+        if (toastContainer.children.length > 3) {
+            closeToast(toastContainer.firstElementChild);
+        }
+    }
+
+    function processFlashMessages() {
+        if (!flashMessages) return;
+        flashMessages.querySelectorAll('div').forEach((msg) => {
+            const category = msg.dataset.category || 'info';
+            const text = msg.dataset.message;
+            if (text) {
+                showToast(text, category);
+            }
+        });
+    }
+
+    processFlashMessages();
+})();
+
+(function () {
+    const toggle = document.getElementById('loginThemeToggle');
+    if (!toggle) return;
+    function setTheme(theme) {
+        const target = theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', target);
+        document.documentElement.style.colorScheme = target;
+        try {
+            localStorage.setItem('e3_theme', target);
+        } catch (err) {}
+        toggle.setAttribute('title', target === 'dark' ? '切換至淺色模式' : '切換至深色模式');
+    }
+    let storedTheme = null;
+    try {
+        storedTheme = localStorage.getItem('e3_theme');
+    } catch (err) {}
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setTheme(storedTheme || (prefersDark ? 'dark' : 'light'));
+    toggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        setTheme(current === 'dark' ? 'light' : 'dark');
+    });
+})();
+
+(function () {
+    const loginForm = document.getElementById('loginForm');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const sessionInput = document.getElementById('moodle_session');
+    const rememberCheckbox = document.getElementById('rememberMe');
+    const rememberSessionCheckbox = document.getElementById('rememberSession');
+    const submitButton = document.getElementById('submitButton');
+    const loginTypeInput = document.getElementById('loginTypeInput');
+    const toggleButtons = document.querySelectorAll('.toggle-btn');
+    const modeSections = document.querySelectorAll('[data-mode-section]');
+    const saved = localStorage.getItem('e3_remember');
+    const savedSession = localStorage.getItem('e3_remember_session');
+
+    if (saved) {
+        try {
+            const creds = JSON.parse(saved);
+            if (creds.username && usernameInput) {
+                usernameInput.value = creds.username;
+            }
+            if (creds.password && passwordInput) {
+                passwordInput.value = creds.password;
+            }
+            if (creds.moodle_session && sessionInput) {
+                sessionInput.value = creds.moodle_session;
+            }
+            if (rememberCheckbox) {
+                rememberCheckbox.checked = true;
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+    if (savedSession && sessionInput) {
+        sessionInput.value = savedSession;
+        if (rememberSessionCheckbox) {
+            rememberSessionCheckbox.checked = true;
+        }
+    }
+
+    function setMode(mode) {
+        loginTypeInput.value = mode;
+        toggleButtons.forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.mode === mode);
+        });
+        modeSections.forEach((section) => {
+        const active = section.dataset.modeSection === mode;
+        section.classList.toggle('active', active);
+    });
+    const usingPassword = mode === 'password';
+    if (usernameInput) {
+        usernameInput.required = usingPassword;
+        usernameInput.disabled = !usingPassword;
+    }
+    if (passwordInput) {
+        passwordInput.required = usingPassword;
+        passwordInput.disabled = !usingPassword;
+    }
+        if (sessionInput) {
+            sessionInput.required = !usingPassword;
+            sessionInput.disabled = usingPassword;
+        }
+        if (rememberCheckbox) {
+            rememberCheckbox.disabled = !usingPassword;
+        }
+        if (rememberSessionCheckbox) {
+            rememberSessionCheckbox.disabled = usingPassword;
+        }
+        if (submitButton) {
+            submitButton.textContent = usingPassword ? '使用帳密登入' : '使用 Session 登入';
+        }
+    }
+
+    toggleButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const mode = btn.dataset.mode === 'session' ? 'session' : 'password';
+            setMode(mode);
+        });
+    });
+
+    setMode('password');
+
+    loginForm?.addEventListener('submit', function () {
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = loginTypeInput?.value === 'password' ? '登入中...' : '驗證中...';
+        }
+        const usingPassword = loginTypeInput?.value === 'password';
+        if (usingPassword) {
+            if (rememberCheckbox?.checked) {
+                localStorage.setItem(
+                    'e3_remember',
+                    JSON.stringify({
+                        username: usernameInput?.value || '',
+                        password: passwordInput?.value || '',
+                    })
+                );
+            } else {
+                localStorage.removeItem('e3_remember');
+            }
+        }
+        const usingSession = loginTypeInput?.value === 'session';
+        if (usingSession) {
+            if (rememberSessionCheckbox?.checked) {
+                localStorage.setItem('e3_remember_session', sessionInput?.value || '');
+            } else {
+                localStorage.removeItem('e3_remember_session');
+            }
+        }
+    });
+
+    const modal = document.getElementById('sessionHelpModal');
+    const modalClose = modal?.querySelector('[data-modal-close]');
+    const helpBtn = document.getElementById('sessionHelpButton');
+
+    function toggleModal(show) {
+        if (!modal) return;
+        modal.classList.toggle('active', show);
+        modal.setAttribute('aria-hidden', show ? 'false' : 'true');
+    }
+
+    helpBtn?.addEventListener('click', () => toggleModal(true));
+    modalClose?.addEventListener('click', () => toggleModal(false));
+    modal?.addEventListener('click', (evt) => {
+        if (evt.target === modal) {
+            toggleModal(false);
+        }
+    });
+})();
+
+(function () {
+    const initialVersion = Number({{ stats_version or 0 }});
+    const pollUrl = "{{ url_for('traffic_stats') }}";
+    if (Number.isNaN(initialVersion)) return;
+    let latest = initialVersion;
+    async function poll() {
+        try {
+            const resp = await fetch(pollUrl, { cache: 'no-store' });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (typeof data.version === 'number' && data.version > latest) {
+                latest = data.version;
+                window.location.reload();
+            }
+        } catch (err) {
+            console.debug('traffic poll failed', err);
+        }
+    }
+    setInterval(poll, 45000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>E3 作業追蹤系統｜隱私權政策</title>
+<meta name="description" content="說明 E3 作業追蹤系統如何收集、使用與保護使用者資料。" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%233730a3'/%3E%3Cpath fill='%23fff' d='M20 18h24v8H28v6h14v8H28v8h16v8H20z'/%3E%3C/svg%3E" />
+<style>
+body{margin:0;background:#0f172a;color:#e2e8f0;font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft JhengHei","Noto Sans TC",sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:48px 20px 64px}
+header{margin-bottom:32px}
+header a{color:#c3dafe;text-decoration:none;font-weight:600}
+header h1{margin:12px 0 0;font-size:32px}
+section{margin-bottom:32px;padding:24px;border-radius:16px;background:#111c3a;border:1px solid rgba(148,163,184,.35)}
+section h2{margin:0 0 12px;font-size:22px}
+section p{margin:0 0 10px;line-height:1.7}
+ul{margin:0;padding-left:20px}
+li{margin-bottom:6px;line-height:1.6}
+footer{margin-top:32px;font-size:14px;color:#94a3b8;display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+footer a{color:#c3dafe;text-decoration:none}
+.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(99,102,241,.5);background:#1e1b4b;color:#a5b4fc;border-radius:999px;padding:6px 14px;font-size:14px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <a href="{{ app_home_url }}">← 返回首頁</a>
+        <h1>隱私權政策</h1>
+        <p class="badge">生效日期：{{ effective_date }}</p>
+        <p>本政策由 {{ legal_entity_name }} 制定，並適用於所有使用 E3 作業追蹤系統（以下簡稱「本服務」）的學生與訪客。</p>
+    </header>
+
+    <section>
+        <h2>1. 我們收集的資料</h2>
+        <ul>
+            <li><strong>E3 認證資訊：</strong>登入時輸入的帳號密碼或 MoodleSession 值僅用於向 E3 平台取得課程資料。</li>
+            <li><strong>Google OAuth 憑證：</strong>僅在使用者選擇日曆同步時，透過授權範圍 <code>{{ google_scope }}</code> 取得存取權杖與更新權杖。</li>
+            <li><strong>操作紀錄與流量資訊：</strong>包含 IP、請求時間、功能使用狀態、匿名統計數據，用於偵錯與濫用偵測。</li>
+            <li><strong>偏好設定：</strong>顯示模式、篩選條件與 Google 同步選項等個人化設定。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. 資料使用方式</h2>
+        <p>蒐集到的資料僅用於下列目的：</p>
+        <ul>
+            <li>登入 E3 並統整作業資料，以呈現個人化儀表板。</li>
+            <li>在您允許的情況下，使用 Google API 將作業匯入指定日曆。</li>
+            <li>偵測異常流量、維護系統安全與品質，以及提供必要的客服協助。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>3. 資料存放與保護</h2>
+        <ul>
+            <li>MoodleSession 與 Google Token 皆儲存在後端加密的持久化儲存體中，不會寫入前端或第三方。</li>
+            <li>機敏資料與操作紀錄僅限授權維運人員存取，並採取最小權限原則。</li>
+            <li>若您停止使用本服務，可透過客服信箱請求刪除相關資料。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>4. 第三方服務</h2>
+        <p>本服務僅串接下列第三方：</p>
+        <ul>
+            <li>國立陽明交通大學 E3 平台：作業資料來源。</li>
+            <li>Google Calendar API：在授權範圍 <code>{{ google_scope }}</code> 內建立行事曆事件。</li>
+        </ul>
+        <p>我們不會販售或分享個資給其他第三方。</p>
+    </section>
+
+    <section>
+        <h2>5. 使用者權利</h2>
+        <ul>
+            <li>如要撤銷 Google 授權，可在 Google 安全性中心或本服務中解除綁定。</li>
+            <li>對本政策有任何疑問，可隨時與我們聯繫。</li>
+        </ul>
+    </section>
+
+    <footer>
+        <a href="{{ app_home_url }}">回到首頁</a>
+        <a href="{{ url_for('terms_of_service') }}">服務條款</a>
+        <a href="{{ url_for('feedback') }}">回報問題</a>
+    </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>回報總覽</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;padding:24px;font-family:"Inter","Manrope","Segoe UI",sans-serif;background:#050816;color:#e2e8f0;line-height:1.5}
+.card{background:#0f172a;border:1px solid rgba(99,102,241,.25);border-radius:18px;padding:22px;margin-bottom:20px;box-shadow:0 18px 40px rgba(2,6,23,.55)}
+.top-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;font-weight:700;text-decoration:none;border:1px solid rgba(255,255,255,.2);color:#f8fafc;background:transparent;cursor:pointer}
+.btn:hover{background:rgba(255,255,255,.08)}
+.btn.primary{background:linear-gradient(135deg,#6366f1,#4f46e5);border:none;box-shadow:0 12px 30px rgba(79,70,229,.4)}
+.badge{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.18);color:#cbd5f5}
+.badge.success{background:rgba(34,197,94,.2);color:#bbf7d0;border-color:rgba(34,197,94,.35)}
+.badge.info{background:rgba(59,130,246,.2);color:#bfdbfe;border-color:rgba(59,130,246,.35)}
+.badge.muted{background:rgba(148,163,184,.12);color:#cbd5f5}
+.metrics{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+.metric{background:rgba(15,23,42,.65);border:1px solid rgba(148,163,184,.3);border-radius:14px;padding:14px 16px;min-width:160px}
+.metric strong{display:block;font-size:26px}
+.metric small{color:#94a3b8}
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#a5b4fc}
+.status{padding:4px 10px;border-radius:10px;font-weight:700;font-size:12px}
+.status.open{background:rgba(251,191,36,.2);color:#facc15}
+.status.resolved{background:rgba(34,197,94,.2);color:#bbf7d0}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.note{color:#94a3b8;font-size:13px;margin-top:6px}
+.muted{color:#94a3b8}
+textarea,input{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.6);color:#e2e8f0}
+textarea{min-height:120px;resize:vertical}
+@media (max-width:700px){body{padding:16px}}
+html[data-theme="light"] body{background:#f5f7ff;color:#0f172a}
+html[data-theme="light"] .card{background:#ffffff;border-color:#e2e8f0;box-shadow:0 18px 40px rgba(15,23,42,.08)}
+html[data-theme="light"] .metric{background:#f8fafc;border-color:#e2e8f0}
+html[data-theme="light"] textarea,html[data-theme="light"] input{background:#ffffff;border-color:#e2e8f0;color:#0f172a}
+html[data-theme="light"] th,html[data-theme="light"] td{border-bottom:1px solid #e2e8f0}
+</style>
+</head>
+<body>
+    <div class="card">
+        <div class="top-row">
+            <div>
+                <h1 style="margin:0">回報總覽</h1>
+                <p class="muted">目前登入：{{ admin_user.username }}</p>
+            </div>
+            <div class="actions">
+                <a class="btn" href="{{ url_for('admin_traffic') }}">流量面板</a>
+                <a class="btn" href="{{ url_for('index') }}">返回主頁</a>
+            </div>
+        </div>
+        <div class="metrics">
+            <div class="metric">
+                <small>未處理</small>
+                <strong>{{ open_count }}</strong>
+            </div>
+            <div class="metric">
+                <small>全部回報</small>
+                <strong>{{ feedback_entries|length }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin:0 0 10px">最新回報</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>用戶</th>
+                        <th>聯絡</th>
+                        <th>內容</th>
+                        <th>時間</th>
+                        <th>狀態</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if feedback_entries %}
+                        {% for item in feedback_entries %}
+                        <tr>
+                            <td>#{{ item.id }}</td>
+                            <td>{{ item.username }}</td>
+                            <td>{{ item.email }}</td>
+                            <td style="max-width:360px;white-space:pre-wrap">{{ item.message }}</td>
+                            <td>{{ item.created_label }}</td>
+                            <td><span class="status {{ item.status }}">{{ item.status|upper }}</span></td>
+                            <td>
+                                <form method="post" style="display:inline">
+                                    <input type="hidden" name="id" value="{{ item.id }}">
+                                    {% if item.status != 'resolved' %}
+                                        <input type="hidden" name="status" value="resolved">
+                                        <button class="btn primary" type="submit" style="padding:8px 12px">標記已處理</button>
+                                    {% else %}
+                                        <input type="hidden" name="status" value="open">
+                                        <button class="btn" type="submit" style="padding:8px 12px">重新開啟</button>
+                                    {% endif %}
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="7" style="text-align:center;color:#94a3b8">目前沒有回報</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

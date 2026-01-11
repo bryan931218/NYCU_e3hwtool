@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>流量監控</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+(function(){
+    try{
+        const stored = localStorage.getItem('e3_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = stored || (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+        document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
+    }catch(err){
+        document.documentElement.setAttribute('data-theme','dark');
+        document.documentElement.style.colorScheme = 'dark';
+    }
+})();
+</script>
+<style>
+:root{
+    --chart-axis:#cbd5f5;
+    --chart-grid:rgba(148,163,184,.25);
+    --chart-line:#a5b4fc;
+    --chart-fill:rgba(129,140,248,.25);
+    --chart-tooltip-bg:#0f172a;
+    --chart-tooltip-fg:#e2e8f0;
+}
+html[data-theme="dark"]{
+    --chart-axis:#cbd5f5;
+    --chart-grid:rgba(99,102,241,.25);
+    --chart-line:#a5b4fc;
+    --chart-fill:rgba(129,140,248,.25);
+    --chart-tooltip-bg:#0f172a;
+    --chart-tooltip-fg:#e2e8f0;
+}
+html[data-theme="light"]{
+    --chart-axis:#475569;
+    --chart-grid:rgba(148,163,184,.35);
+    --chart-line:#2563eb;
+    --chart-fill:rgba(37,99,235,.16);
+    --chart-tooltip-bg:#ffffff;
+    --chart-tooltip-fg:#0f172a;
+}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft JhengHei","Segoe UI",sans-serif;background:#050816;color:#e2e8f0;margin:0;padding:24px;line-height:1.5}
+.card{background:#11142d;border:1px solid rgba(99,102,241,.4);border-radius:18px;padding:22px;margin-bottom:22px;box-shadow:0 18px 45px rgba(2,6,23,.55)}
+h1{margin:0 0 12px;font-size:28px}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.chip{background:rgba(99,102,241,.2);padding:8px 14px;border-radius:999px;font-weight:600;border:1px solid rgba(99,102,241,.35)}
+.top-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:10px;text-decoration:none;font-weight:600;border:1px solid rgba(255,255,255,.25);color:#f8fafc;background:transparent;cursor:pointer}
+.btn:hover{background:rgba(255,255,255,.08)}
+.btn.danger{border-color:#fb7185;color:#fecdd3}
+.btn.danger:hover{background:rgba(251,113,133,.15)}
+.inline-form{margin:0}
+.muted{color:#94a3b8;font-size:13px;margin:0}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-top:12px}
+.metric{background:rgba(15,23,42,.55);border:1px solid rgba(99,102,241,.25);border-radius:14px;padding:14px}
+.metric strong{display:block;font-size:24px}
+.metric small{display:block;color:#94a3b8;margin-top:4px}
+.chart-wrap{position:relative;background:rgba(15,23,42,.6);border:1px solid rgba(99,102,241,.25);border-radius:16px;padding:18px;max-width:860px;margin:0 auto}
+.chart-canvas{display:block;touch-action:none;cursor:grab}
+.chart-canvas.dragging{cursor:grabbing}
+.chart-empty{position:absolute;inset:0;display:grid;place-items:center;color:#94a3b8;font-size:14px;pointer-events:none}
+.list-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.mini-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.mini-list li{display:flex;justify-content:space-between;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.3);border-radius:12px;padding:10px 12px;font-size:14px}
+.mini-list strong{font-size:16px}
+.tag{background:rgba(34,197,94,.18);color:#bbf7d0;border-radius:999px;padding:2px 10px;font-size:12px}
+.status-badge{border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase}
+.status-badge.success{background:rgba(34,197,94,.2);color:#bbf7d0}
+.status-badge.error{background:rgba(248,113,113,.2);color:#fecaca}
+.status-badge.info{background:rgba(59,130,246,.2);color:#bfdbfe}
+.status-badge.start{background:rgba(251,191,36,.2);color:#fde68a}
+.table-wrap{overflow:auto;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#a5b4fc}
+.badge{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block}
+.badge.online{background:#16a34a;color:#dcfce7}
+.badge.offline{background:#52525b;color:#e2e8f0}
+.events{max-height:360px;overflow:auto;border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:0;margin:0;list-style:none;background:rgba(15,23,42,.55)}
+.events li{display:flex;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+.events li:last-child{border-bottom:0}
+.events .time{min-width:150px;color:#a5b4fc;font-family:"SFMono-Regular",Consolas,monospace}
+.events .path{color:#fef3c7}
+.trend-toggle{display:inline-flex;border:1px solid rgba(148,163,184,.35);border-radius:999px;overflow:hidden;background:rgba(15,23,42,.5)}
+.trend-toggle a{padding:8px 16px;text-decoration:none;font-weight:600;color:#cbd5f5;transition:all .2s ease;border-right:1px solid rgba(148,163,184,.2)}
+.trend-toggle a:last-child{border-right:0}
+.trend-toggle a.active{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;box-shadow:0 8px 20px rgba(79,70,229,.35)}
+.trend-toggle a:hover:not(.active){background:rgba(99,102,241,.15)}
+@media (max-width:700px){
+    body{padding:16px}
+    .top-row{flex-direction:column;align-items:flex-start}
+    .actions{width:100%}
+    .actions .btn,.actions form{width:100%}
+    .btn{justify-content:center}
+}
+html[data-theme="light"] body{background:#f5f7ff;color:#0f172a}
+html[data-theme="light"] .card{background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 18px 45px rgba(15,23,42,.08)}
+html[data-theme="light"] .muted{color:#64748b}
+html[data-theme="light"] .chip{background:#eef2ff;border-color:#c7d2fe;color:#312e81}
+html[data-theme="light"] .chip strong{color:#1d1b52}
+html[data-theme="light"] .btn{border-color:#cbd5f5;color:#312e81;background:#f5f7ff}
+html[data-theme="light"] .btn:hover{background:#e0e7ff}
+html[data-theme="light"] .btn.danger{border-color:#fecaca;color:#b91c1c;background:#fff5f5}
+html[data-theme="light"] .btn.danger:hover{background:#ffe4e6}
+html[data-theme="light"] .metric{background:#f8fafc;border:1px solid #e2e8f0}
+html[data-theme="light"] .metric strong{color:#0f172a}
+html[data-theme="light"] .metric small{color:#475569}
+html[data-theme="light"] .chart-wrap{background:#ffffff;border-color:#e2e8f0;box-shadow:0 20px 40px rgba(15,23,42,.06)}
+html[data-theme="light"] .chart-empty{color:#94a3b8}
+html[data-theme="light"] .trend-toggle{border:1px solid #c7d2fe;background:#eef2ff}
+html[data-theme="light"] .trend-toggle a{color:#312e81;border-right:1px solid #d7defd}
+html[data-theme="light"] .trend-toggle a:last-child{border-right:0}
+html[data-theme="light"] .trend-toggle a.active{background:#3730a3;color:#fff;box-shadow:0 10px 18px rgba(55,48,163,.25)}
+html[data-theme="light"] .trend-toggle a:hover:not(.active){background:#e0e7ff}
+html[data-theme="light"] .mini-list li{background:#ffffff;border-color:#e2e8f0;color:#0f172a}
+html[data-theme="light"] .mini-list strong{color:#111827}
+html[data-theme="light"] .tag{background:#dbeafe;color:#1d4ed8}
+html[data-theme="light"] .events{background:#ffffff;border-color:#e2e8f0}
+html[data-theme="light"] .events li{border-bottom:1px solid #edf2ff;color:#0f172a}
+html[data-theme="light"] .events .time{color:#475569}
+html[data-theme="light"] .events .path{color:#b45309}
+html[data-theme="light"] .status-badge.success{background:#dcfce7;color:#166534}
+html[data-theme="light"] .status-badge.error{background:#fee2e2;color:#b91c1c}
+html[data-theme="light"] .status-badge.info{background:#dbeafe;color:#1d4ed8}
+html[data-theme="light"] .status-badge.start{background:#fff7ed;color:#9a3412}
+html[data-theme="light"] .badge.online{background:#22c55e;color:#ffffff}
+html[data-theme="light"] .badge.offline{background:#cbd5f5;color:#312e81}
+html[data-theme="light"] th,html[data-theme="light"] td{border-bottom:1px solid #e2e8f0}
+html[data-theme="light"] th{color:#475569}
+</style>
+</head>
+<body>
+    <div class="card">
+        <div class="top-row">
+            <div>
+                <h1>流量監控面板</h1>
+                <p class="muted">資料更新：{{ generated_at }} · 目前登入：{{ admin_user.username }}</p>
+            </div>
+            <div class="actions">
+                <a class="btn" href="{{ url_for('admin_feedback') }}">回報列表</a>
+                <a class="btn" href="{{ url_for('index') }}">返回主頁</a>
+                <form class="inline-form" method="post" action="{{ url_for('admin_traffic_reset') }}" onsubmit="return confirm('確定要清除所有累積訪問次數與紀錄嗎？');">
+                    <button type="submit" class="btn danger">清除累積訪問次數</button>
+                </form>
+            </div>
+        </div>
+        <div class="stats">
+            <span class="chip">線上人數：{{ summary.online_users }}</span>
+            <span class="chip">累積訪問次數：{{ summary.ip_total_hits }} 次</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin:0;font-size:20px">系統摘要</h2>
+        <div class="metrics-grid">
+            <div class="metric">
+                <span class="muted">帳號數</span>
+                <strong>{{ summary.unique_users }}</strong>
+                <small>目前線上 {{ summary.online_users }}</small>
+            </div>
+            <div class="metric">
+                <span class="muted">總訪客人數</span>
+                <strong>{{ summary.guest_total }}</strong>
+                <small>目前在線 {{ summary.guest_online }}</small>
+            </div>
+            <div class="metric">
+                <span class="muted">累積訪問次數（依 IP ）</span>
+                <strong>{{ summary.ip_total_hits }}</strong>
+            </div>
+            <div class="metric">
+                <span class="muted">最近 500 筆事件</span>
+                <strong>{{ summary.event_samples }}</strong>
+                <small>近期活躍帳號：{{ summary.recent_unique_users }}</small>
+            </div>
+            <div class="metric">
+                <span class="muted">最後一次操作</span>
+                <strong>{{ summary.last_event }}</strong>
+                <small>操作：{{ summary.last_action }}</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="top-row" style="align-items:flex-end">
+            <div>
+                <h2 style="margin:0;font-size:20px">帳號訪問趨勢</h2>
+                <p class="muted">統計每{{ '小時' if trend_window == 'hour' else '天' }}的活躍帳號數（不含訪客，同一帳號在同一時段僅計一次），支援拖曳與滾輪縮放檢視細節。</p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <div class="trend-toggle">
+                    <a class="{{ 'active' if trend_window == 'hour' else '' }}" href="{{ url_for('admin_traffic', trend='hour') }}">每小時</a>
+                    <a class="{{ 'active' if trend_window == 'day' else '' }}" href="{{ url_for('admin_traffic', trend='day') }}">每天</a>
+                </div>
+                <button class="btn" type="button" id="resetZoomBtn" style="display:none">重置縮放</button>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="visitChart" class="chart-canvas" height="200" aria-label="訪問趨勢圖"></canvas>
+            <div class="chart-empty" id="chartEmpty">目前沒有帳號訪問紀錄</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="list-grid">
+            <div>
+                <h3 style="margin-top:0">Top 5 使用者</h3>
+                <ul class="mini-list">
+                    {% if top_users %}
+                        {% for visitor in top_users %}
+                        <li>
+                            <span>
+                                <strong>{{ visitor.username }}</strong><br>
+                                <small class="muted">最後在線：{{ visitor.last_seen }}</small>
+                            </span>
+                            <span class="tag">{{ visitor.count }} 次</span>
+                        </li>
+                        {% endfor %}
+                    {% else %}
+                        <li style="justify-content:center;color:#94a3b8">尚無資料</li>
+                    {% endif %}
+                </ul>
+            </div>
+            <div>
+                <h3 style="margin-top:0">熱門操作</h3>
+                <ul class="mini-list">
+                    {% if top_actions %}
+                        {% for item in top_actions %}
+                        <li>
+                            <span class="path">{{ item.action }}</span>
+                            <span class="tag">{{ item.count }} 次</span>
+                        </li>
+                        {% endfor %}
+                    {% else %}
+                        <li style="justify-content:center;color:#94a3b8">尚無資料</li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin:0 0 8px;font-size:18px">帳號使用概況</h2>
+        <p class="muted">統計自服務啟動以來每個帳號的訪問次數與最後在線時間。</p>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>帳號</th>
+                        <th>狀態</th>
+                        <th>總訪問次數</th>
+                        <th>最後在線時間</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if user_rows %}
+                        {% for row in user_rows %}
+                        <tr>
+                            <td>{{ row.username }}</td>
+                            <td>
+                                {% if row.online %}
+                                <span class="badge online">Online</span>
+                                {% else %}
+                                <span class="badge offline">Offline</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.count }}</td>
+                            <td>{{ row.last_seen }}</td>
+                            <td>
+                                <form class="inline-form" method="post" action="{{ url_for('admin_traffic_reset_user') }}" onsubmit="return confirm('確定要刪除 {{ row.username }} 的統計紀錄嗎？');">
+                                    <input type="hidden" name="username" value="{{ row.username }}">
+                                    <button type="submit" class="btn danger" style="padding:6px 10px;font-size:12px">刪除</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="5" style="text-align:center;color:#94a3b8">目前尚無紀錄</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin:0 0 8px;font-size:18px">近期動態</h2>
+        <p class="muted">紀錄最近的登入、登出、資料存取等行為，方便掌握使用情況。</p>
+        <ul class="events">
+            {% if events %}
+                {% for item in events %}
+                <li>
+                    <span class="time">{{ item.ts }}</span>
+                    <span class="path">{{ item.username }}</span>
+                    <span class="path">{{ item.description }}</span>
+                    <span class="status-badge {{ item.status }}">{{ item.status|upper }}</span>
+                    <span class="muted">{{ item.details or item.ip }}</span>
+                </li>
+                {% endfor %}
+            {% else %}
+                <li><span class="time">-</span><span style="color:#94a3b8">尚無操作紀錄</span></li>
+            {% endif %}
+        </ul>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script>
+const chartLabels = {{ chart_labels|default([])|tojson }};
+const chartValues = {{ chart_values|default([])|tojson }};
+const chartSeriesLabel = "{{ trend_label }}活躍帳號數";
+const chartCanvas = document.getElementById('visitChart');
+const ctx = chartCanvas.getContext('2d');
+const empty = document.getElementById('chartEmpty');
+const resetZoomBtn = document.getElementById('resetZoomBtn');
+const rootStyles = getComputedStyle(document.documentElement);
+const axisColor = rootStyles.getPropertyValue('--chart-axis').trim() || '#cbd5f5';
+const gridColor = rootStyles.getPropertyValue('--chart-grid').trim() || 'rgba(148,163,184,0.25)';
+const lineColor = rootStyles.getPropertyValue('--chart-line').trim() || '#6366f1';
+const fillColor = rootStyles.getPropertyValue('--chart-fill').trim() || 'rgba(99,102,241,0.2)';
+const tooltipBg = rootStyles.getPropertyValue('--chart-tooltip-bg').trim() || '#0f172a';
+const tooltipFg = rootStyles.getPropertyValue('--chart-tooltip-fg').trim() || '#e2e8f0';
+let visitChart = null;
+const dragState = { active: false, lastX: 0, pointerId: null };
+
+function handleDragStart(evt) {
+    if (!chartCanvas) return;
+    dragState.active = true;
+    dragState.lastX = evt.clientX;
+    dragState.pointerId = evt.pointerId;
+    try { chartCanvas.setPointerCapture(evt.pointerId); } catch (e) {}
+    chartCanvas.classList.add('dragging');
+}
+function handleDragMove(evt) {
+    if (!dragState.active || !visitChart) return;
+    evt.preventDefault();
+    const deltaX = evt.clientX - dragState.lastX;
+    dragState.lastX = evt.clientX;
+    if (typeof visitChart.pan === 'function') {
+        visitChart.pan({ x: deltaX, y: 0 }, undefined, 'default');
+        visitChart.update('none');
+    }
+}
+function handleDragEnd(evt) {
+    if (!chartCanvas) return;
+    dragState.active = false;
+    dragState.pointerId = null;
+    try { chartCanvas.releasePointerCapture(evt.pointerId); } catch (e) {}
+    chartCanvas.classList.remove('dragging');
+}
+const zoomPlugin = window["chartjs-plugin-zoom"] || window.ChartZoom;
+if (zoomPlugin) {
+    Chart.register(zoomPlugin);
+}
+if (chartCanvas) {
+    chartCanvas.addEventListener('pointerdown', handleDragStart);
+    chartCanvas.addEventListener('pointermove', handleDragMove);
+    chartCanvas.addEventListener('pointerup', handleDragEnd);
+    chartCanvas.addEventListener('pointercancel', handleDragEnd);
+    chartCanvas.addEventListener('pointerleave', handleDragEnd);
+}
+if (chartLabels.length && chartValues.length) {
+    empty.style.display = 'none';
+    const gradient = ctx.createLinearGradient(0, 0, 0, 320);
+    gradient.addColorStop(0, fillColor);
+    gradient.addColorStop(1, 'rgba(99,102,241,0.02)');
+    visitChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartLabels,
+            datasets: [
+                {
+                    label: chartSeriesLabel,
+                    data: chartValues,
+                    borderColor: lineColor,
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.32,
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    pointHoverRadius: 0,
+                },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+            layout: { padding: 10 },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: axisColor, precision: 0 },
+                    grid: { color: gridColor }
+                },
+                x: {
+                    ticks: { color: axisColor },
+                    grid: { color: gridColor, display: true }
+                }
+            },
+            plugins: {
+                legend: { labels: { color: axisColor, font: { weight: '600' } } },
+                tooltip: {
+                    backgroundColor: tooltipBg,
+                    borderColor: lineColor,
+                    borderWidth: 1,
+                    titleColor: tooltipFg,
+                    bodyColor: tooltipFg
+                },
+                zoom: {
+                    pan: { enabled: true, mode: 'x' },
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        drag: { enabled: false },
+                        mode: 'x'
+                    }
+                }
+            }
+        }
+    });
+    resetZoomBtn.style.display = 'inline-flex';
+    resetZoomBtn.addEventListener('click', () => visitChart && visitChart.resetZoom());
+} else {
+    resetZoomBtn.style.display = 'none';
+}
+</script>
+<script>
+(function () {
+    const initialVersion = Number({{ stats_version or 0 }});
+    const pollUrl = "{{ url_for('traffic_stats') }}";
+    if (Number.isNaN(initialVersion)) {
+        return;
+    }
+    let latest = initialVersion;
+    async function poll() {
+        try {
+            const resp = await fetch(pollUrl, { cache: 'no-store' });
+            if (!resp.ok) {
+                return;
+            }
+            const data = await resp.json();
+            if (typeof data.version === 'number' && data.version > latest) {
+                latest = data.version;
+                window.location.reload();
+            }
+        } catch (err) {
+            console.debug('traffic poll failed', err);
+        }
+    }
+    setInterval(poll, 45000);
+})();
+
+</script>
+</body>
+</html>
