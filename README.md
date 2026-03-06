@@ -61,7 +61,7 @@
 
 ## 安全與隱私建議
 
-- **HTTPS**：整站使用 AWS ACM 憑證，請務必透過 `https://e3hwtool.space` 連線。
+- **HTTPS**：整站使用 AWS ACM 憑證，請務必透過 `https://www.e3hwtool.space` 連線。
 - **OAuth 限制**：NYCU OAuth 只能取得基本身分，無法自動產生 MoodleSession，因此仍需使用用戶直接輸入帳密來登入。未來若學校提供正式 API，再改為純 OAuth。
 
 ---
