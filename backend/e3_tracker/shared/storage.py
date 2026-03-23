@@ -15,8 +15,10 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     delete,
+    inspect,
     insert,
     select,
+    text,
     update,
 )
 from sqlalchemy.engine import Engine
@@ -72,6 +74,8 @@ assignments_table = Table(
     Column("overdue", Integer, nullable=False, default=0),
     Column("completed", Integer, nullable=False, default=0),
     Column("raw_status_text", Text),
+    Column("submitted_count", Integer),
+    Column("participant_count", Integer),
     Column("updated_at", String(64), nullable=False),
     UniqueConstraint("course_id", "uid", name="uq_assignments_course_uid"),
 )
@@ -168,6 +172,23 @@ class PersistentStorage:
         )
         self._lock = threading.Lock()
         metadata.create_all(self._engine)
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        inspector = inspect(self._engine)
+        if not inspector.has_table("assignments"):
+            return
+        existing_columns = {col["name"] for col in inspector.get_columns("assignments")}
+        missing_columns = []
+        if "submitted_count" not in existing_columns:
+            missing_columns.append(("submitted_count", "INTEGER"))
+        if "participant_count" not in existing_columns:
+            missing_columns.append(("participant_count", "INTEGER"))
+        if not missing_columns:
+            return
+        with self._lock, self._engine.begin() as conn:
+            for column_name, column_type in missing_columns:
+                conn.execute(text(f"ALTER TABLE assignments ADD COLUMN {column_name} {column_type}"))
 
     def _normalize_url(self, raw: str) -> str:
         if raw.startswith("postgres://"):
@@ -366,6 +387,8 @@ class PersistentStorage:
                             overdue=self._coerce_bool_int(item.get("overdue")),
                             completed=self._coerce_bool_int(item.get("completed")),
                             raw_status_text=item.get("raw_status_text"),
+                            submitted_count=item.get("submitted_count"),
+                            participant_count=item.get("participant_count"),
                             updated_at=now,
                         )
                     )
@@ -444,6 +467,8 @@ class PersistentStorage:
                         assignments_table.c.overdue,
                         assignments_table.c.completed,
                         assignments_table.c.raw_status_text,
+                        assignments_table.c.submitted_count,
+                        assignments_table.c.participant_count,
                     )
                     .where(assignments_table.c.course_id.in_(course_ids))
                 ).fetchall()
@@ -462,6 +487,8 @@ class PersistentStorage:
                         "overdue": bool(row.overdue),
                         "completed": bool(row.completed),
                         "raw_status_text": row.raw_status_text,
+                        "submitted_count": row.submitted_count,
+                        "participant_count": row.participant_count,
                     }
                     course_entry["assignments"].append(item)
                     course_entry["detected_assign_links"] += 1
