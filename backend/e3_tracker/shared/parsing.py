@@ -92,6 +92,48 @@ def parse_due_text_to_dt(due_text: Optional[str]):
         return None
 
 
+def parse_submission_counts_from_grading_page(html: str) -> Tuple[Optional[int], Optional[int]]:
+    soup = BeautifulSoup(html, "html.parser")
+    submitted_count, participant_count = None, None
+
+    # First attempt: find grading summary table
+    summary_table = soup.find("table", class_="gradingsummary")
+    if summary_table:
+        text = extract_text(summary_table)
+        match_submitted = re.search(r"(?:Submitted|已繳交|已交)\s*[:：]?\s*(\d+)", text, re.IGNORECASE)
+        if match_submitted:
+            submitted_count = int(match_submitted.group(1))
+        
+        match_participants = re.search(r"(?:Participants|參與者)\s*[:：]?\s*(\d+)", text, re.IGNORECASE)
+        if match_participants:
+            participant_count = int(match_participants.group(1))
+
+    # Fallback: search the whole page text
+    if submitted_count is None or participant_count is None:
+        full_text = extract_text(soup)
+        if submitted_count is None:
+            # Pattern: "Submitted: 123" or "已繳交：123"
+            match_submitted = re.search(r"(?:Submitted|已繳交|已交)\s*[:：]?\s*(\d+)", full_text, re.IGNORECASE)
+            if match_submitted:
+                submitted_count = int(match_submitted.group(1))
+        
+        if participant_count is None:
+            # Pattern: "Participants: 150" or "參與者：150"
+            match_participants = re.search(r"(?:Participants|參與者)\s*[:：]?\s*(\d+)", full_text, re.IGNORECASE)
+            if match_participants:
+                participant_count = int(match_participants.group(1))
+
+    # Another fallback for structures like "123 of 150 submitted"
+    if submitted_count is None and participant_count is None:
+        match = re.search(r"(\d+)\s*(?:of|/)\s*(\d+)\s*(?:submitted|participants)", full_text, re.IGNORECASE)
+        if match:
+            submitted_count = int(match.group(1))
+            participant_count = int(match.group(2))
+    
+    return submitted_count, participant_count
+
+
+
 def gather_assign_links_from_list_page(html: str, base_url: str) -> List[Tuple[str, str, Optional[str]]]:
     soup = BeautifulSoup(html, "html.parser")
     links: List[Tuple[str, str, Optional[str]]] = []

@@ -18,6 +18,7 @@ from ..shared.parsing import (
     find_due_and_status_from_assign_page,
     gather_assign_links_from_list_page,
     parse_due_text_to_dt,
+    parse_submission_counts_from_grading_page,
 )
 from ..shared.utils import cleanup_debug_glob
 
@@ -230,6 +231,27 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                 if not due_dt and due_text_from_list:
                     due_dt = parse_due_text_to_dt(due_text_from_list)
 
+                # Fetch submission counts
+                submitted_count, participant_count = None, None
+                if "view.php" in url:
+                    try:
+                        grading_url = url + "&action=grading"
+                        resp_grading = safe_request(
+                            sess, "GET", grading_url, headers=HEADERS, timeout=options.timeout
+                        )
+                        if options.debug:
+                            _save_debug_file(
+                                f"debug_grading_{cid}_{idx}.html",
+                                resp_grading.text,
+                                created_debug,
+                            )
+                        submitted_count, participant_count = parse_submission_counts_from_grading_page(
+                            resp_grading.text
+                        )
+                    except Exception:
+                        # Fail silently for grading page, as it's optional
+                        pass
+
                 if is_complete and not options.include_completed:
                     continue
                 if (is_incomplete is None) or (not is_incomplete and not is_complete):
@@ -251,6 +273,8 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "overdue": overdue,
                         "completed": bool(is_complete),
                         "raw_status_text": raw_status,
+                        "submitted_count": submitted_count,
+                        "participant_count": participant_count,
                     }
                     course_results.append(item)
                     all_results.append(item)
