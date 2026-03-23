@@ -1,18 +1,3 @@
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Set
-
-import requests
-from bs4 import BeautifulSoup
-
-from ..shared.constants import COURSE_LINK_RE, HEADERS, TAIPEI_TZ
-from .http import (
-    apply_cookie,
-    configure_tls,
-    login_with_password,
-    need_login_redirect,
-    safe_request,
-)
 from ..shared.parsing import (
     extract_text,
     find_due_and_status_from_assign_page,
@@ -206,16 +191,19 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                     if options.debug:
                         _save_debug_file(f"debug_fallback_{cid}_{idx+1}.html", resp.text, created_debug)
                     more = gather_assign_links_from_list_page(resp.text, options.base_url)
-                    assign_links.extend(more)
+                    # When falling back, we need to merge results carefully
+                    existing_urls = {link[1] for link in assign_links}
+                    assign_links.extend([link for link in more if link[1] not in existing_urls])
                 except RuntimeError:
                     raise
                 except Exception:
                     pass
-            assign_links = list({url: (title, url, due) for title, url, due in assign_links}.values())
-
+        
         now = datetime.now(TAIPEI_TZ)
         course_results: List[Dict[str, Any]] = []
-        for idx, (title, url, due_text_from_list) in enumerate(assign_links, start=1):
+        for idx, (title, url, due_text_from_list, submitted_count, participant_count) in enumerate(
+            assign_links, start=1
+        ):
             try:
                 resp = safe_request(
                     sess,
@@ -226,6 +214,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                 )
                 if options.debug:
                     _save_debug_file(f"debug_assign_{cid}_{idx}.html", resp.text, created_debug)
+                
                 is_complete, is_incomplete, due_dt, raw_status = find_due_and_status_from_assign_page(resp.text)
                 if not due_dt and due_text_from_list:
                     due_dt = parse_due_text_to_dt(due_text_from_list)
@@ -251,6 +240,8 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "overdue": overdue,
                         "completed": bool(is_complete),
                         "raw_status_text": raw_status,
+                        "submitted_count": submitted_count,
+                        "participant_count": participant_count,
                     }
                     course_results.append(item)
                     all_results.append(item)

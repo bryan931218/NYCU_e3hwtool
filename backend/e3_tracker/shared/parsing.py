@@ -92,9 +92,11 @@ def parse_due_text_to_dt(due_text: Optional[str]):
         return None
 
 
-def gather_assign_links_from_list_page(html: str, base_url: str) -> List[Tuple[str, str, Optional[str]]]:
+def gather_assign_links_from_list_page(
+    html: str, base_url: str
+) -> List[Tuple[str, str, Optional[str], Optional[int], Optional[int]]]:
     soup = BeautifulSoup(html, "html.parser")
-    links: List[Tuple[str, str, Optional[str]]] = []
+    links: List[Tuple[str, str, Optional[str], Optional[int], Optional[int]]] = []
     date_pattern = re.compile(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?")
 
     for table in soup.find_all("table"):
@@ -102,13 +104,17 @@ def gather_assign_links_from_list_page(html: str, base_url: str) -> List[Tuple[s
         header_row = table.find("tr")
         if header_row:
             headers = [extract_text(th).strip() for th in header_row.find_all(["th", "td"])]
-        due_col_idx = None
+        
+        due_col_idx = -1
+        status_col_idx = -1
         for idx, header in enumerate(headers):
             if any(lbl in header for lbl in DUE_LABELS) or any(lbl.lower() in header.lower() for lbl in DUE_LABELS):
                 due_col_idx = idx
-                break
+            if "繳交狀態" in header or "submission status" in header.lower():
+                status_col_idx = idx
 
         for tr in table.find_all("tr"):
+            cells = tr.find_all(["td", "th"])
             candidates = tr.find_all("a", href=True)
             target = None
             for a_tag in candidates:
@@ -124,24 +130,37 @@ def gather_assign_links_from_list_page(html: str, base_url: str) -> List[Tuple[s
                 alt_title = target.get("data-activityname") or target.get("aria-label") or target.get("title")
                 if alt_title:
                     title = extract_text(BeautifulSoup(str(alt_title), "html.parser"))
-            cells = tr.find_all(["td", "th"])
-            if _is_placeholder_title(title):
-                if cells:
-                    guessed = extract_text(cells[0])
-                    if guessed:
-                        title = guessed
+            
+            if _is_placeholder_title(title) and cells:
+                guessed = extract_text(cells[0])
+                if guessed:
+                    title = guessed
+            
             due_text = None
-            if due_col_idx is not None:
-                if len(cells) > due_col_idx:
-                    due_text = extract_text(cells[due_col_idx])
+            if due_col_idx != -1 and len(cells) > due_col_idx:
+                due_text = extract_text(cells[due_col_idx])
             if not due_text:
                 row_text = extract_text(tr)
                 match = date_pattern.search(row_text)
                 if match:
                     due_text = match.group(0)
-            links.append((title, url, due_text))
+
+            submitted_count, participant_count = None, None
+            if status_col_idx != -1 and len(cells) > status_col_idx:
+                status_text = extract_text(cells[status_col_idx])
+                s_match = re.search(r"(\d+)\s*(?:個)?已繳", status_text)
+                u_match = re.search(r"(\d+)\s*(?:個)?未繳", status_text)
+                submitted = int(s_match.group(1)) if s_match else 0
+                unsubmitted = int(u_match.group(1)) if u_match else 0
+                
+                if s_match or u_match:
+                    submitted_count = submitted
+                    participant_count = submitted + unsubmitted
+
+            links.append((title, url, due_text, submitted_count, participant_count))
 
     if not links:
+        # Fallback for when there's no table structure
         for a_tag in soup.find_all("a", href=True):
             href = a_tag["href"]
             if ASSIGN_LINK_RE.search(href):
@@ -152,19 +171,19 @@ def gather_assign_links_from_list_page(html: str, base_url: str) -> List[Tuple[s
                     if alt_title:
                         title = extract_text(BeautifulSoup(str(alt_title), "html.parser"))
                 if _is_placeholder_title(title):
-                    tr = a_tag.find_parent("tr")
-                    if tr:
-                        tds = tr.find_all(["td", "th"])
+                    tr_parent = a_tag.find_parent("tr")
+                    if tr_parent:
+                        tds = tr_parent.find_all(["td", "th"])
                         if tds:
                             guessed = extract_text(tds[0])
                             if guessed:
                                 title = guessed
-                links.append((title, url, None))
+                links.append((title, url, None, None, None))
 
     uniq = []
     seen: Set[str] = set()
-    for title, url, due_text in links:
+    for title, url, due_text, s_count, p_count in links:
         if url not in seen:
-            uniq.append((title, url, due_text))
+            uniq.append((title, url, due_text, s_count, p_count))
             seen.add(url)
     return uniq
