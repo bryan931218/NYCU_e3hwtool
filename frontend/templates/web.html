@@ -749,7 +749,7 @@ html[data-theme="dark"]{
                 {% set participant_count = item.get('participant_count') %}
                 {% set submitted_count = item.get('submitted_count') %}
                 {% if participant_count is not none and submitted_count is not none %}
-                    {% if submitted_count > 0 %}
+                    {% if item.completed %}
                         {% set ratio_class = 'ratio-active' %}
                     {% else %}
                         {% set ratio_class = 'ratio-empty' %}
@@ -808,7 +808,7 @@ html[data-theme="dark"]{
                         {% set participant_count = item.get('participant_count') %}
                         {% set submitted_count = item.get('submitted_count') %}
                         {% if participant_count is not none and submitted_count is not none %}
-                            {% if submitted_count > 0 %}
+                            {% if item.completed %}
                                 {% set ratio_class = 'ratio-active' %}
                             {% else %}
                                 {% set ratio_class = 'ratio-empty' %}
