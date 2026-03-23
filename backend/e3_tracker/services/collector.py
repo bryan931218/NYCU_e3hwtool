@@ -270,8 +270,12 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "title": title,
                         "url": url,
                         "due_at": "",
-                        "overdue": "",
+                        "due_ts": None,
+                        "overdue": False,
+                        "completed": False,
                         "raw_status_text": f"解析失敗：{exc}",
+                        "submitted_count": None,
+                        "participant_count": None,
                     }
                 )
                 errors.append(

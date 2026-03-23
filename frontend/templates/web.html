@@ -727,11 +727,13 @@ html[data-theme="dark"]{
                 </td>
                 <td>{{ item.due_at or "無截止" }}</td>
                 <td>
-                {% if item.participant_count is not none and item.submitted_count is not none %}
+                {% set participant_count = item.get('participant_count') %}
+                {% set submitted_count = item.get('submitted_count') %}
+                {% if participant_count is not none and submitted_count is not none %}
                     <div title="已繳交 / 總人數">
-                        <span style="color:var(--ok-fg); font-weight:600">{{ item.submitted_count }}</span> / {{ item.participant_count }}
+                        <span style="color:var(--ok-fg); font-weight:600">{{ submitted_count }}</span> / {{ participant_count }}
                     </div>
-                    {% set unsubmitted = item.participant_count - item.submitted_count %}
+                    {% set unsubmitted = participant_count - submitted_count %}
                     {% if unsubmitted > 0 %}
                     <div style="font-size:12px; color:var(--muted)" title="未繳交人數">未繳: {{ unsubmitted }}</div>
                     {% endif %}
@@ -781,11 +783,13 @@ html[data-theme="dark"]{
                     </td>
                     <td>{{ item.due_at or "無截止" }}</td>
                     <td>
-                        {% if item.participant_count is not none and item.submitted_count is not none %}
+                        {% set participant_count = item.get('participant_count') %}
+                        {% set submitted_count = item.get('submitted_count') %}
+                        {% if participant_count is not none and submitted_count is not none %}
                             <div title="已繳交 / 總人數">
-                                <span style="color:var(--ok-fg); font-weight:600">{{ item.submitted_count }}</span> / {{ item.participant_count }}
+                                <span style="color:var(--ok-fg); font-weight:600">{{ submitted_count }}</span> / {{ participant_count }}
                             </div>
-                            {% set unsubmitted = item.participant_count - item.submitted_count %}
+                            {% set unsubmitted = participant_count - submitted_count %}
                             {% if unsubmitted > 0 %}
                             <div style="font-size:12px; color:var(--muted)" title="未繳交人數">未繳: {{ unsubmitted }}</div>
                             {% endif %}
