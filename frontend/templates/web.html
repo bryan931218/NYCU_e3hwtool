@@ -101,21 +101,17 @@ html[data-theme="dark"]{
     .submission-pill-count{font-size:14px;font-variant-numeric:tabular-nums}
     .submission-pill-divider{opacity:.45;font-size:12px}
     .submission-pill-total{font-size:12px;opacity:.72;font-variant-numeric:tabular-nums}
-    .submission-pill.ratio-empty{
-    background:linear-gradient(135deg,#fff1f2,#ffe4e6);
-    border-color:#fecdd3;color:#be123c;
-    }
-    .submission-pill.ratio-low{
-    background:linear-gradient(135deg,#fff7ed,#ffedd5);
-    border-color:#fdba74;color:#c2410c;
-    }
-    .submission-pill.ratio-medium{
-    background:linear-gradient(135deg,#fffbeb,#fef3c7);
-    border-color:#fcd34d;color:#b45309;
-    }
-    .submission-pill.ratio-high{
-    background:linear-gradient(135deg,#ecfdf5,#d1fae5);
-    border-color:#86efac;color:#15803d;
+    .submission-pill.ratio-progress{
+    background:linear-gradient(
+        135deg,
+        hsl(var(--submission-hue) 95% 96%),
+        hsl(var(--submission-hue) 88% 90%)
+    );
+    border-color:hsl(var(--submission-hue) 72% 72%);
+    color:hsl(var(--submission-hue) 70% 28%);
+    box-shadow:
+        0 3px 10px hsl(var(--submission-hue) 70% 52% / var(--submission-glow, .05)),
+        inset 0 1px 0 rgba(255,255,255,.28);
     }
     .submission-pill.ratio-active{
     background:linear-gradient(135deg,#dcfce7,#bbf7d0);
@@ -763,16 +759,19 @@ html[data-theme="dark"]{
                 {% if participant_count is not none and submitted_count is not none %}
                     {% if item.completed %}
                         {% set ratio_class = 'ratio-active' %}
-                    {% elif participant_count <= 0 or submitted_count <= 0 %}
-                        {% set ratio_class = 'ratio-empty' %}
-                    {% elif (submitted_count / participant_count) >= 0.75 %}
-                        {% set ratio_class = 'ratio-high' %}
-                    {% elif (submitted_count / participant_count) >= 0.4 %}
-                        {% set ratio_class = 'ratio-medium' %}
                     {% else %}
-                        {% set ratio_class = 'ratio-low' %}
+                        {% set ratio_class = 'ratio-progress' %}
+                        {% set submission_ratio = (submitted_count / participant_count) if participant_count > 0 else 0 %}
+                        {% set submission_hue = 8 + (submission_ratio * 126) %}
+                        {% set submission_glow = 0.04 + (submission_ratio * 0.08) %}
                     {% endif %}
-                    <div class="submission-pill {{ ratio_class }}" title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人">
+                    <div
+                        class="submission-pill {{ ratio_class }}"
+                        {% if ratio_class == 'ratio-progress' %}
+                        style="--submission-hue: {{ '%.1f'|format(submission_hue) }}; --submission-glow: {{ '%.3f'|format(submission_glow) }};"
+                        {% endif %}
+                        title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人"
+                    >
                         <span class="submission-pill-count">{{ submitted_count }}</span>
                         <span class="submission-pill-divider">/</span>
                         <span class="submission-pill-total">{{ participant_count }}</span>
@@ -828,16 +827,19 @@ html[data-theme="dark"]{
                         {% if participant_count is not none and submitted_count is not none %}
                             {% if item.completed %}
                                 {% set ratio_class = 'ratio-active' %}
-                            {% elif participant_count <= 0 or submitted_count <= 0 %}
-                                {% set ratio_class = 'ratio-empty' %}
-                            {% elif (submitted_count / participant_count) >= 0.75 %}
-                                {% set ratio_class = 'ratio-high' %}
-                            {% elif (submitted_count / participant_count) >= 0.4 %}
-                                {% set ratio_class = 'ratio-medium' %}
                             {% else %}
-                                {% set ratio_class = 'ratio-low' %}
+                                {% set ratio_class = 'ratio-progress' %}
+                                {% set submission_ratio = (submitted_count / participant_count) if participant_count > 0 else 0 %}
+                                {% set submission_hue = 8 + (submission_ratio * 126) %}
+                                {% set submission_glow = 0.04 + (submission_ratio * 0.08) %}
                             {% endif %}
-                            <div class="submission-pill {{ ratio_class }}" title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人">
+                            <div
+                                class="submission-pill {{ ratio_class }}"
+                                {% if ratio_class == 'ratio-progress' %}
+                                style="--submission-hue: {{ '%.1f'|format(submission_hue) }}; --submission-glow: {{ '%.3f'|format(submission_glow) }};"
+                                {% endif %}
+                                title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人"
+                            >
                                 <span class="submission-pill-count">{{ submitted_count }}</span>
                                 <span class="submission-pill-divider">/</span>
                                 <span class="submission-pill-total">{{ participant_count }}</span>
