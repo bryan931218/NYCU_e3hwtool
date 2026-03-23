@@ -1,3 +1,18 @@
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Sequence, Set
+
+import requests
+from bs4 import BeautifulSoup
+
+from ..shared.constants import COURSE_LINK_RE, HEADERS, TAIPEI_TZ
+from .http import (
+    apply_cookie,
+    configure_tls,
+    login_with_password,
+    need_login_redirect,
+    safe_request,
+)
 from ..shared.parsing import (
     extract_text,
     find_due_and_status_from_assign_page,
