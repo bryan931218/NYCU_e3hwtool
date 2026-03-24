@@ -407,6 +407,21 @@ html[data-theme="dark"]{
     .announcement-card{border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--card-2)}
     .announcement-card h4{margin:0 0 6px;font-size:17px}
     .announcement-card p{margin:0 0 8px;white-space:pre-wrap}
+    .announcement-meta-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}
+    .announcement-meta-text{margin:0;color:var(--muted);font-size:12px}
+    .announcement-reactions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .announcement-vote-btn{
+    display:inline-flex;align-items:center;gap:6px;padding:7px 10px;
+    border-radius:999px;border:1px solid var(--border);background:var(--card);
+    color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;
+    transition:all .18s ease;
+    }
+    .announcement-vote-btn:hover{transform:translateY(-1px);border-color:var(--primary);color:var(--fg)}
+    .announcement-vote-btn.active-up{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.45);color:#15803d}
+    .announcement-vote-btn.active-down{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.45);color:#b91c1c}
+    .announcement-vote-btn:disabled{opacity:.6;cursor:wait;transform:none}
+    .announcement-vote-count{font-variant-numeric:tabular-nums;color:inherit}
+    .announcement-score{color:var(--muted);font-size:12px;font-weight:700}
     
     @keyframes toast-in {
     from {
@@ -964,10 +979,38 @@ html[data-theme="dark"]{
         <div class="announcement-list" id="announcementList">
             {% if announcements %}
                 {% for ann in announcements %}
-                <article class="announcement-card">
+                <article
+                    class="announcement-card"
+                    data-announcement-id="{{ ann.id }}"
+                    data-vote-url="{{ url_for('announcement_vote', announcement_id=ann.id) }}"
+                    data-user-vote="{{ ann.user_vote or '' }}"
+                >
                     <h4>{{ ann.title }}</h4>
                     <p style="white-space: pre-wrap;">{{ ann.content }}</p>
-                    <p class="muted" style="margin:0">{{ ann.created_label or ann.created_at }}</p>
+                    <div class="announcement-meta-row">
+                        <p class="announcement-meta-text">{{ ann.created_label or ann.created_at }} · {{ ann.author or "系統" }}</p>
+                        <div class="announcement-reactions">
+                            <button
+                                class="announcement-vote-btn{% if ann.user_vote == 'up' %} active-up{% endif %}"
+                                type="button"
+                                data-vote-type="up"
+                                aria-label="喜歡這則公告"
+                            >
+                                <span>👍</span>
+                                <span class="announcement-vote-count" data-role="like-count">{{ ann.like_count or 0 }}</span>
+                            </button>
+                            <button
+                                class="announcement-vote-btn{% if ann.user_vote == 'down' %} active-down{% endif %}"
+                                type="button"
+                                data-vote-type="down"
+                                aria-label="不喜歡這則公告"
+                            >
+                                <span>👎</span>
+                                <span class="announcement-vote-count" data-role="dislike-count">{{ ann.dislike_count or 0 }}</span>
+                            </button>
+                            <span class="announcement-score">淨分 <span data-role="score">{{ ann.score or 0 }}</span></span>
+                        </div>
+                    </div>
                 </article>
                 {% endfor %}
             {% else %}
@@ -1631,6 +1674,7 @@ window.addEventListener('orientationchange', function() {
     const toggle = document.getElementById('announcementToggle');
     const modal = document.getElementById('announcementModal');
     if (!toggle || !modal) return;
+    const announcementList = document.getElementById('announcementList');
     const announcementVersion = "{{ announcement_version or '' }}";
     const hasAnnouncements = !!announcementVersion;
     const storeKey = 'e3_seen_announcements';
@@ -1691,6 +1735,60 @@ window.addEventListener('orientationchange', function() {
             closeModal();
         }
     });
+    function applyAnnouncementVoteState(card, announcement) {
+        if (!card || !announcement) return;
+        const userVote = (announcement.user_vote || '').trim();
+        card.dataset.userVote = userVote;
+        const likeCountEl = card.querySelector('[data-role="like-count"]');
+        const dislikeCountEl = card.querySelector('[data-role="dislike-count"]');
+        const scoreEl = card.querySelector('[data-role="score"]');
+        if (likeCountEl) likeCountEl.textContent = String(announcement.like_count ?? 0);
+        if (dislikeCountEl) dislikeCountEl.textContent = String(announcement.dislike_count ?? 0);
+        if (scoreEl) scoreEl.textContent = String(announcement.score ?? 0);
+        card.querySelectorAll('.announcement-vote-btn').forEach((button) => {
+            const voteType = button.dataset.voteType || '';
+            button.classList.toggle('active-up', voteType === 'up' && userVote === 'up');
+            button.classList.toggle('active-down', voteType === 'down' && userVote === 'down');
+            button.disabled = false;
+        });
+    }
+    async function submitAnnouncementVote(card, button) {
+        if (!card || !button) return;
+        const voteUrl = card.dataset.voteUrl;
+        const voteType = button.dataset.voteType;
+        if (!voteUrl || !voteType) return;
+        const currentVote = (card.dataset.userVote || '').trim();
+        const nextVote = currentVote === voteType ? 'clear' : voteType;
+        card.querySelectorAll('.announcement-vote-btn').forEach((item) => {
+            item.disabled = true;
+        });
+        try {
+            const response = await fetch(voteUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vote: nextVote }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.ok || !payload.announcement) {
+                throw new Error(payload.error || 'vote_failed');
+            }
+            applyAnnouncementVoteState(card, payload.announcement);
+        } catch (err) {
+            card.querySelectorAll('.announcement-vote-btn').forEach((item) => {
+                item.disabled = false;
+            });
+            showToast('公告投票失敗，請稍後再試。', 'error');
+        }
+    }
+    if (announcementList) {
+        announcementList.addEventListener('click', (event) => {
+            const button = event.target.closest('.announcement-vote-btn');
+            if (!button) return;
+            const card = button.closest('.announcement-card');
+            if (!card || button.disabled) return;
+            submitAnnouncementVote(card, button);
+        });
+    }
     try {
         const seenVersion = localStorage.getItem(storeKey);
         if (announcementVersion && seenVersion === announcementVersion && dot) {

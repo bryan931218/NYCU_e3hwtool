@@ -37,6 +37,11 @@ textarea{min-height:120px;resize:vertical}
 .item{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.25);border-radius:16px;padding:16px}
 .item h3{margin:0 0 6px;font-size:18px}
 .item p{margin:0 0 8px;white-space:pre-wrap}
+.reactions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.reaction-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.4)}
+.reaction-pill.positive{color:#bbf7d0;border-color:rgba(74,222,128,.35)}
+.reaction-pill.negative{color:#fecaca;border-color:rgba(248,113,113,.35)}
+.reaction-pill.neutral{color:#cbd5e1}
 .empty{color:#94a3b8;text-align:center;padding:32px;border:1px dashed rgba(148,163,184,.4);border-radius:16px}
   @media (max-width:700px){
       body{padding:16px}
@@ -54,6 +59,9 @@ textarea{min-height:120px;resize:vertical}
   html[data-theme="light"] .muted{color:#4f5a84}
   html[data-theme="light"] .list .item{background:#f9f9ff;border-color:#dfe2f7;color:#1e264a}
   html[data-theme="light"] .empty{color:#6b7198;border-color:#dfe2f7}
+  html[data-theme="light"] .reaction-pill{background:#eef2ff;border-color:#d7def8;color:#334155}
+  html[data-theme="light"] .reaction-pill.positive{color:#166534;border-color:#86efac}
+  html[data-theme="light"] .reaction-pill.negative{color:#b91c1c;border-color:#fca5a5}
   </style>
   </head>
 <body>
@@ -87,6 +95,11 @@ textarea{min-height:120px;resize:vertical}
                     <h3>{{ item.title }}</h3>
                     <p>{{ item.content }}</p>
                     <p class="muted">{{ item.created_label or item.created_at }} · {{ item.author or "系統" }}</p>
+                    <div class="reactions">
+                        <span class="reaction-pill positive">👍 {{ item.like_count or 0 }}</span>
+                        <span class="reaction-pill negative">👎 {{ item.dislike_count or 0 }}</span>
+                        <span class="reaction-pill neutral">淨分 {{ item.score or 0 }}</span>
+                    </div>
                 </div>
                 <form method="post" action="{{ url_for('delete_announcement', announcement_id=item.id) }}" onsubmit="return confirm('確定要刪除這則公告嗎？');">
                     <button type="submit" class="btn danger">刪除</button>

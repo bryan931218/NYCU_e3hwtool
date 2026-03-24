@@ -950,6 +950,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 created_label = datetime.fromisoformat(created_at).astimezone(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
             except Exception:
                 created_label = created_at
+        try:
+            like_count = int(entry.get("like_count") or 0)
+        except (TypeError, ValueError):
+            like_count = 0
+        try:
+            dislike_count = int(entry.get("dislike_count") or 0)
+        except (TypeError, ValueError):
+            dislike_count = 0
+        user_vote = str(entry.get("user_vote") or "").strip().lower() or None
         return {
             "id": ident,
             "title": title,
@@ -957,11 +966,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "created_at": created_at,
             "created_label": created_label,
             "author": author,
+            "like_count": like_count,
+            "dislike_count": dislike_count,
+            "score": like_count - dislike_count,
+            "user_vote": user_vote,
         }
 
-    def load_announcements() -> List[Dict[str, Any]]:
+    def load_announcements(username: Optional[str] = None) -> List[Dict[str, Any]]:
+        if username is None and has_request_context():
+            user = current_user()
+            if user:
+                username = user.get("username")
         items: List[Dict[str, Any]] = []
-        for raw in storage.list_announcements(ANNOUNCEMENT_LIMIT):
+        for raw in storage.list_announcements_with_votes(ANNOUNCEMENT_LIMIT, username=username):
             parsed = _serialize_announcement(raw)
             if parsed:
                 items.append(parsed)
@@ -988,6 +1005,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not announcement_id:
             return False
         return storage.delete_announcement(announcement_id)
+
+    def set_announcement_vote(announcement_id: str, username: str, vote_type: Optional[str]) -> Optional[Dict[str, Any]]:
+        updated = storage.set_announcement_vote(announcement_id, username, vote_type)
+        if not updated:
+            return None
+        return _serialize_announcement(updated)
 
     FEEDBACK_LIMIT = 200
     VALID_FEEDBACK_STATUS = {"open", "resolved"}
@@ -1474,6 +1497,27 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             {"items": len(result.get("all_assignments", [])), "has_excel": bool(excel_data)},
         )
         return redirect(url_for("index"))
+
+    @app.post("/announcements/<announcement_id>/vote")
+    @login_required
+    def announcement_vote(announcement_id: str):
+        user = current_user()
+        if not user:
+            return {"ok": False, "error": "not_logged_in"}, 401
+        payload = request.get_json(silent=True) or {}
+        requested_vote = str(payload.get("vote") or "").strip().lower()
+        if requested_vote not in {"up", "down", "clear"}:
+            return {"ok": False, "error": "invalid_vote"}, 400
+        resolved_vote = None if requested_vote == "clear" else requested_vote
+        updated = set_announcement_vote(announcement_id, user["username"], resolved_vote)
+        if not updated:
+            return {"ok": False, "error": "announcement_not_found"}, 404
+        record_ui_event(
+            "announcement_vote",
+            "success",
+            {"announcement_id": announcement_id, "vote": resolved_vote or "clear"},
+        )
+        return {"ok": True, "announcement": updated}
     @app.route("/google/authorize")
     @login_required
     def google_authorize():

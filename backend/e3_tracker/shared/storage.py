@@ -17,6 +17,7 @@ from sqlalchemy import (
     delete,
     inspect,
     insert,
+    func,
     select,
     text,
     update,
@@ -122,6 +123,18 @@ announcements_table = Table(
     Column("author", String(191)),
     Column("created_at", String(64)),
     Column("created_label", String(64)),
+)
+
+announcement_votes_table = Table(
+    "announcement_votes",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("announcement_id", String(191), nullable=False),
+    Column("user_id", Integer, nullable=False),
+    Column("vote_type", String(16), nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+    UniqueConstraint("announcement_id", "user_id", name="uq_announcement_votes_announcement_user"),
 )
 
 feedback_table = Table(
@@ -622,9 +635,11 @@ class PersistentStorage:
             ).scalars().all()
             if ids_to_keep:
                 conn.execute(delete(announcements_table).where(~announcements_table.c.id.in_(ids_to_keep)))
+                conn.execute(delete(announcement_votes_table).where(~announcement_votes_table.c.announcement_id.in_(ids_to_keep)))
 
     def delete_announcement(self, announcement_id: str) -> bool:
         with self._lock, self._engine.begin() as conn:
+            conn.execute(delete(announcement_votes_table).where(announcement_votes_table.c.announcement_id == announcement_id))
             result = conn.execute(delete(announcements_table).where(announcements_table.c.id == announcement_id))
             return result.rowcount > 0
 
@@ -636,6 +651,112 @@ class PersistentStorage:
                 .limit(limit)
             ).fetchall()
         return [dict(row._mapping) for row in rows]
+
+    def list_announcements_with_votes(self, limit: int, username: Optional[str] = None) -> List[Dict[str, Any]]:
+        announcements = self.list_announcements(limit)
+        if not announcements:
+            return []
+        announcement_ids = [str(item.get("id") or "").strip() for item in announcements if item.get("id")]
+        if not announcement_ids:
+            return announcements
+        summary_map = {
+            announcement_id: {"like_count": 0, "dislike_count": 0, "user_vote": None}
+            for announcement_id in announcement_ids
+        }
+        with self._lock, self._engine.connect() as conn:
+            vote_rows = conn.execute(
+                select(
+                    announcement_votes_table.c.announcement_id,
+                    announcement_votes_table.c.vote_type,
+                    func.count().label("count"),
+                )
+                .where(announcement_votes_table.c.announcement_id.in_(announcement_ids))
+                .group_by(announcement_votes_table.c.announcement_id, announcement_votes_table.c.vote_type)
+            ).fetchall()
+            for row in vote_rows:
+                announcement_id = str(row.announcement_id)
+                if announcement_id not in summary_map:
+                    continue
+                if row.vote_type == "up":
+                    summary_map[announcement_id]["like_count"] = int(row.count or 0)
+                elif row.vote_type == "down":
+                    summary_map[announcement_id]["dislike_count"] = int(row.count or 0)
+            if username:
+                user_row = conn.execute(
+                    select(users_table.c.id).where(users_table.c.username == username)
+                ).fetchone()
+                if user_row:
+                    user_votes = conn.execute(
+                        select(
+                            announcement_votes_table.c.announcement_id,
+                            announcement_votes_table.c.vote_type,
+                        )
+                        .where(announcement_votes_table.c.announcement_id.in_(announcement_ids))
+                        .where(announcement_votes_table.c.user_id == int(user_row.id))
+                    ).fetchall()
+                    for row in user_votes:
+                        announcement_id = str(row.announcement_id)
+                        if announcement_id in summary_map:
+                            summary_map[announcement_id]["user_vote"] = row.vote_type
+        merged: List[Dict[str, Any]] = []
+        for item in announcements:
+            announcement_id = str(item.get("id") or "").strip()
+            summary = summary_map.get(announcement_id, {"like_count": 0, "dislike_count": 0, "user_vote": None})
+            merged_item = dict(item)
+            merged_item.update(summary)
+            merged_item["score"] = int(summary["like_count"]) - int(summary["dislike_count"])
+            merged.append(merged_item)
+        return merged
+
+    def set_announcement_vote(self, announcement_id: str, username: str, vote_type: Optional[str]) -> Optional[Dict[str, Any]]:
+        announcement_id = (announcement_id or "").strip()
+        username = (username or "").strip()
+        normalized_vote = (vote_type or "").strip().lower() or None
+        if not announcement_id or not username:
+            return None
+        if normalized_vote not in {None, "up", "down"}:
+            return None
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            announcement_exists = conn.execute(
+                select(announcements_table.c.id).where(announcements_table.c.id == announcement_id)
+            ).fetchone()
+            if not announcement_exists:
+                return None
+            user_id = self._ensure_user(conn, username)
+            if normalized_vote is None:
+                conn.execute(
+                    delete(announcement_votes_table)
+                    .where(announcement_votes_table.c.announcement_id == announcement_id)
+                    .where(announcement_votes_table.c.user_id == user_id)
+                )
+            else:
+                existing = conn.execute(
+                    select(announcement_votes_table.c.id)
+                    .where(announcement_votes_table.c.announcement_id == announcement_id)
+                    .where(announcement_votes_table.c.user_id == user_id)
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        update(announcement_votes_table)
+                        .where(announcement_votes_table.c.id == int(existing.id))
+                        .values(vote_type=normalized_vote, updated_at=now)
+                    )
+                else:
+                    conn.execute(
+                        insert(announcement_votes_table).values(
+                            announcement_id=announcement_id,
+                            user_id=user_id,
+                            vote_type=normalized_vote,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+        announcement = self.list_announcements_with_votes(limit=500, username=username)
+        for item in announcement:
+            if str(item.get("id") or "") == announcement_id:
+                return item
+        return None
 
     # -- traffic state/events ---------------------------------------------
     def load_traffic_state(self) -> Optional[Dict[str, Any]]:
