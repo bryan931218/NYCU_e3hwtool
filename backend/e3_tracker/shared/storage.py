@@ -704,7 +704,6 @@ class PersistentStorage:
             summary = summary_map.get(announcement_id, {"like_count": 0, "dislike_count": 0, "user_vote": None})
             merged_item = dict(item)
             merged_item.update(summary)
-            merged_item["score"] = int(summary["like_count"]) - int(summary["dislike_count"])
             merged.append(merged_item)
         return merged
 
