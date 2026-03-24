@@ -421,7 +421,6 @@ html[data-theme="dark"]{
     .announcement-vote-btn.active-down{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.45);color:#b91c1c}
     .announcement-vote-btn:disabled{opacity:.6;cursor:wait;transform:none}
     .announcement-vote-count{font-variant-numeric:tabular-nums;color:inherit}
-    .announcement-score{color:var(--muted);font-size:12px;font-weight:700}
     
     @keyframes toast-in {
     from {
@@ -1008,7 +1007,6 @@ html[data-theme="dark"]{
                                 <span>👎</span>
                                 <span class="announcement-vote-count" data-role="dislike-count">{{ ann.dislike_count or 0 }}</span>
                             </button>
-                            <span class="announcement-score">淨分 <span data-role="score">{{ ann.score or 0 }}</span></span>
                         </div>
                     </div>
                 </article>
@@ -1741,10 +1739,8 @@ window.addEventListener('orientationchange', function() {
         card.dataset.userVote = userVote;
         const likeCountEl = card.querySelector('[data-role="like-count"]');
         const dislikeCountEl = card.querySelector('[data-role="dislike-count"]');
-        const scoreEl = card.querySelector('[data-role="score"]');
         if (likeCountEl) likeCountEl.textContent = String(announcement.like_count ?? 0);
         if (dislikeCountEl) dislikeCountEl.textContent = String(announcement.dislike_count ?? 0);
-        if (scoreEl) scoreEl.textContent = String(announcement.score ?? 0);
         card.querySelectorAll('.announcement-vote-btn').forEach((button) => {
             const voteType = button.dataset.voteType || '';
             button.classList.toggle('active-up', voteType === 'up' && userVote === 'up');

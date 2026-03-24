@@ -968,7 +968,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "author": author,
             "like_count": like_count,
             "dislike_count": dislike_count,
-            "score": like_count - dislike_count,
             "user_vote": user_vote,
         }
 
