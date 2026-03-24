@@ -93,15 +93,17 @@ html[data-theme="dark"]{
     .remaining-text.done{color:var(--ok-fg)}
     .submission-pill{
     display:inline-flex;align-items:center;gap:5px;
-    justify-content:center;width:78px;flex-shrink:0;
-    padding:4px 9px;border-radius:10px;border:1px solid transparent;
-    font-weight:700;line-height:1.1;background:var(--card-2);color:var(--fg);
+    justify-content:center;width:57px;height:28px;flex-shrink:0;
+    padding:0 6px;border-radius:10px;border:1px solid transparent;
+    font-weight:700;line-height:1;background:var(--card-2);color:var(--fg);
     font-size:13px;white-space:nowrap;
+    box-sizing:border-box;
+    overflow:hidden;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
     }
-    .submission-pill-count{font-size:14px;font-variant-numeric:tabular-nums}
-    .submission-pill-divider{opacity:.45;font-size:12px}
-    .submission-pill-total{font-size:12px;opacity:.72;font-variant-numeric:tabular-nums}
+    .submission-pill-count{font-size:var(--submission-count-size,14px);font-variant-numeric:tabular-nums}
+    .submission-pill-divider{opacity:.45;font-size:var(--submission-divider-size,12px)}
+    .submission-pill-total{font-size:var(--submission-total-size,12px);opacity:.72;font-variant-numeric:tabular-nums}
     .submission-pill.ratio-progress{
     background:linear-gradient(
         135deg,
@@ -119,9 +121,68 @@ html[data-theme="dark"]{
     border-color:#4ade80;color:#166534;
     box-shadow:0 3px 10px rgba(34,197,94,.12), inset 0 1px 0 rgba(255,255,255,.3);
     }
-    table{width:100%;border-collapse:collapse;margin-top:8px}
-    thead th{font-size:13px;color:var(--muted);text-transform:uppercase}
-    th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+    .table-shell{margin-top:8px;overflow-x:auto}
+    .assignment-table{
+    width:100%;min-width:980px;margin-top:0;
+    border-collapse:separate;border-spacing:0;table-layout:fixed;
+    }
+    .assignment-table thead th{
+    padding:12px 14px;font-size:12px;font-weight:700;letter-spacing:.05em;
+    color:var(--muted);text-transform:uppercase;text-align:left;
+    border-bottom:1px solid var(--border);background:var(--card-2);
+    }
+    .assignment-table thead th:first-child{border-top-left-radius:14px}
+    .assignment-table thead th:last-child{border-top-right-radius:14px}
+    .assignment-table tbody td{
+    padding:14px;border-bottom:1px solid var(--border);
+    text-align:left;vertical-align:middle;background:transparent;
+    }
+    .assignment-table tbody tr:last-child td{border-bottom:0}
+    .assignment-table tbody tr{transition:background .18s ease}
+    .assignment-table tbody tr:hover td{background:rgba(99,102,241,.05)}
+    .assignment-col-signal{width:17%}
+    .assignment-col-title{width:39%}
+    .assignment-col-due{width:16%}
+    .assignment-col-stats{width:10%}
+    .assignment-col-status{width:10%}
+    .assignment-col-link{width:8%}
+    .course-col-title{width:46%}
+    .course-col-due{width:18%}
+    .course-col-stats{width:10%}
+    .course-col-status{width:12%}
+    .course-col-link{width:14%}
+    .assignment-cell-main{min-width:0}
+    .assignment-eyebrow{
+    display:block;margin-bottom:6px;font-size:12px;font-weight:700;
+    color:var(--muted);letter-spacing:.02em;
+    }
+    .assignment-title{
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    overflow:hidden;font-size:15px;font-weight:700;line-height:1.35;
+    }
+    .assignment-meta{
+    display:flex;align-items:center;gap:8px;min-height:20px;
+    margin-top:6px;color:var(--muted);font-size:13px;
+    }
+    .assignment-signal{
+    display:flex;align-items:center;justify-content:center;
+    min-height:42px;text-align:center;
+    }
+    .assignment-signal .remaining-text{
+    margin-top:0;font-size:13px;font-weight:700;line-height:1.3;
+    }
+    .assignment-due{
+    display:flex;flex-direction:column;gap:5px;min-width:0;
+    font-size:14px;font-weight:600;line-height:1.35;
+    }
+    .assignment-due-main{overflow-wrap:anywhere}
+    .assignment-due-sub{font-size:12px;color:var(--muted);font-weight:500}
+    .assignment-due.empty .assignment-due-main{color:var(--muted);font-weight:500}
+    .assignment-center{text-align:center!important}
+    .assignment-link .btn{
+    min-width:72px;justify-content:center;padding:9px 12px;
+    font-size:13px;font-weight:700;
+    }
     .hidden{display:none!important}
 
     .toolbar-compact{
@@ -399,10 +460,11 @@ html[data-theme="dark"]{
         padding: 16px 12px 32px;
     }
     
-    table {
+    .assignment-table {
         font-size: 14px;
     }
-    th, td {
+    .assignment-table thead th,
+    .assignment-table tbody td {
         padding: 8px 10px;
     }
     
@@ -447,23 +509,6 @@ html[data-theme="dark"]{
         font-size: 18px;
     }
     
-    #flatTable th:nth-child(1), #flatTable td:nth-child(1) { width: 30% !important; }
-    #flatTable th:nth-child(2), #flatTable td:nth-child(2) { width: 40% !important; }
-    #flatTable th:nth-child(3), #flatTable td:nth-child(3) { width: 20% !important; }
-    #flatTable th:nth-child(4), #flatTable td:nth-child(4) { width: 10% !important; }
-    #flatTable th:nth-child(5), #flatTable td:nth-child(5) { 
-        width: auto !important;
-        text-align: center;
-    }
-    
-    .courseTable th:nth-child(1), .courseTable td:nth-child(1) { width: 45% !important; }
-    .courseTable th:nth-child(2), .courseTable td:nth-child(2) { width: 25% !important; }
-    .courseTable th:nth-child(3), .courseTable td:nth-child(3) { width: 15% !important; }
-    .courseTable th:nth-child(4), .courseTable td:nth-child(4) { 
-        width: 15% !important;
-        text-align: center;
-    }
-    
     .seg-btn {
         padding: 6px 10px;
         font-size: 13px;
@@ -479,9 +524,10 @@ html[data-theme="dark"]{
         font-size: 13px;
     }
     
-    td .btn {
+    .assignment-link .btn {
         padding: 6px 8px;
         font-size: 12px;
+        min-width: 64px;
     }
     
     .toast {
@@ -499,22 +545,11 @@ html[data-theme="dark"]{
     }
     
     @media (min-width: 481px) and (max-width: 780px) {
-    #flatTable th:nth-child(1), #flatTable td:nth-child(1) { width: 25% !important; }
-    #flatTable th:nth-child(2), #flatTable td:nth-child(2) { width: 35% !important; }
-    #flatTable th:nth-child(3), #flatTable td:nth-child(3) { width: 18% !important; }
-    #flatTable th:nth-child(4), #flatTable td:nth-child(4) { width: 12% !important; }
-    #flatTable th:nth-child(5), #flatTable td:nth-child(5) { width: 10% !important; }
-    }
-    
-    @media (max-width: 600px) {
     .panel {
         padding: 10px;
-        overflow-x: auto;
     }
-    
-    table {
-        min-width: 480px;
-        min-width: 480px;
+    .assignment-table {
+        min-width: 860px;
     }
     }
 </style>
@@ -559,6 +594,49 @@ html[data-theme="dark"]{
         {% else %}
             <span class="remaining-text normal">剩下 {{ format_time_diff(diff) }}</span>
         {% endif %}
+    {% endif %}
+{%- endmacro %}
+{% macro render_submission_pill(item) -%}
+    {% set participant_count = item.get('participant_count') %}
+    {% set submitted_count = item.get('submitted_count') %}
+    {% if participant_count is not none and submitted_count is not none %}
+        {% if item.completed %}
+            {% set ratio_class = 'ratio-active' %}
+        {% else %}
+            {% set ratio_class = 'ratio-progress' %}
+            {% set submission_ratio = (submitted_count / participant_count) if participant_count > 0 else 0 %}
+            {% set submission_hue = 8 + (submission_ratio * 126) %}
+            {% set submission_glow = 0.04 + (submission_ratio * 0.08) %}
+        {% endif %}
+        {% set submission_text_len = (submitted_count|string|length) + (participant_count|string|length) %}
+        {% if submission_text_len >= 8 %}
+            {% set submission_count_size = '10px' %}
+            {% set submission_divider_size = '9px' %}
+            {% set submission_total_size = '9px' %}
+        {% elif submission_text_len >= 6 %}
+            {% set submission_count_size = '11px' %}
+            {% set submission_divider_size = '10px' %}
+            {% set submission_total_size = '10px' %}
+        {% elif submission_text_len >= 4 %}
+            {% set submission_count_size = '12px' %}
+            {% set submission_divider_size = '11px' %}
+            {% set submission_total_size = '11px' %}
+        {% else %}
+            {% set submission_count_size = '14px' %}
+            {% set submission_divider_size = '12px' %}
+            {% set submission_total_size = '12px' %}
+        {% endif %}
+        <div
+            class="submission-pill {{ ratio_class }}"
+            style="--submission-count-size: {{ submission_count_size }}; --submission-divider-size: {{ submission_divider_size }}; --submission-total-size: {{ submission_total_size }};{% if ratio_class == 'ratio-progress' %} --submission-hue: {{ '%.1f'|format(submission_hue) }}; --submission-glow: {{ '%.3f'|format(submission_glow) }};{% endif %}"
+            title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人"
+        >
+            <span class="submission-pill-count">{{ submitted_count }}</span>
+            <span class="submission-pill-divider">/</span>
+            <span class="submission-pill-total">{{ participant_count }}</span>
+        </div>
+    {% else %}
+        <span class="assignment-due-sub">-</span>
     {% endif %}
 {%- endmacro %}
 <div class="loader-wrap" id="loader">
@@ -725,15 +803,24 @@ html[data-theme="dark"]{
 
     {% if result %}
         <section id="viewDue" class="card panel hidden">
-        <table id="flatTable">
+        <div class="table-shell">
+        <table id="flatTable" class="assignment-table">
+            <colgroup>
+                <col class="assignment-col-signal">
+                <col class="assignment-col-title">
+                <col class="assignment-col-due">
+                <col class="assignment-col-stats">
+                <col class="assignment-col-status">
+                <col class="assignment-col-link">
+            </colgroup>
             <thead>
             <tr>
-                <th style="width:24%">課程</th>
-                <th style="width:34%">作業名稱</th>
-                <th style="width:18%">截止時間</th>
-                <th style="width:10%">繳交統計</th>
-                <th style="width:8%">狀態</th>
-                <th style="width:6%">連結</th>
+                <th class="assignment-center">剩餘時間</th>
+                <th>作業名稱</th>
+                <th>截止時間</th>
+                <th class="assignment-center">繳交統計</th>
+                <th class="assignment-center">狀態</th>
+                <th class="assignment-center">連結</th>
             </tr>
             </thead>
             <tbody>
@@ -748,49 +835,35 @@ html[data-theme="dark"]{
                 data-due="{{ item.due_at or '無截止' }}"
                 data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
             >
-                <td>{{ item.course_title }}</td>
-                <td>
-                <div style="font-weight:600">{{ item.title }}</div>
-                <div>{{ render_remaining_text(item, server_now_ts)|safe }}</div>
-                </td>
-                <td>{{ item.due_at or "無截止" }}</td>
-                <td>
-                {% set participant_count = item.get('participant_count') %}
-                {% set submitted_count = item.get('submitted_count') %}
-                {% if participant_count is not none and submitted_count is not none %}
-                    {% if item.completed %}
-                        {% set ratio_class = 'ratio-active' %}
-                    {% else %}
-                        {% set ratio_class = 'ratio-progress' %}
-                        {% set submission_ratio = (submitted_count / participant_count) if participant_count > 0 else 0 %}
-                        {% set submission_hue = 8 + (submission_ratio * 126) %}
-                        {% set submission_glow = 0.04 + (submission_ratio * 0.08) %}
-                    {% endif %}
-                    <div
-                        class="submission-pill {{ ratio_class }}"
-                        {% if ratio_class == 'ratio-progress' %}
-                        style="--submission-hue: {{ '%.1f'|format(submission_hue) }}; --submission-glow: {{ '%.3f'|format(submission_glow) }};"
-                        {% endif %}
-                        title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人"
-                    >
-                        <span class="submission-pill-count">{{ submitted_count }}</span>
-                        <span class="submission-pill-divider">/</span>
-                        <span class="submission-pill-total">{{ participant_count }}</span>
+                <td class="assignment-center">
+                    <div class="assignment-signal">
+                        {{ render_remaining_text(item, server_now_ts)|safe }}
                     </div>
-                {% else %}
-                    -
-                {% endif %}
+                </td>
+                <td class="assignment-cell-main">
+                    <span class="assignment-eyebrow">{{ item.course_title }}</span>
+                    <span class="assignment-title">{{ item.title }}</span>
                 </td>
                 <td>
+                    <div class="assignment-due {% if not item.due_at %}empty{% endif %}">
+                        <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
+                        <span class="assignment-due-sub">{{ item.raw_status_text or "截止資訊同步中" }}</span>
+                    </div>
+                </td>
+                <td class="assignment-center">
+                    {{ render_submission_pill(item) }}
+                </td>
+                <td class="assignment-center">
                 {% if item.completed %}<span class="badge done">已完成</span>
                 {% elif item.overdue %}<span class="badge overdue">逾期</span>
                 {% else %}<span class="badge nodue">未完成</span>{% endif %}
                 </td>
-                <td><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
+                <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
             </tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
         </section>
 
         <section id="viewCourse">
@@ -803,8 +876,16 @@ html[data-theme="dark"]{
                 {% if course.url %}<a class="btn" href="{{ course.url }}" target="_blank" rel="noopener">前往課程</a>{% endif %}
             </div>
             <div class="panel">
-                <table class="courseTable">
-                <thead><tr><th style="width:45%">作業名稱</th><th style="width:20%">截止時間</th><th style="width:12%">繳交統計</th><th style="width:12%">狀態</th><th style="width:11%">連結</th></tr></thead>
+                <div class="table-shell">
+                <table class="courseTable assignment-table">
+                <colgroup>
+                    <col class="course-col-title">
+                    <col class="course-col-due">
+                    <col class="course-col-stats">
+                    <col class="course-col-status">
+                    <col class="course-col-link">
+                </colgroup>
+                <thead><tr><th>作業名稱</th><th>截止時間</th><th class="assignment-center">繳交統計</th><th class="assignment-center">狀態</th><th class="assignment-center">連結</th></tr></thead>
                 <tbody>
                     {% for item in course.assignments %}
                     <tr
@@ -817,48 +898,30 @@ html[data-theme="dark"]{
                     data-due="{{ item.due_at or '無截止' }}"
                     data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
                     >
-                    <td>
-                        <div style="font-weight:600">{{ item.title }}</div>
-                        <div>{{ render_remaining_text(item, server_now_ts)|safe }}</div>
-                    </td>
-                    <td>{{ item.due_at or "無截止" }}</td>
-                    <td>
-                        {% set participant_count = item.get('participant_count') %}
-                        {% set submitted_count = item.get('submitted_count') %}
-                        {% if participant_count is not none and submitted_count is not none %}
-                            {% if item.completed %}
-                                {% set ratio_class = 'ratio-active' %}
-                            {% else %}
-                                {% set ratio_class = 'ratio-progress' %}
-                                {% set submission_ratio = (submitted_count / participant_count) if participant_count > 0 else 0 %}
-                                {% set submission_hue = 8 + (submission_ratio * 126) %}
-                                {% set submission_glow = 0.04 + (submission_ratio * 0.08) %}
-                            {% endif %}
-                            <div
-                                class="submission-pill {{ ratio_class }}"
-                                {% if ratio_class == 'ratio-progress' %}
-                                style="--submission-hue: {{ '%.1f'|format(submission_hue) }}; --submission-glow: {{ '%.3f'|format(submission_glow) }};"
-                                {% endif %}
-                                title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人"
-                            >
-                                <span class="submission-pill-count">{{ submitted_count }}</span>
-                                <span class="submission-pill-divider">/</span>
-                                <span class="submission-pill-total">{{ participant_count }}</span>
-                            </div>
-                        {% else %}
-                            -
-                        {% endif %}
+                    <td class="assignment-cell-main">
+                        <span class="assignment-title">{{ item.title }}</span>
+                        <div class="assignment-meta">{{ render_remaining_text(item, server_now_ts)|safe }}</div>
                     </td>
                     <td>
+                        <div class="assignment-due {% if not item.due_at %}empty{% endif %}">
+                            <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
+                            <span class="assignment-due-sub">{{ item.raw_status_text or "截止資訊同步中" }}</span>
+                        </div>
+                    </td>
+                    <td class="assignment-center">
+                        {{ render_submission_pill(item) }}
+                    </td>
+                    <td class="assignment-center">
                         {% if item.completed %}<span class="badge done">已完成</span>
                         {% elif item.overdue %}<span class="badge overdue">逾期</span>
                         {% else %}<span class="badge nodue">未完成</span>{% endif %}
                     </td>
-                    <td><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
+                    <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
                 </table>
+                </div>
             </div>
             </section>
         {% endfor %}

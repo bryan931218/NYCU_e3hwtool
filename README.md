@@ -42,6 +42,30 @@
 
 ---
 
+## 本機開發 / 測試
+
+1. 安裝套件  
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. 啟動本機前後端  
+   ```bash
+   python start_servers.py
+   ```
+   - 前端網址：`http://127.0.0.1:3000`
+   - 後端網址：`http://127.0.0.1:8000`
+   - `start_servers.py` 會自動切成本機設定，不需要推到 GitHub 才能看畫面。
+   - 本機模式會自動關閉 `Secure` cookie、停用 canonical host redirect，並使用專案內的 `.localdata/e3_tracker.sqlite3` 當測試資料庫，避免碰到正式環境資料。
+
+3. 跑本機 smoke test  
+   ```bash
+   python -m unittest discover -s tests -v
+   ```
+   - 這會實際拉起前後端，檢查 `healthz`、首頁，以及 localhost 下的訪客登入流程。
+
+---
+
 ## 介面截圖
 
 1. **登入頁**  
