@@ -48,11 +48,26 @@ def _clean_grade_text(value: Optional[str]) -> Optional[str]:
     return text
 
 
-def find_due_and_status_from_assign_page(html: str) -> Tuple[bool, Optional[bool], Optional[datetime], str, Optional[str]]:
+def find_due_and_status_from_assign_page(
+    html: str,
+) -> Tuple[bool, Optional[bool], Optional[datetime], str, Optional[str], Optional[datetime], Optional[str]]:
     soup = BeautifulSoup(html, "html.parser")
     status_cell_text = ""
     due_str = None
     grade_text = None
+    submitted_str = None
+    remaining_text = None
+    submission_labels = [
+        "submission time",
+        "submitted on",
+        "last submission",
+        "last modified",
+        "繳交時間",
+        "提交時間",
+        "最後修改",
+        "最後繳交",
+        "最後提交",
+    ]
 
     for tr in soup.find_all("tr"):
         th = tr.find(["th", "td"])
@@ -66,6 +81,10 @@ def find_due_and_status_from_assign_page(html: str) -> Tuple[bool, Optional[bool
                 due_str = extract_text(tds[-1])
         if _matches_labeled_field(label, GRADE_LABELS):
             grade_text = _clean_grade_text(extract_text(tds[-1]) if tds else extract_text(tr))
+        if not submitted_str and any(lbl in label_lower for lbl in submission_labels):
+            submitted_str = extract_text(tds[-1]) if tds else extract_text(tr)
+        if not remaining_text and any(lbl in label_lower for lbl in ["剩餘時間", "time remaining"]):
+            remaining_text = extract_text(tds[-1]) if tds else extract_text(tr)
 
     for dt in soup.find_all("dt"):
         label = extract_text(dt)
@@ -76,6 +95,10 @@ def find_due_and_status_from_assign_page(html: str) -> Tuple[bool, Optional[bool
             due_str = extract_text(dt.find_next_sibling("dd"))
         if grade_text is None and _matches_labeled_field(label, GRADE_LABELS):
             grade_text = _clean_grade_text(extract_text(dt.find_next_sibling("dd")))
+        if not submitted_str and any(lbl in label_lower for lbl in submission_labels):
+            submitted_str = extract_text(dt.find_next_sibling("dd"))
+        if not remaining_text and any(lbl in label_lower for lbl in ["剩餘時間", "time remaining"]):
+            remaining_text = extract_text(dt.find_next_sibling("dd"))
 
     if not due_str:
         block_text = extract_text(soup)
@@ -85,6 +108,21 @@ def find_due_and_status_from_assign_page(html: str) -> Tuple[bool, Optional[bool
                 if match:
                     due_str = match.group(1)
                     break
+    else:
+        block_text = extract_text(soup)
+
+    if not remaining_text:
+        remaining_match = re.search(
+            r"((?:提早|提前|逾期)\s*\d+\s*[日天](?:\s*\d+\s*小時)?(?:\s*\d+\s*分鐘)?(?:\s*就)?繳交作業)",
+            block_text,
+        )
+        if not remaining_match:
+            remaining_match = re.search(
+                r"((?:提早|提前|逾期|準時)(?:\s*\d+\s*[日天])?(?:\s*\d+\s*小時)?(?:\s*\d+\s*分鐘)?(?:\s*就)?繳交作業)",
+                block_text,
+            )
+        if remaining_match:
+            remaining_text = remaining_match.group(1)
 
     low = status_cell_text.lower()
     status_is_complete = any(kw in low for kw in [s.lower() for s in COMPLETED_KEYWORDS])
@@ -103,7 +141,18 @@ def find_due_and_status_from_assign_page(html: str) -> Tuple[bool, Optional[bool
         except Exception:
             due_dt = None
 
-    return status_is_complete, status_is_incomplete, due_dt, status_cell_text.strip(), grade_text
+    submitted_dt = None
+    if submitted_str:
+        try:
+            submitted_dt = dtparser.parse(submitted_str, dayfirst=False, fuzzy=True)
+            if submitted_dt.tzinfo is None:
+                submitted_dt = TAIPEI_TZ.localize(submitted_dt)
+            else:
+                submitted_dt = submitted_dt.astimezone(TAIPEI_TZ)
+        except Exception:
+            submitted_dt = None
+
+    return status_is_complete, status_is_incomplete, due_dt, status_cell_text.strip(), grade_text, submitted_dt, remaining_text
 
 
 def parse_due_text_to_dt(due_text: Optional[str]):

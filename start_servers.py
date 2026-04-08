@@ -30,6 +30,17 @@ def _public_host(host: str) -> str:
     return normalized
 
 
+def _normalize_windows_path(value: Path | str) -> str:
+    text = str(value)
+    if os.name != "nt":
+        return text
+    if text.startswith("\\\\?\\UNC\\"):
+        return "\\" + text[7:]
+    if text.startswith("\\\\?\\"):
+        return text[4:]
+    return text
+
+
 def build_local_env() -> Dict[str, str]:
     backend_host = os.getenv("HOST", "127.0.0.1")
     backend_port = os.getenv("PORT", "8000")
@@ -55,8 +66,8 @@ def build_local_env() -> Dict[str, str]:
             "E3_CANONICAL_HOST": "",
             "E3_APP_HOME_URL": f"{frontend_url}/",
             "E3_GOOGLE_REDIRECT_URI": f"{frontend_url}/google/callback",
-            "E3_CACHE_DIR": str(LOCAL_DATA_DIR),
-            "E3_DATABASE_URL": str(local_db_path),
+            "E3_CACHE_DIR": _normalize_windows_path(LOCAL_DATA_DIR),
+            "E3_DATABASE_URL": _normalize_windows_path(local_db_path),
         }
     )
     return env

@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="作業節奏分析報告，包含截止負載、繳交習慣、課程熱點與提醒建議。" />
+<meta name="theme-color" content="#0f766e" />
+<title>作業節奏報告</title>
+<script>
+(function(){
+    try{
+        const stored = localStorage.getItem('e3_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const choice = stored || (prefersDark ? 'dark' : 'light');
+        const normalized = choice === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', normalized);
+        document.documentElement.style.colorScheme = normalized;
+    }catch(err){
+        document.documentElement.setAttribute('data-theme','light');
+        document.documentElement.style.colorScheme = 'light';
+    }
+})();
+</script>
+<style>
+    :root{
+        color-scheme:light dark;
+        --bg:#f3f7ff; --fg:#10203a; --muted:#5e7392;
+        --card:#ffffff; --card-2:#f4f8ff; --border:#d7e1f0;
+        --primary:#0f766e; --primary-2:#155e75; --accent:#2563eb; --accent-2:#7c3aed;
+        --shadow:0 24px 70px rgba(15,23,42,.09);
+    }
+    html[data-theme="dark"]{
+        --bg:#08111f; --fg:#ecf4ff; --muted:#9db0d3;
+        --card:#101a2b; --card-2:#162236; --border:#2b3d5b;
+        --primary:#34d399; --primary-2:#22c55e; --accent:#60a5fa; --accent-2:#a78bfa;
+        --shadow:0 28px 90px rgba(0,0,0,.4);
+    }
+    *{box-sizing:border-box}
+    body{
+        margin:0;color:var(--fg);
+        font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft JhengHei","Noto Sans TC",sans-serif;
+        background:
+            radial-gradient(circle at top left, rgba(37,99,235,.14), transparent 28%),
+            radial-gradient(circle at top right, rgba(124,58,237,.12), transparent 24%),
+            linear-gradient(180deg, color-mix(in srgb, var(--bg) 84%, #ffffff 16%), var(--bg));
+    }
+    .container{max-width:1240px;margin:0 auto;padding:28px 18px 48px}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+    .title-wrap h1{margin:0;font-size:34px;letter-spacing:-.03em}
+    .title-wrap p{margin:8px 0 0;color:var(--muted);line-height:1.6}
+    .actions{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{
+        display:inline-flex;align-items:center;justify-content:center;gap:8px;
+        min-height:42px;padding:10px 16px;border-radius:999px;text-decoration:none;
+        border:1px solid var(--border);background:var(--card);color:var(--fg);font-weight:800;
+        box-shadow:var(--shadow);
+    }
+    .btn.primary{
+        color:#fff;border-color:transparent;
+        background:linear-gradient(135deg,var(--primary),var(--accent));
+    }
+    .banner,.card{
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 86%, #ffffff 14%), color-mix(in srgb, var(--card-2) 92%, transparent));
+        border:1px solid var(--border);border-radius:24px;box-shadow:var(--shadow);
+    }
+    .banner{padding:18px 20px;margin-bottom:18px}
+    .banner h3{margin:0 0 6px;font-size:18px}
+    .banner p{margin:0;color:var(--muted);line-height:1.6}
+    .hero{
+        position:relative;overflow:hidden;padding:28px;border-radius:28px;margin-bottom:18px;
+        background:
+            radial-gradient(circle at top right, rgba(96,165,250,.22), transparent 30%),
+            radial-gradient(circle at bottom left, rgba(52,211,153,.18), transparent 26%),
+            linear-gradient(135deg, color-mix(in srgb, var(--card) 82%, #e0f2fe 18%), color-mix(in srgb, var(--card-2) 82%, #ede9fe 18%));
+        border:1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+        box-shadow:var(--shadow);
+    }
+    .hero::after{
+        content:"";position:absolute;right:-48px;bottom:-58px;width:220px;height:220px;border-radius:50%;
+        background:radial-gradient(circle, rgba(255,255,255,.32), transparent 66%);
+        animation:floaty 7s ease-in-out infinite;
+    }
+    .hero-grid{display:grid;grid-template-columns:minmax(0,1.3fr) 210px;gap:24px;align-items:center}
+    .eyebrow{
+        display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;
+        background:rgba(255,255,255,.46);border:1px solid rgba(255,255,255,.5);
+        font-size:12px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;
+    }
+    .hero h2{margin:14px 0 8px;font-size:40px;letter-spacing:-.04em}
+    .hero p{margin:0;color:var(--muted);line-height:1.7}
+    .chip-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+    .chip{
+        display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;
+        background:rgba(255,255,255,.58);border:1px solid rgba(255,255,255,.52);font-weight:800;font-size:13px;
+    }
+    .score-orb{
+        --score-angle: calc(var(--score, 0) * 3.6deg);
+        position:relative;width:180px;height:180px;border-radius:50%;
+        display:grid;place-items:center;
+        background:conic-gradient(from -90deg, var(--accent) var(--score-angle), rgba(148,163,184,.18) 0deg);
+        box-shadow:0 24px 48px rgba(37,99,235,.24);
+        animation:rise .8s ease both;
+    }
+    .score-orb::before{
+        content:"";position:absolute;inset:14px;border-radius:50%;
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 88%, #fff 12%), color-mix(in srgb, var(--card-2) 90%, transparent));
+        border:1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+    }
+    .score-inner{position:relative;z-index:1;text-align:center}
+    .score-value{display:block;font-size:46px;font-weight:900;line-height:1}
+    .score-label{display:block;margin-top:8px;font-size:12px;font-weight:800;color:var(--muted)}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+    .metric{padding:18px}
+    .metric strong{display:block;font-size:30px;line-height:1.05}
+    .metric span{display:block;margin-top:8px;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .metric small{display:block;margin-top:8px;color:var(--muted);line-height:1.5}
+    .grid-2{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:18px;margin-bottom:18px}
+    .section{padding:22px}
+    .section h3{margin:0;font-size:22px;letter-spacing:-.02em}
+    .section p{margin:8px 0 0;color:var(--muted);line-height:1.6}
+    .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:18px}
+    .mini{
+        padding:14px 16px;border-radius:18px;border:1px solid color-mix(in srgb, var(--accent) 10%, var(--border));
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 90%, transparent), color-mix(in srgb, var(--card-2) 94%, transparent));
+    }
+    .mini strong{display:block;font-size:24px;line-height:1.05}
+    .mini span{display:block;margin-top:6px;font-size:12px;font-weight:800;color:var(--muted)}
+    .mini-note{display:block;margin-top:8px;font-size:12px;color:var(--muted);line-height:1.5}
+    .load-board{padding:22px;margin-bottom:18px}
+    .load-grid{display:grid;grid-template-columns:minmax(0,1.5fr) 300px;gap:18px;align-items:start}
+    .subhead{margin:22px 0 0;font-size:16px;font-weight:900;letter-spacing:-.01em}
+    .timeline{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-top:18px}
+    .day{
+        padding:14px 10px;border-radius:20px;border:1px solid color-mix(in srgb, var(--accent) 10%, var(--border));
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, transparent), color-mix(in srgb, var(--card-2) 96%, transparent));
+        text-align:center;animation:rise .7s ease both;
+    }
+    .day.today{outline:2px solid color-mix(in srgb, var(--primary) 30%, transparent)}
+    .day-label{display:block;font-size:12px;font-weight:900}
+    .day-date{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
+    .day-bar{height:70px;width:18px;margin:14px auto 10px;border-radius:999px;background:color-mix(in srgb, var(--border) 78%, transparent);display:flex;align-items:flex-end;overflow:hidden}
+    .day-bar span{
+        display:block;width:100%;height:var(--height,0%);border-radius:inherit;
+        background:linear-gradient(180deg,var(--primary),var(--accent-2));
+        transform-origin:center bottom;animation:growY .85s cubic-bezier(.2,.8,.2,1) both;
+    }
+    .day-count{font-size:13px;font-weight:900}
+    .day-note{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
+    .list{display:flex;flex-direction:column;gap:12px;margin-top:18px}
+    .course{
+        display:grid;grid-template-columns:minmax(0,1fr) 88px;gap:12px;align-items:center;
+        padding:14px 16px;border-radius:18px;border:1px solid color-mix(in srgb, var(--accent) 10%, var(--border));
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 90%, transparent), color-mix(in srgb, var(--card-2) 96%, transparent));
+    }
+    .course-head{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .course-title{font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .course-note{font-size:12px;color:var(--muted)}
+    .bar{height:12px;border-radius:999px;background:color-mix(in srgb, var(--border) 74%, transparent);overflow:hidden;margin-top:8px}
+    .bar span{
+        display:block;height:100%;width:var(--width,0%);border-radius:inherit;
+        background:linear-gradient(90deg,var(--primary),var(--accent),var(--accent-2));
+        transform-origin:left center;animation:growX .9s cubic-bezier(.2,.8,.2,1) both;
+    }
+    .pill{
+        display:inline-flex;justify-content:center;padding:8px 10px;border-radius:999px;
+        background:rgba(37,99,235,.12);color:#1d4ed8;font-size:12px;font-weight:900;
+    }
+    html[data-theme="dark"] .pill{background:rgba(96,165,250,.18);color:#dbeafe}
+    .window-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px}
+    .window{
+        padding:14px 16px;border-radius:18px;border:1px solid color-mix(in srgb, var(--accent) 10%, var(--border));
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 90%, transparent), color-mix(in srgb, var(--card-2) 96%, transparent));
+    }
+    .window strong{display:block;font-size:24px}
+    .window span{display:block;margin-top:6px;font-size:12px;font-weight:800;color:var(--muted)}
+    .scope-note{
+        display:inline-flex;align-items:center;gap:8px;margin-top:14px;padding:7px 12px;border-radius:999px;
+        background:color-mix(in srgb, var(--primary) 8%, var(--card));border:1px solid color-mix(in srgb, var(--primary) 16%, var(--border));
+        font-size:12px;font-weight:900;color:var(--primary);
+    }
+    .task-list{display:flex;flex-direction:column;gap:12px;margin-top:18px}
+    .task{
+        display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;
+        padding:15px 16px;border-radius:18px;border:1px solid color-mix(in srgb, var(--accent) 10%, var(--border));
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 90%, transparent), color-mix(in srgb, var(--card-2) 96%, transparent));
+    }
+    .task-title{font-weight:900;line-height:1.4}
+    .task-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)}
+    .task-pill{
+        display:inline-flex;justify-content:center;padding:8px 10px;border-radius:999px;
+        background:rgba(15,118,110,.12);color:var(--primary);font-size:12px;font-weight:900;white-space:nowrap;
+    }
+    .task-pill.warn{background:rgba(239,68,68,.12);color:#b91c1c}
+    .task-pill.alt{background:rgba(37,99,235,.12);color:#1d4ed8}
+    .reco-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+    .reco{
+        padding:18px;border-radius:20px;border:1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+        background:linear-gradient(180deg, color-mix(in srgb, var(--card) 90%, transparent), color-mix(in srgb, var(--card-2) 95%, transparent));
+    }
+    .reco strong{display:block;font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:var(--primary)}
+    .reco p{margin:10px 0 0;color:var(--fg);line-height:1.7}
+    .empty{padding:28px;text-align:center}
+    .footer{margin-top:28px;padding-top:18px;border-top:1px solid var(--border);color:var(--muted);font-size:13px;text-align:center}
+    @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+    @keyframes growY{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+    @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+    @media (max-width: 980px){
+        .hero-grid,.grid-2,.metrics,.window-grid,.reco-list,.load-grid{grid-template-columns:1fr 1fr}
+        .timeline{grid-template-columns:repeat(4,minmax(0,1fr))}
+    }
+    @media (max-width: 720px){
+        .hero-grid,.metrics,.grid-2,.stat-row,.window-grid,.reco-list,.timeline,.load-grid{grid-template-columns:1fr}
+        .score-orb{width:160px;height:160px}
+        .hero h2{font-size:32px}
+    }
+</style>
+</head>
+<body>
+<main class="container">
+    <div class="topbar">
+        <div class="title-wrap">
+            <h1>作業節奏報告</h1>
+            <p>
+                {% if user %}{{ user.username }}{% endif %} 的目前快取分析
+                {% if last_updated_label %}，資料更新於 {{ last_updated_label }}{% endif %}
+            </p>
+        </div>
+        <div class="actions">
+            <a class="btn" href="{{ url_for('index', view_user=viewed_username) if is_admin_view else url_for('index') }}">回到首頁</a>
+            {% if user and user.is_admin %}
+            <a class="btn" href="{{ url_for('admin_traffic', view_user=viewed_username) if is_admin_view else url_for('admin_traffic') }}">流量監控</a>
+            {% endif %}
+            <a class="btn primary" href="{{ url_for('logout') }}">登出</a>
+        </div>
+    </div>
+
+    {% if is_admin_view %}
+    <section class="banner">
+        <h3>唯讀代看模式</h3>
+        <p>目前顯示的是 {{ viewed_username }} 的資料庫快取。此頁只會讀現有資料，不會替對方登入、同步或寫入偏好。</p>
+    </section>
+    {% endif %}
+
+    {% if assignment_report %}
+    <section class="hero">
+        <div class="hero-grid">
+            <div>
+                <span class="eyebrow">Task Rhythm Lab</span>
+                <h2>{{ assignment_report.archetype }}</h2>
+                <p>這份分析依目前快取中的 {{ assignment_report.total }} 筆作業推估你的處理節奏。{{ assignment_report.summary }}</p>
+                <div class="chip-row">
+                    {% if assignment_report.timing_ready %}
+                    <span class="chip">平均 {{ assignment_report.avg_submit_lead_label }}</span>
+                    <span class="chip">壓線率 {{ assignment_report.last_minute_submit_rate }}%</span>
+                    <span class="chip">提早完成率 {{ assignment_report.early_submit_rate }}%</span>
+                    {% else %}
+                    <span class="chip">目前待繳 {{ assignment_report.open }} 筆</span>
+                    <span class="chip">24h 內截止 {{ assignment_report.focus_now_count }} 筆</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="score-orb" style="--score:{{ assignment_report.momentum_score }}">
+                <div class="score-inner">
+                    <span class="score-value">{{ assignment_report.momentum_score }}</span>
+                    <span class="score-label">{{ assignment_report.score_label }}</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card load-board">
+        <h3>7 天內負載</h3>
+        <p>這裡會幫你整理接下來一週的截止分布，方便你先看出哪幾天比較容易堆在一起。</p>
+        <div class="load-grid">
+            <div>
+                <div class="timeline">
+                    {% for day in assignment_report.daily_load %}
+                    <div class="day {% if day.is_today %}today{% endif %}">
+                        <span class="day-label">{{ day.weekday }}</span>
+                        <span class="day-date">{{ day.label }}</span>
+                        <div class="day-bar"><span style="--height:{{ [day.intensity, 8]|max }}%"></span></div>
+                        <div class="day-count">{{ day.count }} 筆</div>
+                        <span class="day-note">{% if day.count > 0 %}有截止{% else %}平穩{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="stat-row" style="margin-top:0">
+                <div class="mini">
+                    <strong>{{ assignment_report.urgent_7d_total }}</strong>
+                    <span>7 天內負載</span>
+                    <small class="mini-note">未來 7 天內需要處理的待繳作業</small>
+                </div>
+                <div class="mini">
+                    <strong>{{ assignment_report.active_days_next_week }}</strong>
+                    <span>有截止的天數</span>
+                    <small class="mini-note">有幾天需要特別留意截止</small>
+                </div>
+                <div class="mini">
+                    <strong>{{ assignment_report.max_day_load }}</strong>
+                    <span>單日最高負載</span>
+                    <small class="mini-note">這週有 {{ assignment_report.conflict_day_count }} 天出現撞期</small>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="grid-2">
+        <article class="card section">
+            <h3>繳交習性</h3>
+            <p>從你已繳交的作業裡，整理出最接近你平常節奏的幾個指標。</p>
+            {% if assignment_report.timing_ready %}
+            <div class="stat-row">
+                <div class="mini">
+                    <strong>{{ assignment_report.avg_submit_lead_label }}</strong>
+                    <span>平均提早多久交</span>
+                </div>
+                <div class="mini">
+                    <strong>{{ assignment_report.median_submit_lead_label }}</strong>
+                    <span>中位數節奏</span>
+                </div>
+                <div class="mini">
+                    <strong>{{ assignment_report.last_minute_submit_rate }}%</strong>
+                    <span>壓線率</span>
+                </div>
+                <div class="mini">
+                    <strong>{{ assignment_report.early_submit_rate }}%</strong>
+                    <span>提早完成率</span>
+                </div>
+            </div>
+            <div class="stat-row">
+                <div class="mini">
+                    <strong>{{ assignment_report.submit_style }}</strong>
+                    <span>目前判定風格</span>
+                </div>
+            </div>
+            {% else %}
+            <p>目前還沒有足夠的已繳交時間資料，等下次同步抓到更多作業紀錄後，這裡就會補上。</p>
+            <div class="stat-row">
+                <div class="mini">
+                    <strong>蒐集中</strong>
+                    <span>平均提早多久交</span>
+                </div>
+                <div class="mini">
+                    <strong>蒐集中</strong>
+                    <span>中位數節奏</span>
+                </div>
+            </div>
+            {% endif %}
+            <div class="scope-note">壓線率＝截止前 1 小時內才繳交；提早完成率＝截止前一天以上完成。</div>
+        </article>
+
+        <article class="card section">
+            <h3>課程與班級壓力</h3>
+            <p>這裡會告訴你待辦最集中在哪門課，以及哪些作業已經明顯慢於班上進度。</p>
+            <div class="stat-row">
+                <div class="mini">
+                    <strong>{% if assignment_report.focus_course %}{{ assignment_report.focus_course.course_title }}{% else %}目前分散{% endif %}</strong>
+                    <span>課程熱點</span>
+                </div>
+                <div class="mini">
+                    <strong>{% if assignment_report.focus_course %}{{ assignment_report.focus_course_share }}%{% else %}0%{% endif %}</strong>
+                    <span>待辦集中度</span>
+                </div>
+                <div class="mini">
+                    <strong>{{ assignment_report.peer_pressure_tasks }}</strong>
+                    <span>班級進度壓力點</span>
+                </div>
+            </div>
+            <h4 class="subhead">班級進度壓力點</h4>
+            <div class="task-list">
+                {% for task in assignment_report.peer_pressure_candidates %}
+                <article class="task">
+                    <div>
+                        <div class="task-title">{{ task.title }}</div>
+                        <div class="task-meta">
+                            <span>{{ task.course_title }}</span>
+                            <span>{{ task.due_at }}</span>
+                            {% if task.class_progress is not none %}
+                            <span>班上已交 {{ task.class_progress }}%</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <span class="task-pill {% if task.remaining_label.startswith('已逾期') %}warn{% endif %}">{{ task.remaining_label }}</span>
+                </article>
+                {% else %}
+                <article class="task">
+                    <div>
+                        <div class="task-title">目前沒有明顯的班級進度壓力點</div>
+                        <div class="task-meta">
+                            <span>代表目前沒有你未交、但班上大多數人已經完成的作業。</span>
+                        </div>
+                    </div>
+                    <span class="task-pill">平穩</span>
+                </article>
+                {% endfor %}
+            </div>
+            <div class="scope-note">課程熱點代表待辦最多的課；待辦集中度代表那門課目前佔你全部待辦的比例；班級進度壓力點代表你還沒交、但班上已經有不少人完成的作業。</div>
+        </article>
+    </section>
+    {% else %}
+    <section class="card empty">
+        <h2 style="margin:0 0 10px">目前還沒有可分析的作業資料</h2>
+        <p style="margin:0;color:var(--muted)">請先回首頁同步作業，之後這裡就會顯示節奏報告與統計結果。</p>
+    </section>
+    {% endif %}
+
+    <div class="footer">
+        這份報告依目前資料庫快取推估，適合看整體節奏與風險熱點。若要看到更完整的繳交習慣，請保持資料同步。
+    </div>
+</main>
+</body>
+</html>

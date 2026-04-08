@@ -259,6 +259,114 @@ html[data-theme="dark"]{
     .toolbar-stack{
     display:flex;align-items:center;gap:10px;flex-wrap:wrap;
     }
+    .report-shell{
+    display:grid;grid-template-columns:minmax(320px,1.2fr) minmax(280px,.8fr);gap:18px;margin:18px 0;
+    }
+    .report-hero{
+    position:relative;overflow:hidden;padding:22px;border-radius:22px;
+    background:
+        radial-gradient(circle at top right, rgba(99,102,241,.28), transparent 34%),
+        radial-gradient(circle at bottom left, rgba(14,165,233,.18), transparent 30%),
+        linear-gradient(135deg, color-mix(in srgb, var(--card) 86%, #dbeafe 14%), color-mix(in srgb, var(--card-2) 62%, #e9d5ff 38%));
+    border:1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+    box-shadow:0 24px 60px rgba(15,23,42,.1);
+    }
+    .report-hero::after{
+    content:"";position:absolute;inset:auto -40px -54px auto;width:220px;height:220px;border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,255,.25), transparent 66%);
+    animation:report-float 7s ease-in-out infinite;
+    }
+    .report-eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.45);font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+    .report-title{margin:14px 0 8px;font-size:30px;line-height:1.1}
+    .report-subtitle{margin:0;color:var(--muted);font-size:14px;max-width:620px;line-height:1.65}
+    .report-hero-grid{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:20px;align-items:center;margin-top:22px}
+    .report-score-wrap{display:flex;justify-content:center}
+    .report-score-orb{
+    --score-angle: calc(var(--score, 0) * 3.6deg);
+    position:relative;width:168px;height:168px;border-radius:50%;
+    background:conic-gradient(from -90deg, #4f46e5 var(--score-angle), rgba(148,163,184,.16) 0deg);
+    display:grid;place-items:center;box-shadow:0 22px 44px rgba(79,70,229,.22);
+    animation:report-rise .8s ease both;
+    }
+    .report-score-orb::before{
+    content:"";position:absolute;inset:14px;border-radius:50%;
+    background:linear-gradient(180deg, color-mix(in srgb, var(--card) 86%, #ffffff 14%), color-mix(in srgb, var(--card-2) 84%, #eef2ff 16%));
+    border:1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+    }
+    .report-score-inner{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:1}
+    .report-score-value{font-size:42px;font-weight:900;letter-spacing:-.03em;line-height:1}
+    .report-score-label{margin-top:6px;font-size:12px;font-weight:700;color:var(--muted)}
+    .report-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}
+    .report-stat-card,.report-side-card{
+    position:relative;overflow:hidden;padding:16px 18px;border-radius:18px;
+    background:linear-gradient(180deg, color-mix(in srgb, var(--card) 84%, #ffffff 16%), color-mix(in srgb, var(--card-2) 88%, #eef2ff 12%));
+    border:1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
+    box-shadow:0 18px 36px rgba(15,23,42,.06);
+    opacity:0;transform:translateY(18px);animation:report-rise .72s ease forwards;
+    animation-delay:calc(var(--delay, 0) * 90ms);
+    }
+    .report-stat-card strong,.report-side-card strong{display:block;font-size:28px;line-height:1.05}
+    .report-stat-label{display:block;margin-top:6px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+    .report-stat-note{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
+    .report-aside{display:grid;gap:18px}
+    .report-side-title{margin:0 0 6px;font-size:18px}
+    .report-side-copy{margin:0;color:var(--muted);line-height:1.55;font-size:14px}
+    .report-kpi-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}
+    .report-bar{height:12px;border-radius:999px;background:color-mix(in srgb, var(--border) 76%, transparent);overflow:hidden}
+    .report-bar-fill{
+    height:100%;width:var(--fill, 0%);border-radius:inherit;
+    background:linear-gradient(90deg,#0ea5e9,#4f46e5 55%,#8b5cf6);
+    transform-origin:left center;transform:scaleX(0);animation:report-grow .95s cubic-bezier(.2,.8,.2,1) forwards;
+    animation-delay:calc(var(--delay, 0) * 120ms + 160ms);
+    }
+    .report-list{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+    .report-course-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:12px;align-items:center}
+    .report-course-meta{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:13px}
+    .report-course-title{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .report-course-note{color:var(--muted);font-size:12px}
+    .report-course-pill{display:inline-flex;justify-content:center;padding:7px 10px;border-radius:999px;background:rgba(79,70,229,.12);color:#4338ca;font-size:12px;font-weight:800}
+    .report-week-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-top:14px}
+    .report-day{
+    padding:12px 8px;border-radius:16px;text-align:center;border:1px solid color-mix(in srgb, var(--primary) 12%, var(--border));
+    background:linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, transparent), color-mix(in srgb, var(--card-2) 92%, transparent));
+    opacity:0;transform:translateY(12px);animation:report-rise .58s ease forwards;
+    animation-delay:calc(var(--delay, 0) * 70ms + 120ms);
+    }
+    .report-day-bar{height:56px;margin:12px auto 10px;width:16px;border-radius:999px;background:color-mix(in srgb, var(--border) 74%, transparent);display:flex;align-items:flex-end;overflow:hidden}
+    .report-day-bar span{
+    display:block;width:100%;height:var(--height, 0%);border-radius:inherit;
+    background:linear-gradient(180deg,#22d3ee,#4f46e5);transform-origin:center bottom;transform:scaleY(0);
+    animation:report-grow-y .9s ease forwards;animation-delay:calc(var(--delay, 0) * 70ms + 220ms);
+    }
+    .report-day-label{font-size:12px;font-weight:800}
+    .report-day-count{display:block;margin-top:4px;color:var(--muted);font-size:12px}
+    .report-reco-list{display:grid;gap:10px;margin-top:14px}
+    .report-reco{
+    display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;
+    background:color-mix(in srgb, var(--card-2) 88%, #e0f2fe 12%);
+    border:1px solid color-mix(in srgb, var(--primary) 10%, var(--border));
+    opacity:0;transform:translateY(14px);animation:report-rise .68s ease forwards;
+    animation-delay:calc(var(--delay, 0) * 110ms + 180ms);
+    }
+    .report-reco-index{
+    flex:0 0 26px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+    background:linear-gradient(135deg,#4f46e5,#0ea5e9);color:#fff;font-size:12px;font-weight:800;
+    }
+    .report-reco p{margin:0;font-size:14px;line-height:1.5}
+    .report-glance{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+    .report-glance-item{
+    display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;
+    background:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.4);font-size:12px;font-weight:700;
+    }
+    .report-accent-fire .report-score-orb{background:conic-gradient(from -90deg, #ef4444 var(--score-angle), rgba(148,163,184,.16) 0deg)}
+    .report-accent-fire .report-course-pill{background:rgba(239,68,68,.12);color:#b91c1c}
+    .report-accent-sprint .report-score-orb{background:conic-gradient(from -90deg, #f59e0b var(--score-angle), rgba(148,163,184,.16) 0deg)}
+    .report-accent-steady .report-score-orb{background:conic-gradient(from -90deg, #16a34a var(--score-angle), rgba(148,163,184,.16) 0deg)}
+    .report-accent-multi .report-score-orb{background:conic-gradient(from -90deg, #0ea5e9 var(--score-angle), rgba(148,163,184,.16) 0deg)}
+    @keyframes report-rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes report-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+    @keyframes report-grow-y{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+    @keyframes report-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
     .filter-menu{
     position:relative;
     }
@@ -347,6 +455,24 @@ html[data-theme="dark"]{
     html[data-theme="dark"] .btn.ghost.outline:hover{background:rgba(124,94,238,.25)}
     html[data-theme="dark"] .status-item{border-color:#3d4770;background:#1b2142}
     html[data-theme="dark"] #flatTable a.btn{color:#fff;background:#374291;border-color:#5862c0}
+    html[data-theme="dark"] .report-hero{
+    background:
+        radial-gradient(circle at top right, rgba(124,131,255,.22), transparent 34%),
+        radial-gradient(circle at bottom left, rgba(14,165,233,.16), transparent 28%),
+        linear-gradient(135deg, rgba(18,24,48,.96), rgba(28,38,74,.94));
+    border-color:#394777;box-shadow:0 26px 60px rgba(2,6,23,.45);
+    }
+    html[data-theme="dark"] .report-eyebrow,
+    html[data-theme="dark"] .report-glance-item{background:rgba(15,23,42,.38);border-color:rgba(148,163,184,.18)}
+    html[data-theme="dark"] .report-stat-card,
+    html[data-theme="dark"] .report-side-card,
+    html[data-theme="dark"] .report-day{
+    background:linear-gradient(180deg, rgba(16,24,45,.96), rgba(24,34,63,.94));
+    border-color:#31406b;box-shadow:0 20px 42px rgba(2,6,23,.28);
+    }
+    html[data-theme="dark"] .report-score-orb::before{background:linear-gradient(180deg,#111a31,#17213d);border-color:#32406d}
+    html[data-theme="dark"] .report-course-pill{background:rgba(129,140,248,.16);color:#dbe4ff}
+    html[data-theme="dark"] .report-reco{background:rgba(18,28,52,.92);border-color:#32406a}
     html[data-theme="dark"] .filter-trigger{background:#1e294b;border-color:#3a466f;color:#dfe4ff}
     html[data-theme="dark"] .filter-trigger-count{background:#202a49;border-color:#3d4872;color:#c6cff8}
     html[data-theme="dark"] .filter-panel{background:#131a2f;border-color:#32406a;box-shadow:0 24px 54px rgba(0,0,0,.42)}
@@ -520,6 +646,59 @@ html[data-theme="dark"]{
     .modal-item input{margin-top:4px;}
     .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
     .modal-empty{color:var(--muted);text-align:center;padding:24px;}
+    .insight-fab-shell{
+    position:fixed;right:20px;bottom:84px;z-index:80;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+    }
+    .insight-fab-note{
+    padding:8px 12px;border-radius:999px;background:color-mix(in srgb, var(--card) 90%, rgba(15,23,42,.08));
+    color:var(--fg);font-size:12px;font-weight:800;border:1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
+    box-shadow:0 10px 22px rgba(15,23,42,.12);backdrop-filter:blur(12px);animation:launcher-bob 4.5s ease-in-out infinite;
+    }
+    .insight-fab{
+    position:relative;width:68px;height:68px;border:0;border-radius:22px;cursor:pointer;
+    background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;font-weight:900;
+    box-shadow:0 18px 36px rgba(37,99,235,.24), inset 0 1px 0 rgba(255,255,255,.22);
+    overflow:hidden;isolation:isolate;
+    }
+    .insight-fab::before{
+    content:"";position:absolute;inset:9px;border-radius:16px;background:rgba(255,255,255,.12);
+    border:1px solid rgba(255,255,255,.16);z-index:-1;
+    }
+    .insight-fab::after{
+    content:"";position:absolute;inset:-14px;border-radius:28px;border:1px solid rgba(37,99,235,.2);
+    animation:launcher-ping 2.4s ease-out infinite;
+    }
+    .insight-fab-label{display:flex;align-items:center;justify-content:center;line-height:1}
+    .insight-fab-label strong{font-size:15px;letter-spacing:.03em}
+    .insight-launcher-panel{width:min(520px,92vw);padding:22px}
+    .insight-preview{
+    margin-top:14px;padding:18px;border-radius:22px;border:1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+    background:
+        radial-gradient(circle at top right, rgba(99,102,241,.14), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(14,165,233,.1), transparent 22%),
+        linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, #fff 8%), color-mix(in srgb, var(--card-2) 90%, transparent));
+    }
+    .insight-preview-top{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:16px;align-items:center}
+    .insight-preview-title{margin:0;font-size:22px;letter-spacing:-.03em}
+    .insight-preview-copy{margin:8px 0 0;color:var(--muted);line-height:1.6}
+    .insight-preview-score{
+    width:92px;height:92px;border-radius:28px;display:grid;place-items:center;text-align:center;
+    background:linear-gradient(135deg,var(--primary-2),var(--accent));color:#fff;box-shadow:0 16px 30px rgba(37,99,235,.22);
+    }
+    .insight-preview-score strong{display:block;font-size:28px;line-height:1}
+    .insight-preview-score span{display:block;margin-top:4px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.86}
+    .insight-preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}
+    .insight-preview-card{
+    padding:14px 15px;border-radius:18px;border:1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
+    background:linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, transparent), color-mix(in srgb, var(--card-2) 92%, transparent));
+    }
+    .insight-preview-card strong{display:block;font-size:24px;line-height:1.05}
+    .insight-preview-card span{display:block;margin-top:6px;font-size:12px;font-weight:800;color:var(--muted)}
+    .insight-preview-card small{display:block;margin-top:7px;font-size:12px;color:var(--muted);line-height:1.5}
+    .insight-preview-empty{text-align:center}
+    .insight-preview-empty .insight-preview-top{grid-template-columns:1fr}
+    @keyframes launcher-ping{0%{transform:scale(.92);opacity:.55}70%{transform:scale(1.14);opacity:0}100%{transform:scale(1.14);opacity:0}}
+    @keyframes launcher-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
     .announcement-list{margin-top:12px;display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow:auto}
     .announcement-card{border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--card-2)}
     .announcement-card h4{margin:0 0 6px;font-size:17px}
@@ -571,6 +750,14 @@ html[data-theme="dark"]{
     }
 
     @media (max-width: 780px){
+    .report-shell{grid-template-columns:1fr}
+    .report-hero-grid{grid-template-columns:1fr}
+    .report-summary-grid{grid-template-columns:1fr}
+    .report-score-wrap{justify-content:flex-start}
+    .report-week-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .insight-fab-shell{right:14px;bottom:78px}
+    .insight-fab-note{display:none}
+    .insight-preview-top,.insight-preview-grid{grid-template-columns:1fr}
     .toolbar-compact{ 
         grid-template-columns: 1fr; 
         row-gap: 10px;
@@ -698,6 +885,7 @@ html[data-theme="dark"]{
     .panel {
         padding: 10px;
     }
+    .report-week-grid{grid-template-columns:repeat(7,minmax(0,1fr))}
     .assignment-table {
         min-width: 980px;
     }
@@ -1157,6 +1345,86 @@ html[data-theme="dark"]{
         <section class="card panel"><div style="color:var(--muted)">尚未取得課程資訊</div></section>
     {% endif %}
     {% endif %}
+<div class="insight-fab-shell">
+    <div class="insight-fab-note">查看報告</div>
+    <button type="button" class="insight-fab" id="insightLauncherFab" aria-label="開啟作業報告">
+        <span class="insight-fab-label">
+            <strong>報告</strong>
+        </span>
+    </button>
+</div>
+
+<div id="insightLauncherModal" class="modal-root hidden" style="display:none">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel insight-launcher-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div>
+                <h3 style="margin:0;font-size:22px">作業報告</h3>
+                <p class="muted" style="margin:4px 0 0">先看重點摘要，再決定要不要打開完整頁面。</p>
+            </div>
+            <button class="btn ghost" type="button" id="insightLauncherClose" aria-label="關閉作業報告">×</button>
+        </div>
+        <div id="insightLauncherPreview">
+            {% if assignment_report %}
+            <section class="insight-preview">
+                <div class="insight-preview-top">
+                    <div>
+                        <h4 class="insight-preview-title">目前摘要</h4>
+                        <p class="insight-preview-copy">
+                            {{ assignment_report.summary }}
+                            {% if assignment_report.next_deadline %}
+                            下一個截止是 {{ assignment_report.next_deadline.title }}，{{ assignment_report.next_deadline.remaining_label }}。
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="insight-preview-score">
+                        <div>
+                            <strong>{{ assignment_report.momentum_score }}</strong>
+                            <span>{{ assignment_report.score_label }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="insight-preview-grid">
+                    <article class="insight-preview-card">
+                        <strong>{{ assignment_report.urgent_7d_total }}</strong>
+                        <span>7 天內負載</span>
+                        <small>{{ assignment_report.active_days_next_week }} 天有截止</small>
+                    </article>
+                    <article class="insight-preview-card">
+                        <strong>{% if assignment_report.next_deadline %}{{ assignment_report.next_deadline.remaining_label }}{% else %}目前無截止{% endif %}</strong>
+                        <span>下一個截止</span>
+                        <small>{% if assignment_report.next_deadline %}{{ assignment_report.next_deadline.title }}{% else %}目前沒有已知截止中的待繳作業{% endif %}</small>
+                    </article>
+                    <article class="insight-preview-card">
+                        {% if assignment_report.timing_ready %}
+                        <strong>{{ assignment_report.submit_style }}</strong>
+                        <span>繳交習性</span>
+                        <small>平均 {{ assignment_report.avg_submit_lead_label }}，壓線率 {{ assignment_report.last_minute_submit_rate }}%</small>
+                        {% else %}
+                        <strong>{{ assignment_report.peer_pressure_tasks }}</strong>
+                        <span>班級進度壓力</span>
+                        <small>{% if assignment_report.peer_pressure_tasks %}有 {{ assignment_report.peer_pressure_tasks }} 筆作業班上已經交得比較快{% else %}目前沒有明顯落後班級進度的作業{% endif %}</small>
+                        {% endif %}
+                    </article>
+                </div>
+            </section>
+            {% else %}
+            <section class="insight-preview insight-preview-empty">
+                <div class="insight-preview-top">
+                    <div>
+                        <h4 class="insight-preview-title">報告資料尚未就緒</h4>
+                        <p class="insight-preview-copy">先同步一次作業，這裡就會顯示接下來的截止壓力與繳交摘要。</p>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
+        </div>
+        <div class="modal-actions">
+            <button class="btn ghost" type="button" id="insightLauncherCancel">稍後再看</button>
+            <a class="btn primary" href="{{ url_for('report_page', view_user=viewed_username) if is_admin_view else url_for('report_page') }}">查看完整報告</a>
+        </div>
+    </div>
+</div>
 {% if google_ready and google_linked %}
 <div id="googleModal" class="modal-root hidden" style="display:none">
     <div class="modal-backdrop"></div>
@@ -1433,6 +1701,12 @@ async function fetchAndSwapContent() {
     const newViewCourse = doc.getElementById('viewCourse');
     if (newViewCourse && viewCourse) {
         viewCourse.innerHTML = newViewCourse.innerHTML;
+    }
+
+    const currentInsightPreview = document.getElementById('insightLauncherPreview');
+    const nextInsightPreview = doc.getElementById('insightLauncherPreview');
+    if (currentInsightPreview && nextInsightPreview) {
+        currentInsightPreview.outerHTML = nextInsightPreview.outerHTML;
     }
 
     const newTotalCount = doc.getElementById('totalCount');
@@ -2058,6 +2332,44 @@ window.addEventListener('orientationchange', function() {
     } catch (err) {
         console.error('announcement modal init failed', err);
     }
+})();
+</script>
+<script>
+(function () {
+    const fab = document.getElementById('insightLauncherFab');
+    const modal = document.getElementById('insightLauncherModal');
+    if (!fab || !modal) return;
+    const backdrop = modal.querySelector('.modal-backdrop');
+    const panel = modal.querySelector('.modal-panel');
+    const closeBtn = document.getElementById('insightLauncherClose');
+    const cancelBtn = document.getElementById('insightLauncherCancel');
+    function openLauncher() {
+        modal.classList.remove('hidden');
+        modal.style.display = 'block';
+        backdrop && backdrop.classList.add('show');
+        panel && panel.classList.add('show');
+    }
+    function closeLauncher() {
+        backdrop && backdrop.classList.remove('show');
+        panel && panel.classList.remove('show');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }, 150);
+    }
+    fab.addEventListener('click', openLauncher);
+    closeBtn && closeBtn.addEventListener('click', closeLauncher);
+    cancelBtn && cancelBtn.addEventListener('click', closeLauncher);
+    modal.addEventListener('click', (evt) => {
+        if (backdrop && evt.target === backdrop) {
+            closeLauncher();
+        }
+    });
+    document.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape' && !modal.classList.contains('hidden')) {
+            closeLauncher();
+        }
+    });
 })();
 </script>
 <script>

@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -77,6 +78,9 @@ assignments_table = Table(
     Column("completed", Integer, nullable=False, default=0),
     Column("raw_status_text", Text),
     Column("grade_text", Text),
+    Column("submitted_at", String(64)),
+    Column("submitted_ts", Integer),
+    Column("remaining_text", Text),
     Column("submitted_count", Integer),
     Column("participant_count", Integer),
     Column("updated_at", String(64), nullable=False),
@@ -217,6 +221,12 @@ class PersistentStorage:
             missing_columns.append(("participant_count", "INTEGER"))
         if "grade_text" not in existing_columns:
             missing_columns.append(("grade_text", "TEXT"))
+        if "submitted_at" not in existing_columns:
+            missing_columns.append(("submitted_at", "TEXT"))
+        if "submitted_ts" not in existing_columns:
+            missing_columns.append(("submitted_ts", "INTEGER"))
+        if "remaining_text" not in existing_columns:
+            missing_columns.append(("remaining_text", "TEXT"))
         if not missing_columns:
             return
         with self._lock, self._engine.begin() as conn:
@@ -224,6 +234,7 @@ class PersistentStorage:
                 conn.execute(text(f"ALTER TABLE assignments ADD COLUMN {column_name} {column_type}"))
 
     def _normalize_url(self, raw: str) -> str:
+        raw = self._normalize_filesystem_path(raw)
         if raw.startswith("postgres://"):
             return "postgresql+psycopg://" + raw[len("postgres://") :]
         if raw.startswith("postgresql://"):
@@ -235,6 +246,18 @@ class PersistentStorage:
         path = Path(raw).expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{path.as_posix()}"
+
+    def _normalize_filesystem_path(self, raw: str) -> str:
+        value = str(raw or "").strip()
+        if not value:
+            return value
+        if os.name != "nt":
+            return value
+        if value.startswith("\\\\?\\UNC\\"):
+            return "\\" + value[7:]
+        if value.startswith("\\\\?\\"):
+            return value[4:]
+        return value
 
     def _now_iso(self) -> str:
         return datetime.utcnow().isoformat()
@@ -413,6 +436,14 @@ class PersistentStorage:
                             due_ts_val = int(due_ts)
                         except (TypeError, ValueError):
                             due_ts_val = None
+                    submitted_ts = item.get("submitted_ts")
+                    if submitted_ts in ("", None):
+                        submitted_ts_val = None
+                    else:
+                        try:
+                            submitted_ts_val = int(submitted_ts)
+                        except (TypeError, ValueError):
+                            submitted_ts_val = None
                     conn.execute(
                         insert(assignments_table).values(
                             course_id=course_pk,
@@ -425,6 +456,9 @@ class PersistentStorage:
                             completed=self._coerce_bool_int(item.get("completed")),
                             raw_status_text=item.get("raw_status_text"),
                             grade_text=item.get("grade_text"),
+                            submitted_at=item.get("submitted_at"),
+                            submitted_ts=submitted_ts_val,
+                            remaining_text=item.get("remaining_text"),
                             submitted_count=item.get("submitted_count"),
                             participant_count=item.get("participant_count"),
                             updated_at=now,
@@ -506,6 +540,9 @@ class PersistentStorage:
                         assignments_table.c.completed,
                         assignments_table.c.raw_status_text,
                         assignments_table.c.grade_text,
+                        assignments_table.c.submitted_at,
+                        assignments_table.c.submitted_ts,
+                        assignments_table.c.remaining_text,
                         assignments_table.c.submitted_count,
                         assignments_table.c.participant_count,
                     )
@@ -527,6 +564,9 @@ class PersistentStorage:
                         "completed": bool(row.completed),
                         "raw_status_text": row.raw_status_text,
                         "grade_text": row.grade_text,
+                        "submitted_at": row.submitted_at,
+                        "submitted_ts": row.submitted_ts,
+                        "remaining_text": row.remaining_text,
                         "submitted_count": row.submitted_count,
                         "participant_count": row.participant_count,
                     }

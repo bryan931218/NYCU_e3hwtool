@@ -230,7 +230,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                 if options.debug:
                     _save_debug_file(f"debug_assign_{cid}_{idx}.html", resp.text, created_debug)
                 
-                is_complete, is_incomplete, due_dt, raw_status, grade_text = find_due_and_status_from_assign_page(resp.text)
+                is_complete, is_incomplete, due_dt, raw_status, grade_text, submitted_dt, remaining_text = find_due_and_status_from_assign_page(resp.text)
                 if not due_dt and due_text_from_list:
                     due_dt = parse_due_text_to_dt(due_text_from_list)
 
@@ -245,6 +245,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                     due_str = due_dt.astimezone(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
                     overdue = bool(due_dt and due_dt < now)
                     due_ts = int(due_dt.timestamp())
+                    submitted_ts = int(submitted_dt.timestamp()) if submitted_dt else None
                     item = {
                         "course_id": cid,
                         "course_title": ctitle,
@@ -252,6 +253,9 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "url": url,
                         "due_at": due_str,
                         "due_ts": due_ts,
+                        "submitted_at": submitted_dt.astimezone(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M") if submitted_dt else None,
+                        "submitted_ts": submitted_ts,
+                        "remaining_text": remaining_text,
                         "overdue": overdue,
                         "completed": bool(is_complete),
                         "raw_status_text": raw_status,
@@ -272,6 +276,9 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "url": url,
                         "due_at": "",
                         "due_ts": None,
+                        "submitted_at": None,
+                        "submitted_ts": None,
+                        "remaining_text": None,
                         "overdue": False,
                         "completed": False,
                         "raw_status_text": f"解析失敗：{exc}",
