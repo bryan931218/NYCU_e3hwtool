@@ -815,14 +815,30 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     def save_cache_to_disk(username: str, payload: Dict[str, Any]) -> None:
         storage.save_user_cache(username, payload)
 
+    def _start_web_session(username: str, *, moodle_session: Optional[str], is_guest: bool, is_admin: bool, permanent: bool) -> None:
+        session.clear()
+        session_token = secrets.token_urlsafe(24)
+        storage.save_web_session(session_token, username)
+        session["username"] = username
+        session["session_token"] = session_token
+        session["moodle_session"] = moodle_session
+        session["is_guest"] = is_guest
+        session["is_admin"] = is_admin
+        session.permanent = permanent
+
     def current_user() -> Optional[Dict[str, Any]]:
-        if "username" in session:
+        username = session.get("username")
+        session_token = session.get("session_token")
+        if username and session_token and storage.is_valid_web_session(session_token, username):
             return {
-                "username": session["username"],
+                "username": username,
                 "moodle_session": session.get("moodle_session"),
                 "is_guest": bool(session.get("is_guest")),
                 "is_admin": bool(session.get("is_admin")),
             }
+        if username or session_token:
+            session.clear()
+            session.modified = True
         return None
 
     def login_required(fn):
@@ -1277,11 +1293,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                             result, excel_data = fetch_assignments_for(
                                 {"username": session_label, "moodle_session": raw_session}
                             )
-                        session["username"] = session_label
-                        session["moodle_session"] = raw_session
-                        session["is_guest"] = False
-                        session["is_admin"] = bool(admin_user_id and session_label == admin_user_id)
-                        session.permanent = True
+                        _start_web_session(
+                            session_label,
+                            moodle_session=raw_session,
+                            is_guest=False,
+                            is_admin=bool(admin_user_id and session_label == admin_user_id),
+                            permanent=True,
+                        )
                         record_ui_event("login_success", meta={"username": session_label})
                         if existing_cache:
                             flash("已載入先前的課程資料，系統將在背景自動更新最新內容。", "info")
@@ -1310,11 +1328,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         cookie_val = sess.cookies.get("MoodleSession")
                         if not cookie_val:
                             raise RuntimeError("登入成功但未取得 MoodleSession。")
-                        session["username"] = raw_username
-                        session["moodle_session"] = cookie_val
-                        session["is_guest"] = False
-                        session["is_admin"] = bool(admin_user_id and raw_username == admin_user_id)
-                        session.permanent = True
+                        _start_web_session(
+                            raw_username,
+                            moodle_session=cookie_val,
+                            is_guest=False,
+                            is_admin=bool(admin_user_id and raw_username == admin_user_id),
+                            permanent=True,
+                        )
                         record_ui_event("login_success", meta={"username": raw_username})
                         existing_cache = load_cache_from_disk(raw_username)
                         if existing_cache:
@@ -1424,12 +1444,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     @app.route("/guest-login", methods=["POST"])
     def guest_login():
-        session.clear()
         guest_name = f"訪客_{secrets.token_hex(3)}"
-        session["username"] = guest_name
-        session["is_guest"] = True
-        session["is_admin"] = False
-        session.permanent = False
+        _start_web_session(
+            guest_name,
+            moodle_session=None,
+            is_guest=True,
+            is_admin=False,
+            permanent=False,
+        )
         flash("已進入訪客模式：請使用匯出工具生成 JSON 後上傳即可瀏覽作業。", "info")
         record_ui_event("guest_login", meta={"username": guest_name})
         return redirect(url_for("index"))
@@ -1687,23 +1709,30 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @app.route("/logout")
     def logout():
         old_user = session.get("username")
+        session_token = session.get("session_token")
         was_guest = bool(session.get("is_guest"))
         if old_user:
             if was_guest:
                 storage.delete_user_cache(old_user)
             clear_google_tokens(old_user)
+        if session_token:
+            storage.clear_web_session(session_token)
         if old_user:
             record_ui_event("logout", meta={"username": old_user})
         session.clear()
+        session.permanent = False
         session.modified = True
         flash("已登出。", "success")
         resp = redirect(url_for("index"))
         session_cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
-        resp.delete_cookie(
-            session_cookie_name,
-            path=app.config.get("SESSION_COOKIE_PATH", "/"),
-            domain=app.config.get("SESSION_COOKIE_DOMAIN"),
-        )
+        cookie_path = app.config.get("SESSION_COOKIE_PATH", "/")
+        cookie_domain = app.config.get("SESSION_COOKIE_DOMAIN")
+        resp.delete_cookie(session_cookie_name, path=cookie_path, domain=cookie_domain)
+        host_only_domain = (request.host.split(":", 1)[0] or "").strip() or None
+        if host_only_domain and host_only_domain != cookie_domain:
+            resp.delete_cookie(session_cookie_name, path=cookie_path, domain=host_only_domain)
+            if not host_only_domain.startswith("."):
+                resp.delete_cookie(session_cookie_name, path=cookie_path, domain=f".{host_only_domain}")
         return resp
 
     @app.post("/api/assignments")

@@ -116,6 +116,15 @@ google_tokens_table = Table(
     Column("updated_at", String(64)),
 )
 
+web_sessions_table = Table(
+    "web_sessions",
+    metadata,
+    Column("session_token", String(191), primary_key=True),
+    Column("username", String(191), nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+)
+
 announcements_table = Table(
     "announcements",
     metadata,
@@ -196,6 +205,8 @@ class PersistentStorage:
             if "show_graded" not in pref_columns:
                 with self._lock, self._engine.begin() as conn:
                     conn.execute(text("ALTER TABLE user_preferences ADD COLUMN show_graded INTEGER"))
+        if not inspector.has_table("web_sessions"):
+            metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
         if not inspector.has_table("assignments"):
             return
         existing_columns = {col["name"] for col in inspector.get_columns("assignments")}
@@ -579,6 +590,7 @@ class PersistentStorage:
             conn.execute(delete(fetch_errors_table).where(fetch_errors_table.c.user_id == user_id))
             conn.execute(delete(user_preferences_table).where(user_preferences_table.c.user_id == user_id))
             conn.execute(delete(google_tokens_table).where(google_tokens_table.c.user_id == user_id))
+            conn.execute(delete(web_sessions_table).where(web_sessions_table.c.username == username))
 
     # -- google tokens ----------------------------------------------------
     def save_google_tokens(self, username: str, payload: Dict[str, Any]) -> None:
@@ -637,6 +649,40 @@ class PersistentStorage:
             if not user_row:
                 return
             conn.execute(delete(google_tokens_table).where(google_tokens_table.c.user_id == user_row.id))
+
+    # -- web sessions -----------------------------------------------------
+    def save_web_session(self, session_token: str, username: str) -> None:
+        if not session_token or not username:
+            return
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(delete(web_sessions_table).where(web_sessions_table.c.session_token == session_token))
+            conn.execute(
+                insert(web_sessions_table).values(
+                    session_token=session_token,
+                    username=username,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+    def is_valid_web_session(self, session_token: str, username: str) -> bool:
+        if not session_token or not username:
+            return False
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(web_sessions_table.c.session_token)
+                .where(web_sessions_table.c.session_token == session_token)
+                .where(web_sessions_table.c.username == username)
+                .limit(1)
+            ).fetchone()
+        return bool(row)
+
+    def clear_web_session(self, session_token: str) -> None:
+        if not session_token:
+            return
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(delete(web_sessions_table).where(web_sessions_table.c.session_token == session_token))
 
     # -- announcements ----------------------------------------------------
     def insert_announcement(self, entry: Dict[str, Any], limit: int) -> None:
