@@ -888,30 +888,91 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 clean[key] = coerced
         return clean
 
-    def get_user_preferences() -> Dict[str, Any]:
-        prefs = dict(DEFAULT_PREFERENCES)
-        user = current_user()
+    def _selected_view_username(raw_username: Optional[str], *, actor: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        user = actor or current_user()
         if not user:
+            return None
+        candidate = (raw_username or "").strip()
+        if user.get("is_admin") and candidate:
+            return candidate
+        return user["username"]
+
+    def _request_view_username() -> Optional[str]:
+        raw = request.args.get("view_user")
+        if raw is None and request.method != "GET":
+            raw = request.form.get("view_user")
+        return raw
+
+    def get_viewed_username(*, actor: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        return _selected_view_username(_request_view_username(), actor=actor)
+
+    def is_admin_viewing_other_user(*, actor: Optional[Dict[str, Any]] = None, viewed_username: Optional[str] = None) -> bool:
+        user = actor or current_user()
+        if not user or not user.get("is_admin"):
+            return False
+        target_username = (viewed_username or get_viewed_username(actor=user) or "").strip()
+        return bool(target_username and target_username != user["username"])
+
+    def list_admin_view_options(limit: int = 500) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        guest_prefix = f"{chr(0x8A2A)}{chr(0x5BA2)}_"
+        for raw in storage.list_cached_users(limit=limit):
+            username = str(raw.get("username") or "").strip()
+            if not username:
+                continue
+            if username.startswith(guest_prefix) or username.startswith("Session-"):
+                continue
+            fetched_ts = raw.get("fetched_ts")
+            fetched_label = "尚未更新"
+            if fetched_ts:
+                try:
+                    fetched_label = datetime.fromtimestamp(int(fetched_ts), TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    fetched_label = str(fetched_ts)
+            try:
+                assignment_count = int(raw.get("assignment_count") or 0)
+            except (TypeError, ValueError):
+                assignment_count = 0
+            try:
+                course_count = int(raw.get("course_count") or 0)
+            except (TypeError, ValueError):
+                course_count = 0
+            items.append(
+                {
+                    "username": username,
+                    "is_admin": bool(raw.get("is_admin")),
+                    "fetched_ts": fetched_ts,
+                    "fetched_label": fetched_label,
+                    "assignment_count": assignment_count,
+                    "course_count": course_count,
+                }
+            )
+        return items
+
+    def get_user_preferences(username: Optional[str] = None) -> Dict[str, Any]:
+        prefs = dict(DEFAULT_PREFERENCES)
+        resolved_username = _selected_view_username(username)
+        if not resolved_username:
             return prefs
-        stored = storage.load_user_preferences(user["username"])
+        stored = storage.load_user_preferences(resolved_username)
         prefs.update(_sanitize_preferences(stored))
         return prefs
 
-    def update_user_preferences(partial: Dict[str, Any]) -> Dict[str, Any]:
-        prefs = get_user_preferences()
+    def update_user_preferences(partial: Dict[str, Any], *, username: Optional[str] = None) -> Dict[str, Any]:
+        prefs = get_user_preferences(username)
         sanitized = _sanitize_preferences(partial)
         prefs.update(sanitized)
-        user = current_user()
-        if not user:
+        resolved_username = _selected_view_username(username)
+        if not resolved_username:
             return prefs
-        storage.save_user_preferences(user["username"], prefs)
+        storage.save_user_preferences(resolved_username, prefs)
         return prefs
 
-    def get_assign_cache() -> Optional[Dict[str, Any]]:
-        user = current_user()
-        if not user:
+    def get_assign_cache(username: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        resolved_username = _selected_view_username(username)
+        if not resolved_username:
             return None
-        return load_cache_from_disk(user["username"])
+        return load_cache_from_disk(resolved_username)
 
     def set_assign_cache_for_user(username: str, result: Dict[str, Any], excel_data: Optional[str]) -> None:
         if not username:
@@ -1424,20 +1485,27 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @app.get("/api/cache")
     @login_required
     def api_cache():
-        cache = get_assign_cache() or {}
-        preferences = get_user_preferences()
+        user = current_user()
+        viewed_username = get_viewed_username(actor=user)
+        cache = get_assign_cache(viewed_username) or {}
+        preferences = get_user_preferences(viewed_username)
         payload = {
             "ok": True,
             "cache": cache,
             "ts": cache.get("ts"),
             "has_result": bool(cache.get("result")) if cache else False,
             "preferences": preferences,
+            "viewed_username": viewed_username,
+            "readonly_view": is_admin_viewing_other_user(actor=user, viewed_username=viewed_username),
         }
         return payload
 
     @app.post("/preferences")
     @login_required
     def save_preferences():
+        user = current_user()
+        if is_admin_viewing_other_user(actor=user):
+            return {"ok": False, "error": "readonly_view"}, 403
         payload = request.get_json(silent=True) or {}
         updated = update_user_preferences(payload)
         return {"ok": True, "preferences": updated}
@@ -1739,6 +1807,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @login_required
     def api_assignments():
         user = current_user()
+        if is_admin_viewing_other_user(actor=user):
+            return {"ok": False, "error": "readonly_view"}, 403
         if user and user.get("is_guest"):
             return {"ok": False, "error": "訪客模式不支援自動更新"}, 400
         username = user["username"]
@@ -1791,6 +1861,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not user or not user.get("is_admin"):
             flash("僅限管理員瀏覽流量資訊。", "error")
             return redirect(url_for("index"))
+        admin_view_options = list_admin_view_options()
+        selected_view_username = user["username"]
+        requested_view_username = (request.args.get("view_user") or "").strip()
+        if requested_view_username:
+            valid_usernames = {item["username"] for item in admin_view_options}
+            if requested_view_username in valid_usernames:
+                selected_view_username = requested_view_username
 
         def _fmt_ts(ts: Optional[float]) -> str:
             if not ts:
@@ -1990,6 +2067,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             trend_window=trend_window,
             trend_label="每小時" if trend_window == "hour" else "每天",
             ip_summary=ip_overview,
+            admin_view_options=admin_view_options,
+            selected_view_username=selected_view_username,
         )
 
     @app.route("/admin/traffic/reset", methods=["POST"])
@@ -2117,20 +2196,49 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 app_home_url=app_home_url,
                 support_email=support_email,
             )
-        cache = get_assign_cache()
+        admin_view_options: List[Dict[str, Any]] = []
+        viewed_username = user["username"]
+        if user.get("is_admin"):
+            admin_view_options = list_admin_view_options()
+            requested_view_username = (_request_view_username() or "").strip()
+            if requested_view_username and requested_view_username != user["username"]:
+                valid_usernames = {item["username"] for item in admin_view_options}
+                if requested_view_username in valid_usernames:
+                    viewed_username = requested_view_username
+                else:
+                    flash("找不到指定帳號的資料快取，已切回目前登入帳號。", "warning")
+        is_admin_view = is_admin_viewing_other_user(actor=user, viewed_username=viewed_username)
+        if user["username"] not in {item["username"] for item in admin_view_options}:
+            self_cache = load_cache_from_disk(user["username"]) or {}
+            admin_view_options.insert(
+                0,
+                {
+                    "username": user["username"],
+                    "is_admin": bool(user.get("is_admin")),
+                    "fetched_ts": self_cache.get("ts"),
+                    "fetched_label": datetime.fromtimestamp(
+                        int(self_cache.get("ts")), TAIPEI_TZ
+                    ).strftime("%Y-%m-%d %H:%M")
+                    if self_cache.get("ts")
+                    else "尚未更新",
+                    "assignment_count": len((self_cache.get("result") or {}).get("all_assignments", [])),
+                    "course_count": len((self_cache.get("result") or {}).get("courses", [])),
+                },
+            )
+        cache = get_assign_cache(viewed_username)
         result = cache.get("result") if cache else None
         excel_data = cache.get("excel_data") if cache else None
         guest_mode = bool(user and user.get("is_guest"))
         if result and not excel_data:
             excel_data = _generate_excel_data(result.get("all_assignments"))
             if excel_data:
-                set_assign_cache(result, excel_data)
-        if not result and user and not guest_mode:
+                set_assign_cache_for_user(viewed_username, result, excel_data)
+        if not result and user and not guest_mode and not is_admin_view:
             flash("正在載入資料，請稍候...", "info")
-        google_linked = bool(user and load_google_tokens(user["username"]))
+        google_linked = bool(user and not is_admin_view and load_google_tokens(user["username"]))
         stats = usage_stats()
         stats_version_value = current_stats_version()
-        announcements_list = load_announcements()
+        announcements_list = load_announcements(None if is_admin_view else user["username"])
         cache_ts_val = cache.get("ts") if cache else None
         last_updated_label = None
         if cache_ts_val:
@@ -2149,7 +2257,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             stats=stats,
             stats_version=stats_version_value,
             now_ts=int(datetime.now(TAIPEI_TZ).timestamp()),
-            preferences=get_user_preferences(),
+            preferences=get_user_preferences(viewed_username),
             cache_ts=cache_ts_val,
             last_updated_ts=cache_ts_val,
             last_updated_label=last_updated_label,
@@ -2157,6 +2265,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             announcement_version=(announcements_list[0]["id"] if announcements_list else None),
             app_home_url=app_home_url,
             support_email=support_email,
+            viewed_username=viewed_username,
+            is_admin_view=is_admin_view,
+            admin_view_options=admin_view_options,
         )
 
     return app

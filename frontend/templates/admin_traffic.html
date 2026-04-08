@@ -54,6 +54,14 @@ h1{margin:0 0 12px;font-size:28px}
 .btn:hover{background:rgba(255,255,255,.08)}
 .btn.danger{border-color:#fb7185;color:#fecdd3}
 .btn.danger:hover{background:rgba(251,113,133,.15)}
+.admin-view-panel{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid rgba(148,163,184,.16)}
+.admin-view-copy{display:flex;flex-direction:column;gap:4px}
+.admin-view-copy h2{margin:0;font-size:18px}
+.admin-view-copy p{margin:0;color:#94a3b8;font-size:13px}
+.admin-view-form{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.admin-view-field{display:flex;flex-direction:column;gap:6px;min-width:280px}
+.admin-view-field label{font-size:12px;font-weight:700;color:#94a3b8}
+.admin-view-field select{min-width:280px;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(15,23,42,.6);color:#e2e8f0;font:inherit}
 .inline-form{margin:0}
 .muted{color:#94a3b8;font-size:13px;margin:0}
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-top:12px}
@@ -107,6 +115,10 @@ html[data-theme="light"] .btn{border-color:#cbd5f5;color:#312e81;background:#f5f
 html[data-theme="light"] .btn:hover{background:#e0e7ff}
 html[data-theme="light"] .btn.danger{border-color:#fecaca;color:#b91c1c;background:#fff5f5}
 html[data-theme="light"] .btn.danger:hover{background:#ffe4e6}
+html[data-theme="light"] .admin-view-panel{border-top:1px solid #e2e8f0}
+html[data-theme="light"] .admin-view-copy p{color:#64748b}
+html[data-theme="light"] .admin-view-field label{color:#64748b}
+html[data-theme="light"] .admin-view-field select{border-color:#cbd5f5;background:#ffffff;color:#0f172a}
 html[data-theme="light"] .metric{background:#f8fafc;border:1px solid #e2e8f0}
 html[data-theme="light"] .metric strong{color:#0f172a}
 html[data-theme="light"] .metric small{color:#475569}
@@ -152,6 +164,25 @@ html[data-theme="light"] th{color:#475569}
         <div class="stats">
             <span class="chip">線上人數：{{ summary.online_users }}</span>
             <span class="chip">累積訪問次數：{{ summary.ip_total_hits }} 次</span>
+        </div>
+        <div class="admin-view-panel">
+            <div class="admin-view-copy">
+                <h2>資料庫使用者檢視</h2>
+                <p>直接從目前資料庫快取選擇帳號，切換到與一般使用者相同的資料顯示頁面。</p>
+            </div>
+            <form class="admin-view-form" method="get" action="{{ url_for('index') }}">
+                <div class="admin-view-field">
+                    <label for="trafficViewUser">選擇帳號</label>
+                    <select id="trafficViewUser" name="view_user">
+                        {% for option in admin_view_options %}
+                        <option value="{{ option.username }}" {% if option.username == selected_view_username %}selected{% endif %}>
+                            {{ option.username }}{% if option.is_admin %}（管理員）{% endif %} · {{ option.assignment_count }} 筆作業 · {{ option.fetched_label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn">前往檢視</button>
+            </form>
         </div>
     </div>
 

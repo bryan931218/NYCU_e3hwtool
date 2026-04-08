@@ -164,6 +164,9 @@ html[data-theme="dark"]{
     .grade-pill.empty .grade-pill-main{font-size:12px;font-weight:700;letter-spacing:0;white-space:nowrap}
     .grade-pill.empty .grade-pill-sub{display:none}
     .grade-pill.textual .grade-pill-sub{display:none}
+    .readonly-banner{margin-bottom:16px;border:1px solid color-mix(in srgb, var(--primary) 28%, var(--border));background:color-mix(in srgb, var(--primary) 9%, var(--card))}
+    .readonly-banner h3{margin:0 0 6px;font-size:18px}
+    .readonly-banner p{margin:0;color:var(--muted);line-height:1.5}
     html[data-theme="dark"] .grade-pill{
     background:linear-gradient(180deg, color-mix(in srgb, #19253d 78%, var(--card) 22%), color-mix(in srgb, #22314a 82%, var(--card-2) 18%));
     color:#d7e4f2;box-shadow:0 8px 18px rgba(2,6,23,.22), inset 0 1px 0 rgba(255,255,255,.06);
@@ -701,7 +704,7 @@ html[data-theme="dark"]{
     }
 </style>
 </head>
-<body data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}">
+<body data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}" data-readonly-view="{{ 1 if is_admin_view else 0 }}" data-view-user="{{ viewed_username or '' }}">
 {% set server_now_ts = now_ts if now_ts is defined else none %}
 {% macro format_time_diff(seconds) -%}
     {% if seconds is none %}
@@ -863,7 +866,7 @@ html[data-theme="dark"]{
         {% if user %}
             {% if user.is_admin %}
             <a class="btn" href="{{ url_for('admin_announcements') }}">公告管理</a>
-            <a class="btn" href="{{ url_for('admin_traffic') }}">流量監控</a>
+            <a class="btn" href="{{ url_for('admin_traffic', view_user=viewed_username) if is_admin_view else url_for('admin_traffic') }}">流量監控</a>
             {% endif %}
             <a class="btn" href="{{ url_for('logout') }}">登出</a>
         {% else %}
@@ -890,6 +893,13 @@ html[data-theme="dark"]{
     {% if not user %}
     <section class="card panel"><div style="color:var(--muted)">請先登入才能使用。</div></section>
     {% else %}
+
+    {% if is_admin_view %}
+    <section class="card panel readonly-banner">
+        <h3>唯讀代看模式</h3>
+        <p>目前正顯示 <strong>{{ viewed_username }}</strong> 在資料庫中的既有快取，介面與一般使用者相同，但不會替該帳號執行更新、Google 同步、公告投票或偏好設定寫入。</p>
+    </section>
+    {% endif %}
 
     {% if guest_mode %}
     <section class="card panel" style="margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
@@ -961,7 +971,9 @@ html[data-theme="dark"]{
                 導出作業資訊
                 </a>
             {% endif %}
-            {% if google_ready %}
+            {% if is_admin_view %}
+                <span class="btn disabled">唯讀檢視不提供更新與 Google 同步</span>
+            {% elif google_ready %}
                 {% if google_linked %}
                     <button class="btn google" type="button" id="googleSyncBtn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1195,6 +1207,7 @@ html[data-theme="dark"]{
                                 type="button"
                                 data-vote-type="up"
                                 aria-label="喜歡這則公告"
+                                {% if is_admin_view %}disabled title="管理員代看模式不提供公告投票"{% endif %}
                             >
                                 <span>👍</span>
                                 <span class="announcement-vote-count" data-role="like-count">{{ ann.like_count or 0 }}</span>
@@ -1204,6 +1217,7 @@ html[data-theme="dark"]{
                                 type="button"
                                 data-vote-type="down"
                                 aria-label="不喜歡這則公告"
+                                {% if is_admin_view %}disabled title="管理員代看模式不提供公告投票"{% endif %}
                             >
                                 <span>👎</span>
                                 <span class="announcement-vote-count" data-role="dislike-count">{{ ann.dislike_count or 0 }}</span>
@@ -1235,14 +1249,15 @@ html[data-theme="dark"]{
 
 <script>
 const USER_PREFERENCES = {{ preferences | tojson | safe }} || {};
-const PREFERENCES_ENDPOINT = "{{ url_for('save_preferences') }}";
-const CACHE_SYNC_ENDPOINT = "{{ url_for('api_cache') }}";
+const PREFERENCES_ENDPOINT = "{{ url_for('save_preferences', view_user=viewed_username) if is_admin_view else url_for('save_preferences') }}";
+const CACHE_SYNC_ENDPOINT = "{{ url_for('api_cache', view_user=viewed_username) if is_admin_view else url_for('api_cache') }}";
 const CACHE_SYNC_INTERVAL = 60000;
 let currentCacheTs = Number(document.body.dataset.cacheTs || '0');
 if (Number.isNaN(currentCacheTs)) {
     currentCacheTs = 0;
 }
 const IS_GUEST = {{ 'true' if guest_mode else 'false' }};
+const IS_READONLY_VIEW = document.body.dataset.readonlyView === '1';
 const loader = document.getElementById('loader');
 const loaderMessageEl = loader ? loader.querySelector('.loader-message') : null;
 const bgRefreshIndicator = document.getElementById('bgRefreshIndicator');
@@ -1587,6 +1602,7 @@ const showG = !!(showGraded && showGraded.checked);
 }
 
 function persistPreferences(partial = {}){
+    if (IS_READONLY_VIEW) return;
     if (!PREFERENCES_ENDPOINT) return;
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(partial, 'viewMode')) {
@@ -1820,7 +1836,7 @@ document.querySelectorAll('[data-log-action]').forEach((el) => {
 })();
 
 (function () {
-    if (!CACHE_SYNC_ENDPOINT) {
+    if (!CACHE_SYNC_ENDPOINT || IS_READONLY_VIEW) {
         return;
     }
     async function pollCacheSync() {
@@ -1902,7 +1918,7 @@ if (googleModalSubmit && googleModalList) {
 }
 }
 
-if (!IS_GUEST) {
+if (!IS_GUEST && !IS_READONLY_VIEW) {
     setTimeout(() => refreshAssignments(true), 1000);
 }
 
@@ -1991,10 +2007,11 @@ window.addEventListener('orientationchange', function() {
             const voteType = button.dataset.voteType || '';
             button.classList.toggle('active-up', voteType === 'up' && userVote === 'up');
             button.classList.toggle('active-down', voteType === 'down' && userVote === 'down');
-            button.disabled = false;
+            button.disabled = IS_READONLY_VIEW;
         });
     }
     async function submitAnnouncementVote(card, button) {
+        if (IS_READONLY_VIEW) return;
         if (!card || !button) return;
         const voteUrl = card.dataset.voteUrl;
         const voteType = button.dataset.voteType;
@@ -2024,6 +2041,7 @@ window.addEventListener('orientationchange', function() {
     }
     if (announcementList) {
         announcementList.addEventListener('click', (event) => {
+            if (IS_READONLY_VIEW) return;
             const button = event.target.closest('.announcement-vote-btn');
             if (!button) return;
             const card = button.closest('.announcement-card');

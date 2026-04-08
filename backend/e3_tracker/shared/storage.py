@@ -570,6 +570,41 @@ class PersistentStorage:
             cache["preferences"] = prefs
         return cache
 
+    def list_cached_users(self, limit: int = 500) -> List[Dict[str, Any]]:
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    users_table.c.username,
+                    users_table.c.is_admin,
+                    users_table.c.is_guest,
+                    users_table.c.last_seen,
+                    user_fetch_state_table.c.fetched_ts,
+                    func.count(func.distinct(courses_table.c.id)).label("course_count"),
+                    func.count(func.distinct(assignments_table.c.id)).label("assignment_count"),
+                )
+                .select_from(
+                    users_table.join(user_fetch_state_table, user_fetch_state_table.c.user_id == users_table.c.id)
+                    .outerjoin(courses_table, courses_table.c.user_id == users_table.c.id)
+                    .outerjoin(assignments_table, assignments_table.c.course_id == courses_table.c.id)
+                )
+                .where(users_table.c.is_guest == 0)
+                .group_by(
+                    users_table.c.id,
+                    users_table.c.username,
+                    users_table.c.is_admin,
+                    users_table.c.is_guest,
+                    users_table.c.last_seen,
+                    user_fetch_state_table.c.fetched_ts,
+                )
+                .order_by(
+                    func.coalesce(user_fetch_state_table.c.fetched_ts, 0).desc(),
+                    func.coalesce(users_table.c.last_seen, "").desc(),
+                    users_table.c.username.asc(),
+                )
+                .limit(limit)
+            ).fetchall()
+        return [dict(row._mapping) for row in rows]
+
     def delete_user_cache(self, username: str) -> None:
         if not username:
             return
