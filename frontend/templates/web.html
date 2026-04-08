@@ -121,9 +121,56 @@ html[data-theme="dark"]{
     border-color:#4ade80;color:#166534;
     box-shadow:0 3px 10px rgba(34,197,94,.12), inset 0 1px 0 rgba(255,255,255,.3);
     }
+    .grade-pill{
+    display:inline-grid;grid-template-columns:minmax(0,1fr);justify-items:center;
+    width:100%;max-width:92px;min-height:38px;padding:7px 8px;
+    border-radius:14px;border:1px solid color-mix(in srgb, var(--border) 82%, transparent);
+    background:linear-gradient(180deg, color-mix(in srgb, var(--card) 76%, #d9e8f7 24%), color-mix(in srgb, var(--card-2) 70%, #d4e2f2 30%));
+    color:color-mix(in srgb, var(--fg) 78%, #31506e 22%);box-sizing:border-box;
+    font-variant-numeric:tabular-nums;overflow:hidden;
+    box-shadow:0 4px 12px rgba(15,23,42,.05), inset 0 1px 0 rgba(255,255,255,.62);
+    }
+    .grade-pill-content{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:2px;width:100%;min-width:0;
+    }
+    .grade-pill-main{
+    display:block;width:100%;
+    font-size:15px;font-weight:800;line-height:1;
+    letter-spacing:-.02em;text-align:center;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .grade-pill-sub{
+    display:block;width:100%;
+    font-size:10px;font-weight:700;line-height:1.1;
+    text-align:center;color:color-mix(in srgb, var(--muted) 72%, #56718c 28%);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .grade-pill.textual .grade-pill-main{
+    font-size:12px;line-height:1.2;white-space:normal;overflow-wrap:anywhere;
+    }
+    .grade-pill.compact .grade-pill-main{font-size:13px}
+    .grade-pill.compact .grade-pill-sub{font-size:9px}
+    .grade-pill.tiny{min-height:42px}
+    .grade-pill.tiny .grade-pill-main{
+    font-size:11px;line-height:1.12;white-space:normal;overflow-wrap:anywhere;
+    }
+    .grade-pill.tiny .grade-pill-sub{font-size:8px}
+    .grade-pill.empty{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-height:32px;max-width:78px;padding:6px 8px;
+    background:transparent;border:1px dashed var(--border);color:var(--muted);font-weight:600;box-shadow:none;
+    }
+    .grade-pill.empty .grade-pill-main{font-size:12px;font-weight:700;letter-spacing:0;white-space:nowrap}
+    .grade-pill.empty .grade-pill-sub{display:none}
+    .grade-pill.textual .grade-pill-sub{display:none}
+    html[data-theme="dark"] .grade-pill{
+    background:linear-gradient(180deg, color-mix(in srgb, #19253d 78%, var(--card) 22%), color-mix(in srgb, #22314a 82%, var(--card-2) 18%));
+    color:#d7e4f2;box-shadow:0 8px 18px rgba(2,6,23,.22), inset 0 1px 0 rgba(255,255,255,.06);
+    }
     .table-shell{margin-top:8px;overflow-x:auto}
     .assignment-table{
-    width:100%;min-width:980px;margin-top:0;
+    width:100%;min-width:1060px;margin-top:0;
     border-collapse:separate;border-spacing:0;table-layout:fixed;
     }
     .assignment-table thead th{
@@ -140,17 +187,17 @@ html[data-theme="dark"]{
     .assignment-table tbody tr:last-child td{border-bottom:0}
     .assignment-table tbody tr{transition:background .18s ease}
     .assignment-table tbody tr:hover td{background:rgba(99,102,241,.05)}
-    .assignment-col-signal{width:17%}
-    .assignment-col-title{width:39%}
+    .assignment-col-signal{width:16%}
+    .assignment-col-title{width:38%}
     .assignment-col-due{width:16%}
     .assignment-col-stats{width:10%}
     .assignment-col-status{width:10%}
-    .assignment-col-link{width:8%}
+    .assignment-col-link{width:10%}
     .course-col-title{width:46%}
     .course-col-due{width:18%}
     .course-col-stats{width:10%}
-    .course-col-status{width:12%}
-    .course-col-link{width:14%}
+    .course-col-status{width:10%}
+    .course-col-link{width:16%}
     .assignment-cell-main{min-width:0}
     .assignment-eyebrow{
     display:block;margin-bottom:6px;font-size:12px;font-weight:700;
@@ -161,9 +208,24 @@ html[data-theme="dark"]{
     overflow:hidden;font-size:15px;font-weight:700;line-height:1.35;
     }
     .assignment-meta{
-    display:flex;align-items:center;gap:8px;min-height:20px;
+    display:flex;align-items:center;gap:8px;min-height:20px;flex-wrap:wrap;
     margin-top:6px;color:var(--muted);font-size:13px;
     }
+    .assignment-grade-inline{
+    display:inline-flex;align-items:center;max-width:100%;
+    padding:3px 8px;border-radius:999px;
+    border:1px solid color-mix(in srgb, var(--border) 82%, transparent);
+    background:linear-gradient(180deg, color-mix(in srgb, var(--card) 76%, #d9e8f7 24%), color-mix(in srgb, var(--card-2) 70%, #d4e2f2 30%));
+    color:color-mix(in srgb, var(--fg) 78%, #31506e 22%);
+    font-size:12px;font-weight:700;line-height:1.2;
+    font-variant-numeric:tabular-nums;
+    box-shadow:0 2px 8px rgba(15,23,42,.04);
+    }
+    .assignment-grade-inline.empty{
+    background:transparent;border-style:dashed;color:var(--muted);box-shadow:none;
+    }
+    .assignment-grade-inline-label{opacity:.62;margin-right:4px;font-size:11px;font-weight:700}
+    .assignment-grade-inline-text{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .assignment-signal{
     display:flex;align-items:center;justify-content:center;
     min-height:42px;text-align:center;
@@ -563,7 +625,7 @@ html[data-theme="dark"]{
         padding: 10px;
     }
     .assignment-table {
-        min-width: 860px;
+        min-width: 980px;
     }
     }
 </style>
@@ -651,6 +713,54 @@ html[data-theme="dark"]{
         </div>
     {% else %}
         <span class="assignment-due-sub">-</span>
+    {% endif %}
+{%- endmacro %}
+{% macro render_grade_pill(item) -%}
+    {% set grade_text = item.get('grade_text') %}
+    {% if grade_text %}
+        {% set normalized_grade = (grade_text|string)|replace('／', '/')|replace(' / ', '/')|replace('/ ', '/')|replace(' /', '/') %}
+        {% set grade_parts = normalized_grade.split('/') %}
+        {% set grade_len = grade_text|string|length %}
+        {% set grade_class = '' %}
+        {% if grade_len >= 13 %}
+            {% set grade_class = 'tiny' %}
+        {% elif grade_len >= 9 %}
+            {% set grade_class = 'compact' %}
+        {% endif %}
+        {% if grade_parts|length == 2 and (grade_parts[0]|trim) and (grade_parts[1]|trim) %}
+            <div class="grade-pill {{ grade_class }}" title="成績：{{ grade_text }}">
+                <span class="grade-pill-content">
+                    <span class="grade-pill-main">{{ grade_parts[0]|trim }}</span>
+                    <span class="grade-pill-sub">/ {{ grade_parts[1]|trim }}</span>
+                </span>
+            </div>
+        {% else %}
+            <div class="grade-pill textual {{ grade_class }}" title="成績：{{ grade_text }}">
+                <span class="grade-pill-content">
+                    <span class="grade-pill-main">{{ grade_text }}</span>
+                </span>
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="grade-pill empty" title="尚無成績">
+            <span class="grade-pill-content">
+                <span class="grade-pill-main">-</span>
+            </span>
+        </div>
+    {% endif %}
+{%- endmacro %}
+{% macro render_grade_inline(item) -%}
+    {% set grade_text = item.get('grade_text') %}
+    {% if grade_text %}
+        <span class="assignment-grade-inline" title="成績：{{ grade_text }}">
+            <span class="assignment-grade-inline-label">成績</span>
+            <span class="assignment-grade-inline-text">{{ grade_text }}</span>
+        </span>
+    {% else %}
+        <span class="assignment-grade-inline empty" title="尚無成績">
+            <span class="assignment-grade-inline-label">成績</span>
+            <span class="assignment-grade-inline-text">-</span>
+        </span>
     {% endif %}
 {%- endmacro %}
 <div class="loader-wrap" id="loader">
@@ -857,6 +967,7 @@ html[data-theme="dark"]{
                 <td class="assignment-cell-main">
                     <span class="assignment-eyebrow">{{ item.course_title }}</span>
                     <span class="assignment-title">{{ item.title }}</span>
+                    <div class="assignment-meta">{{ render_grade_inline(item) }}</div>
                 </td>
                 <td>
                     <div class="assignment-due {% if not item.due_at %}empty{% endif %}">
@@ -868,9 +979,9 @@ html[data-theme="dark"]{
                     {{ render_submission_pill(item) }}
                 </td>
                 <td class="assignment-center">
-                {% if item.completed %}<span class="badge done">已完成</span>
-                {% elif item.overdue %}<span class="badge overdue">逾期</span>
-                {% else %}<span class="badge nodue">未完成</span>{% endif %}
+                    {% if item.completed %}<span class="badge done">已完成</span>
+                    {% elif item.overdue %}<span class="badge overdue">逾期</span>
+                    {% else %}<span class="badge nodue">未完成</span>{% endif %}
                 </td>
                 <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
             </tr>
@@ -914,7 +1025,10 @@ html[data-theme="dark"]{
                     >
                     <td class="assignment-cell-main">
                         <span class="assignment-title">{{ item.title }}</span>
-                        <div class="assignment-meta">{{ render_remaining_text(item, server_now_ts)|safe }}</div>
+                        <div class="assignment-meta">
+                            {{ render_remaining_text(item, server_now_ts)|safe }}
+                            {{ render_grade_inline(item) }}
+                        </div>
                     </td>
                     <td>
                         <div class="assignment-due {% if not item.due_at %}empty{% endif %}">

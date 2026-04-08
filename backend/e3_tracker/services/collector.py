@@ -230,7 +230,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                 if options.debug:
                     _save_debug_file(f"debug_assign_{cid}_{idx}.html", resp.text, created_debug)
                 
-                is_complete, is_incomplete, due_dt, raw_status = find_due_and_status_from_assign_page(resp.text)
+                is_complete, is_incomplete, due_dt, raw_status, grade_text = find_due_and_status_from_assign_page(resp.text)
                 if not due_dt and due_text_from_list:
                     due_dt = parse_due_text_to_dt(due_text_from_list)
 
@@ -255,6 +255,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "overdue": overdue,
                         "completed": bool(is_complete),
                         "raw_status_text": raw_status,
+                        "grade_text": grade_text,
                         "submitted_count": submitted_count,
                         "participant_count": participant_count,
                     }
@@ -274,6 +275,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "overdue": False,
                         "completed": False,
                         "raw_status_text": f"解析失敗：{exc}",
+                        "grade_text": None,
                         "submitted_count": None,
                         "participant_count": None,
                     }

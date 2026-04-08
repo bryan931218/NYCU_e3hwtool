@@ -75,6 +75,7 @@ assignments_table = Table(
     Column("overdue", Integer, nullable=False, default=0),
     Column("completed", Integer, nullable=False, default=0),
     Column("raw_status_text", Text),
+    Column("grade_text", Text),
     Column("submitted_count", Integer),
     Column("participant_count", Integer),
     Column("updated_at", String(64), nullable=False),
@@ -197,6 +198,8 @@ class PersistentStorage:
             missing_columns.append(("submitted_count", "INTEGER"))
         if "participant_count" not in existing_columns:
             missing_columns.append(("participant_count", "INTEGER"))
+        if "grade_text" not in existing_columns:
+            missing_columns.append(("grade_text", "TEXT"))
         if not missing_columns:
             return
         with self._lock, self._engine.begin() as conn:
@@ -400,6 +403,7 @@ class PersistentStorage:
                             overdue=self._coerce_bool_int(item.get("overdue")),
                             completed=self._coerce_bool_int(item.get("completed")),
                             raw_status_text=item.get("raw_status_text"),
+                            grade_text=item.get("grade_text"),
                             submitted_count=item.get("submitted_count"),
                             participant_count=item.get("participant_count"),
                             updated_at=now,
@@ -480,6 +484,7 @@ class PersistentStorage:
                         assignments_table.c.overdue,
                         assignments_table.c.completed,
                         assignments_table.c.raw_status_text,
+                        assignments_table.c.grade_text,
                         assignments_table.c.submitted_count,
                         assignments_table.c.participant_count,
                     )
@@ -500,6 +505,7 @@ class PersistentStorage:
                         "overdue": bool(row.overdue),
                         "completed": bool(row.completed),
                         "raw_status_text": row.raw_status_text,
+                        "grade_text": row.grade_text,
                         "submitted_count": row.submitted_count,
                         "participant_count": row.participant_count,
                     }

@@ -122,6 +122,7 @@ def _mock_context() -> dict:
                     "overdue": False,
                     "completed": False,
                     "raw_status_text": "繳交期限內",
+                    "grade_text": "95 / 100",
                 },
                 {
                     "course_id": 1,
@@ -133,6 +134,7 @@ def _mock_context() -> dict:
                     "overdue": True,
                     "completed": False,
                     "raw_status_text": "已逾期",
+                    "grade_text": None,
                 },
             ],
             "detected_assign_links": 2,

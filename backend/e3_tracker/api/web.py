@@ -1070,6 +1070,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     def _assignment_uid(item: Dict[str, Any]) -> str:
         return f"{item.get('course_id')}|{item.get('title')}|{item.get('url')}"
 
+    def _select_assignments_from_result(result: Optional[Dict[str, Any]], selected_uids: List[str]) -> List[Dict[str, Any]]:
+        if not isinstance(result, dict) or not selected_uids:
+            return []
+        selected = set(selected_uids)
+        return [
+            item
+            for item in result.get("all_assignments", [])
+            if _assignment_uid(item) in selected
+        ]
+
     def _google_redirect_uri() -> str:
         return google_redirect_uri or url_for("google_callback", _external=True)
 
@@ -1638,20 +1648,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return redirect(url_for("index"))
         record_ui_event("google_sync", "start", {"count": len(selected_uids)})
         try:
+            cache = get_assign_cache() or {}
+            result = cache.get("result") or {}
+            excel_data = cache.get("excel_data")
+            assignments = _select_assignments_from_result(result, selected_uids)
             if user.get("is_guest"):
-                cache = get_assign_cache()
-                if not cache:
+                if not assignments:
                     raise RuntimeError("找不到訪客匯入的作業資料，請重新匯入後再試。")
-                result = cache.get("result") or {}
-                excel_data = cache.get("excel_data")
-            else:
+            elif not assignments:
                 result, excel_data = fetch_assignments_for({"username": user["username"], "moodle_session": session.get("moodle_session")})
                 set_assign_cache(result, excel_data)
-            assignments = [
-                item
-                for item in result.get("all_assignments", [])
-                if _assignment_uid(item) in selected_uids
-            ]
+                assignments = _select_assignments_from_result(result, selected_uids)
             if not assignments:
                 flash("找不到選擇的作業，請重新整理後再試。", "warning")
                 record_ui_event("google_sync", "error", {"reason": "not_found"})

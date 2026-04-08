@@ -49,6 +49,15 @@ DUE_LABELS: Set[str] = {
     "End Date",
     "Close date",
 }
+GRADE_LABELS: Set[str] = {
+    "成績",
+    "評分",
+    "分數",
+    "grade",
+    "grade in gradebook",
+    "current grade in gradebook",
+    "final grade",
+}
 
 HEADERS: Dict[str, str] = {
     "User-Agent": (

@@ -74,6 +74,15 @@ INCOMPLETE_KEYWORDS = [
     "not yet submitted",
     "not submitted for grading",
 ]
+GRADE_LABELS = [
+    "成績",
+    "評分",
+    "分數",
+    "grade",
+    "grade in gradebook",
+    "current grade in gradebook",
+    "final grade",
+]
 
 
 @dataclass
@@ -277,32 +286,59 @@ def _find_due_text_from_html(html: str) -> Optional[str]:
     return None
 
 
-def find_due_and_status_from_assign_page(html: str) -> Tuple[bool, Optional[bool], Optional[datetime], str]:
+def _normalize_label(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip().strip(":：").lower()
+
+
+def _matches_labeled_field(label: str, candidates: Sequence[str]) -> bool:
+    normalized = _normalize_label(label)
+    return any(
+        normalized == candidate or normalized.startswith(f"{candidate}:") or normalized.startswith(f"{candidate} ")
+        for candidate in candidates
+    )
+
+
+def _clean_grade_text(value: Optional[str]) -> Optional[str]:
+    text = re.sub(r"\s+", " ", value or "").strip()
+    if not text or text in {"-", "—", "N/A"}:
+        return None
+    return text
+
+
+def find_due_and_status_from_assign_page(html: str) -> Tuple[bool, Optional[bool], Optional[datetime], str, Optional[str]]:
     soup = BeautifulSoup(html, "html.parser")
     status_cell_text = ""
     due_str = None
+    grade_text = None
 
     for tr in soup.find_all("tr"):
         th = tr.find(["th", "td"])
         tds = tr.find_all("td")
-        label = extract_text(th).lower() if th else ""
-        if any(lbl in label for lbl in ["submission status", "繳交狀態", "提交狀態"]):
+        label = extract_text(th) if th else ""
+        label_lower = label.lower()
+        if any(lbl in label_lower for lbl in ["submission status", "繳交狀態", "提交狀態"]):
             status_cell_text = extract_text(tds[-1]) if tds else extract_text(tr)
-        if any(lbl.lower() in label for lbl in [s.lower() for s in DUE_LABELS]):
+        if any(lbl.lower() in label_lower for lbl in [s.lower() for s in DUE_LABELS]):
             if tds:
                 due_str = extract_text(tds[-1])
+        if _matches_labeled_field(label, GRADE_LABELS):
+            grade_text = _clean_grade_text(extract_text(tds[-1]) if tds else extract_text(tr))
 
-    if not status_cell_text:
-        for dt in soup.find_all("dt"):
-            label = extract_text(dt).lower()
-            if any(lbl in label for lbl in ["submission status", "繳交狀態", "提交狀態"]):
-                status_cell_text = extract_text(dt.find_next_sibling("dd"))
+    for dt in soup.find_all("dt"):
+        label = extract_text(dt)
+        label_lower = label.lower()
+        if not status_cell_text and any(lbl in label_lower for lbl in ["submission status", "繳交狀態", "提交狀態"]):
+            status_cell_text = extract_text(dt.find_next_sibling("dd"))
+        if not due_str and any(lbl.lower() in label_lower for lbl in [s.lower() for s in DUE_LABELS]):
+            due_str = extract_text(dt.find_next_sibling("dd"))
+        if grade_text is None and _matches_labeled_field(label, GRADE_LABELS):
+            grade_text = _clean_grade_text(extract_text(dt.find_next_sibling("dd")))
 
     low_status = status_cell_text.lower()
     completed = any(word.lower() in low_status for word in COMPLETED_KEYWORDS)
     incomplete = any(word.lower() in low_status for word in INCOMPLETE_KEYWORDS)
     due_dt = parse_due_text_to_dt(due_str)
-    return completed, incomplete if not completed else False, due_dt, status_cell_text or "未知"
+    return completed, incomplete if not completed else False, due_dt, status_cell_text or "未知", grade_text
 
 
 def _format_time_diff(due_dt: datetime, now: datetime) -> str:
@@ -375,7 +411,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
         for idx, (title, url, due_text) in enumerate(assign_links, start=1):
             try:
                 resp = safe_request(sess, "GET", url, headers=HEADERS, timeout=options.timeout)
-                is_complete, is_incomplete, due_dt, raw_status = find_due_and_status_from_assign_page(resp.text)
+                is_complete, is_incomplete, due_dt, raw_status, grade_text = find_due_and_status_from_assign_page(resp.text)
                 if not due_dt and due_text:
                     due_dt = parse_due_text_to_dt(due_text)
                 if not due_dt:
@@ -403,6 +439,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "overdue": overdue,
                         "completed": bool(is_complete),
                         "raw_status_text": raw_status_text,
+                        "grade_text": grade_text,
                     }
                     course_results.append(item)
                     all_results.append(item)
