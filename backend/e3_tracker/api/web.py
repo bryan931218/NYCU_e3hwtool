@@ -807,6 +807,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         "view_mode": "due",
         "show_overdue": False,
         "show_completed": False,
+        "show_graded": False,
     }
     def load_cache_from_disk(username: str) -> Optional[Dict[str, Any]]:
         return storage.load_user_cache(username)
@@ -858,7 +859,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             lowered = view_mode.strip().lower()
             if lowered in {"course", "due"}:
                 clean["view_mode"] = lowered
-        for key, alias in (("show_overdue", "showOverdue"), ("show_completed", "showCompleted")):
+        for key, alias in (
+            ("show_overdue", "showOverdue"),
+            ("show_completed", "showCompleted"),
+            ("show_graded", "showGraded"),
+        ):
             value = raw.get(key)
             if value is None and alias:
                 value = raw.get(alias)

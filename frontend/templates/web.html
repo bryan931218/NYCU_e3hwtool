@@ -253,9 +253,55 @@ html[data-theme="dark"]{
     align-items: center; gap: 12px; padding: 10px 16px;
     }
     .tc-left{ display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+    .toolbar-stack{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    }
+    .filter-menu{
+    position:relative;
+    }
+    .filter-trigger{
+    list-style:none;
+    display:inline-flex;align-items:center;gap:10px;
+    min-height:40px;padding:8px 14px;border-radius:999px;
+    border:1px solid var(--border);background:var(--card-2);
+    cursor:pointer;color:var(--fg);font-size:13px;font-weight:700;
+    user-select:none;
+    }
+    .filter-trigger::-webkit-details-marker{display:none}
+    .filter-menu[open] .filter-trigger{
+    border-color:color-mix(in srgb, var(--primary) 35%, var(--border) 65%);
+    box-shadow:0 8px 20px rgba(15,23,42,.08);
+    }
+    .filter-trigger-label{
+    display:inline-flex;align-items:center;gap:8px;
+    }
+    .filter-trigger-count{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:22px;height:22px;padding:0 6px;border-radius:999px;
+    background:var(--card);border:1px solid var(--border);
+    color:var(--muted);font-size:12px;font-weight:800;
+    }
+    .filter-panel{
+    position:absolute;top:calc(100% + 10px);left:0;z-index:30;
+    width:min(320px, calc(100vw - 48px));
+    padding:14px;border-radius:16px;border:1px solid var(--border);
+    background:var(--card);box-shadow:0 20px 48px rgba(15,23,42,.16);
+    }
+    .filter-panel-title{
+    margin:0 0 10px;font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--muted);
+    }
+    .filter-options{
+    display:flex;flex-direction:column;align-items:stretch;gap:8px;
+    }
     .tc-center{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap }
     .tc-right{ display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap }
-    label.cb{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:10px;background:var(--card-2);user-select:none}
+    label.cb{
+    display:flex;align-items:center;gap:8px;padding:10px 12px;
+    border:1px solid color-mix(in srgb, var(--border) 86%, transparent);
+    border-radius:12px;background:var(--card-2);user-select:none;
+    font-size:13px;font-weight:600;line-height:1;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.45);
+    }
     input[type="checkbox"]{transform:translateY(1px)}
     .excel-btn {
     background: var(--primary);
@@ -298,6 +344,12 @@ html[data-theme="dark"]{
     html[data-theme="dark"] .btn.ghost.outline:hover{background:rgba(124,94,238,.25)}
     html[data-theme="dark"] .status-item{border-color:#3d4770;background:#1b2142}
     html[data-theme="dark"] #flatTable a.btn{color:#fff;background:#374291;border-color:#5862c0}
+    html[data-theme="dark"] .filter-trigger{background:#1e294b;border-color:#3a466f;color:#dfe4ff}
+    html[data-theme="dark"] .filter-trigger-count{background:#202a49;border-color:#3d4872;color:#c6cff8}
+    html[data-theme="dark"] .filter-panel{background:#131a2f;border-color:#32406a;box-shadow:0 24px 54px rgba(0,0,0,.42)}
+    html[data-theme="dark"] label.cb{
+    background:#202a49;border-color:#3d4872;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+    }
     html[data-theme="dark"] .seg{border-color:#3a466f;background:#1e294b}
     html[data-theme="dark"] .seg-btn{color:#c6cff8}
     html[data-theme="dark"] .seg-btn.active{background:#5f67f0;color:#fff}
@@ -527,6 +579,22 @@ html[data-theme="dark"]{
         justify-content: flex-start;
         margin-top: 6px;
     }
+    .tc-left{
+        align-items:stretch;
+    }
+    .toolbar-stack,
+    .filter-menu{
+        width:100%;
+    }
+    .filter-trigger{
+        width:100%;justify-content:space-between;
+    }
+    .filter-panel{
+        position:relative;top:auto;left:auto;width:100%;margin-top:8px;
+    }
+    .filter-options{
+        width:100%;
+    }
     header{
         flex-direction: column; 
         align-items: flex-start; 
@@ -593,6 +661,9 @@ html[data-theme="dark"]{
     label.cb {
         padding: 5px 8px;
         font-size: 13px;
+    }
+    .filter-options{
+        gap:6px;
     }
     
     .excel-btn {
@@ -856,11 +927,25 @@ html[data-theme="dark"]{
 
     <section class="card panel toolbar-compact">
         <div class="tc-left">
-        <label class="cb"><input type="checkbox" id="showOverdue"{% if preferences.show_overdue %} checked{% endif %}> 顯示逾期作業</label>
-        <label class="cb"><input type="checkbox" id="showCompleted"{% if preferences.show_completed %} checked{% endif %}> 顯示已完成作業</label>
-        <div class="seg">
-            <button id="viewDueBtn" class="seg-btn" data-view="due">到期日排序</button>
-            <button id="viewCourseBtn" class="seg-btn" data-view="course">依課程排序</button>
+        <div class="toolbar-stack">
+            <div class="seg">
+                <button id="viewDueBtn" class="seg-btn" data-view="due">到期日排序</button>
+                <button id="viewCourseBtn" class="seg-btn" data-view="course">依課程排序</button>
+            </div>
+            <details class="filter-menu" id="filterMenu">
+                <summary class="filter-trigger">
+                    <span class="filter-trigger-label">篩選條件</span>
+                    <span class="filter-trigger-count" id="filterActiveCount">0</span>
+                </summary>
+                <div class="filter-panel">
+                    <p class="filter-panel-title">顯示規則</p>
+                    <div class="filter-options">
+                        <label class="cb"><input type="checkbox" id="showOverdue"{% if preferences.show_overdue %} checked{% endif %}> 顯示逾期作業</label>
+                        <label class="cb"><input type="checkbox" id="showCompleted"{% if preferences.show_completed %} checked{% endif %}> 顯示已完成作業</label>
+                        <label class="cb"><input type="checkbox" id="showGraded"{% if preferences.show_graded %} checked{% endif %}> 額外顯示已評分作業</label>
+                    </div>
+                </div>
+            </details>
         </div>
         </div>
         <div class="tc-center">
@@ -953,6 +1038,7 @@ html[data-theme="dark"]{
                 data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
                 data-overdue="{{ 1 if item.overdue else 0 }}"
                 data-completed="{{ 1 if item.completed else 0 }}"
+                data-graded="{{ 1 if item.grade_text or (item.raw_status_text and ('已評分' in item.raw_status_text or 'graded' in (item.raw_status_text|lower))) else 0 }}"
                 data-uid="{{ item.course_id }}|{{ item.title }}|{{ item.url }}"
                 data-course="{{ item.course_title }}"
                 data-title="{{ item.title }}"
@@ -1017,6 +1103,7 @@ html[data-theme="dark"]{
                     data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
                     data-overdue="{{ 1 if item.overdue else 0 }}"
                     data-completed="{{ 1 if item.completed else 0 }}"
+                    data-graded="{{ 1 if item.grade_text or (item.raw_status_text and ('已評分' in item.raw_status_text or 'graded' in (item.raw_status_text|lower))) else 0 }}"
                     data-uid="{{ item.course_id }}|{{ item.title }}|{{ item.url }}"
                     data-course="{{ course.title }}"
                     data-title="{{ item.title }}"
@@ -1161,6 +1248,9 @@ const loaderMessageEl = loader ? loader.querySelector('.loader-message') : null;
 const bgRefreshIndicator = document.getElementById('bgRefreshIndicator');
 const showOverdue = document.getElementById('showOverdue');
 const showCompleted = document.getElementById('showCompleted');
+const showGraded = document.getElementById('showGraded');
+const filterMenu = document.getElementById('filterMenu');
+const filterActiveCount = document.getElementById('filterActiveCount');
 const viewDue = document.getElementById('viewDue');
 const viewCourse = document.getElementById('viewCourse');
 const viewCourseBtn = document.getElementById('viewCourseBtn');
@@ -1436,6 +1526,15 @@ function sortFlatTableAsc(){
 
 let currentViewMode = (USER_PREFERENCES && USER_PREFERENCES.view_mode === 'course') ? 'course' : 'due';
 
+function updateFilterSummary() {
+    if (!filterActiveCount) return;
+    const activeCount =
+        (showOverdue && showOverdue.checked ? 1 : 0) +
+        (showCompleted && showCompleted.checked ? 1 : 0) +
+        (showGraded && showGraded.checked ? 1 : 0);
+    filterActiveCount.textContent = String(activeCount);
+}
+
 function updateCounts() {
     const currentView = currentViewMode === 'due' ? viewDue : viewCourse;
     
@@ -1466,18 +1565,21 @@ function updateCounts() {
 function applyFilters(){
 const showO = !!(showOverdue && showOverdue.checked);
 const showC = !!(showCompleted && showCompleted.checked);
+const showG = !!(showGraded && showGraded.checked);
 
     document.querySelectorAll('#flatTable tbody tr').forEach(tr=>{
     const overdue = tr.dataset.overdue === '1';
     const completed = tr.dataset.completed === '1';
-    let visible = (!completed || showC) && (!overdue || showO);
+    const graded = tr.dataset.graded === '1';
+    let visible = graded && showG ? true : ((!completed || showC) && (!overdue || showO));
     tr.classList.toggle('hidden', !visible);
     });
 
     document.querySelectorAll('.courseTable tbody tr').forEach(tr=>{
     const overdue = tr.dataset.overdue === '1';
     const completed = tr.dataset.completed === '1';
-    let visible = (!completed || showC) && (!overdue || showO);
+    const graded = tr.dataset.graded === '1';
+    let visible = graded && showG ? true : ((!completed || showC) && (!overdue || showO));
     tr.classList.toggle('hidden', !visible);
     });
     
@@ -1502,6 +1604,11 @@ function persistPreferences(partial = {}){
         USER_PREFERENCES.show_completed = val;
         payload.showCompleted = val;
     }
+    if (Object.prototype.hasOwnProperty.call(partial, 'showGraded')) {
+        const val = !!partial.showGraded;
+        USER_PREFERENCES.show_graded = val;
+        payload.showGraded = val;
+    }
     if (!Object.keys(payload).length) return;
     fetch(PREFERENCES_ENDPOINT, {
         method: 'POST',
@@ -1516,6 +1623,7 @@ function applyServerPreferenceState(nextPrefs){
         view_mode: nextPrefs.view_mode === 'due' ? 'due' : 'course',
         show_overdue: !!nextPrefs.show_overdue,
         show_completed: !!nextPrefs.show_completed,
+        show_graded: !!nextPrefs.show_graded,
     };
     let viewChanged = false;
     if (incoming.view_mode && incoming.view_mode !== currentViewMode) {
@@ -1528,9 +1636,14 @@ function applyServerPreferenceState(nextPrefs){
     if (showCompleted) {
         showCompleted.checked = incoming.show_completed;
     }
+    if (showGraded) {
+        showGraded.checked = incoming.show_graded;
+    }
     USER_PREFERENCES.view_mode = incoming.view_mode;
     USER_PREFERENCES.show_overdue = incoming.show_overdue;
     USER_PREFERENCES.show_completed = incoming.show_completed;
+    USER_PREFERENCES.show_graded = incoming.show_graded;
+    updateFilterSummary();
     if (!viewChanged) {
         applyFilters();
     }
@@ -1631,14 +1744,23 @@ setView(currentViewMode, { skipPersist: true });
 
 if(showOverdue) {
     showOverdue.addEventListener('change', ()=>{
+        updateFilterSummary();
         applyFilters();
         persistPreferences({ showOverdue: !!showOverdue.checked });
     });
 }
 if(showCompleted) {
     showCompleted.addEventListener('change', ()=>{
+        updateFilterSummary();
         applyFilters();
         persistPreferences({ showCompleted: !!showCompleted.checked });
+    });
+}
+if(showGraded) {
+    showGraded.addEventListener('change', ()=>{
+        updateFilterSummary();
+        applyFilters();
+        persistPreferences({ showGraded: !!showGraded.checked });
     });
 }
 
@@ -1650,6 +1772,16 @@ if (viewDueBtn) {
 }
 
 applyFilters();
+updateFilterSummary();
+
+if (filterMenu) {
+    document.addEventListener('click', (evt) => {
+        if (window.innerWidth <= 780) return;
+        if (!filterMenu.open) return;
+        if (filterMenu.contains(evt.target)) return;
+        filterMenu.open = false;
+    });
+}
 
 document.querySelectorAll('[data-log-action]').forEach((el) => {
     el.addEventListener('click', () => {

@@ -46,6 +46,7 @@ user_preferences_table = Table(
     Column("view_mode", String(32)),
     Column("show_overdue", Integer, nullable=False, default=0),
     Column("show_completed", Integer, nullable=False, default=0),
+    Column("show_graded", Integer, nullable=False, default=0),
     Column("updated_at", String(64)),
 )
 
@@ -190,6 +191,11 @@ class PersistentStorage:
 
     def _ensure_schema(self) -> None:
         inspector = inspect(self._engine)
+        if inspector.has_table("user_preferences"):
+            pref_columns = {col["name"] for col in inspector.get_columns("user_preferences")}
+            if "show_graded" not in pref_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN show_graded INTEGER"))
         if not inspector.has_table("assignments"):
             return
         existing_columns = {col["name"] for col in inspector.get_columns("assignments")}
@@ -283,6 +289,7 @@ class PersistentStorage:
                     user_preferences_table.c.view_mode,
                     user_preferences_table.c.show_overdue,
                     user_preferences_table.c.show_completed,
+                    user_preferences_table.c.show_graded,
                 )
                 .select_from(user_preferences_table.join(users_table, user_preferences_table.c.user_id == users_table.c.id))
                 .where(users_table.c.username == username)
@@ -293,6 +300,7 @@ class PersistentStorage:
             "view_mode": row.view_mode,
             "show_overdue": bool(row.show_overdue),
             "show_completed": bool(row.show_completed),
+            "show_graded": bool(row.show_graded),
         }
 
     def save_user_preferences(self, username: str, prefs: Dict[str, Any]) -> None:
@@ -303,6 +311,7 @@ class PersistentStorage:
         view_mode = prefs.get("view_mode")
         show_overdue = self._coerce_bool_int(prefs.get("show_overdue"))
         show_completed = self._coerce_bool_int(prefs.get("show_completed"))
+        show_graded = self._coerce_bool_int(prefs.get("show_graded"))
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
             user_id = self._ensure_user(conn, username)
@@ -313,6 +322,7 @@ class PersistentStorage:
                     view_mode=view_mode,
                     show_overdue=show_overdue,
                     show_completed=show_completed,
+                    show_graded=show_graded,
                     updated_at=now,
                 )
             )
