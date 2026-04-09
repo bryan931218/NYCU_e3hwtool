@@ -927,7 +927,11 @@ html[data-theme="dark"]{
     {% endif %}
 {%- endmacro %}
 {% macro render_remaining_text(item, now_ts) -%}
-    {% if item.completed %}
+    {% set raw_status_text = item.raw_status_text or '' %}
+    {% set is_graded = item.get('grade_text') or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
+    {% if is_graded %}
+        <span class="remaining-text done">已評分</span>
+    {% elif item.completed %}
         <span class="remaining-text done">已完成</span>
     {% elif not item.due_ts or now_ts is none %}
         <span class="remaining-text neutral">{{ item.raw_status_text or "無截止資訊" }}</span>
