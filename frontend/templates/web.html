@@ -85,6 +85,7 @@ html[data-theme="dark"]{
     .badge.done{background:var(--ok-bg);color:var(--ok-fg)}
     .badge.overdue{background:var(--err-bg);color:var(--err-fg)}
     .badge.nodue{background:var(--warn-bg);color:var(--warn-fg)}
+    .badge.graded{background:color-mix(in srgb, var(--primary) 12%, var(--card));color:var(--primary)}
     .remaining-text{display:inline-block;font-size:13px;margin-top:4px}
     .remaining-text.neutral{color:var(--muted)}
     .remaining-text.normal{color:var(--primary)}
@@ -404,6 +405,22 @@ html[data-theme="dark"]{
     .filter-options{
     display:flex;flex-direction:column;align-items:stretch;gap:8px;
     }
+    .filter-subsection{margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb, var(--border) 82%, transparent)}
+    .ignored-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .ignored-chip{
+    display:inline-flex;align-items:center;gap:8px;max-width:100%;
+    padding:7px 10px;border-radius:999px;border:1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
+    background:color-mix(in srgb, var(--card-2) 88%, transparent);font-size:12px;
+    }
+    .ignored-chip-label{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ignored-chip-btn,.row-ignore-btn,.ignored-restore-all{
+    border:1px solid color-mix(in srgb, var(--primary) 18%, var(--border));background:transparent;color:var(--primary);
+    border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800;cursor:pointer;
+    }
+    .ignored-restore-all{margin-top:10px}
+    .row-status-stack{display:flex;flex-direction:column;align-items:center;gap:8px}
+    .row-status-badges{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+    .row-ignore-btn{padding:5px 9px}
     .tc-center{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap }
     .tc-right{ display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap }
     label.cb{
@@ -479,6 +496,7 @@ html[data-theme="dark"]{
     html[data-theme="dark"] label.cb{
     background:#202a49;border-color:#3d4872;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
     }
+    html[data-theme="dark"] .ignored-chip{background:#202a49;border-color:#3d4872}
     html[data-theme="dark"] .seg{border-color:#3a466f;background:#1e294b}
     html[data-theme="dark"] .seg-btn{color:#c6cff8}
     html[data-theme="dark"] .seg-btn.active{background:#5f67f0;color:#fff}
@@ -1037,6 +1055,7 @@ html[data-theme="dark"]{
         </span>
     {% endif %}
 {%- endmacro %}
+{% set ignored_overdue_uids = preferences.ignored_overdue_uids if preferences.ignored_overdue_uids is defined else [] %}
 <div class="loader-wrap" id="loader">
     <div class="loader-content">
         <div class="loader" aria-label="載入中"></div>
@@ -1154,6 +1173,12 @@ html[data-theme="dark"]{
                         <label class="cb"><input type="checkbox" id="showCompleted"{% if preferences.show_completed %} checked{% endif %}> 顯示已完成作業</label>
                         <label class="cb"><input type="checkbox" id="showGraded"{% if preferences.show_graded %} checked{% endif %}> 額外顯示已評分作業</label>
                     </div>
+                    <div class="filter-subsection">
+                        <p class="filter-panel-title" style="margin-bottom:6px">已忽略逾期作業</p>
+                        <div class="muted" style="font-size:12px">這裡可以復原你先前排除的逾期作業。</div>
+                        <button type="button" class="ignored-restore-all" id="restoreIgnoredOverdueAll" hidden>全部復原</button>
+                        <div class="ignored-list" id="ignoredOverdueList"></div>
+                    </div>
                 </div>
             </details>
         </div>
@@ -1246,12 +1271,19 @@ html[data-theme="dark"]{
             </thead>
             <tbody>
             {% for item in result.all_assignments %}
+            {% set item_uid = item.course_id ~ '|' ~ item.title ~ '|' ~ (item.url or '') %}
+            {% set raw_status_text = item.raw_status_text or '' %}
+            {% set is_graded = item.grade_text or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
+            {% set filter_overdue = item.overdue %}
+            {% set display_overdue = filter_overdue and (not item.completed) %}
+            {% set can_ignore_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
             <tr
                 data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
-                data-overdue="{{ 1 if item.overdue else 0 }}"
+                data-overdue="{{ 1 if filter_overdue else 0 }}"
                 data-completed="{{ 1 if item.completed else 0 }}"
-                data-graded="{{ 1 if item.grade_text or (item.raw_status_text and ('已評分' in item.raw_status_text or 'graded' in (item.raw_status_text|lower))) else 0 }}"
-                data-uid="{{ item.course_id }}|{{ item.title }}|{{ item.url }}"
+                data-graded="{{ 1 if is_graded else 0 }}"
+                data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
+                data-uid="{{ item_uid }}"
                 data-course="{{ item.course_title }}"
                 data-title="{{ item.title }}"
                 data-due="{{ item.due_at or '無截止' }}"
@@ -1277,9 +1309,17 @@ html[data-theme="dark"]{
                     {{ render_submission_pill(item) }}
                 </td>
                 <td class="assignment-center">
-                    {% if item.completed %}<span class="badge done">已完成</span>
-                    {% elif item.overdue %}<span class="badge overdue">逾期</span>
-                    {% else %}<span class="badge nodue">未完成</span>{% endif %}
+                    <div class="row-status-stack">
+                    <div class="row-status-badges">
+                    {% if item.completed %}<span class="badge done">已完成</span>{% endif %}
+                    {% if display_overdue %}<span class="badge overdue">逾期</span>{% endif %}
+                    {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}
+                    {% if not item.completed and not display_overdue and not is_graded %}<span class="badge nodue">未完成</span>{% endif %}
+                    </div>
+                    {% if can_ignore_overdue and not is_admin_view %}
+                        <button type="button" class="row-ignore-btn" data-ignore-overdue="{{ item_uid }}">忽略</button>
+                    {% endif %}
+                    </div>
                 </td>
                 <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
             </tr>
@@ -1311,12 +1351,19 @@ html[data-theme="dark"]{
                 <thead><tr><th>作業名稱</th><th>截止時間</th><th class="assignment-center">繳交統計</th><th class="assignment-center">狀態</th><th class="assignment-center">連結</th></tr></thead>
                 <tbody>
                     {% for item in course.assignments %}
+                    {% set item_uid = item.course_id ~ '|' ~ item.title ~ '|' ~ (item.url or '') %}
+                    {% set raw_status_text = item.raw_status_text or '' %}
+                    {% set is_graded = item.grade_text or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
+                    {% set filter_overdue = item.overdue %}
+                    {% set display_overdue = filter_overdue and (not item.completed) %}
+                    {% set can_ignore_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
                     <tr
                     data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
-                    data-overdue="{{ 1 if item.overdue else 0 }}"
+                    data-overdue="{{ 1 if filter_overdue else 0 }}"
                     data-completed="{{ 1 if item.completed else 0 }}"
-                    data-graded="{{ 1 if item.grade_text or (item.raw_status_text and ('已評分' in item.raw_status_text or 'graded' in (item.raw_status_text|lower))) else 0 }}"
-                    data-uid="{{ item.course_id }}|{{ item.title }}|{{ item.url }}"
+                    data-graded="{{ 1 if is_graded else 0 }}"
+                    data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
+                    data-uid="{{ item_uid }}"
                     data-course="{{ course.title }}"
                     data-title="{{ item.title }}"
                     data-due="{{ item.due_at or '無截止' }}"
@@ -1339,9 +1386,17 @@ html[data-theme="dark"]{
                         {{ render_submission_pill(item) }}
                     </td>
                     <td class="assignment-center">
-                        {% if item.completed %}<span class="badge done">已完成</span>
-                        {% elif item.overdue %}<span class="badge overdue">逾期</span>
-                        {% else %}<span class="badge nodue">未完成</span>{% endif %}
+                        <div class="row-status-stack">
+                        <div class="row-status-badges">
+                        {% if item.completed %}<span class="badge done">已完成</span>{% endif %}
+                        {% if display_overdue %}<span class="badge overdue">逾期</span>{% endif %}
+                        {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}
+                        {% if not item.completed and not display_overdue and not is_graded %}<span class="badge nodue">未完成</span>{% endif %}
+                        </div>
+                        {% if can_ignore_overdue and not is_admin_view %}
+                            <button type="button" class="row-ignore-btn" data-ignore-overdue="{{ item_uid }}">忽略</button>
+                        {% endif %}
+                        </div>
                     </td>
                     <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
                     </tr>
@@ -1545,6 +1600,8 @@ const bgRefreshIndicator = document.getElementById('bgRefreshIndicator');
 const showOverdue = document.getElementById('showOverdue');
 const showCompleted = document.getElementById('showCompleted');
 const showGraded = document.getElementById('showGraded');
+const ignoredOverdueList = document.getElementById('ignoredOverdueList');
+const restoreIgnoredOverdueAll = document.getElementById('restoreIgnoredOverdueAll');
 const filterMenu = document.getElementById('filterMenu');
 const filterActiveCount = document.getElementById('filterActiveCount');
 const viewDue = document.getElementById('viewDue');
@@ -1827,6 +1884,51 @@ function sortFlatTableAsc(){
 }
 
 let currentViewMode = (USER_PREFERENCES && USER_PREFERENCES.view_mode === 'course') ? 'course' : 'due';
+if (!Array.isArray(USER_PREFERENCES.ignored_overdue_uids)) {
+    USER_PREFERENCES.ignored_overdue_uids = [];
+}
+
+function getIgnoredOverdueUidSet() {
+    return new Set((USER_PREFERENCES.ignored_overdue_uids || []).map((item) => String(item || '').trim()).filter(Boolean));
+}
+
+function setIgnoredOverdueUids(nextUids) {
+    USER_PREFERENCES.ignored_overdue_uids = Array.from(new Set((nextUids || []).map((item) => String(item || '').trim()).filter(Boolean)));
+}
+
+function renderIgnoredOverdueList() {
+    if (!ignoredOverdueList) return;
+    const ignoredSet = getIgnoredOverdueUidSet();
+    const rows = Array.from(document.querySelectorAll('tr[data-uid][data-overdue="1"]'));
+    const items = [];
+    const seen = new Set();
+    rows.forEach((row) => {
+        const uid = row.dataset.uid || '';
+        if (!ignoredSet.has(uid) || seen.has(uid)) return;
+        seen.add(uid);
+        items.push({
+            uid,
+            label: `${row.dataset.course || ''}｜${row.dataset.title || ''}`.replace(/^｜/, ''),
+        });
+    });
+    ignoredOverdueList.innerHTML = '';
+    if (restoreIgnoredOverdueAll) {
+        restoreIgnoredOverdueAll.hidden = items.length === 0;
+    }
+    if (!items.length) {
+        ignoredOverdueList.innerHTML = '<div class="muted" style="font-size:12px">目前沒有已忽略的逾期作業。</div>';
+        return;
+    }
+    items.forEach((item) => {
+        const chip = document.createElement('div');
+        chip.className = 'ignored-chip';
+        chip.innerHTML = `
+            <span class="ignored-chip-label" title="${item.label}">${item.label}</span>
+            <button type="button" class="ignored-chip-btn" data-restore-overdue="${item.uid}">復原</button>
+        `;
+        ignoredOverdueList.appendChild(chip);
+    });
+}
 
 function updateFilterSummary() {
     if (!filterActiveCount) return;
@@ -1868,12 +1970,22 @@ function applyFilters(){
 const showO = !!(showOverdue && showOverdue.checked);
 const showC = !!(showCompleted && showCompleted.checked);
 const showG = !!(showGraded && showGraded.checked);
+const ignoredSet = getIgnoredOverdueUidSet();
 
     document.querySelectorAll('#flatTable tbody tr').forEach(tr=>{
     const overdue = tr.dataset.overdue === '1';
     const completed = tr.dataset.completed === '1';
     const graded = tr.dataset.graded === '1';
-    let visible = graded && showG ? true : ((!completed || showC) && (!overdue || showO));
+    const ignored = overdue && ignoredSet.has(tr.dataset.uid || '');
+    tr.dataset.ignored = ignored ? '1' : '0';
+    const baseVisible = !completed && !overdue && !graded;
+    let visible = true;
+    if (completed && !showC) visible = false;
+    if (overdue && !showO) visible = false;
+    if (graded && !completed && !overdue && !showG) visible = false;
+    if (baseVisible) visible = true;
+    if (graded && showG) visible = true;
+    if (ignored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
 
@@ -1881,11 +1993,21 @@ const showG = !!(showGraded && showGraded.checked);
     const overdue = tr.dataset.overdue === '1';
     const completed = tr.dataset.completed === '1';
     const graded = tr.dataset.graded === '1';
-    let visible = graded && showG ? true : ((!completed || showC) && (!overdue || showO));
+    const ignored = overdue && ignoredSet.has(tr.dataset.uid || '');
+    tr.dataset.ignored = ignored ? '1' : '0';
+    const baseVisible = !completed && !overdue && !graded;
+    let visible = true;
+    if (completed && !showC) visible = false;
+    if (overdue && !showO) visible = false;
+    if (graded && !completed && !overdue && !showG) visible = false;
+    if (baseVisible) visible = true;
+    if (graded && showG) visible = true;
+    if (ignored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
     
     updateCounts();
+    renderIgnoredOverdueList();
 }
 
 function persistPreferences(partial = {}){
@@ -1912,6 +2034,10 @@ function persistPreferences(partial = {}){
         USER_PREFERENCES.show_graded = val;
         payload.showGraded = val;
     }
+    if (Object.prototype.hasOwnProperty.call(partial, 'ignoredOverdueUids')) {
+        setIgnoredOverdueUids(partial.ignoredOverdueUids);
+        payload.ignoredOverdueUids = USER_PREFERENCES.ignored_overdue_uids.slice();
+    }
     if (!Object.keys(payload).length) return;
     fetch(PREFERENCES_ENDPOINT, {
         method: 'POST',
@@ -1927,6 +2053,7 @@ function applyServerPreferenceState(nextPrefs){
         show_overdue: !!nextPrefs.show_overdue,
         show_completed: !!nextPrefs.show_completed,
         show_graded: !!nextPrefs.show_graded,
+        ignored_overdue_uids: Array.isArray(nextPrefs.ignored_overdue_uids) ? nextPrefs.ignored_overdue_uids : [],
     };
     let viewChanged = false;
     if (incoming.view_mode && incoming.view_mode !== currentViewMode) {
@@ -1946,10 +2073,32 @@ function applyServerPreferenceState(nextPrefs){
     USER_PREFERENCES.show_overdue = incoming.show_overdue;
     USER_PREFERENCES.show_completed = incoming.show_completed;
     USER_PREFERENCES.show_graded = incoming.show_graded;
+    setIgnoredOverdueUids(incoming.ignored_overdue_uids);
     updateFilterSummary();
     if (!viewChanged) {
         applyFilters();
     }
+}
+
+function ignoreOverdueAssignment(uid) {
+    if (!uid || IS_READONLY_VIEW) return;
+    const next = USER_PREFERENCES.ignored_overdue_uids.slice();
+    next.push(uid);
+    persistPreferences({ ignoredOverdueUids: next });
+    applyFilters();
+}
+
+function restoreIgnoredOverdueAssignment(uid) {
+    if (!uid || IS_READONLY_VIEW) return;
+    const next = USER_PREFERENCES.ignored_overdue_uids.filter((item) => item !== uid);
+    persistPreferences({ ignoredOverdueUids: next });
+    applyFilters();
+}
+
+function restoreAllIgnoredOverdueAssignments() {
+    if (IS_READONLY_VIEW) return;
+    persistPreferences({ ignoredOverdueUids: [] });
+    applyFilters();
 }
 
 function collectVisibleAssignments(){
@@ -2076,6 +2225,26 @@ if (viewDueBtn) {
 
 applyFilters();
 updateFilterSummary();
+
+document.addEventListener('click', (evt) => {
+    const ignoreBtn = evt.target.closest('[data-ignore-overdue]');
+    if (ignoreBtn) {
+        evt.preventDefault();
+        ignoreOverdueAssignment(ignoreBtn.getAttribute('data-ignore-overdue'));
+        return;
+    }
+    const restoreBtn = evt.target.closest('[data-restore-overdue]');
+    if (restoreBtn) {
+        evt.preventDefault();
+        restoreIgnoredOverdueAssignment(restoreBtn.getAttribute('data-restore-overdue'));
+    }
+});
+
+if (restoreIgnoredOverdueAll) {
+    restoreIgnoredOverdueAll.addEventListener('click', () => {
+        restoreAllIgnoredOverdueAssignments();
+    });
+}
 
 if (filterMenu) {
     document.addEventListener('click', (evt) => {

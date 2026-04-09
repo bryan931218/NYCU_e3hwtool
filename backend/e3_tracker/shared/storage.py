@@ -48,6 +48,7 @@ user_preferences_table = Table(
     Column("show_overdue", Integer, nullable=False, default=0),
     Column("show_completed", Integer, nullable=False, default=0),
     Column("show_graded", Integer, nullable=False, default=0),
+    Column("ignored_overdue_uids", Text),
     Column("updated_at", String(64)),
 )
 
@@ -209,6 +210,9 @@ class PersistentStorage:
             if "show_graded" not in pref_columns:
                 with self._lock, self._engine.begin() as conn:
                     conn.execute(text("ALTER TABLE user_preferences ADD COLUMN show_graded INTEGER"))
+            if "ignored_overdue_uids" not in pref_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN ignored_overdue_uids TEXT"))
         if not inspector.has_table("web_sessions"):
             metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
         if not inspector.has_table("assignments"):
@@ -324,17 +328,27 @@ class PersistentStorage:
                     user_preferences_table.c.show_overdue,
                     user_preferences_table.c.show_completed,
                     user_preferences_table.c.show_graded,
+                    user_preferences_table.c.ignored_overdue_uids,
                 )
                 .select_from(user_preferences_table.join(users_table, user_preferences_table.c.user_id == users_table.c.id))
                 .where(users_table.c.username == username)
             ).fetchone()
         if not row:
             return {}
+        ignored_overdue_uids: List[str] = []
+        if row.ignored_overdue_uids:
+            try:
+                parsed = json.loads(row.ignored_overdue_uids)
+                if isinstance(parsed, list):
+                    ignored_overdue_uids = [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                ignored_overdue_uids = []
         return {
             "view_mode": row.view_mode,
             "show_overdue": bool(row.show_overdue),
             "show_completed": bool(row.show_completed),
             "show_graded": bool(row.show_graded),
+            "ignored_overdue_uids": ignored_overdue_uids,
         }
 
     def save_user_preferences(self, username: str, prefs: Dict[str, Any]) -> None:
@@ -346,6 +360,10 @@ class PersistentStorage:
         show_overdue = self._coerce_bool_int(prefs.get("show_overdue"))
         show_completed = self._coerce_bool_int(prefs.get("show_completed"))
         show_graded = self._coerce_bool_int(prefs.get("show_graded"))
+        ignored_overdue_uids = prefs.get("ignored_overdue_uids")
+        if not isinstance(ignored_overdue_uids, list):
+            ignored_overdue_uids = []
+        ignored_overdue_uids = [str(item).strip() for item in ignored_overdue_uids if str(item).strip()]
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
             user_id = self._ensure_user(conn, username)
@@ -357,6 +375,7 @@ class PersistentStorage:
                     show_overdue=show_overdue,
                     show_completed=show_completed,
                     show_graded=show_graded,
+                    ignored_overdue_uids=json.dumps(ignored_overdue_uids, ensure_ascii=False),
                     updated_at=now,
                 )
             )

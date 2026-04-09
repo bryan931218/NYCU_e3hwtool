@@ -810,6 +810,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         "show_overdue": False,
         "show_completed": False,
         "show_graded": False,
+        "ignored_overdue_uids": [],
     }
     def load_cache_from_disk(username: str) -> Optional[Dict[str, Any]]:
         return storage.load_user_cache(username)
@@ -888,6 +889,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             coerced = _coerce_bool(value)
             if coerced is not None:
                 clean[key] = coerced
+        ignored_overdue_uids = raw.get("ignored_overdue_uids")
+        if ignored_overdue_uids is None:
+            ignored_overdue_uids = raw.get("ignoredOverdueUids")
+        if isinstance(ignored_overdue_uids, list):
+            clean["ignored_overdue_uids"] = [
+                str(item).strip()
+                for item in ignored_overdue_uids
+                if str(item).strip()
+            ][:500]
         return clean
 
     def _selected_view_username(raw_username: Optional[str], *, actor: Optional[Dict[str, Any]] = None) -> Optional[str]:
