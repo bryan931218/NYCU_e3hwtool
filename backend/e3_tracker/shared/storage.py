@@ -45,6 +45,8 @@ user_preferences_table = Table(
     metadata,
     Column("user_id", Integer, primary_key=True),
     Column("view_mode", String(32)),
+    Column("status_filter", String(32)),
+    Column("include_ignored_overdue", Integer, nullable=False, default=0),
     Column("show_overdue", Integer, nullable=False, default=0),
     Column("show_completed", Integer, nullable=False, default=0),
     Column("show_graded", Integer, nullable=False, default=0),
@@ -207,6 +209,12 @@ class PersistentStorage:
         inspector = inspect(self._engine)
         if inspector.has_table("user_preferences"):
             pref_columns = {col["name"] for col in inspector.get_columns("user_preferences")}
+            if "status_filter" not in pref_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN status_filter TEXT"))
+            if "include_ignored_overdue" not in pref_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN include_ignored_overdue INTEGER"))
             if "show_graded" not in pref_columns:
                 with self._lock, self._engine.begin() as conn:
                     conn.execute(text("ALTER TABLE user_preferences ADD COLUMN show_graded INTEGER"))
@@ -325,6 +333,8 @@ class PersistentStorage:
             row = conn.execute(
                 select(
                     user_preferences_table.c.view_mode,
+                    user_preferences_table.c.status_filter,
+                    user_preferences_table.c.include_ignored_overdue,
                     user_preferences_table.c.show_overdue,
                     user_preferences_table.c.show_completed,
                     user_preferences_table.c.show_graded,
@@ -345,6 +355,8 @@ class PersistentStorage:
                 ignored_overdue_uids = []
         return {
             "view_mode": row.view_mode,
+            "status_filter": row.status_filter,
+            "include_ignored_overdue": bool(row.include_ignored_overdue),
             "show_overdue": bool(row.show_overdue),
             "show_completed": bool(row.show_completed),
             "show_graded": bool(row.show_graded),
@@ -357,6 +369,8 @@ class PersistentStorage:
         if not isinstance(prefs, dict):
             return
         view_mode = prefs.get("view_mode")
+        status_filter = prefs.get("status_filter")
+        include_ignored_overdue = self._coerce_bool_int(prefs.get("include_ignored_overdue"))
         show_overdue = self._coerce_bool_int(prefs.get("show_overdue"))
         show_completed = self._coerce_bool_int(prefs.get("show_completed"))
         show_graded = self._coerce_bool_int(prefs.get("show_graded"))
@@ -372,6 +386,8 @@ class PersistentStorage:
                 insert(user_preferences_table).values(
                     user_id=user_id,
                     view_mode=view_mode,
+                    status_filter=status_filter,
+                    include_ignored_overdue=include_ignored_overdue,
                     show_overdue=show_overdue,
                     show_completed=show_completed,
                     show_graded=show_graded,

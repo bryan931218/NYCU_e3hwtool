@@ -807,6 +807,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     DEFAULT_PREFERENCES = {
         "view_mode": "due",
+        "status_filter": "pending",
+        "include_ignored_overdue": False,
         "show_overdue": False,
         "show_completed": False,
         "show_graded": False,
@@ -878,6 +880,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             lowered = view_mode.strip().lower()
             if lowered in {"course", "due"}:
                 clean["view_mode"] = lowered
+        status_filter = raw.get("status_filter")
+        if status_filter is None:
+            status_filter = raw.get("statusFilter")
+        if isinstance(status_filter, str):
+            lowered = status_filter.strip().lower()
+            if lowered in {"pending", "completed", "graded", "overdue", "all"}:
+                clean["status_filter"] = lowered
+        include_ignored_overdue = raw.get("include_ignored_overdue")
+        if include_ignored_overdue is None:
+            include_ignored_overdue = raw.get("includeIgnoredOverdue")
+        coerced_include = _coerce_bool(include_ignored_overdue)
+        if coerced_include is not None:
+            clean["include_ignored_overdue"] = coerced_include
         for key, alias in (
             ("show_overdue", "showOverdue"),
             ("show_completed", "showCompleted"),

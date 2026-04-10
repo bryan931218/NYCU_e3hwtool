@@ -405,6 +405,17 @@ html[data-theme="dark"]{
     .filter-options{
     display:flex;flex-direction:column;align-items:stretch;gap:8px;
     }
+    .status-filter-group{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .status-filter-btn{
+    display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;
+    border-radius:12px;border:1px solid color-mix(in srgb, var(--border) 86%, transparent);
+    background:var(--card-2);font-size:13px;font-weight:700;cursor:pointer;
+    transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease;
+    }
+    .status-filter-btn.active{
+    background:color-mix(in srgb, var(--primary) 14%, var(--card));border-color:color-mix(in srgb, var(--primary) 34%, var(--border));
+    color:var(--primary);transform:translateY(-1px);
+    }
     .filter-subsection{margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb, var(--border) 82%, transparent)}
     .ignored-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
     .ignored-chip{
@@ -497,6 +508,8 @@ html[data-theme="dark"]{
     background:#202a49;border-color:#3d4872;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
     }
     html[data-theme="dark"] .ignored-chip{background:#202a49;border-color:#3d4872}
+    html[data-theme="dark"] .status-filter-btn{background:#202a49;border-color:#3d4872;color:#dfe4ff}
+    html[data-theme="dark"] .status-filter-btn.active{background:#244168;border-color:#4e79b8;color:#f3f7ff}
     html[data-theme="dark"] .seg{border-color:#3a466f;background:#1e294b}
     html[data-theme="dark"] .seg-btn{color:#c6cff8}
     html[data-theme="dark"] .seg-btn.active{background:#5f67f0;color:#fff}
@@ -1167,11 +1180,19 @@ html[data-theme="dark"]{
                     <span class="filter-trigger-count" id="filterActiveCount">0</span>
                 </summary>
                 <div class="filter-panel">
-                    <p class="filter-panel-title">顯示規則</p>
-                    <div class="filter-options">
-                        <label class="cb"><input type="checkbox" id="showOverdue"{% if preferences.show_overdue %} checked{% endif %}> 顯示逾期作業</label>
-                        <label class="cb"><input type="checkbox" id="showCompleted"{% if preferences.show_completed %} checked{% endif %}> 顯示已完成作業</label>
-                        <label class="cb"><input type="checkbox" id="showGraded"{% if preferences.show_graded %} checked{% endif %}> 額外顯示已評分作業</label>
+                    <p class="filter-panel-title">主狀態</p>
+                    <div class="status-filter-group" id="statusFilterGroup">
+                        <button type="button" class="status-filter-btn{% if preferences.status_filter == 'pending' %} active{% endif %}" data-status-filter="pending">待處理</button>
+                        <button type="button" class="status-filter-btn{% if preferences.status_filter == 'completed' %} active{% endif %}" data-status-filter="completed">已完成</button>
+                        <button type="button" class="status-filter-btn{% if preferences.status_filter == 'graded' %} active{% endif %}" data-status-filter="graded">已評分</button>
+                        <button type="button" class="status-filter-btn{% if preferences.status_filter == 'overdue' %} active{% endif %}" data-status-filter="overdue">逾期未交</button>
+                        <button type="button" class="status-filter-btn{% if preferences.status_filter == 'all' %} active{% endif %}" data-status-filter="all" style="grid-column:1 / -1">全部</button>
+                    </div>
+                    <div class="filter-subsection" style="margin-top:12px;padding-top:12px">
+                        <p class="filter-panel-title" style="margin-bottom:8px">附加條件</p>
+                        <div class="filter-options">
+                            <label class="cb"><input type="checkbox" id="includeIgnoredOverdue"{% if preferences.include_ignored_overdue %} checked{% endif %}> 包含已忽略逾期作業</label>
+                        </div>
                     </div>
                     <div class="filter-subsection">
                         <p class="filter-panel-title" style="margin-bottom:6px">已忽略逾期作業</p>
@@ -1229,9 +1250,9 @@ html[data-theme="dark"]{
         </form>
         {% endif %}
         <div class="tc-right stats">
-        <span class="chip">總筆數：<strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong></span>
-        <span class="chip">逾期：<strong id="overdueCount" style="color:var(--err-fg)">{{ (result.all_assignments | selectattr('overdue') | rejectattr('completed') | list | length) if result else 0 }}</strong></span>
-        <span class="chip">未完成：<strong id="incompleteCount">{{ (result.all_assignments | rejectattr('completed') | list | length) if result else 0 }}</strong></span>
+        <span class="chip">目前顯示：<strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong></span>
+        <span class="chip">篩選狀態：<strong id="currentFilterLabel">{{ {'pending':'待處理','completed':'已完成','graded':'已評分','overdue':'逾期未交','all':'全部'}.get(preferences.status_filter or 'pending', '待處理') }}</strong></span>
+        <span class="chip">已忽略逾期：<strong id="ignoredCount" style="color:var(--err-fg)">{{ (preferences.ignored_overdue_uids|length) if preferences.ignored_overdue_uids is defined else 0 }}</strong></span>
         </div>
     </section>
 
@@ -1276,14 +1297,14 @@ html[data-theme="dark"]{
             {% set is_graded = item.grade_text or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
             {% set filter_overdue = item.overdue %}
             {% set display_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
-            {% set can_ignore_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
+            {% set primary_status = 'graded' if is_graded else ('completed' if item.completed else ('overdue' if filter_overdue else 'pending')) %}
+            {% set can_ignore_overdue = primary_status == 'overdue' %}
             <tr
                 data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
                 data-overdue="{{ 1 if filter_overdue else 0 }}"
                 data-completed="{{ 1 if item.completed else 0 }}"
                 data-graded="{{ 1 if is_graded else 0 }}"
-                data-display-overdue="{{ 1 if display_overdue else 0 }}"
-                data-display-incomplete="{{ 1 if (not item.completed and not display_overdue and not is_graded) else 0 }}"
+                data-primary-status="{{ primary_status }}"
                 data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
                 data-uid="{{ item_uid }}"
                 data-course="{{ item.course_title }}"
@@ -1316,7 +1337,7 @@ html[data-theme="dark"]{
                     {% if item.completed and not is_graded %}<span class="badge done">已完成</span>{% endif %}
                     {% if display_overdue %}<span class="badge overdue">逾期</span>{% endif %}
                     {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}
-                    {% if not item.completed and not display_overdue and not is_graded %}<span class="badge nodue">未完成</span>{% endif %}
+                    {% if primary_status == 'pending' %}<span class="badge nodue">未完成</span>{% endif %}
                     </div>
                     {% if can_ignore_overdue and not is_admin_view %}
                         <button type="button" class="row-ignore-btn" data-ignore-overdue="{{ item_uid }}">忽略</button>
@@ -1358,14 +1379,14 @@ html[data-theme="dark"]{
                     {% set is_graded = item.grade_text or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
                     {% set filter_overdue = item.overdue %}
                     {% set display_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
-                    {% set can_ignore_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
+                    {% set primary_status = 'graded' if is_graded else ('completed' if item.completed else ('overdue' if filter_overdue else 'pending')) %}
+                    {% set can_ignore_overdue = primary_status == 'overdue' %}
                     <tr
                     data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
                     data-overdue="{{ 1 if filter_overdue else 0 }}"
                     data-completed="{{ 1 if item.completed else 0 }}"
                     data-graded="{{ 1 if is_graded else 0 }}"
-                    data-display-overdue="{{ 1 if display_overdue else 0 }}"
-                    data-display-incomplete="{{ 1 if (not item.completed and not display_overdue and not is_graded) else 0 }}"
+                    data-primary-status="{{ primary_status }}"
                     data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
                     data-uid="{{ item_uid }}"
                     data-course="{{ course.title }}"
@@ -1395,7 +1416,7 @@ html[data-theme="dark"]{
                         {% if item.completed and not is_graded %}<span class="badge done">已完成</span>{% endif %}
                         {% if display_overdue %}<span class="badge overdue">逾期</span>{% endif %}
                         {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}
-                        {% if not item.completed and not display_overdue and not is_graded %}<span class="badge nodue">未完成</span>{% endif %}
+                        {% if primary_status == 'pending' %}<span class="badge nodue">未完成</span>{% endif %}
                         </div>
                         {% if can_ignore_overdue and not is_admin_view %}
                             <button type="button" class="row-ignore-btn" data-ignore-overdue="{{ item_uid }}">忽略</button>
@@ -1601,9 +1622,8 @@ const IS_READONLY_VIEW = document.body.dataset.readonlyView === '1';
 const loader = document.getElementById('loader');
 const loaderMessageEl = loader ? loader.querySelector('.loader-message') : null;
 const bgRefreshIndicator = document.getElementById('bgRefreshIndicator');
-const showOverdue = document.getElementById('showOverdue');
-const showCompleted = document.getElementById('showCompleted');
-const showGraded = document.getElementById('showGraded');
+const statusFilterGroup = document.getElementById('statusFilterGroup');
+const includeIgnoredOverdue = document.getElementById('includeIgnoredOverdue');
 const ignoredOverdueList = document.getElementById('ignoredOverdueList');
 const restoreIgnoredOverdueAll = document.getElementById('restoreIgnoredOverdueAll');
 const filterMenu = document.getElementById('filterMenu');
@@ -1618,8 +1638,8 @@ const UI_EVENT_ENDPOINT = "{{ url_for('ui_event') }}";
 const themeToggle = document.getElementById('themeToggle');
 
 const totalCountEl = document.getElementById('totalCount');
-const overdueCountEl = document.getElementById('overdueCount');
-const incompleteCountEl = document.getElementById('incompleteCount');
+const currentFilterLabelEl = document.getElementById('currentFilterLabel');
+const ignoredCountEl = document.getElementById('ignoredCount');
 
 const TOAST_ICONS = {
     success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
@@ -1784,12 +1804,12 @@ async function fetchAndSwapContent() {
     }
 
     const newTotalCount = doc.getElementById('totalCount');
-    const newOverdueCount = doc.getElementById('overdueCount');
-    const newIncompleteCount = doc.getElementById('incompleteCount');
+    const newCurrentFilterLabel = doc.getElementById('currentFilterLabel');
+    const newIgnoredCount = doc.getElementById('ignoredCount');
 
     if (newTotalCount && totalCountEl) totalCountEl.textContent = newTotalCount.textContent;
-    if (newOverdueCount && overdueCountEl) overdueCountEl.textContent = newOverdueCount.textContent;
-    if (newIncompleteCount && incompleteCountEl) incompleteCountEl.textContent = newIncompleteCount.textContent;
+    if (newCurrentFilterLabel && currentFilterLabelEl) currentFilterLabelEl.textContent = newCurrentFilterLabel.textContent;
+    if (newIgnoredCount && ignoredCountEl) ignoredCountEl.textContent = newIgnoredCount.textContent;
 
     const excelLink = document.querySelector('.tc-center a[download]');
     const newExcelLink = doc.querySelector('.tc-center a[download]');
@@ -1887,7 +1907,18 @@ function sortFlatTableAsc(){
     rows.forEach(r=>tbody.appendChild(r));
 }
 
+const STATUS_FILTER_LABELS = {
+    pending: '待處理',
+    completed: '已完成',
+    graded: '已評分',
+    overdue: '逾期未交',
+    all: '全部',
+};
+
 let currentViewMode = (USER_PREFERENCES && USER_PREFERENCES.view_mode === 'course') ? 'course' : 'due';
+let currentStatusFilter = (USER_PREFERENCES && typeof USER_PREFERENCES.status_filter === 'string' && STATUS_FILTER_LABELS[USER_PREFERENCES.status_filter]) ? USER_PREFERENCES.status_filter : 'pending';
+USER_PREFERENCES.status_filter = currentStatusFilter;
+USER_PREFERENCES.include_ignored_overdue = !!USER_PREFERENCES.include_ignored_overdue;
 if (!Array.isArray(USER_PREFERENCES.ignored_overdue_uids)) {
     USER_PREFERENCES.ignored_overdue_uids = [];
 }
@@ -1903,7 +1934,7 @@ function setIgnoredOverdueUids(nextUids) {
 function renderIgnoredOverdueList() {
     if (!ignoredOverdueList) return;
     const ignoredSet = getIgnoredOverdueUidSet();
-    const rows = Array.from(document.querySelectorAll('tr[data-uid][data-overdue="1"]'));
+    const rows = Array.from(document.querySelectorAll('tr[data-uid][data-primary-status="overdue"]'));
     const items = [];
     const seen = new Set();
     rows.forEach((row) => {
@@ -1937,9 +1968,8 @@ function renderIgnoredOverdueList() {
 function updateFilterSummary() {
     if (!filterActiveCount) return;
     const activeCount =
-        (showOverdue && showOverdue.checked ? 1 : 0) +
-        (showCompleted && showCompleted.checked ? 1 : 0) +
-        (showGraded && showGraded.checked ? 1 : 0);
+        (currentStatusFilter !== 'pending' ? 1 : 0) +
+        (includeIgnoredOverdue && includeIgnoredOverdue.checked ? 1 : 0);
     filterActiveCount.textContent = String(activeCount);
 }
 
@@ -1948,65 +1978,30 @@ function updateCounts() {
     
     const visibleRows = currentView.querySelectorAll('tbody tr:not(.hidden)');
     const totalVisible = visibleRows.length;
-    
-    let overdueCount = 0;
-    let incompleteCount = 0;
-    
-    visibleRows.forEach(row => {
-    const isDisplayOverdue = row.dataset.displayOverdue === '1';
-    const isDisplayIncomplete = row.dataset.displayIncomplete === '1';
-
-    if (isDisplayOverdue) {
-        overdueCount++;
-    }
-    
-    if (isDisplayIncomplete) {
-        incompleteCount++;
-    }
-    });
-    
     if (totalCountEl) totalCountEl.textContent = totalVisible;
-    if (overdueCountEl) overdueCountEl.textContent = overdueCount;
-    if (incompleteCountEl) incompleteCountEl.textContent = incompleteCount;
+    if (currentFilterLabelEl) currentFilterLabelEl.textContent = STATUS_FILTER_LABELS[currentStatusFilter] || '待處理';
+    if (ignoredCountEl) ignoredCountEl.textContent = String(getIgnoredOverdueUidSet().size);
 }
 
 function applyFilters(){
-const showO = !!(showOverdue && showOverdue.checked);
-const showC = !!(showCompleted && showCompleted.checked);
-const showG = !!(showGraded && showGraded.checked);
+const includeIgnored = !!(includeIgnoredOverdue && includeIgnoredOverdue.checked);
 const ignoredSet = getIgnoredOverdueUidSet();
 
     document.querySelectorAll('#flatTable tbody tr').forEach(tr=>{
-    const overdue = tr.dataset.overdue === '1';
-    const completed = tr.dataset.completed === '1';
-    const graded = tr.dataset.graded === '1';
-    const ignored = overdue && ignoredSet.has(tr.dataset.uid || '');
+    const primaryStatus = tr.dataset.primaryStatus || 'pending';
+    const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
     tr.dataset.ignored = ignored ? '1' : '0';
-    const baseVisible = !completed && !overdue && !graded;
-    let visible = true;
-    if (completed && !showC) visible = false;
-    if (overdue && !showO) visible = false;
-    if (graded && !completed && !overdue && !showG) visible = false;
-    if (baseVisible) visible = true;
-    if (graded && showG) visible = true;
-    if (ignored) visible = false;
+    let visible = currentStatusFilter === 'all' ? true : primaryStatus === currentStatusFilter;
+    if (primaryStatus === 'overdue' && ignored && !includeIgnored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
 
     document.querySelectorAll('.courseTable tbody tr').forEach(tr=>{
-    const overdue = tr.dataset.overdue === '1';
-    const completed = tr.dataset.completed === '1';
-    const graded = tr.dataset.graded === '1';
-    const ignored = overdue && ignoredSet.has(tr.dataset.uid || '');
+    const primaryStatus = tr.dataset.primaryStatus || 'pending';
+    const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
     tr.dataset.ignored = ignored ? '1' : '0';
-    const baseVisible = !completed && !overdue && !graded;
-    let visible = true;
-    if (completed && !showC) visible = false;
-    if (overdue && !showO) visible = false;
-    if (graded && !completed && !overdue && !showG) visible = false;
-    if (baseVisible) visible = true;
-    if (graded && showG) visible = true;
-    if (ignored) visible = false;
+    let visible = currentStatusFilter === 'all' ? true : primaryStatus === currentStatusFilter;
+    if (primaryStatus === 'overdue' && ignored && !includeIgnored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
     
@@ -2023,20 +2018,16 @@ function persistPreferences(partial = {}){
         USER_PREFERENCES.view_mode = mode;
         payload.viewMode = mode;
     }
-    if (Object.prototype.hasOwnProperty.call(partial, 'showOverdue')) {
-        const val = !!partial.showOverdue;
-        USER_PREFERENCES.show_overdue = val;
-        payload.showOverdue = val;
+    if (Object.prototype.hasOwnProperty.call(partial, 'statusFilter')) {
+        const nextFilter = STATUS_FILTER_LABELS[partial.statusFilter] ? partial.statusFilter : 'pending';
+        USER_PREFERENCES.status_filter = nextFilter;
+        currentStatusFilter = nextFilter;
+        payload.statusFilter = nextFilter;
     }
-    if (Object.prototype.hasOwnProperty.call(partial, 'showCompleted')) {
-        const val = !!partial.showCompleted;
-        USER_PREFERENCES.show_completed = val;
-        payload.showCompleted = val;
-    }
-    if (Object.prototype.hasOwnProperty.call(partial, 'showGraded')) {
-        const val = !!partial.showGraded;
-        USER_PREFERENCES.show_graded = val;
-        payload.showGraded = val;
+    if (Object.prototype.hasOwnProperty.call(partial, 'includeIgnoredOverdue')) {
+        const val = !!partial.includeIgnoredOverdue;
+        USER_PREFERENCES.include_ignored_overdue = val;
+        payload.includeIgnoredOverdue = val;
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'ignoredOverdueUids')) {
         setIgnoredOverdueUids(partial.ignoredOverdueUids);
@@ -2054,9 +2045,8 @@ function applyServerPreferenceState(nextPrefs){
     if (!nextPrefs || typeof nextPrefs !== 'object') return;
     const incoming = {
         view_mode: nextPrefs.view_mode === 'due' ? 'due' : 'course',
-        show_overdue: !!nextPrefs.show_overdue,
-        show_completed: !!nextPrefs.show_completed,
-        show_graded: !!nextPrefs.show_graded,
+        status_filter: STATUS_FILTER_LABELS[nextPrefs.status_filter] ? nextPrefs.status_filter : 'pending',
+        include_ignored_overdue: !!nextPrefs.include_ignored_overdue,
         ignored_overdue_uids: Array.isArray(nextPrefs.ignored_overdue_uids) ? nextPrefs.ignored_overdue_uids : [],
     };
     let viewChanged = false;
@@ -2064,20 +2054,19 @@ function applyServerPreferenceState(nextPrefs){
         viewChanged = true;
         setView(incoming.view_mode, { skipPersist: true });
     }
-    if (showOverdue) {
-        showOverdue.checked = incoming.show_overdue;
-    }
-    if (showCompleted) {
-        showCompleted.checked = incoming.show_completed;
-    }
-    if (showGraded) {
-        showGraded.checked = incoming.show_graded;
+    if (includeIgnoredOverdue) {
+        includeIgnoredOverdue.checked = incoming.include_ignored_overdue;
     }
     USER_PREFERENCES.view_mode = incoming.view_mode;
-    USER_PREFERENCES.show_overdue = incoming.show_overdue;
-    USER_PREFERENCES.show_completed = incoming.show_completed;
-    USER_PREFERENCES.show_graded = incoming.show_graded;
+    USER_PREFERENCES.status_filter = incoming.status_filter;
+    currentStatusFilter = incoming.status_filter;
+    USER_PREFERENCES.include_ignored_overdue = incoming.include_ignored_overdue;
     setIgnoredOverdueUids(incoming.ignored_overdue_uids);
+    if (statusFilterGroup) {
+        statusFilterGroup.querySelectorAll('[data-status-filter]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-status-filter') === currentStatusFilter);
+        });
+    }
     updateFilterSummary();
     if (!viewChanged) {
         applyFilters();
@@ -2116,12 +2105,7 @@ function collectVisibleAssignments(){
             course: row.dataset.course || '',
             title: row.dataset.title || '',
             due: row.dataset.due || '',
-            status:
-                row.dataset.completed === '1'
-                    ? '已完成'
-                    : row.dataset.overdue === '1'
-                    ? '逾期'
-                    : '未完成',
+            status: STATUS_FILTER_LABELS[row.dataset.primaryStatus || 'pending'] || '待處理',
         }));
 }
 
@@ -2198,25 +2182,25 @@ function setView(mode, options = {}){
 sortFlatTableAsc();
 setView(currentViewMode, { skipPersist: true });
 
-if(showOverdue) {
-    showOverdue.addEventListener('change', ()=>{
-        updateFilterSummary();
-        applyFilters();
-        persistPreferences({ showOverdue: !!showOverdue.checked });
+if (statusFilterGroup) {
+    statusFilterGroup.querySelectorAll('[data-status-filter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const nextFilter = btn.getAttribute('data-status-filter') || 'pending';
+            currentStatusFilter = STATUS_FILTER_LABELS[nextFilter] ? nextFilter : 'pending';
+            statusFilterGroup.querySelectorAll('[data-status-filter]').forEach((candidate) => {
+                candidate.classList.toggle('active', candidate === btn);
+            });
+            updateFilterSummary();
+            applyFilters();
+            persistPreferences({ statusFilter: currentStatusFilter });
+        });
     });
 }
-if(showCompleted) {
-    showCompleted.addEventListener('change', ()=>{
+if(includeIgnoredOverdue) {
+    includeIgnoredOverdue.addEventListener('change', ()=>{
         updateFilterSummary();
         applyFilters();
-        persistPreferences({ showCompleted: !!showCompleted.checked });
-    });
-}
-if(showGraded) {
-    showGraded.addEventListener('change', ()=>{
-        updateFilterSummary();
-        applyFilters();
-        persistPreferences({ showGraded: !!showGraded.checked });
+        persistPreferences({ includeIgnoredOverdue: !!includeIgnoredOverdue.checked });
     });
 }
 
