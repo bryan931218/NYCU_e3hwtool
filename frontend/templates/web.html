@@ -1282,6 +1282,8 @@ html[data-theme="dark"]{
                 data-overdue="{{ 1 if filter_overdue else 0 }}"
                 data-completed="{{ 1 if item.completed else 0 }}"
                 data-graded="{{ 1 if is_graded else 0 }}"
+                data-display-overdue="{{ 1 if display_overdue else 0 }}"
+                data-display-incomplete="{{ 1 if (not item.completed and not display_overdue and not is_graded) else 0 }}"
                 data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
                 data-uid="{{ item_uid }}"
                 data-course="{{ item.course_title }}"
@@ -1362,6 +1364,8 @@ html[data-theme="dark"]{
                     data-overdue="{{ 1 if filter_overdue else 0 }}"
                     data-completed="{{ 1 if item.completed else 0 }}"
                     data-graded="{{ 1 if is_graded else 0 }}"
+                    data-display-overdue="{{ 1 if display_overdue else 0 }}"
+                    data-display-incomplete="{{ 1 if (not item.completed and not display_overdue and not is_graded) else 0 }}"
                     data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
                     data-uid="{{ item_uid }}"
                     data-course="{{ course.title }}"
@@ -1949,14 +1953,14 @@ function updateCounts() {
     let incompleteCount = 0;
     
     visibleRows.forEach(row => {
-    const isOverdue = row.dataset.overdue === '1';
-    const isCompleted = row.dataset.completed === '1';
-    
-    if (isOverdue && !isCompleted) {
+    const isDisplayOverdue = row.dataset.displayOverdue === '1';
+    const isDisplayIncomplete = row.dataset.displayIncomplete === '1';
+
+    if (isDisplayOverdue) {
         overdueCount++;
     }
     
-    if (!isCompleted) {
+    if (isDisplayIncomplete) {
         incompleteCount++;
     }
     });
