@@ -1907,6 +1907,32 @@ function sortFlatTableAsc(){
     rows.forEach(r=>tbody.appendChild(r));
 }
 
+function getAllFilterPriority(row) {
+    const status = row.dataset.primaryStatus || 'pending';
+    if (status === 'pending' || status === 'overdue') return 0;
+    if (status === 'graded') return 1;
+    if (status === 'completed') return 2;
+    return 3;
+}
+
+function sortAssignmentTable(tbody) {
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        if (currentStatusFilter === 'all') {
+            const priorityA = getAllFilterPriority(a);
+            const priorityB = getAllFilterPriority(b);
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+        }
+        const dueA = parseInt(a.dataset.dueTs || '9999999999', 10);
+        const dueB = parseInt(b.dataset.dueTs || '9999999999', 10);
+        return dueA - dueB;
+    });
+    rows.forEach((row) => tbody.appendChild(row));
+}
+
 const STATUS_FILTER_LABELS = {
     pending: '待處理',
     completed: '已完成',
@@ -2004,6 +2030,9 @@ const ignoredSet = getIgnoredOverdueUidSet();
     if (primaryStatus === 'overdue' && ignored && !includeIgnored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
+
+    sortAssignmentTable(document.querySelector('#flatTable tbody'));
+    document.querySelectorAll('.courseTable tbody').forEach((tbody) => sortAssignmentTable(tbody));
     
     updateCounts();
     renderIgnoredOverdueList();
