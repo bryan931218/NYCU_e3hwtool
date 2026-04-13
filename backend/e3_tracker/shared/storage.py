@@ -90,6 +90,17 @@ assignments_table = Table(
     UniqueConstraint("course_id", "uid", name="uq_assignments_course_uid"),
 )
 
+assignment_views_table = Table(
+    "assignment_views",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, nullable=False),
+    Column("assignment_uid", String(255), nullable=False),
+    Column("first_seen_at", String(64), nullable=False),
+    Column("first_seen_ts", Integer, nullable=False),
+    UniqueConstraint("user_id", "assignment_uid", name="uq_assignment_views_user_uid"),
+)
+
 user_fetch_state_table = Table(
     "user_fetch_state",
     metadata,
@@ -223,6 +234,8 @@ class PersistentStorage:
                     conn.execute(text("ALTER TABLE user_preferences ADD COLUMN ignored_overdue_uids TEXT"))
         if not inspector.has_table("web_sessions"):
             metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
+        if not inspector.has_table("assignment_views"):
+            metadata.tables["assignment_views"].create(self._engine, checkfirst=True)
         if not inspector.has_table("assignments"):
             return
         existing_columns = {col["name"] for col in inspector.get_columns("assignments")}
@@ -322,8 +335,11 @@ class PersistentStorage:
             return (item.get("course_title", ""), 1, float("inf"))
         return (item.get("course_title", ""), 0, due_ts)
 
-    def _assignment_uid(self, course_code: int, title: str, url: Optional[str]) -> str:
+    def _assignment_uid(self, course_code: Optional[int], title: str, url: Optional[str]) -> str:
         return f"{course_code}|{title}|{url or ''}"
+
+    def assignment_uid(self, course_code: Optional[int], title: str, url: Optional[str]) -> str:
+        return self._assignment_uid(course_code, title, url)
 
     # -- user preferences -------------------------------------------------
     def load_user_preferences(self, username: str) -> Dict[str, Any]:
@@ -518,6 +534,76 @@ class PersistentStorage:
                     )
                 )
 
+    def mark_assignment_views(
+        self,
+        username: str,
+        assignment_uids: List[str],
+        *,
+        seen_ts: Optional[int] = None,
+    ) -> Dict[str, int]:
+        if not username:
+            return {}
+        normalized_uids = [str(item or "").strip() for item in assignment_uids if str(item or "").strip()]
+        if not normalized_uids:
+            return {}
+        unique_uids = list(dict.fromkeys(normalized_uids))
+        if seen_ts is None:
+            seen_ts = int(datetime.utcnow().timestamp())
+        seen_at = datetime.utcfromtimestamp(int(seen_ts)).isoformat()
+        with self._lock, self._engine.begin() as conn:
+            user_id = self._ensure_user(conn, username)
+            existing_rows = conn.execute(
+                select(
+                    assignment_views_table.c.assignment_uid,
+                    assignment_views_table.c.first_seen_ts,
+                ).where(
+                    assignment_views_table.c.user_id == user_id,
+                    assignment_views_table.c.assignment_uid.in_(unique_uids),
+                )
+            ).fetchall()
+            first_seen_map = {str(row.assignment_uid): int(row.first_seen_ts) for row in existing_rows}
+            missing_uids = [uid for uid in unique_uids if uid not in first_seen_map]
+            if missing_uids:
+                conn.execute(
+                    insert(assignment_views_table),
+                    [
+                        {
+                            "user_id": user_id,
+                            "assignment_uid": uid,
+                            "first_seen_at": seen_at,
+                            "first_seen_ts": int(seen_ts),
+                        }
+                        for uid in missing_uids
+                    ],
+                )
+                for uid in missing_uids:
+                    first_seen_map[uid] = int(seen_ts)
+        return first_seen_map
+
+    def load_assignment_view_map(self, username: str, assignment_uids: List[str]) -> Dict[str, int]:
+        if not username:
+            return {}
+        normalized_uids = [str(item or "").strip() for item in assignment_uids if str(item or "").strip()]
+        if not normalized_uids:
+            return {}
+        unique_uids = list(dict.fromkeys(normalized_uids))
+        with self._lock, self._engine.connect() as conn:
+            user_row = conn.execute(
+                select(users_table.c.id).where(users_table.c.username == username)
+            ).fetchone()
+            if not user_row:
+                return {}
+            rows = conn.execute(
+                select(
+                    assignment_views_table.c.assignment_uid,
+                    assignment_views_table.c.first_seen_ts,
+                ).where(
+                    assignment_views_table.c.user_id == int(user_row.id),
+                    assignment_views_table.c.assignment_uid.in_(unique_uids),
+                )
+            ).fetchall()
+        return {str(row.assignment_uid): int(row.first_seen_ts) for row in rows}
+
     def load_user_cache(self, username: str) -> Optional[Dict[str, Any]]:
         if not username:
             return None
@@ -696,6 +782,7 @@ class PersistentStorage:
             if course_ids:
                 conn.execute(delete(assignments_table).where(assignments_table.c.course_id.in_(course_ids)))
             conn.execute(delete(courses_table).where(courses_table.c.user_id == user_id))
+            conn.execute(delete(assignment_views_table).where(assignment_views_table.c.user_id == user_id))
             conn.execute(delete(user_fetch_state_table).where(user_fetch_state_table.c.user_id == user_id))
             conn.execute(delete(fetch_errors_table).where(fetch_errors_table.c.user_id == user_id))
             conn.execute(delete(user_preferences_table).where(user_preferences_table.c.user_id == user_id))

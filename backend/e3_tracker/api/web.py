@@ -814,6 +814,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         "show_graded": False,
         "ignored_overdue_uids": [],
     }
+    NEW_ASSIGNMENT_WINDOW_SECONDS = 5 * 60
     def load_cache_from_disk(username: str) -> Optional[Dict[str, Any]]:
         return storage.load_user_cache(username)
 
@@ -1000,6 +1001,66 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not resolved_username:
             return None
         return load_cache_from_disk(resolved_username)
+
+    def _annotate_new_assignments(
+        result: Optional[Dict[str, Any]],
+        *,
+        username: Optional[str],
+        readonly: bool,
+        now_ts: int,
+    ) -> None:
+        if not username or not isinstance(result, dict):
+            return
+        assignments = result.get("all_assignments")
+        if not isinstance(assignments, list) or not assignments:
+            return
+        assignment_uids: List[str] = []
+        for item in assignments:
+            if not isinstance(item, dict):
+                continue
+            try:
+                course_id = int(item.get("course_id"))
+            except (TypeError, ValueError):
+                continue
+            uid = storage.assignment_uid(course_id, str(item.get("title") or "").strip(), item.get("url"))
+            if not uid.strip():
+                continue
+            item["assignment_uid"] = uid
+            assignment_uids.append(uid)
+        if not assignment_uids:
+            return
+        first_seen_map = (
+            storage.load_assignment_view_map(username, assignment_uids)
+            if readonly
+            else storage.mark_assignment_views(username, assignment_uids, seen_ts=now_ts)
+        )
+        for item in assignments:
+            uid = str(item.get("assignment_uid") or "").strip()
+            first_seen_ts = first_seen_map.get(uid)
+            is_new = bool(first_seen_ts is not None and now_ts - int(first_seen_ts) <= NEW_ASSIGNMENT_WINDOW_SECONDS)
+            item["first_seen_ts"] = first_seen_ts
+            item["is_new"] = is_new
+            item["new_until_ts"] = (int(first_seen_ts) + NEW_ASSIGNMENT_WINDOW_SECONDS) if first_seen_ts is not None else None
+        for course in result.get("courses") or []:
+            if not isinstance(course, dict):
+                continue
+            for item in course.get("assignments") or []:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    course_id = int(item.get("course_id"))
+                except (TypeError, ValueError):
+                    course_id = None
+                uid = storage.assignment_uid(
+                    course_id,
+                    str(item.get("title") or "").strip(),
+                    item.get("url"),
+                ) if course_id is not None else ""
+                first_seen_ts = first_seen_map.get(uid)
+                item["assignment_uid"] = uid
+                item["first_seen_ts"] = first_seen_ts
+                item["is_new"] = bool(first_seen_ts is not None and now_ts - int(first_seen_ts) <= NEW_ASSIGNMENT_WINDOW_SECONDS)
+                item["new_until_ts"] = (int(first_seen_ts) + NEW_ASSIGNMENT_WINDOW_SECONDS) if first_seen_ts is not None else None
 
     def set_assign_cache_for_user(username: str, result: Dict[str, Any], excel_data: Optional[str]) -> None:
         if not username:
@@ -1816,6 +1877,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         stats_version_value = current_stats_version()
         announcements_list = load_announcements(None if is_admin_view else user["username"])
         cache_ts_val = cache.get("ts") if cache else None
+        now_ts = int(datetime.now(TAIPEI_TZ).timestamp())
+        _annotate_new_assignments(
+            result,
+            username=viewed_username,
+            readonly=is_admin_view,
+            now_ts=now_ts,
+        )
         last_updated_label = None
         if cache_ts_val:
             try:
@@ -1831,7 +1899,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "guest_mode": guest_mode,
             "stats": stats,
             "stats_version": stats_version_value,
-            "now_ts": int(datetime.now(TAIPEI_TZ).timestamp()),
+            "now_ts": now_ts,
             "preferences": get_user_preferences(viewed_username),
             "cache_ts": cache_ts_val,
             "last_updated_ts": cache_ts_val,

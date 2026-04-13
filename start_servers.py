@@ -61,6 +61,7 @@ def build_local_env() -> Dict[str, str]:
             "PORT": backend_port,
             "FRONTEND_HOST": frontend_host,
             "FRONTEND_PORT": frontend_port,
+            "E3_DEV_RELOAD": os.getenv("E3_DEV_RELOAD", "1"),
             "BACKEND_URL": backend_url,
             "E3_SESSION_COOKIE_SECURE": "0",
             "E3_CANONICAL_HOST": "",

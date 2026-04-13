@@ -207,9 +207,36 @@ html[data-theme="dark"]{
     display:block;margin-bottom:6px;font-size:12px;font-weight:700;
     color:var(--muted);letter-spacing:.02em;
     }
+    .assignment-title-row{
+    display:flex;align-items:flex-start;gap:8px;min-width:0;flex-wrap:wrap;
+    }
     .assignment-title{
-    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    flex:1 1 220px;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
     overflow:hidden;font-size:15px;font-weight:700;line-height:1.35;
+    }
+    .assignment-new-badge{
+    display:inline-flex;align-items:center;justify-content:center;
+    align-self:flex-start;flex:0 0 auto;
+    min-width:50px;padding:4px 9px;border-radius:999px;
+    background:linear-gradient(180deg, color-mix(in srgb, #f0fbff 82%, var(--card) 18%), color-mix(in srgb, #8ee4ff 78%, var(--card-2) 22%));
+    color:#075f7a;font-size:10px;font-weight:900;letter-spacing:.09em;line-height:1;text-transform:uppercase;
+    border:1px solid color-mix(in srgb, #43c8f5 72%, transparent);
+    box-shadow:0 4px 14px rgba(14,165,233,.18), inset 0 1px 0 rgba(255,255,255,.75);
+    white-space:nowrap;
+    animation:newBadgeFloat 2.2s ease-in-out infinite;
+    }
+    @keyframes newBadgeFloat{
+    0%,100%{
+        transform:translateY(0) scale(1);
+        box-shadow:0 4px 14px rgba(14,165,233,.18), inset 0 1px 0 rgba(255,255,255,.75);
+    }
+    50%{
+        transform:translateY(-1px) scale(1.04);
+        box-shadow:0 8px 18px rgba(14,165,233,.24), inset 0 1px 0 rgba(255,255,255,.88);
+    }
+    }
+    @media (prefers-reduced-motion:reduce){
+    .assignment-new-badge{animation:none}
     }
     .assignment-meta{
     display:flex;align-items:center;gap:8px;min-height:20px;flex-wrap:wrap;
@@ -231,8 +258,8 @@ html[data-theme="dark"]{
     .assignment-grade-inline-label{opacity:.62;margin-right:4px;font-size:11px;font-weight:700}
     .assignment-grade-inline-text{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .assignment-signal{
-    display:flex;align-items:center;justify-content:center;
-    min-height:42px;text-align:center;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:7px;min-height:52px;text-align:center;
     }
     .assignment-signal .remaining-text{
     margin-top:0;font-size:13px;font-weight:700;line-height:1.3;
@@ -840,6 +867,19 @@ html[data-theme="dark"]{
     .assignment-table tbody td {
         padding: 8px 10px;
     }
+    .assignment-signal{
+        min-height:60px;
+        gap:6px;
+    }
+    .assignment-new-badge{
+        min-width:48px;
+        padding:3px 8px;
+        font-size:9px;
+        letter-spacing:.07em;
+    }
+    .assignment-meta{
+        gap:6px;
+    }
     
     .badge {
         font-size: 11px;
@@ -904,6 +944,20 @@ html[data-theme="dark"]{
         padding: 6px 8px;
         font-size: 12px;
         min-width: 64px;
+    }
+    .assignment-signal{
+        min-height:58px;
+        gap:5px;
+    }
+    .assignment-new-badge{
+        min-width:44px;
+        padding:3px 6px;
+        font-size:8px;
+        letter-spacing:.06em;
+    }
+    .assignment-meta{
+        gap:5px;
+        font-size:12px;
     }
     
     .toast {
@@ -1319,7 +1373,10 @@ html[data-theme="dark"]{
                 </td>
                 <td class="assignment-cell-main">
                     <span class="assignment-eyebrow">{{ item.course_title }}</span>
-                    <span class="assignment-title">{{ item.title }}</span>
+                    <div class="assignment-title-row">
+                        <span class="assignment-title">{{ item.title }}</span>
+                        {% if item.is_new %}<span class="assignment-new-badge">New</span>{% endif %}
+                    </div>
                     <div class="assignment-meta">{{ render_grade_inline(item) }}</div>
                 </td>
                 <td>
@@ -1395,7 +1452,10 @@ html[data-theme="dark"]{
                     data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
                     >
                     <td class="assignment-cell-main">
-                        <span class="assignment-title">{{ item.title }}</span>
+                        <div class="assignment-title-row">
+                            <span class="assignment-title">{{ item.title }}</span>
+                            {% if item.is_new %}<span class="assignment-new-badge">New</span>{% endif %}
+                        </div>
                         <div class="assignment-meta">
                             {{ render_remaining_text(item, server_now_ts)|safe }}
                             {{ render_grade_inline(item) }}

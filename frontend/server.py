@@ -22,6 +22,13 @@ app.jinja_env.globals.setdefault("url_for", lambda *_, **__: "#")
 app.jinja_env.globals.setdefault("get_flashed_messages", lambda **__: [])
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _non_hop_headers():
     hop_headers = {"host", "content-length", "connection", "accept-encoding"}
     headers = {k: v for k, v in request.headers.items() if k.lower() not in hop_headers}
@@ -163,7 +170,15 @@ def _render_mock_page(path: str, exc: Exception) -> Response:
 
 
 def main():
-    app.run(host=FRONTEND_HOST, port=FRONTEND_PORT)
+    reload_enabled = _env_flag("E3_DEV_RELOAD", default=False)
+    extra_files = [str(path) for path in TEMPLATE_DIR.rglob("*.html")]
+    app.run(
+        host=FRONTEND_HOST,
+        port=FRONTEND_PORT,
+        debug=reload_enabled,
+        use_reloader=reload_enabled,
+        extra_files=extra_files if reload_enabled else None,
+    )
 
 
 if __name__ == "__main__":
