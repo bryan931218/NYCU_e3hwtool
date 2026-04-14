@@ -1059,12 +1059,6 @@ html[data-theme="dark"]{
                         <button type="button" class="status-filter-btn{% if 'overdue' in selected_status_filters %} active{% endif %}" data-status-filter="overdue">逾期未交</button>
                         <button type="button" class="status-filter-btn{% if selected_status_filters|length >= status_filter_labels|length %} active{% endif %}" data-status-filter="all" style="grid-column:1 / -1">全部</button>
                     </div>
-                    <div class="filter-subsection" style="margin-top:12px;padding-top:12px">
-                        <p class="filter-panel-title" style="margin-bottom:8px">附加條件</p>
-                        <div class="filter-options">
-                            <label class="cb"><input type="checkbox" id="includeIgnoredOverdue"{% if preferences.include_ignored_overdue %} checked{% endif %}> 包含已忽略逾期作業</label>
-                        </div>
-                    </div>
                     <div class="filter-subsection">
                         <p class="filter-panel-title" style="margin-bottom:6px">已忽略逾期作業</p>
                         <div class="muted" style="font-size:12px">這裡可以復原你先前排除的逾期作業。</div>
@@ -1418,7 +1412,6 @@ const loader = document.getElementById('loader');
 const loaderMessageEl = loader ? loader.querySelector('.loader-message') : null;
 const bgRefreshIndicator = document.getElementById('bgRefreshIndicator');
 const statusFilterGroup = document.getElementById('statusFilterGroup');
-const includeIgnoredOverdue = document.getElementById('includeIgnoredOverdue');
 const ignoredOverdueList = document.getElementById('ignoredOverdueList');
 const restoreIgnoredOverdueAll = document.getElementById('restoreIgnoredOverdueAll');
 const filterMenu = document.getElementById('filterMenu');
@@ -1832,10 +1825,7 @@ function renderIgnoredOverdueList() {
 
 function updateFilterSummary() {
     if (!filterActiveCount) return;
-    const activeCount =
-        currentStatusFilters.length +
-        (includeIgnoredOverdue && includeIgnoredOverdue.checked ? 1 : 0);
-    filterActiveCount.textContent = String(activeCount);
+    filterActiveCount.textContent = String(currentStatusFilters.length);
 }
 
 function updateCounts() {
@@ -1848,7 +1838,6 @@ function updateCounts() {
 }
 
 function applyFilters(){
-const includeIgnored = !!(includeIgnoredOverdue && includeIgnoredOverdue.checked);
 const ignoredSet = getIgnoredOverdueUidSet();
 const selectedStatuses = new Set(currentStatusFilters);
 
@@ -1857,7 +1846,7 @@ const selectedStatuses = new Set(currentStatusFilters);
     const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
     tr.dataset.ignored = ignored ? '1' : '0';
     let visible = selectedStatuses.has(primaryStatus);
-    if (primaryStatus === 'overdue' && ignored && !includeIgnored) visible = false;
+    if (primaryStatus === 'overdue' && ignored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
 
@@ -1866,7 +1855,7 @@ const selectedStatuses = new Set(currentStatusFilters);
     const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
     tr.dataset.ignored = ignored ? '1' : '0';
     let visible = selectedStatuses.has(primaryStatus);
-    if (primaryStatus === 'overdue' && ignored && !includeIgnored) visible = false;
+    if (primaryStatus === 'overdue' && ignored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
 
@@ -1894,11 +1883,6 @@ function persistPreferences(partial = {}){
         currentStatusFilters = nextFilters.slice();
         payload.statusFilters = nextFilters.slice();
     }
-    if (Object.prototype.hasOwnProperty.call(partial, 'includeIgnoredOverdue')) {
-        const val = !!partial.includeIgnoredOverdue;
-        USER_PREFERENCES.include_ignored_overdue = val;
-        payload.includeIgnoredOverdue = val;
-    }
     if (Object.prototype.hasOwnProperty.call(partial, 'ignoredOverdueUids')) {
         setIgnoredOverdueUids(partial.ignoredOverdueUids);
         payload.ignoredOverdueUids = USER_PREFERENCES.ignored_overdue_uids.slice();
@@ -1924,13 +1908,9 @@ function applyServerPreferenceState(nextPrefs){
         viewChanged = true;
         setView(incoming.view_mode, { skipPersist: true });
     }
-    if (includeIgnoredOverdue) {
-        includeIgnoredOverdue.checked = incoming.include_ignored_overdue;
-    }
     USER_PREFERENCES.view_mode = incoming.view_mode;
     USER_PREFERENCES.status_filter = incoming.status_filter.slice();
     currentStatusFilters = incoming.status_filter.slice();
-    USER_PREFERENCES.include_ignored_overdue = incoming.include_ignored_overdue;
     setIgnoredOverdueUids(incoming.ignored_overdue_uids);
     syncStatusFilterButtons();
     updateFilterSummary();
@@ -2069,13 +2049,6 @@ if (statusFilterGroup) {
             applyFilters();
             persistPreferences({ statusFilters: currentStatusFilters });
         });
-    });
-}
-if(includeIgnoredOverdue) {
-    includeIgnoredOverdue.addEventListener('change', ()=>{
-        updateFilterSummary();
-        applyFilters();
-        persistPreferences({ includeIgnoredOverdue: !!includeIgnoredOverdue.checked });
     });
 }
 
