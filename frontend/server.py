@@ -14,6 +14,7 @@ BACKEND_BASE = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 FRONTEND_HOST = os.getenv("FRONTEND_HOST", "0.0.0.0")
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
 TEMPLATE_DIR = ROOT / "frontend" / "templates"
+DEV_RELOAD_INTERVAL_MS = int(os.getenv("E3_DEV_RELOAD_INTERVAL_MS", "1200"))
 
 SUPPORTED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
@@ -27,6 +28,60 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _dev_reload_enabled() -> bool:
+    return _env_flag("E3_DEV_RELOAD", default=False)
+
+
+def _compute_reload_token() -> str:
+    latest_mtime = 0
+    watch_paths = [TEMPLATE_DIR, ROOT / "frontend" / "server.py"]
+    for path in watch_paths:
+        if not path.exists():
+            continue
+        if path.is_file():
+            latest_mtime = max(latest_mtime, path.stat().st_mtime_ns)
+            continue
+        for child in path.rglob("*"):
+            if child.is_file():
+                latest_mtime = max(latest_mtime, child.stat().st_mtime_ns)
+    return str(latest_mtime)
+
+
+def _inject_live_reload(html: str) -> str:
+    if not _dev_reload_enabled():
+        return html
+    script = f"""
+<script>
+(function () {{
+    const endpoint = "/_dev/reload-token";
+    const intervalMs = {DEV_RELOAD_INTERVAL_MS};
+    let currentToken = null;
+    async function poll() {{
+        try {{
+            const resp = await fetch(endpoint, {{ cache: "no-store", credentials: "same-origin" }});
+            if (!resp.ok) return;
+            const payload = await resp.json();
+            const nextToken = String(payload.token || "");
+            if (!currentToken) {{
+                currentToken = nextToken;
+                return;
+            }}
+            if (nextToken && nextToken !== currentToken) {{
+                window.location.reload();
+            }}
+        }} catch (err) {{}}
+    }}
+    poll();
+    setInterval(poll, intervalMs);
+}})();
+</script>
+""".strip()
+    closing_body_index = html.lower().rfind("</body>")
+    if closing_body_index == -1:
+        return html + script
+    return html[:closing_body_index] + script + html[closing_body_index:]
 
 
 def _non_hop_headers():
@@ -48,6 +103,13 @@ def _build_target(path: str) -> str:
 @app.route("/healthz", methods=["GET"])
 def health_check():
     return {"status": "ok", "backend": BACKEND_BASE}
+
+
+@app.route("/_dev/reload-token", methods=["GET"])
+def dev_reload_token():
+    if not _dev_reload_enabled():
+        return {"enabled": False, "token": ""}
+    return {"enabled": True, "token": _compute_reload_token()}
 
 
 @app.route("/", defaults={"path": ""}, methods=SUPPORTED_METHODS)
@@ -84,21 +146,30 @@ def proxy(path: str):
         return Response(f"Backend unreachable: {exc}", status=502)
 
     excluded_headers = {"content-encoding", "transfer-encoding", "connection"}
+    content_type = resp.headers.get("Content-Type", "")
+    should_inject_live_reload = _dev_reload_enabled() and "text/html" in content_type.lower()
     if stream:
-        def generate():
-            try:
-                for chunk in resp.iter_content(chunk_size=64 * 1024):
-                    if chunk:
-                        yield chunk
-            finally:
-                resp.close()
+        if should_inject_live_reload:
+            body_text = resp.text
+            resp.close()
+            proxy_response = Response(_inject_live_reload(body_text), status=resp.status_code)
+        else:
+            def generate():
+                try:
+                    for chunk in resp.iter_content(chunk_size=64 * 1024):
+                        if chunk:
+                            yield chunk
+                finally:
+                    resp.close()
 
-        body = generate()
-        proxy_response = Response(body, status=resp.status_code, direct_passthrough=True)
+            body = generate()
+            proxy_response = Response(body, status=resp.status_code, direct_passthrough=True)
     else:
         proxy_response = Response(resp.content, status=resp.status_code)
     for header, value in resp.headers.items():
         if header.lower() in excluded_headers:
+            continue
+        if should_inject_live_reload and header.lower() == "content-length":
             continue
         proxy_response.headers[header] = value
     return proxy_response
@@ -170,7 +241,7 @@ def _render_mock_page(path: str, exc: Exception) -> Response:
 
 
 def main():
-    reload_enabled = _env_flag("E3_DEV_RELOAD", default=False)
+    reload_enabled = _dev_reload_enabled()
     extra_files = [str(path) for path in TEMPLATE_DIR.rglob("*.html")]
     app.run(
         host=FRONTEND_HOST,

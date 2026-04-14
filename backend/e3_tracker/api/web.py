@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-import re
 import secrets
 import threading
 import time
@@ -42,8 +41,6 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 FRONTEND_TEMPLATE_DIR = ROOT_DIR / "frontend" / "templates"
 TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "web.html"
 WEB_TEMPLATE = TEMPLATE_PATH.read_text(encoding="utf-8")
-REPORT_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "report.html"
-REPORT_TEMPLATE = REPORT_TEMPLATE_PATH.read_text(encoding="utf-8")
 LOGIN_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "login.html"
 LOGIN_TEMPLATE = LOGIN_TEMPLATE_PATH.read_text(encoding="utf-8")
 TRAFFIC_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_traffic.html"
@@ -807,7 +804,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     DEFAULT_PREFERENCES = {
         "view_mode": "due",
-        "status_filter": "pending",
+        "status_filter": ["pending"],
         "include_ignored_overdue": False,
         "show_overdue": False,
         "show_completed": False,
@@ -881,13 +878,49 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             lowered = view_mode.strip().lower()
             if lowered in {"course", "due"}:
                 clean["view_mode"] = lowered
+        valid_status_filters = ("pending", "completed", "graded", "overdue")
+
+        def _normalize_status_filters(value: Any) -> List[str]:
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return []
+                try:
+                    parsed = json.loads(stripped)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, list):
+                    value = parsed
+                else:
+                    value = [stripped]
+            if not isinstance(value, list):
+                return []
+            normalized: List[str] = []
+            seen: Set[str] = set()
+            for item in value:
+                lowered = str(item or "").strip().lower()
+                if lowered == "all":
+                    return list(valid_status_filters)
+                if lowered in valid_status_filters and lowered not in seen:
+                    seen.add(lowered)
+                    normalized.append(lowered)
+            return normalized
+
+        status_filter_provided = False
         status_filter = raw.get("status_filter")
+        if "status_filter" in raw:
+            status_filter_provided = True
         if status_filter is None:
             status_filter = raw.get("statusFilter")
-        if isinstance(status_filter, str):
-            lowered = status_filter.strip().lower()
-            if lowered in {"pending", "completed", "graded", "overdue", "all"}:
-                clean["status_filter"] = lowered
+            if "statusFilter" in raw:
+                status_filter_provided = True
+        if status_filter is None:
+            status_filter = raw.get("statusFilters")
+            if "statusFilters" in raw:
+                status_filter_provided = True
+        normalized_status_filters = _normalize_status_filters(status_filter)
+        if status_filter_provided:
+            clean["status_filter"] = normalized_status_filters
         include_ignored_overdue = raw.get("include_ignored_overdue")
         if include_ignored_overdue is None:
             include_ignored_overdue = raw.get("includeIgnoredOverdue")
@@ -1365,472 +1398,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         lines.append("END:VCALENDAR")
         return "\r\n".join(lines)
 
-    def _compute_assignment_report(result: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        if not isinstance(result, dict):
-            return None
-        assignments = list(result.get("all_assignments") or [])
-        if not assignments:
-            return None
-
-        def _coerce_ts(value: Any) -> Optional[int]:
-            if value in (None, ""):
-                return None
-            try:
-                return int(value)
-            except (TypeError, ValueError, OSError, OverflowError):
-                return None
-
-        def _format_hours_label(hours: Optional[float]) -> Optional[str]:
-            if hours is None:
-                return None
-            if hours < 0:
-                late_hours = abs(hours)
-                if late_hours < 24:
-                    return f"晚了 {int(round(late_hours))} 小時"
-                return f"晚了 {late_hours / 24:.1f} 天"
-            if hours < 24:
-                return f"提前 {int(round(hours))} 小時"
-            return f"提前 {hours / 24:.1f} 天"
-
-        def _format_remaining_label(seconds: Optional[int]) -> Optional[str]:
-            if seconds is None:
-                return None
-            if seconds < 0:
-                late_hours = abs(seconds) / 3600
-                if late_hours < 24:
-                    return f"已逾期 {int(round(late_hours))} 小時"
-                return f"已逾期 {late_hours / 24:.1f} 天"
-            hours = seconds / 3600
-            if hours < 24:
-                return f"剩 {int(round(hours))} 小時"
-            return f"剩 {hours / 24:.1f} 天"
-
-        def _parse_direct_timing_hours(text: Optional[str]) -> Optional[float]:
-            source = str(text or "").strip()
-            if not source:
-                return None
-            compact = re.sub(r"\s+", "", source)
-            if "準時" in compact and "繳交" in compact:
-                return 0.0
-
-            def _extract(pattern: str) -> Optional[float]:
-                match = re.search(pattern, compact)
-                if not match:
-                    return None
-                days = int(match.group(1) or 0)
-                hours = int(match.group(2) or 0)
-                minutes = int(match.group(3) or 0)
-                return days * 24 + hours + (minutes / 60)
-
-            early = _extract(r"(?:提早|提前)(?:(\d+)[日天])?(?:(\d+)小時)?(?:(\d+)分鐘)?")
-            if early is not None:
-                return early
-            late = _extract(r"逾期(?:(\d+)[日天])?(?:(\d+)小時)?(?:(\d+)分鐘)?")
-            if late is not None:
-                return -late
-            return None
-
-        now_dt = datetime.now(TAIPEI_TZ)
-        now_ts = int(now_dt.timestamp())
-        total = 0
-        completed = 0
-        graded = 0
-        upcoming_24h = 0
-        upcoming_3d = 0
-        upcoming_7d = 0
-        no_due_open = 0
-        due_known = 0
-        weekend_due_open = 0
-        evening_due_open = 0
-        peer_pressure_tasks = 0
-        open_due_known = 0
-        open_later_count = 0
-        class_progress_values: List[float] = []
-        weekday_counts = [0] * 7
-        daily_load_counts = [0] * 7
-        deadline_window_counts = {"凌晨": 0, "上午": 0, "下午": 0, "晚上": 0}
-        course_stats: Dict[str, Dict[str, Any]] = {}
-        next_deadline: Optional[Dict[str, Any]] = None
-        submission_lead_hours: List[float] = []
-        future_open_remaining_hours: List[float] = []
-        last_minute_submit_count = 0
-        same_day_submit_count = 0
-        early_submit_count = 0
-        late_submit_count = 0
-        urgent_queue: List[Dict[str, Any]] = []
-        peer_pressure_candidates: List[Dict[str, Any]] = []
-
-        for item in assignments:
-            is_completed = bool(item.get("completed"))
-            is_overdue = bool(item.get("overdue"))
-            if not is_completed and is_overdue:
-                continue
-
-            total += 1
-            course_title = str(item.get("course_title") or "未分類課程")
-            course_entry = course_stats.setdefault(
-                course_title,
-                {"course_title": course_title, "total": 0, "completed": 0, "open": 0, "overdue_open": 0},
-            )
-            course_entry["total"] += 1
-
-            due_ts = _coerce_ts(item.get("due_ts"))
-            submitted_ts = _coerce_ts(item.get("submitted_ts"))
-            direct_timing_hours = _parse_direct_timing_hours(item.get("remaining_text"))
-            due_dt = datetime.fromtimestamp(due_ts, tz=TAIPEI_TZ) if due_ts is not None else None
-            if due_dt is not None:
-                due_known += 1
-                weekday_counts[due_dt.weekday()] += 1
-                if due_dt.hour < 6:
-                    deadline_window_counts["凌晨"] += 1
-                elif due_dt.hour < 12:
-                    deadline_window_counts["上午"] += 1
-                elif due_dt.hour < 18:
-                    deadline_window_counts["下午"] += 1
-                else:
-                    deadline_window_counts["晚上"] += 1
-
-            raw_status_text = str(item.get("raw_status_text") or "")
-            raw_status = raw_status_text.lower()
-            if item.get("grade_text") or "graded" in raw_status or "已評分" in raw_status_text:
-                graded += 1
-
-            submitted_count = item.get("submitted_count")
-            participant_count = item.get("participant_count")
-            try:
-                submitted_val = int(submitted_count) if submitted_count is not None else None
-                participant_val = int(participant_count) if participant_count is not None else None
-            except (TypeError, ValueError):
-                submitted_val = None
-                participant_val = None
-            progress_ratio = None
-            if submitted_val is not None and participant_val and participant_val > 0:
-                progress_ratio = max(0.0, min(1.0, submitted_val / participant_val))
-                class_progress_values.append(progress_ratio)
-
-            if is_completed:
-                completed += 1
-                course_entry["completed"] += 1
-                lead_hours = direct_timing_hours
-                if lead_hours is None and due_ts is not None and submitted_ts is not None:
-                    lead_hours = (due_ts - submitted_ts) / 3600
-                if lead_hours is not None:
-                    submission_lead_hours.append(lead_hours)
-                    if lead_hours < 0:
-                        late_submit_count += 1
-                    elif lead_hours <= 1:
-                        last_minute_submit_count += 1
-                    if 0 <= lead_hours <= 24:
-                        same_day_submit_count += 1
-                    if lead_hours >= 24:
-                        early_submit_count += 1
-            else:
-                course_entry["open"] += 1
-                if due_ts is None:
-                    no_due_open += 1
-                else:
-                    open_due_known += 1
-                    remaining = due_ts - now_ts
-                    future_open_remaining_hours.append(remaining / 3600)
-                    urgent_queue.append(
-                        {
-                            "title": str(item.get("title") or "未命名作業"),
-                            "course_title": course_title,
-                            "due_at": item.get("due_at") or "無截止資訊",
-                            "remaining_label": _format_remaining_label(remaining),
-                            "class_progress": int(round((progress_ratio or 0) * 100)) if progress_ratio is not None else None,
-                        }
-                    )
-                    if remaining <= 86400:
-                        upcoming_24h += 1
-                    if remaining <= 86400 * 3:
-                        upcoming_3d += 1
-                    if remaining <= 86400 * 7:
-                        upcoming_7d += 1
-                    else:
-                        open_later_count += 1
-                    if due_dt.weekday() >= 5:
-                        weekend_due_open += 1
-                    if due_dt.hour >= 18 or due_dt.hour < 6:
-                        evening_due_open += 1
-                    if progress_ratio is not None and progress_ratio >= 0.6:
-                        peer_pressure_tasks += 1
-                        peer_pressure_candidates.append(
-                            {
-                                "title": str(item.get("title") or "未命名作業"),
-                                "course_title": course_title,
-                                "due_at": item.get("due_at") or "無截止資訊",
-                                "remaining_label": _format_remaining_label(remaining),
-                                "class_progress": int(round(progress_ratio * 100)),
-                            }
-                        )
-                    if remaining > 0:
-                        day_offset = (due_dt.date() - now_dt.date()).days
-                        if 0 <= day_offset < len(daily_load_counts):
-                            daily_load_counts[day_offset] += 1
-                        if next_deadline is None or due_ts < int(next_deadline["due_ts"]):
-                            next_deadline = {
-                                "title": str(item.get("title") or "未命名作業"),
-                                "course_title": course_title,
-                                "due_at": item.get("due_at") or "無截止資訊",
-                                "due_ts": due_ts,
-                            }
-
-        if total <= 0:
-            return None
-
-        open_count = max(0, total - completed)
-        completion_ratio = completed / total if total else 0.0
-        graded_ratio = graded / total if total else 0.0
-        due_known_ratio = due_known / total if total else 0.0
-        avg_class_progress = sum(class_progress_values) / len(class_progress_values) if class_progress_values else 0.0
-        multi_course_open_count = len([course for course in course_stats.values() if course["open"] > 0])
-        focus_now_count = upcoming_24h
-        urgent_3d_total = upcoming_3d
-        urgent_7d_total = upcoming_7d
-        open_due_ratio = int(round((open_due_known / open_count) * 100)) if open_count else 0
-
-        momentum_score = int(
-            max(
-                8,
-                min(
-                    98,
-                    round(
-                        42
-                        + completion_ratio * 36
-                        + graded_ratio * 10
-                        + due_known_ratio * 8
-                        - upcoming_24h * 4
-                        - no_due_open * 2
-                        - peer_pressure_tasks * 2
-                    ),
-                ),
-            )
-        )
-
-        if open_count == 0:
-            archetype = "全清空收官型"
-            summary = "目前沒有待完成作業，節奏非常乾淨。"
-            accent = "all-clear"
-        elif upcoming_24h >= max(2, int(open_count * 0.4)):
-            archetype = "短線衝刺型"
-            summary = "大量截止日集中在 24 小時內，接下來是高密度衝刺時段。"
-            accent = "sprint"
-        elif completion_ratio >= 0.6 and upcoming_24h == 0:
-            archetype = "穩定收割型"
-            summary = "完成率高，而且眼前沒有 24 小時內要爆掉的作業，屬於穩穩推進的節奏。"
-            accent = "steady"
-        elif multi_course_open_count >= 4:
-            archetype = "多線並行型"
-            summary = "待辦分散在多門課，重點是切出固定的輪轉節奏。"
-            accent = "multi"
-        else:
-            archetype = "持續推進型"
-            summary = "整體還在可控範圍，適合趁現在把最近三天的任務往前清。"
-            accent = "flow"
-
-        score_label = "節奏穩定" if momentum_score >= 82 else ("持續推進" if momentum_score >= 64 else ("需要排程" if momentum_score >= 46 else "短線衝刺"))
-
-        top_courses = sorted(
-            course_stats.values(),
-            key=lambda item: (item["open"], item["overdue_open"], item["total"], item["course_title"]),
-            reverse=True,
-        )[:4]
-        for entry in top_courses:
-            base_total = max(1, int(entry["total"]))
-            entry["open_ratio"] = int(round((int(entry["open"]) / base_total) * 100))
-            entry["completed_ratio"] = int(round((int(entry["completed"]) / base_total) * 100))
-
-        weekday_names = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
-        max_weekday = max(weekday_counts) if any(weekday_counts) else 1
-        weekday_breakdown = [
-            {
-                "label": weekday_names[idx],
-                "count": count,
-                "intensity": int(round((count / max_weekday) * 100)) if max_weekday else 0,
-            }
-            for idx, count in enumerate(weekday_counts)
-        ]
-        busiest_day = max(weekday_breakdown, key=lambda item: item["count"]) if weekday_breakdown else {"label": "-", "count": 0}
-
-        max_daily = max(daily_load_counts) if any(daily_load_counts) else 1
-        daily_load = []
-        for idx, count in enumerate(daily_load_counts):
-            target_day = now_dt + timedelta(days=idx)
-            daily_load.append(
-                {
-                    "label": target_day.strftime("%m/%d"),
-                    "weekday": weekday_names[target_day.weekday()],
-                    "count": count,
-                    "intensity": int(round((count / max_daily) * 100)) if max_daily else 0,
-                    "is_today": idx == 0,
-                }
-            )
-
-        deadline_windows = [
-            {
-                "label": label,
-                "count": count,
-                "intensity": int(round((count / max(deadline_window_counts.values() or [1])) * 100))
-                if any(deadline_window_counts.values())
-                else 0,
-            }
-            for label, count in deadline_window_counts.items()
-        ]
-        peak_deadline_window = max(deadline_windows, key=lambda item: item["count"]) if deadline_windows else {"label": "-", "count": 0}
-        max_day_load = max(daily_load_counts) if any(daily_load_counts) else 0
-        conflict_day_count = sum(1 for count in daily_load_counts if count >= 2)
-        active_days_next_week = sum(1 for count in daily_load_counts if count > 0)
-        recommended_daily_focus = int(max(1, round((focus_now_count + no_due_open) / max(1, min(3, active_days_next_week or 1))))) if open_count else 0
-
-        avg_open_remaining_hours = None
-        avg_open_remaining_label = None
-        if future_open_remaining_hours:
-            avg_open_remaining_hours = round(sum(future_open_remaining_hours) / len(future_open_remaining_hours), 1)
-            avg_open_remaining_label = _format_remaining_label(int(avg_open_remaining_hours * 3600))
-
-        timing_count = len(submission_lead_hours)
-        avg_submit_lead_hours = None
-        median_submit_lead_hours = None
-        avg_submit_lead_label = None
-        median_submit_lead_label = None
-        submit_style = "資料蒐集中"
-        if submission_lead_hours:
-            avg_submit_lead_hours = round(sum(submission_lead_hours) / timing_count, 1)
-            ordered_leads = sorted(submission_lead_hours)
-            middle = timing_count // 2
-            if timing_count % 2 == 1:
-                median_submit_lead_hours = ordered_leads[middle]
-            else:
-                median_submit_lead_hours = round((ordered_leads[middle - 1] + ordered_leads[middle]) / 2, 1)
-            avg_submit_lead_label = _format_hours_label(avg_submit_lead_hours)
-            median_submit_lead_label = _format_hours_label(median_submit_lead_hours)
-            if avg_submit_lead_hours >= 72:
-                submit_style = "提早部署型"
-            elif avg_submit_lead_hours >= 24:
-                submit_style = "前一天穩交型"
-            elif avg_submit_lead_hours >= 6:
-                submit_style = "當日完成型"
-            elif avg_submit_lead_hours >= 0:
-                submit_style = "壓線衝刺型"
-            else:
-                submit_style = "截止後補交型"
-
-        if timing_count >= 3:
-            archetype = submit_style
-            accent_map = {
-                "提早部署型": "steady",
-                "前一天穩交型": "flow",
-                "當日完成型": "multi",
-                "壓線衝刺型": "sprint",
-                "截止後補交型": "fire",
-            }
-            summary_map = {
-                "提早部署型": "大多數作業會在截止前好幾天完成，屬於前置規劃很強的節奏。",
-                "前一天穩交型": "通常會在截止前一天左右完成，節奏穩定而且可預期。",
-                "當日完成型": "多半在截止當天完成，能收尾但緩衝時間偏少。",
-                "壓線衝刺型": "習慣把作業留到最後幾小時處理，最怕臨時插入的變數。",
-                "截止後補交型": "已交紀錄裡還是出現晚交，代表排程節點需要再往前拉。",
-            }
-            accent = accent_map.get(submit_style, accent)
-            summary = summary_map.get(submit_style, summary)
-            if focus_now_count:
-                summary = f"{summary} 目前另有 {focus_now_count} 筆作業會在 24 小時內截止。"
-
-        focus_course = top_courses[0] if top_courses else None
-        focus_course_share = int(round((focus_course["open"] / open_count) * 100)) if focus_course and open_count else 0
-        timing_coverage = int(round((timing_count / completed) * 100)) if completed else 0
-        urgent_queue.sort(
-            key=lambda item: (
-                0 if str(item.get("remaining_label") or "").startswith("已逾期") else 1,
-                str(item.get("due_at") or ""),
-            )
-        )
-        peer_pressure_candidates.sort(
-            key=lambda item: (
-                -(int(item.get("class_progress") or 0)),
-                0 if str(item.get("remaining_label") or "").startswith("已逾期") else 1,
-                str(item.get("due_at") or ""),
-            )
-        )
-
-        recommendations: List[str] = []
-        if focus_now_count:
-            recommendations.append(f"現在最值得先處理的是 {focus_now_count} 筆 24 小時內截止的任務。")
-        if recommended_daily_focus and open_count:
-            recommendations.append(f"若想把眼前壓力降下來，接下來幾天每天至少清掉 {recommended_daily_focus} 筆待辦會比較穩。")
-        if focus_course and focus_course["open"] > 0:
-            recommendations.append(f"優先處理 {focus_course['course_title']}，它目前佔了 {focus_course_share}% 的待辦量。")
-        if peer_pressure_tasks:
-            recommendations.append(f"有 {peer_pressure_tasks} 筆未完成作業班上已有超過六成同學繳交，建議提早補齊。")
-        if timing_count and avg_submit_lead_hours is not None and avg_submit_lead_label:
-            if avg_submit_lead_hours >= 0:
-                recommendations.append(f"你的已交作業平均在截止前 {avg_submit_lead_label.replace('提前 ', '')} 完成，可以拿來當下次排程基準。")
-            else:
-                recommendations.append(f"目前已辨識到部分作業是在截止後才完成，平均約 {avg_submit_lead_label}，建議把高風險課先往前移。")
-        if not recommendations:
-            recommendations.append("目前節奏良好，可以把最接近截止的作業再往前推一點。")
-        recommendations = recommendations[:4]
-
-        return {
-            "total": total,
-            "completed": completed,
-            "open": open_count,
-            "graded": graded,
-            "overdue_open": 0,
-            "focus_now_count": focus_now_count,
-            "urgent_3d_total": urgent_3d_total,
-            "urgent_7d_total": urgent_7d_total,
-            "upcoming_24h": upcoming_24h,
-            "upcoming_3d": upcoming_3d,
-            "upcoming_7d": upcoming_7d,
-            "no_due_open": no_due_open,
-            "open_due_known": open_due_known,
-            "open_later_count": open_later_count,
-            "open_due_ratio": open_due_ratio,
-            "weekend_due_open": weekend_due_open,
-            "evening_due_open": evening_due_open,
-            "peer_pressure_tasks": peer_pressure_tasks,
-            "completion_ratio": int(round(completion_ratio * 100)),
-            "graded_ratio": int(round(graded_ratio * 100)),
-            "avg_class_progress": int(round(avg_class_progress * 100)),
-            "momentum_score": momentum_score,
-            "score_label": score_label,
-            "archetype": archetype,
-            "summary": summary,
-            "accent": accent,
-            "top_courses": top_courses,
-            "weekday_breakdown": weekday_breakdown,
-            "daily_load": daily_load,
-            "deadline_windows": deadline_windows,
-            "peak_deadline_window": peak_deadline_window,
-            "busiest_day": busiest_day,
-            "max_day_load": max_day_load,
-            "conflict_day_count": conflict_day_count,
-            "active_days_next_week": active_days_next_week,
-            "recommended_daily_focus": recommended_daily_focus,
-            "avg_open_remaining_hours": avg_open_remaining_hours,
-            "avg_open_remaining_label": avg_open_remaining_label,
-            "next_deadline": next_deadline,
-            "urgent_queue": urgent_queue[:5],
-            "peer_pressure_candidates": peer_pressure_candidates[:4],
-            "recommendations": recommendations,
-            "focus_course": focus_course,
-            "focus_course_share": focus_course_share,
-            "timing_ready": timing_count > 0,
-            "timing_count": timing_count,
-            "timing_coverage": timing_coverage,
-            "avg_submit_lead_hours": avg_submit_lead_hours,
-            "median_submit_lead_hours": median_submit_lead_hours,
-            "avg_submit_lead_label": avg_submit_lead_label,
-            "median_submit_lead_label": median_submit_lead_label,
-            "last_minute_submit_rate": int(round((last_minute_submit_count / timing_count) * 100)) if timing_count else 0,
-            "same_day_submit_rate": int(round((same_day_submit_count / timing_count) * 100)) if timing_count else 0,
-            "early_submit_rate": int(round((early_submit_count / timing_count) * 100)) if timing_count else 0,
-            "late_submit_count": late_submit_count,
-            "submit_style": submit_style,
-        }
-
     def _build_dashboard_context(user: Dict[str, Any]) -> Dict[str, Any]:
         admin_view_options: List[Dict[str, Any]] = []
         viewed_username = user["username"]
@@ -1872,7 +1439,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not result and not guest_mode and not is_admin_view:
             flash("正在載入資料，請稍候...", "info")
         google_linked = bool(not is_admin_view and load_google_tokens(user["username"]))
-        assignment_report = _compute_assignment_report(result)
         stats = usage_stats()
         stats_version_value = current_stats_version()
         announcements_list = load_announcements(None if is_admin_view else user["username"])
@@ -1909,7 +1475,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "viewed_username": viewed_username,
             "is_admin_view": is_admin_view,
             "admin_view_options": admin_view_options,
-            "assignment_report": assignment_report,
         }
 
     def fetch_assignments_for(user: Dict[str, str]) -> Tuple[Dict[str, Any], Optional[str]]:
@@ -2817,20 +2382,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             support_email=support_email,
             stats=usage_stats(),
             stats_version=current_stats_version(),
-        )
-
-    @app.route("/report", methods=["GET"])
-    @login_required
-    def report_page():
-        user = current_user()
-        if not user:
-            return redirect(url_for("login"))
-        context = _build_dashboard_context(user)
-        return render_template_string(
-            REPORT_TEMPLATE,
-            **context,
-            app_home_url=app_home_url,
-            support_email=support_email,
         )
 
     @app.route("/", methods=["GET"])

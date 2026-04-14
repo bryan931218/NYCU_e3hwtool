@@ -386,6 +386,11 @@ class PersistentStorage:
             return
         view_mode = prefs.get("view_mode")
         status_filter = prefs.get("status_filter")
+        if isinstance(status_filter, list):
+            status_filter = json.dumps(
+                [str(item).strip() for item in status_filter if str(item).strip()],
+                ensure_ascii=False,
+            )
         include_ignored_overdue = self._coerce_bool_int(prefs.get("include_ignored_overdue"))
         show_overdue = self._coerce_bool_int(prefs.get("show_overdue"))
         show_completed = self._coerce_bool_int(prefs.get("show_completed"))
