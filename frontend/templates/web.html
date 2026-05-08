@@ -1401,11 +1401,12 @@ html[data-theme="dark"]{
 const USER_PREFERENCES = {{ preferences | tojson | safe }} || {};
 const PREFERENCES_ENDPOINT = "{{ url_for('save_preferences', view_user=viewed_username) if is_admin_view else url_for('save_preferences') }}";
 const CACHE_SYNC_ENDPOINT = "{{ url_for('api_cache', view_user=viewed_username) if is_admin_view else url_for('api_cache') }}";
-const CACHE_SYNC_INTERVAL = 60000;
+const CACHE_SYNC_INTERVAL = 120000;
 let currentCacheTs = Number(document.body.dataset.cacheTs || '0');
 if (Number.isNaN(currentCacheTs)) {
     currentCacheTs = 0;
 }
+let refreshInFlight = false;
 const IS_GUEST = {{ 'true' if guest_mode else 'false' }};
 const IS_READONLY_VIEW = document.body.dataset.readonlyView === '1';
 const loader = document.getElementById('loader');
@@ -1630,9 +1631,13 @@ async function waitForCacheUpdate(prevTs, timeoutMs = 30000, intervalMs = 2000) 
 }
 
 async function refreshAssignments(background = true){
+    if (refreshInFlight) {
+        return;
+    }
+    refreshInFlight = true;
     try{
     if (background) {
-        bgRefreshIndicator.classList.add('active');
+        bgRefreshIndicator && bgRefreshIndicator.classList.add('active');
     } else {
         showLoader('資料更新中，請稍候...');
     }
@@ -1658,7 +1663,7 @@ async function refreshAssignments(background = true){
     }
     } catch(e) {
     if (background) {
-        bgRefreshIndicator.classList.remove('active');
+        bgRefreshIndicator && bgRefreshIndicator.classList.remove('active');
         console.error("背景更新失敗：", e.message);
         showToast("背景更新失敗：" + e.message, "error");
     } else {
@@ -1666,8 +1671,9 @@ async function refreshAssignments(background = true){
         showToast("更新失敗：" + e.message, "error");
     }
     } finally {
+    refreshInFlight = false;
     if (background) {
-        bgRefreshIndicator.classList.remove('active');
+        bgRefreshIndicator && bgRefreshIndicator.classList.remove('active');
     } else {
         hideLoader();
     }
@@ -2104,7 +2110,7 @@ document.querySelectorAll('[data-log-action]').forEach((el) => {
     if (IS_GUEST) {
         return;
     }
-    const HEARTBEAT_INTERVAL = 60000;
+    const HEARTBEAT_INTERVAL = 240000;
     let heartbeatTimer = null;
     function sendHeartbeat() {
         logUiEvent('heartbeat', 'info');
@@ -2140,8 +2146,9 @@ document.querySelectorAll('[data-log-action]').forEach((el) => {
             const nextTs = Number(payload.ts || '0');
             if (!Number.isNaN(nextTs) && nextTs > currentCacheTs) {
                 currentCacheTs = nextTs;
-                if (typeof refreshAssignments === 'function') {
-                    await refreshAssignments(true);
+                await fetchAndSwapContent();
+                if (payload.preferences) {
+                    applyServerPreferenceState(payload.preferences);
                 }
                 return;
             }
@@ -2211,7 +2218,18 @@ if (googleModalSubmit && googleModalList) {
 }
 
 if (!IS_GUEST && !IS_READONLY_VIEW) {
-    setTimeout(() => refreshAssignments(true), 1000);
+    setTimeout(() => {
+        try {
+            const lastAutoRefresh = Number(localStorage.getItem('e3_last_auto_refresh_ts') || '0');
+            const now = Date.now();
+            if (Number.isNaN(lastAutoRefresh) || now - lastAutoRefresh > 15 * 60 * 1000) {
+                localStorage.setItem('e3_last_auto_refresh_ts', String(now));
+                refreshAssignments(true);
+            }
+        } catch (err) {
+            refreshAssignments(true);
+        }
+    }, 1000);
 }
 
 window.addEventListener('orientationchange', function() {
@@ -2375,7 +2393,7 @@ window.addEventListener('orientationchange', function() {
             console.debug('traffic poll failed', err);
         }
     }
-    setInterval(poll, 45000);
+    setInterval(poll, 120000);
 })();
 
 </script>

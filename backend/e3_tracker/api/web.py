@@ -812,6 +812,39 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         "ignored_overdue_uids": [],
     }
     NEW_ASSIGNMENT_WINDOW_SECONDS = 5 * 60
+    refresh_jobs_lock = threading.Lock()
+    refresh_jobs: Dict[str, Dict[str, Any]] = {}
+
+    def _refresh_job_state(username: str) -> Optional[Dict[str, Any]]:
+        if not username:
+            return None
+        with refresh_jobs_lock:
+            job = refresh_jobs.get(username)
+            if not job:
+                return None
+            started_at = float(job.get("started_at") or 0)
+            if started_at and time.time() - started_at > 180:
+                refresh_jobs.pop(username, None)
+                return None
+            return dict(job)
+
+    def _mark_refresh_job_started(username: str) -> bool:
+        if not username:
+            return False
+        with refresh_jobs_lock:
+            job = refresh_jobs.get(username)
+            started_at = float(job.get("started_at") or 0) if job else 0
+            if started_at and time.time() - started_at <= 180:
+                return False
+            refresh_jobs[username] = {"started_at": time.time()}
+            return True
+
+    def _mark_refresh_job_done(username: str) -> None:
+        if not username:
+            return
+        with refresh_jobs_lock:
+            refresh_jobs.pop(username, None)
+
     def load_cache_from_disk(username: str) -> Optional[Dict[str, Any]]:
         return storage.load_user_cache(username)
 
@@ -1689,15 +1722,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         viewed_username = get_viewed_username(actor=user)
         cache = get_assign_cache(viewed_username) or {}
         preferences = get_user_preferences(viewed_username)
+        include_cache = str(request.args.get("include_cache") or "").lower() in {"1", "true", "yes"}
+        refresh_state = _refresh_job_state(viewed_username)
         payload = {
             "ok": True,
-            "cache": cache,
             "ts": cache.get("ts"),
             "has_result": bool(cache.get("result")) if cache else False,
             "preferences": preferences,
             "viewed_username": viewed_username,
             "readonly_view": is_admin_viewing_other_user(actor=user, viewed_username=viewed_username),
+            "refresh_in_progress": bool(refresh_state),
+            "refresh_started_at": refresh_state.get("started_at") if refresh_state else None,
         }
+        if include_cache:
+            payload["cache"] = cache
         return payload
 
     @app.post("/preferences")
@@ -2015,6 +2053,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         moodle_session_val = session.get("moodle_session")
         prev_cache = get_assign_cache() or {}
         prev_ts = prev_cache.get("ts") or 0
+        if not _mark_refresh_job_started(username):
+            return {
+                "ok": True,
+                "message": "背景更新已在進行中。",
+                "background": True,
+                "in_progress": True,
+                "ts": prev_ts,
+            }
 
         def _run_background():
             with app.app_context():
@@ -2028,6 +2074,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     )
                 except Exception as exc:  # pragma: no cover - background logging
                     record_ui_event("refresh_assignments", "error", {"reason": str(exc), "mode": "background"})
+                finally:
+                    _mark_refresh_job_done(username)
 
         threading.Thread(target=_run_background, daemon=True).start()
         return {
