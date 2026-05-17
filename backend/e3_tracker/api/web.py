@@ -823,7 +823,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if not job:
                 return None
             started_at = float(job.get("started_at") or 0)
-            if started_at and time.time() - started_at > 180:
+            finished_at = float(job.get("finished_at") or 0)
+            if finished_at and time.time() - finished_at > 300:
+                refresh_jobs.pop(username, None)
+                return None
+            if not finished_at and started_at and time.time() - started_at > 600:
                 refresh_jobs.pop(username, None)
                 return None
             return dict(job)
@@ -834,16 +838,24 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         with refresh_jobs_lock:
             job = refresh_jobs.get(username)
             started_at = float(job.get("started_at") or 0) if job else 0
-            if started_at and time.time() - started_at <= 180:
+            finished_at = float(job.get("finished_at") or 0) if job else 0
+            if started_at and not finished_at and time.time() - started_at <= 600:
                 return False
-            refresh_jobs[username] = {"started_at": time.time()}
+            refresh_jobs[username] = {"started_at": time.time(), "status": "running"}
             return True
 
-    def _mark_refresh_job_done(username: str) -> None:
+    def _mark_refresh_job_done(username: str, *, status: str = "success", error: Optional[str] = None) -> None:
         if not username:
             return
         with refresh_jobs_lock:
-            refresh_jobs.pop(username, None)
+            job = refresh_jobs.get(username) or {"started_at": time.time()}
+            job["status"] = status
+            job["finished_at"] = time.time()
+            if error:
+                job["error"] = str(error)
+            else:
+                job.pop("error", None)
+            refresh_jobs[username] = job
 
     def load_cache_from_disk(username: str) -> Optional[Dict[str, Any]]:
         return storage.load_user_cache(username)
@@ -1731,8 +1743,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "preferences": preferences,
             "viewed_username": viewed_username,
             "readonly_view": is_admin_viewing_other_user(actor=user, viewed_username=viewed_username),
-            "refresh_in_progress": bool(refresh_state),
+            "refresh_status": refresh_state.get("status") if refresh_state else None,
+            "refresh_error": refresh_state.get("error") if refresh_state else None,
+            "refresh_in_progress": bool(refresh_state and refresh_state.get("status") == "running"),
             "refresh_started_at": refresh_state.get("started_at") if refresh_state else None,
+            "refresh_finished_at": refresh_state.get("finished_at") if refresh_state else None,
         }
         if include_cache:
             payload["cache"] = cache
@@ -2074,8 +2089,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     )
                 except Exception as exc:  # pragma: no cover - background logging
                     record_ui_event("refresh_assignments", "error", {"reason": str(exc), "mode": "background"})
-                finally:
-                    _mark_refresh_job_done(username)
+                    _mark_refresh_job_done(username, status="error", error=str(exc))
+                else:
+                    _mark_refresh_job_done(username, status="success")
 
         threading.Thread(target=_run_background, daemon=True).start()
         return {

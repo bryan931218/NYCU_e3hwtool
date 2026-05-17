@@ -1070,6 +1070,17 @@ html[data-theme="dark"]{
         </div>
         </div>
         <div class="tc-center">
+            {% if not guest_mode and not is_admin_view %}
+                <button class="btn accent" type="button" id="manualRefreshBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 1-15.5 6.3"></path>
+                        <path d="M3 12a9 9 0 0 1 15.5-6.3"></path>
+                        <path d="M18 3v5h-5"></path>
+                        <path d="M6 21v-5h5"></path>
+                    </svg>
+                    手動更新
+                </button>
+            {% endif %}
             {% if result and excel_data %}
                 <a class="btn primary excel-btn" data-log-action="download_excel" download="待繳作業.xlsx"
                 href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}">
@@ -1606,26 +1617,41 @@ async function fetchAndSwapContent() {
     applyFilters();
 }
 
-async function fetchCacheTs() {
-    const resp = await fetch("{{ url_for('api_cache') }}", { credentials: "same-origin" });
+async function fetchCacheStatus() {
+    const resp = await fetch(CACHE_SYNC_ENDPOINT || "{{ url_for('api_cache') }}", {
+        cache: "no-store",
+        credentials: "same-origin"
+    });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || "cache error");
-    return Number(data.ts || 0);
+    return data;
 }
 
-async function waitForCacheUpdate(prevTs, timeoutMs = 30000, intervalMs = 2000) {
+async function waitForCacheUpdate(prevTs, timeoutMs = 300000, intervalMs = 2500) {
     const start = Date.now();
+    let lastStatus = null;
     while (Date.now() - start < timeoutMs) {
         try {
-            const ts = await fetchCacheTs();
+            const status = await fetchCacheStatus();
+            lastStatus = status;
+            if (status.refresh_status === 'error') {
+                throw new Error(status.refresh_error || "背景更新失敗");
+            }
+            const ts = Number(status.ts || 0);
             if (!Number.isNaN(ts) && ts > prevTs) {
-                return ts;
+                return { ts, pending: false };
             }
         } catch (err) {
+            if (lastStatus && lastStatus.refresh_status === 'error') {
+                throw err;
+            }
             console.error("poll cache failed:", err.message);
         }
         await new Promise(res => setTimeout(res, intervalMs));
+    }
+    if (lastStatus && lastStatus.refresh_in_progress) {
+        return { ts: Number(lastStatus.ts || 0), pending: true };
     }
     throw new Error("等待更新逾時");
 }
@@ -1635,6 +1661,9 @@ async function refreshAssignments(background = true){
         return;
     }
     refreshInFlight = true;
+    document.querySelectorAll('#manualRefreshBtn').forEach((button) => {
+        button.disabled = true;
+    });
     try{
     if (background) {
         bgRefreshIndicator && bgRefreshIndicator.classList.add('active');
@@ -1653,8 +1682,12 @@ async function refreshAssignments(background = true){
     if (response.ok) {
         const prevTs = Number(currentCacheTs || 0);
         if (response.background) {
-            const nextTs = await waitForCacheUpdate(prevTs, 40000, 2000);
-            currentCacheTs = nextTs;
+            const updateResult = await waitForCacheUpdate(prevTs);
+            if (updateResult.pending) {
+                showToast("背景更新仍在進行，完成後會自動同步畫面。", "info");
+                return;
+            }
+            currentCacheTs = updateResult.ts;
         }
         await fetchAndSwapContent();
         showToast("資料已成功更新", "success");
@@ -1672,6 +1705,9 @@ async function refreshAssignments(background = true){
     }
     } finally {
     refreshInFlight = false;
+    document.querySelectorAll('#manualRefreshBtn').forEach((button) => {
+        button.disabled = false;
+    });
     if (background) {
         bgRefreshIndicator && bgRefreshIndicator.classList.remove('active');
     } else {
@@ -2104,6 +2140,13 @@ document.querySelectorAll('[data-log-action]').forEach((el) => {
             logUiEvent(action);
         }
     });
+});
+
+document.addEventListener('click', (evt) => {
+    const refreshBtn = evt.target.closest('#manualRefreshBtn');
+    if (!refreshBtn) return;
+    evt.preventDefault();
+    refreshAssignments(false);
 });
 
 (function () {
