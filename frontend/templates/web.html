@@ -2146,7 +2146,7 @@ document.addEventListener('click', (evt) => {
     const refreshBtn = evt.target.closest('#manualRefreshBtn');
     if (!refreshBtn) return;
     evt.preventDefault();
-    refreshAssignments(false);
+    refreshAssignments(true);
 });
 
 (function () {
