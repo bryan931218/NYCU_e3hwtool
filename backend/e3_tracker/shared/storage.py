@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import (
     Column,
     Float,
+    Index,
     Integer,
     MetaData,
     String,
@@ -66,6 +67,7 @@ courses_table = Table(
     Column("updated_at", String(64), nullable=False),
     UniqueConstraint("user_id", "course_code", name="uq_courses_user_course"),
 )
+Index("ix_courses_user_id", courses_table.c.user_id)
 
 assignments_table = Table(
     "assignments",
@@ -89,6 +91,8 @@ assignments_table = Table(
     Column("updated_at", String(64), nullable=False),
     UniqueConstraint("course_id", "uid", name="uq_assignments_course_uid"),
 )
+Index("ix_assignments_course_id", assignments_table.c.course_id)
+Index("ix_assignments_due_ts", assignments_table.c.due_ts)
 
 assignment_views_table = Table(
     "assignment_views",
@@ -100,6 +104,7 @@ assignment_views_table = Table(
     Column("first_seen_ts", Integer, nullable=False),
     UniqueConstraint("user_id", "assignment_uid", name="uq_assignment_views_user_uid"),
 )
+Index("ix_assignment_views_user_id", assignment_views_table.c.user_id)
 
 user_fetch_state_table = Table(
     "user_fetch_state",
@@ -133,6 +138,7 @@ google_tokens_table = Table(
     Column("expires_at", Float),
     Column("updated_at", String(64)),
 )
+Index("ix_fetch_errors_user_id", fetch_errors_table.c.user_id)
 
 web_sessions_table = Table(
     "web_sessions",
@@ -142,6 +148,7 @@ web_sessions_table = Table(
     Column("created_at", String(64), nullable=False),
     Column("updated_at", String(64), nullable=False),
 )
+Index("ix_web_sessions_username", web_sessions_table.c.username)
 
 announcements_table = Table(
     "announcements",
@@ -165,6 +172,7 @@ announcement_votes_table = Table(
     Column("updated_at", String(64), nullable=False),
     UniqueConstraint("announcement_id", "user_id", name="uq_announcement_votes_announcement_user"),
 )
+Index("ix_announcement_votes_user_id", announcement_votes_table.c.user_id)
 
 feedback_table = Table(
     "feedback",
@@ -177,6 +185,8 @@ feedback_table = Table(
     Column("status", String(32)),
     Column("created_at", String(64)),
 )
+Index("ix_feedback_user_id", feedback_table.c.user_id)
+Index("ix_feedback_status", feedback_table.c.status)
 
 traffic_state_table = Table(
     "traffic_state",
@@ -199,6 +209,9 @@ traffic_events_table = Table(
     Column("is_admin", Integer),
     Column("meta", Text),
 )
+Index("ix_traffic_events_username", traffic_events_table.c.username)
+Index("ix_traffic_events_ts", traffic_events_table.c.ts)
+Index("ix_traffic_events_action", traffic_events_table.c.action)
 
 class PersistentStorage:
     """Database-backed persistence with normalized storage."""
@@ -252,11 +265,19 @@ class PersistentStorage:
             missing_columns.append(("submitted_ts", "INTEGER"))
         if "remaining_text" not in existing_columns:
             missing_columns.append(("remaining_text", "TEXT"))
-        if not missing_columns:
-            return
-        with self._lock, self._engine.begin() as conn:
-            for column_name, column_type in missing_columns:
-                conn.execute(text(f"ALTER TABLE assignments ADD COLUMN {column_name} {column_type}"))
+        if missing_columns:
+            with self._lock, self._engine.begin() as conn:
+                for column_name, column_type in missing_columns:
+                    conn.execute(text(f"ALTER TABLE assignments ADD COLUMN {column_name} {column_type}"))
+        self._ensure_indexes()
+
+    def _ensure_indexes(self) -> None:
+        for table in metadata.sorted_tables:
+            for index in table.indexes:
+                try:
+                    index.create(self._engine, checkfirst=True)
+                except Exception:
+                    pass
 
     def _normalize_url(self, raw: str) -> str:
         raw = self._normalize_filesystem_path(raw)
@@ -460,6 +481,7 @@ class PersistentStorage:
             conn.execute(delete(courses_table).where(courses_table.c.user_id == user_id))
 
             now = self._now_iso()
+            assignment_rows: List[Dict[str, Any]] = []
             for course in courses:
                 try:
                     course_code = int(course.get("id"))
@@ -500,27 +522,30 @@ class PersistentStorage:
                             submitted_ts_val = int(submitted_ts)
                         except (TypeError, ValueError):
                             submitted_ts_val = None
-                    conn.execute(
-                        insert(assignments_table).values(
-                            course_id=course_pk,
-                            uid=self._assignment_uid(course_code, title_val, item.get("url")),
-                            title=title_val,
-                            url=item.get("url"),
-                            due_at=item.get("due_at"),
-                            due_ts=due_ts_val,
-                            overdue=self._coerce_bool_int(item.get("overdue")),
-                            completed=self._coerce_bool_int(item.get("completed")),
-                            raw_status_text=item.get("raw_status_text"),
-                            grade_text=item.get("grade_text"),
-                            submitted_at=item.get("submitted_at"),
-                            submitted_ts=submitted_ts_val,
-                            remaining_text=item.get("remaining_text"),
-                            submitted_count=item.get("submitted_count"),
-                            participant_count=item.get("participant_count"),
-                            updated_at=now,
-                        )
+                    assignment_rows.append(
+                        {
+                            "course_id": course_pk,
+                            "uid": self._assignment_uid(course_code, title_val, item.get("url")),
+                            "title": title_val,
+                            "url": item.get("url"),
+                            "due_at": item.get("due_at"),
+                            "due_ts": due_ts_val,
+                            "overdue": self._coerce_bool_int(item.get("overdue")),
+                            "completed": self._coerce_bool_int(item.get("completed")),
+                            "raw_status_text": item.get("raw_status_text"),
+                            "grade_text": item.get("grade_text"),
+                            "submitted_at": item.get("submitted_at"),
+                            "submitted_ts": submitted_ts_val,
+                            "remaining_text": item.get("remaining_text"),
+                            "submitted_count": item.get("submitted_count"),
+                            "participant_count": item.get("participant_count"),
+                            "updated_at": now,
+                        }
                     )
+            if assignment_rows:
+                conn.execute(insert(assignments_table), assignment_rows)
 
+            error_rows: List[Dict[str, Any]] = []
             for err in errors:
                 if not isinstance(err, dict):
                     continue
@@ -529,15 +554,17 @@ class PersistentStorage:
                     course_code_val = int(course_code) if course_code is not None else None
                 except (TypeError, ValueError):
                     course_code_val = None
-                conn.execute(
-                    insert(fetch_errors_table).values(
-                        user_id=user_id,
-                        course_code=course_code_val,
-                        course_title=err.get("course_title"),
-                        assignment_title=err.get("assignment_title"),
-                        message=str(err.get("message") or ""),
-                    )
+                error_rows.append(
+                    {
+                        "user_id": user_id,
+                        "course_code": course_code_val,
+                        "course_title": err.get("course_title"),
+                        "assignment_title": err.get("assignment_title"),
+                        "message": str(err.get("message") or ""),
+                    }
                 )
+            if error_rows:
+                conn.execute(insert(fetch_errors_table), error_rows)
 
     def mark_assignment_views(
         self,
