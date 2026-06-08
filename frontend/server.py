@@ -19,8 +19,8 @@ DEV_RELOAD_INTERVAL_MS = int(os.getenv("E3_DEV_RELOAD_INTERVAL_MS", "1200"))
 SUPPORTED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
-app.jinja_env.globals.setdefault("url_for", lambda *_, **__: "#")
-app.jinja_env.globals.setdefault("get_flashed_messages", lambda **__: [])
+app.jinja_env.globals["url_for"] = lambda endpoint, **values: f"/{endpoint}"
+app.jinja_env.globals["get_flashed_messages"] = lambda **__: []
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -229,6 +229,27 @@ def _mock_context() -> dict:
         "google_linked": False,
         "cache_ts": int(now.timestamp()),
         "now_ts": int(now.timestamp()),
+        "preferences": {
+            "view_mode": "due",
+            "status_filter": ["pending"],
+            "ignored_overdue_uids": [],
+            "include_ignored_overdue": False,
+        },
+        "status_filter_labels": {
+            "pending": "待處理",
+            "completed": "已完成",
+            "graded": "已評分",
+            "overdue": "逾期未交",
+        },
+        "user": {"username": "dev-user", "is_admin": False},
+        "viewed_username": "dev-user",
+        "is_admin_view": False,
+        "guest_mode": False,
+        "stats": {"online": 1, "total": 1},
+        "last_updated_label": now.strftime("%Y-%m-%d %H:%M"),
+        "announcements": [],
+        "announcement_version": "",
+        "stats_version": 0,
     }
 
 

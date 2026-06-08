@@ -268,9 +268,18 @@ html[data-theme="dark"]{
     display:flex;flex-direction:column;gap:5px;min-width:0;
     font-size:14px;font-weight:600;line-height:1.35;
     }
+    .assignment-due-header{display:flex;align-items:center;gap:6px;min-width:0}
     .assignment-due-main{overflow-wrap:anywhere}
     .assignment-due-sub{font-size:12px;color:var(--muted);font-weight:500}
     .assignment-due.empty .assignment-due-main{color:var(--muted);font-weight:500}
+    .due-edit-btn{
+    width:28px;height:28px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid var(--border);border-radius:999px;background:var(--card-2);color:var(--muted);
+    cursor:pointer;transition:background .16s ease,color .16s ease,border-color .16s ease;
+    }
+    .due-edit-btn svg{width:14px;height:14px}
+    .due-edit-btn:hover{background:var(--card);color:var(--primary);border-color:color-mix(in srgb, var(--primary) 35%, var(--border))}
+    .custom-delete-btn{border-style:solid;color:var(--err-fg)}
     .assignment-center{text-align:center!important}
     .assignment-link .btn{
     min-width:72px;justify-content:center;padding:9px 12px;
@@ -578,6 +587,13 @@ html[data-theme="dark"]{
     .modal-item input{margin-top:4px;}
     .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
     .modal-empty{color:var(--muted);text-align:center;padding:24px;}
+    .form-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
+    .form-field{display:flex;flex-direction:column;gap:6px}
+    .form-field label{font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.03em}
+    .form-field input{
+    width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+    background:var(--card-2);color:var(--fg);font:inherit;
+    }
     .announcement-list{margin-top:12px;display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow:auto}
     .announcement-card{border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--card-2)}
     .announcement-card h4{margin:0 0 6px;font-size:17px}
@@ -1081,6 +1097,15 @@ html[data-theme="dark"]{
                     手動更新
                 </button>
             {% endif %}
+            {% if not is_admin_view %}
+                <button class="btn" type="button" id="addCustomAssignmentBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 5v14"></path>
+                        <path d="M5 12h14"></path>
+                    </svg>
+                    新增代辦
+                </button>
+            {% endif %}
             {% if result and excel_data %}
                 <a class="btn primary excel-btn" data-log-action="download_excel" download="待繳作業.xlsx"
                 href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}">
@@ -1182,6 +1207,8 @@ html[data-theme="dark"]{
                 data-primary-status="{{ primary_status }}"
                 data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
                 data-uid="{{ item_uid }}"
+                data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
+                data-original-due="{{ item.due_at or '' }}"
                 data-course="{{ item.course_title }}"
                 data-title="{{ item.title }}"
                 data-due="{{ item.due_at or '無截止' }}"
@@ -1202,7 +1229,14 @@ html[data-theme="dark"]{
                 </td>
                 <td>
                     <div class="assignment-due {% if not item.due_at %}empty{% endif %}">
-                        <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
+                        <div class="assignment-due-header">
+                            <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
+                            {% if not is_admin_view %}
+                            <button type="button" class="due-edit-btn" data-edit-due="{{ item_uid }}" aria-label="修改繳交期限" title="修改繳交期限">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                            </button>
+                            {% endif %}
+                        </div>
                         <span class="assignment-due-sub">{{ item.raw_status_text or "截止資訊同步中" }}</span>
                     </div>
                 </td>
@@ -1267,6 +1301,8 @@ html[data-theme="dark"]{
                     data-primary-status="{{ primary_status }}"
                     data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
                     data-uid="{{ item_uid }}"
+                    data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
+                    data-original-due="{{ item.due_at or '' }}"
                     data-course="{{ course.title }}"
                     data-title="{{ item.title }}"
                     data-due="{{ item.due_at or '無截止' }}"
@@ -1284,7 +1320,14 @@ html[data-theme="dark"]{
                     </td>
                     <td>
                         <div class="assignment-due {% if not item.due_at %}empty{% endif %}">
-                            <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
+                            <div class="assignment-due-header">
+                                <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
+                                {% if not is_admin_view %}
+                                <button type="button" class="due-edit-btn" data-edit-due="{{ item_uid }}" aria-label="修改繳交期限" title="修改繳交期限">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                                </button>
+                                {% endif %}
+                            </div>
                             <span class="assignment-due-sub">{{ item.raw_status_text or "截止資訊同步中" }}</span>
                         </div>
                     </td>
@@ -1335,6 +1378,64 @@ html[data-theme="dark"]{
             <button class="btn ghost" type="button" id="googleModalCancel">取消</button>
             <button class="btn google" type="button" id="googleModalSubmit">導入</button>
         </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not is_admin_view %}
+<div id="dueEditModal" class="modal-root hidden" style="display:none">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div>
+                <h3 style="margin:0;font-size:20px">修改繳交期限</h3>
+                <p class="muted" id="dueEditTitle" style="margin:4px 0 0"></p>
+            </div>
+            <button class="btn ghost" type="button" data-close-due-edit aria-label="關閉">×</button>
+        </div>
+        <form id="dueEditForm" class="form-grid">
+            <input type="hidden" id="dueEditUid">
+            <div class="form-field">
+                <label for="dueEditInput">繳交期限</label>
+                <input id="dueEditInput" type="datetime-local" required>
+            </div>
+            <div class="modal-actions">
+                <button class="btn ghost" type="button" id="dueResetBtn">還原原期限</button>
+                <button class="btn ghost" type="button" data-close-due-edit>取消</button>
+                <button class="btn primary" type="submit">儲存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="customAssignmentModal" class="modal-root hidden" style="display:none">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div>
+                <h3 style="margin:0;font-size:20px">新增代辦作業</h3>
+                <p class="muted" style="margin:4px 0 0">自訂項目會保存在這台瀏覽器。</p>
+            </div>
+            <button class="btn ghost" type="button" data-close-custom-assignment aria-label="關閉">×</button>
+        </div>
+        <form id="customAssignmentForm" class="form-grid">
+            <div class="form-field">
+                <label for="customCourseInput">課程或分類</label>
+                <input id="customCourseInput" type="text" placeholder="自訂代辦">
+            </div>
+            <div class="form-field">
+                <label for="customTitleInput">作業名稱</label>
+                <input id="customTitleInput" type="text" required>
+            </div>
+            <div class="form-field">
+                <label for="customDueInput">繳交期限</label>
+                <input id="customDueInput" type="datetime-local" required>
+            </div>
+            <div class="modal-actions">
+                <button class="btn ghost" type="button" data-close-custom-assignment>取消</button>
+                <button class="btn primary" type="submit">新增</button>
+            </div>
+        </form>
     </div>
 </div>
 {% endif %}
@@ -1439,6 +1540,18 @@ const themeToggle = document.getElementById('themeToggle');
 
 const totalCountEl = document.getElementById('totalCount');
 const ignoredCountEl = document.getElementById('ignoredCount');
+const addCustomAssignmentBtn = document.getElementById('addCustomAssignmentBtn');
+const dueEditModal = document.getElementById('dueEditModal');
+const dueEditForm = document.getElementById('dueEditForm');
+const dueEditUid = document.getElementById('dueEditUid');
+const dueEditInput = document.getElementById('dueEditInput');
+const dueEditTitle = document.getElementById('dueEditTitle');
+const dueResetBtn = document.getElementById('dueResetBtn');
+const customAssignmentModal = document.getElementById('customAssignmentModal');
+const customAssignmentForm = document.getElementById('customAssignmentForm');
+const customCourseInput = document.getElementById('customCourseInput');
+const customTitleInput = document.getElementById('customTitleInput');
+const customDueInput = document.getElementById('customDueInput');
 
 const TOAST_ICONS = {
     success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
@@ -1613,6 +1726,7 @@ async function fetchAndSwapContent() {
         }
     }
 
+    hydrateLocalAssignments();
     sortFlatTableAsc();
     applyFilters();
 }
@@ -1823,6 +1937,389 @@ if (!Array.isArray(USER_PREFERENCES.ignored_overdue_uids)) {
     USER_PREFERENCES.ignored_overdue_uids = [];
 }
 
+const STORAGE_USER_KEY = (document.body.dataset.viewUser || 'guest').replace(/[^\w.-]/g, '_') || 'guest';
+const DUE_OVERRIDES_KEY = `e3_due_overrides_${STORAGE_USER_KEY}`;
+const CUSTOM_ASSIGNMENTS_KEY = `e3_custom_assignments_${STORAGE_USER_KEY}`;
+let dueOverrides = loadJsonMap(DUE_OVERRIDES_KEY);
+let customAssignments = loadJsonArray(CUSTOM_ASSIGNMENTS_KEY);
+
+function loadJsonMap(key) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (err) {
+        return {};
+    }
+}
+
+function loadJsonArray(key) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+        return [];
+    }
+}
+
+function saveDueOverrides() {
+    try {
+        localStorage.setItem(DUE_OVERRIDES_KEY, JSON.stringify(dueOverrides));
+    } catch (err) {}
+}
+
+function saveCustomAssignments() {
+    try {
+        localStorage.setItem(CUSTOM_ASSIGNMENTS_KEY, JSON.stringify(customAssignments));
+    } catch (err) {}
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[char]));
+}
+
+function cssEscapeValue(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(String(value));
+    }
+    return String(value).replace(/["\\]/g, '\\$&');
+}
+
+function formatDueDisplayFromTs(ts) {
+    if (!ts) return '';
+    const date = new Date(Number(ts) * 1000);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatDatetimeLocalFromTs(ts) {
+    if (!ts) return '';
+    return formatDueDisplayFromTs(ts).replace(' ', 'T');
+}
+
+function parseDatetimeLocalToTs(value) {
+    if (!value) return null;
+    const parsed = new Date(value);
+    const ms = parsed.getTime();
+    if (Number.isNaN(ms)) return null;
+    return Math.floor(ms / 1000);
+}
+
+function formatDuration(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    if (days > 0) return `${days}天 ${hours}小時`;
+    if (hours > 0) return `${hours}小時 ${minutes}分鐘`;
+    return `${Math.max(1, minutes)}分鐘`;
+}
+
+function computePrimaryStatus(row, dueTs) {
+    if (row.dataset.graded === '1') return 'graded';
+    if (row.dataset.completed === '1') return 'completed';
+    if (dueTs && dueTs < Math.floor(Date.now() / 1000)) return 'overdue';
+    return 'pending';
+}
+
+function updateRemainingForRow(row) {
+    if (!row) return;
+    const dueTs = Number(row.dataset.dueTs || '0');
+    const hasDue = row.dataset.hasDue === '1' && Number.isFinite(dueTs) && dueTs < 9999999999;
+    const status = row.dataset.primaryStatus || computePrimaryStatus(row, hasDue ? dueTs : null);
+    const remainingEls = row.querySelectorAll('.remaining-text');
+    if (!remainingEls.length) return;
+    let cls = 'neutral';
+    let label = '無截止資訊';
+    if (status === 'graded') {
+        cls = 'done';
+        label = '已評分';
+    } else if (status === 'completed') {
+        cls = 'done';
+        label = '已完成';
+    } else if (hasDue) {
+        const diff = dueTs - Math.floor(Date.now() / 1000);
+        if (diff < 0) {
+            cls = 'overdue';
+            label = `已逾期 ${formatDuration(-diff)}`;
+        } else if (diff <= 86400) {
+            cls = 'warning';
+            label = `剩下 ${formatDuration(diff)}`;
+        } else {
+            cls = 'normal';
+            label = `剩下 ${formatDuration(diff)}`;
+        }
+    }
+    remainingEls.forEach((el) => {
+        el.className = `remaining-text ${cls}`;
+        el.textContent = label;
+    });
+}
+
+function renderStatusBadges(row) {
+    const wrap = row.querySelector('.row-status-badges');
+    if (!wrap) return;
+    const status = row.dataset.primaryStatus || 'pending';
+    wrap.innerHTML = '';
+    if (status === 'completed') {
+        wrap.innerHTML = '<span class="badge done">已完成</span>';
+    } else if (status === 'graded') {
+        wrap.innerHTML = '<span class="badge graded">已評分</span>';
+    } else if (status === 'overdue') {
+        wrap.innerHTML = '<span class="badge overdue">逾期</span>';
+    } else {
+        wrap.innerHTML = '<span class="badge nodue">未完成</span>';
+    }
+    const stack = row.querySelector('.row-status-stack');
+    const existingIgnore = row.querySelector('[data-ignore-overdue]');
+    if (existingIgnore) existingIgnore.remove();
+    if (stack && status === 'overdue' && !IS_READONLY_VIEW && !(row.dataset.uid || '').startsWith('custom|')) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'row-ignore-btn';
+        button.dataset.ignoreOverdue = row.dataset.uid || '';
+        button.textContent = '忽略';
+        stack.appendChild(button);
+    }
+}
+
+function setRowDue(row, dueTs, dueText, sourceLabel = '自訂期限') {
+    if (!row) return;
+    const normalizedTs = Number(dueTs);
+    const hasDue = Number.isFinite(normalizedTs) && normalizedTs > 0;
+    row.dataset.dueTs = hasDue ? String(normalizedTs) : '9999999999';
+    row.dataset.hasDue = hasDue ? '1' : '0';
+    row.dataset.due = hasDue ? dueText : '無截止';
+    row.dataset.overdue = hasDue && normalizedTs < Math.floor(Date.now() / 1000) ? '1' : '0';
+    row.dataset.primaryStatus = computePrimaryStatus(row, hasDue ? normalizedTs : null);
+    const dueBox = row.querySelector('.assignment-due');
+    if (dueBox) {
+        dueBox.classList.toggle('empty', !hasDue);
+        const main = dueBox.querySelector('.assignment-due-main');
+        const sub = dueBox.querySelector('.assignment-due-sub');
+        if (main) main.textContent = hasDue ? dueText : '無截止';
+        if (sub) sub.textContent = hasDue ? sourceLabel : '截止資訊同步中';
+    }
+    updateRemainingForRow(row);
+    renderStatusBadges(row);
+}
+
+function applyDueOverrides() {
+    document.querySelectorAll('tr[data-uid]').forEach((row) => {
+        const override = dueOverrides[row.dataset.uid || ''];
+        if (override && override.due_ts) {
+            setRowDue(row, override.due_ts, override.due_at || formatDueDisplayFromTs(override.due_ts), '已手動修改期限');
+        } else if (!(row.dataset.uid || '').startsWith('custom|')) {
+            const originalTs = row.dataset.originalDueTs ? Number(row.dataset.originalDueTs) : null;
+            setRowDue(row, originalTs, row.dataset.originalDue || '', row.dataset.originalDue ? 'E3 同步期限' : '截止資訊同步中');
+        }
+    });
+}
+
+function refreshRemainingTimes() {
+    document.querySelectorAll('tr[data-uid]').forEach((row) => {
+        const dueTs = Number(row.dataset.dueTs || '0');
+        if (row.dataset.completed !== '1' && row.dataset.graded !== '1') {
+            row.dataset.overdue = row.dataset.hasDue === '1' && dueTs < Math.floor(Date.now() / 1000) ? '1' : '0';
+            row.dataset.primaryStatus = computePrimaryStatus(row, row.dataset.hasDue === '1' ? dueTs : null);
+            renderStatusBadges(row);
+        }
+        updateRemainingForRow(row);
+    });
+    applyFilters();
+}
+
+function openModalRoot(modal) {
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.style.display = 'block';
+    const backdrop = modal.querySelector('.modal-backdrop');
+    const panel = modal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.add('show');
+    panel && panel.classList.add('show');
+}
+
+function closeModalRoot(modal) {
+    if (!modal) return;
+    const backdrop = modal.querySelector('.modal-backdrop');
+    const panel = modal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.remove('show');
+    panel && panel.classList.remove('show');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }, 150);
+}
+
+function openDueEditModal(uid) {
+    if (IS_READONLY_VIEW || !uid || !dueEditModal || !dueEditForm) return;
+    const row = document.querySelector(`tr[data-uid="${cssEscapeValue(uid)}"]`);
+    if (!row) return;
+    const override = dueOverrides[uid];
+    const dueTs = override && override.due_ts ? Number(override.due_ts) : Number(row.dataset.dueTs || row.dataset.originalDueTs || '0');
+    dueEditUid.value = uid;
+    dueEditInput.value = dueTs && dueTs < 9999999999 ? formatDatetimeLocalFromTs(dueTs) : '';
+    if (dueEditTitle) dueEditTitle.textContent = `${row.dataset.course || ''}｜${row.dataset.title || ''}`.replace(/^｜/, '');
+    openModalRoot(dueEditModal);
+}
+
+function applyDueOverride(uid, dueTs) {
+    const dueText = formatDueDisplayFromTs(dueTs);
+    dueOverrides[uid] = { due_ts: dueTs, due_at: dueText };
+    saveDueOverrides();
+    document.querySelectorAll(`tr[data-uid="${cssEscapeValue(uid)}"]`).forEach((row) => {
+        setRowDue(row, dueTs, dueText, '已手動修改期限');
+    });
+    applyFilters();
+}
+
+function resetDueOverride(uid) {
+    delete dueOverrides[uid];
+    saveDueOverrides();
+    document.querySelectorAll(`tr[data-uid="${cssEscapeValue(uid)}"]`).forEach((row) => {
+        const originalTs = row.dataset.originalDueTs ? Number(row.dataset.originalDueTs) : null;
+        setRowDue(row, originalTs, row.dataset.originalDue || '', row.dataset.originalDue ? 'E3 同步期限' : '截止資訊同步中');
+    });
+    applyFilters();
+}
+
+function customAssignmentRowHtml(item, flat = false) {
+    const dueText = formatDueDisplayFromTs(item.due_ts);
+    const status = item.due_ts < Math.floor(Date.now() / 1000) ? 'overdue' : 'pending';
+    const commonAttrs = `
+        data-due-ts="${item.due_ts}"
+        data-overdue="${status === 'overdue' ? 1 : 0}"
+        data-completed="0"
+        data-graded="0"
+        data-primary-status="${status}"
+        data-ignored="0"
+        data-uid="${escapeHtml(item.uid)}"
+        data-course="${escapeHtml(item.course)}"
+        data-title="${escapeHtml(item.title)}"
+        data-due="${escapeHtml(dueText)}"
+        data-has-due="1"
+        data-original-due-ts="${item.due_ts}"
+        data-original-due="${escapeHtml(dueText)}"
+    `;
+    const titleCell = flat ? `
+        <td class="assignment-cell-main">
+            <span class="assignment-eyebrow">${escapeHtml(item.course)}</span>
+            <div class="assignment-title-row"><span class="assignment-title">${escapeHtml(item.title)}</span></div>
+            <div class="assignment-meta"><span class="assignment-grade-inline empty"><span class="assignment-grade-inline-label">自訂</span><span class="assignment-grade-inline-text">代辦</span></span></div>
+        </td>
+    ` : `
+        <td class="assignment-cell-main">
+            <div class="assignment-title-row"><span class="assignment-title">${escapeHtml(item.title)}</span></div>
+            <div class="assignment-meta"><span class="remaining-text normal"></span><span class="assignment-grade-inline empty"><span class="assignment-grade-inline-label">自訂</span><span class="assignment-grade-inline-text">代辦</span></span></div>
+        </td>
+    `;
+    const signalCell = flat ? '<td class="assignment-center"><div class="assignment-signal"><span class="remaining-text normal"></span></div></td>' : '';
+    return `
+        <tr ${commonAttrs}>
+            ${signalCell}
+            ${titleCell}
+            <td>
+                <div class="assignment-due">
+                    <div class="assignment-due-header">
+                        <span class="assignment-due-main">${escapeHtml(dueText)}</span>
+                        <button type="button" class="due-edit-btn" data-edit-due="${escapeHtml(item.uid)}" aria-label="修改繳交期限" title="修改繳交期限">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                        </button>
+                    </div>
+                    <span class="assignment-due-sub">自訂期限</span>
+                </div>
+            </td>
+            <td class="assignment-center"><span class="submission-pill">-</span></td>
+            <td class="assignment-center"><div class="row-status-stack"><div class="row-status-badges"></div></div></td>
+            <td class="assignment-center assignment-link"><button type="button" class="btn custom-delete-btn" data-delete-custom="${escapeHtml(item.uid)}">刪除</button></td>
+        </tr>
+    `;
+}
+
+function ensureCustomCourseSection(courseName) {
+    if (!viewCourse) return null;
+    const existing = Array.from(viewCourse.querySelectorAll('.course-card')).find((card) => {
+        const heading = card.querySelector('h2');
+        return heading && heading.textContent.trim().startsWith(courseName);
+    });
+    if (existing) return existing.querySelector('tbody');
+    const section = document.createElement('section');
+    section.className = 'card course-card';
+    section.innerHTML = `
+        <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div><h2>${escapeHtml(courseName)} <span style="color:var(--muted);font-size:14px">#自訂</span></h2></div>
+        </div>
+        <div class="panel">
+            <div class="table-shell">
+                <table class="courseTable assignment-table">
+                    <colgroup>
+                        <col class="course-col-title"><col class="course-col-due"><col class="course-col-stats"><col class="course-col-status"><col class="course-col-link">
+                    </colgroup>
+                    <thead><tr><th>作業名稱</th><th>截止時間</th><th class="assignment-center">繳交統計</th><th class="assignment-center">狀態</th><th class="assignment-center">連結</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    viewCourse.appendChild(section);
+    return section.querySelector('tbody');
+}
+
+function renderCustomAssignments() {
+    document.querySelectorAll('tr[data-uid^="custom|"]').forEach((row) => row.remove());
+    customAssignments = customAssignments.filter((item) => item && item.uid && item.title && item.due_ts);
+    customAssignments.forEach((item) => {
+        const flatTbody = document.querySelector('#flatTable tbody');
+        if (flatTbody) {
+            flatTbody.insertAdjacentHTML('beforeend', customAssignmentRowHtml(item, true));
+        }
+        const courseTbody = ensureCustomCourseSection(item.course || '自訂代辦');
+        if (courseTbody) {
+            courseTbody.insertAdjacentHTML('beforeend', customAssignmentRowHtml(item, false));
+        }
+    });
+    document.querySelectorAll('tr[data-uid^="custom|"]').forEach((row) => {
+        updateRemainingForRow(row);
+        renderStatusBadges(row);
+    });
+}
+
+function addCustomAssignment(course, title, dueTs) {
+    const item = {
+        uid: `custom|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
+        course: String(course || '').trim() || '自訂代辦',
+        title: String(title || '').trim(),
+        due_ts: dueTs,
+    };
+    if (!item.title || !item.due_ts) return false;
+    customAssignments.push(item);
+    saveCustomAssignments();
+    renderCustomAssignments();
+    applyFilters();
+    return true;
+}
+
+function deleteCustomAssignment(uid) {
+    customAssignments = customAssignments.filter((item) => item.uid !== uid);
+    delete dueOverrides[uid];
+    saveCustomAssignments();
+    saveDueOverrides();
+    document.querySelectorAll(`tr[data-uid="${cssEscapeValue(uid)}"]`).forEach((row) => row.remove());
+    applyFilters();
+}
+
+function hydrateLocalAssignments() {
+    renderCustomAssignments();
+    applyDueOverrides();
+    refreshRemainingTimes();
+}
+
 function getIgnoredOverdueUidSet() {
     return new Set((USER_PREFERENCES.ignored_overdue_uids || []).map((item) => String(item || '').trim()).filter(Boolean));
 }
@@ -1872,6 +2369,11 @@ function updateFilterSummary() {
 
 function updateCounts() {
     const currentView = currentViewMode === 'due' ? viewDue : viewCourse;
+    if (!currentView) {
+        if (totalCountEl) totalCountEl.textContent = '0';
+        if (ignoredCountEl) ignoredCountEl.textContent = String(getIgnoredOverdueUidSet().size);
+        return;
+    }
     
     const visibleRows = currentView.querySelectorAll('tbody tr:not(.hidden)');
     const totalVisible = visibleRows.length;
@@ -2067,6 +2569,7 @@ function setView(mode, options = {}){
     applyFilters();
 }
 
+hydrateLocalAssignments();
 sortFlatTableAsc();
 setView(currentViewMode, { skipPersist: true });
 
@@ -2105,6 +2608,19 @@ applyFilters();
 updateFilterSummary();
 
 document.addEventListener('click', (evt) => {
+    const editDueBtn = evt.target.closest('[data-edit-due]');
+    if (editDueBtn) {
+        evt.preventDefault();
+        openDueEditModal(editDueBtn.getAttribute('data-edit-due'));
+        return;
+    }
+    const deleteCustomBtn = evt.target.closest('[data-delete-custom]');
+    if (deleteCustomBtn) {
+        evt.preventDefault();
+        deleteCustomAssignment(deleteCustomBtn.getAttribute('data-delete-custom'));
+        showToast('已刪除自訂代辦。', 'success');
+        return;
+    }
     const ignoreBtn = evt.target.closest('[data-ignore-overdue]');
     if (ignoreBtn) {
         evt.preventDefault();
@@ -2123,6 +2639,97 @@ if (restoreIgnoredOverdueAll) {
         restoreAllIgnoredOverdueAssignments();
     });
 }
+
+if (dueEditForm) {
+    dueEditForm.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        const uid = dueEditUid ? dueEditUid.value : '';
+        const dueTs = parseDatetimeLocalToTs(dueEditInput ? dueEditInput.value : '');
+        if (!uid || !dueTs) {
+            showToast('請輸入有效的繳交期限。', 'warning');
+            return;
+        }
+        applyDueOverride(uid, dueTs);
+        const customItem = customAssignments.find((item) => item.uid === uid);
+        if (customItem) {
+            customItem.due_ts = dueTs;
+            saveCustomAssignments();
+        }
+        closeModalRoot(dueEditModal);
+        showToast('繳交期限已更新。', 'success');
+    });
+}
+
+if (dueResetBtn) {
+    dueResetBtn.addEventListener('click', () => {
+        const uid = dueEditUid ? dueEditUid.value : '';
+        if (!uid) return;
+        if (uid.startsWith('custom|')) {
+            showToast('自訂代辦沒有 E3 原始期限可還原。', 'info');
+            return;
+        }
+        resetDueOverride(uid);
+        closeModalRoot(dueEditModal);
+        showToast('已還原原本的繳交期限。', 'success');
+    });
+}
+
+document.querySelectorAll('[data-close-due-edit]').forEach((button) => {
+    button.addEventListener('click', () => closeModalRoot(dueEditModal));
+});
+if (dueEditModal) {
+    dueEditModal.addEventListener('click', (evt) => {
+        if (evt.target.classList.contains('modal-backdrop')) {
+            closeModalRoot(dueEditModal);
+        }
+    });
+}
+
+if (addCustomAssignmentBtn) {
+    addCustomAssignmentBtn.addEventListener('click', () => {
+        if (customAssignmentForm) customAssignmentForm.reset();
+        if (customCourseInput) customCourseInput.value = '自訂代辦';
+        openModalRoot(customAssignmentModal);
+    });
+}
+
+if (customAssignmentForm) {
+    customAssignmentForm.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        const dueTs = parseDatetimeLocalToTs(customDueInput ? customDueInput.value : '');
+        const title = customTitleInput ? customTitleInput.value.trim() : '';
+        if (!title || !dueTs) {
+            showToast('請輸入作業名稱與有效期限。', 'warning');
+            return;
+        }
+        addCustomAssignment(customCourseInput ? customCourseInput.value : '', title, dueTs);
+        closeModalRoot(customAssignmentModal);
+        showToast('已新增自訂代辦。', 'success');
+    });
+}
+
+document.querySelectorAll('[data-close-custom-assignment]').forEach((button) => {
+    button.addEventListener('click', () => closeModalRoot(customAssignmentModal));
+});
+if (customAssignmentModal) {
+    customAssignmentModal.addEventListener('click', (evt) => {
+        if (evt.target.classList.contains('modal-backdrop')) {
+            closeModalRoot(customAssignmentModal);
+        }
+    });
+}
+
+document.addEventListener('keydown', (evt) => {
+    if (evt.key !== 'Escape') return;
+    if (dueEditModal && !dueEditModal.classList.contains('hidden')) {
+        closeModalRoot(dueEditModal);
+    }
+    if (customAssignmentModal && !customAssignmentModal.classList.contains('hidden')) {
+        closeModalRoot(customAssignmentModal);
+    }
+});
+
+setInterval(refreshRemainingTimes, 60000);
 
 if (filterMenu) {
     document.addEventListener('click', (evt) => {
