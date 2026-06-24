@@ -91,14 +91,16 @@
         .save-button { align-self: end; min-height: 38px; padding: 0 15px; border: 0; border-radius: 6px; background: var(--blue); color: #fff; font-weight: 760; cursor: pointer; white-space: nowrap; }
         .table-wrap { min-width: 0; overflow: visible; }
         table { width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; }
-        th { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--muted); background: #fbfcfe; text-align: left; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; }
-        td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; overflow-wrap: anywhere; }
+        /* ↓ padding 從 14px 收緊至 10px */
+        th { padding: 12px 10px; border-bottom: 1px solid var(--line); color: var(--muted); background: #fbfcfe; text-align: left; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; }
+        td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; overflow-wrap: anywhere; }
         tr:last-child td { border-bottom: 0; }
         .log-note { max-width: none; color: var(--ink-2); line-height: 1.5; word-break: break-word; }
         .log-numbers { white-space: nowrap; font-variant-numeric: tabular-nums; }
         .mini-track { width: 84px; height: 5px; margin-top: 5px; }
         .delete-form { display: inline; }
-        .record-action { width: 32px; min-width: 32px; padding-left: 6px; padding-right: 6px; text-align: center; }
+        /* ↓ 刪除欄寬度從 32px 調整為 36px（與 th width 對齊），padding 更緊 */
+        .record-action { width: 36px; min-width: 36px; padding-left: 4px; padding-right: 4px; text-align: center; }
         .delete-button { padding: 4px; border: 0; background: transparent; color: #91a2b4; cursor: pointer; }
         .delete-button:hover { color: var(--red); }
         .empty { padding: 46px 24px; color: var(--muted); text-align: center; }
@@ -119,11 +121,9 @@
             </header>
             <div class="content">
                 <div class="title-row">
-                    <div><h1>研究所讀書計畫</h1><p class="subtitle">單科順讀：上一科影片全部完成後，才進入下一科。</p></div>
+                    <div><h1>研究所讀書計畫</h1></div>
                     <div class="date-range">{{ plan_start }} 至 {{ plan_end }}・{{ plan_total_weeks }} 週</div>
                 </div>
-
-                <div class="review-guidance"><strong>本版安排已保留複習空間：</strong>數學共 8 週、演算法 2 週；每週至少安排 2 個半天寫課本題與整理錯題，最後保留 1 天彈性補進度。12/7 起進入總複習、考古題與弱點回補。</div>
 
                 {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash">{{ message }}</div>{% endfor %}</div>{% endif %}
@@ -185,7 +185,17 @@
                         </form>
                         <div class="table-wrap">
                             <table>
-                                <thead><tr><th>#</th><th>影片</th><th>原始片長</th><th>已觀看</th><th>觀看進度</th><th>筆記</th><th>最後更新</th><th aria-label="清除"></th></tr></thead>
+                                <!-- ↓ 各欄明確指定寬度，讓影片名稱欄吃剩餘空間 -->
+                                <thead><tr>
+                                    <th style="width:60px">#</th>
+                                    <th>影片</th>
+                                    <th style="width:80px">原始片長</th>
+                                    <th style="width:72px">已觀看</th>
+                                    <th style="width:100px">觀看進度</th>
+                                    <th>筆記</th>
+                                    <th style="width:108px">最後更新</th>
+                                    <th style="width:45px" aria-label="清除"></th>
+                                </tr></thead>
                                 <tbody>
                                     {% for video in videos %}
                                     <tr>
@@ -195,7 +205,7 @@
                                         <td class="log-numbers" data-label="已觀看">{{ video.watched_minutes }} 分</td>
                                         <td class="log-numbers" data-label="觀看進度">{{ video.completion|round(0) }}%<div class="track mini-track"><div class="fill" style="--progress:{{ video.completion }}%"></div></div></td>
                                         <td class="log-note" data-label="筆記">{{ video.notes or '—' }}</td>
-                                        <td class="log-numbers" data-label="最後更新">{{ video.updated_at[:16]|replace('T', ' ') if video.updated_at else '—' }}</td>
+                                        <td class="log-numbers" data-label="最後更新">{{ video.updated_at or '—' }}</td>
                                         <td class="record-action{% if video.watched_seconds or video.notes %} has-record{% endif %}" data-label="紀錄">{% if video.watched_seconds or video.notes %}<form class="delete-form" method="post" action="{{ url_for('admin_study_plan') }}"><input type="hidden" name="action" value="delete_video"><input type="hidden" name="subject" value="{{ selected_subject }}"><input type="hidden" name="video_id" value="{{ video.id }}"><button class="delete-button" type="submit" title="清除這支影片的紀錄" aria-label="清除第 {{ '%03d'|format(video.sequence) }} 支影片的紀錄">✕</button></form>{% endif %}</td>
                                     </tr>
                                     {% endfor %}

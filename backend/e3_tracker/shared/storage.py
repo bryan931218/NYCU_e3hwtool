@@ -1,7 +1,7 @@
 import json
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -529,6 +529,15 @@ class PersistentStorage:
                 )
                 .order_by(study_plan_videos_table.c.subject, study_plan_videos_table.c.sequence)
             ).fetchall()
+
+        def _to_taipei(dt_str: Optional[str]) -> Optional[str]:
+            if not dt_str:
+                return None
+            try:
+                return (datetime.fromisoformat(dt_str) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M")
+            except (ValueError, TypeError):
+                return dt_str[:16].replace("T", " ")
+
         return [
             {
                 "id": int(row.id),
@@ -538,7 +547,7 @@ class PersistentStorage:
                 "duration_seconds": float(row.duration_seconds or 0),
                 "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
                 "notes": row.notes or "",
-                "updated_at": row.updated_at,
+                "updated_at": _to_taipei(row.updated_at),
             }
             for row in rows
         ]
