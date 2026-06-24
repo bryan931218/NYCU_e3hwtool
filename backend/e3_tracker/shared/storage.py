@@ -213,6 +213,29 @@ Index("ix_traffic_events_username", traffic_events_table.c.username)
 Index("ix_traffic_events_ts", traffic_events_table.c.ts)
 Index("ix_traffic_events_action", traffic_events_table.c.action)
 
+study_plan_videos_table = Table(
+    "study_plan_videos",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("subject", String(64), nullable=False),
+    Column("sequence", Integer, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("duration_seconds", Float, nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+    UniqueConstraint("subject", "sequence", name="uq_study_plan_video_subject_sequence"),
+)
+Index("ix_study_plan_videos_subject_sequence", study_plan_videos_table.c.subject, study_plan_videos_table.c.sequence)
+
+study_plan_video_records_table = Table(
+    "study_plan_video_records",
+    metadata,
+    Column("video_id", Integer, primary_key=True),
+    Column("watched_seconds", Float, nullable=False, default=0),
+    Column("notes", Text),
+    Column("updated_at", String(64), nullable=False),
+)
+
 class PersistentStorage:
     """Database-backed persistence with normalized storage."""
 
@@ -437,6 +460,134 @@ class PersistentStorage:
                     updated_at=now,
                 )
             )
+
+    # -- administrator study plan ---------------------------------------
+    def sync_study_plan_videos(self, videos: List[Dict[str, Any]]) -> None:
+        """Upsert the source inventory while preserving each video's viewing record."""
+        now = self._now_iso()
+        normalized: List[Dict[str, Any]] = []
+        for item in videos:
+            try:
+                subject = str(item.get("subject") or "").strip()
+                sequence = int(item.get("sequence") or 0)
+                title = str(item.get("title") or "").strip()
+                duration_seconds = float(item.get("duration_seconds") or 0)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not subject or sequence <= 0 or not title or duration_seconds <= 0:
+                continue
+            normalized.append(
+                {
+                    "subject": subject,
+                    "sequence": sequence,
+                    "title": title,
+                    "duration_seconds": duration_seconds,
+                }
+            )
+        if not normalized:
+            return
+        with self._lock, self._engine.begin() as conn:
+            existing_rows = conn.execute(
+                select(
+                    study_plan_videos_table.c.id,
+                    study_plan_videos_table.c.subject,
+                    study_plan_videos_table.c.sequence,
+                )
+            ).fetchall()
+            existing = {(row.subject, int(row.sequence)): int(row.id) for row in existing_rows}
+            for item in normalized:
+                key = (item["subject"], item["sequence"])
+                values = {**item, "updated_at": now}
+                video_id = existing.get(key)
+                if video_id:
+                    conn.execute(
+                        update(study_plan_videos_table)
+                        .where(study_plan_videos_table.c.id == video_id)
+                        .values(**values)
+                    )
+                else:
+                    conn.execute(insert(study_plan_videos_table).values(created_at=now, **values))
+
+    def list_study_plan_videos_with_records(self) -> List[Dict[str, Any]]:
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    study_plan_videos_table.c.id,
+                    study_plan_videos_table.c.subject,
+                    study_plan_videos_table.c.sequence,
+                    study_plan_videos_table.c.title,
+                    study_plan_videos_table.c.duration_seconds,
+                    study_plan_video_records_table.c.watched_seconds,
+                    study_plan_video_records_table.c.notes,
+                    study_plan_video_records_table.c.updated_at,
+                )
+                .select_from(
+                    study_plan_videos_table.outerjoin(
+                        study_plan_video_records_table,
+                        study_plan_videos_table.c.id == study_plan_video_records_table.c.video_id,
+                    )
+                )
+                .order_by(study_plan_videos_table.c.subject, study_plan_videos_table.c.sequence)
+            ).fetchall()
+        return [
+            {
+                "id": int(row.id),
+                "subject": row.subject,
+                "sequence": int(row.sequence),
+                "title": row.title,
+                "duration_seconds": float(row.duration_seconds or 0),
+                "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
+                "notes": row.notes or "",
+                "updated_at": row.updated_at,
+            }
+            for row in rows
+        ]
+
+    def upsert_study_plan_video_record(
+        self,
+        *,
+        video_id: int,
+        watched_seconds: float,
+        notes: str,
+    ) -> bool:
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            video = conn.execute(
+                select(study_plan_videos_table.c.duration_seconds).where(
+                    study_plan_videos_table.c.id == video_id
+                )
+            ).fetchone()
+            if not video:
+                return False
+            normalized_seconds = max(0.0, min(float(watched_seconds or 0), float(video.duration_seconds or 0)))
+            existing = conn.execute(
+                select(study_plan_video_records_table.c.video_id).where(
+                    study_plan_video_records_table.c.video_id == video_id
+                )
+            ).fetchone()
+            values = {
+                "watched_seconds": normalized_seconds,
+                "notes": notes,
+                "updated_at": now,
+            }
+            if existing:
+                conn.execute(
+                    update(study_plan_video_records_table)
+                    .where(study_plan_video_records_table.c.video_id == video_id)
+                    .values(**values)
+                )
+            else:
+                conn.execute(
+                    insert(study_plan_video_records_table).values(video_id=video_id, **values)
+                )
+        return True
+
+    def delete_study_plan_video_record(self, video_id: int) -> bool:
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                delete(study_plan_video_records_table).where(study_plan_video_records_table.c.video_id == video_id)
+            )
+        return bool(result.rowcount)
 
     # -- assignments ------------------------------------------------------
     def save_user_cache(self, username: str, payload: Dict[str, Any]) -> None:

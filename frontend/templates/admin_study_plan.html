@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>管理員讀書計畫｜E3 作業追蹤系統</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
+    <style>
+        :root {
+            --ink: #102a43;
+            --ink-2: #243b53;
+            --blue: #1463d9;
+            --blue-soft: #eaf3ff;
+            --paper: #ffffff;
+            --canvas: #f7f9fc;
+            --line: #dce5ef;
+            --muted: #62768b;
+            --green: #258957;
+            --green-soft: #eaf7ef;
+            --amber: #b86d00;
+            --amber-soft: #fff5df;
+            --red: #b33a3a;
+            --radius: 12px;
+            font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: var(--ink); background: var(--canvas); }
+        a { color: inherit; text-decoration: none; }
+        button, input, select, textarea { font: inherit; }
+        .shell { min-height: 100vh; }
+        .main { min-width: 0; }
+        .topbar { height: 72px; padding: 0 34px; background: var(--paper); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .crumb { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--muted); }
+        .back-link { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); font-weight: 680; }
+        .admin-identity { display: inline-flex; align-items: center; gap: 9px; color: var(--ink-2); font-size: 14px; font-weight: 650; }
+        .identity-dot { width: 9px; height: 9px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 4px var(--green-soft); }
+        .content { width: 100%; max-width: none; padding: 34px; }
+        .title-row { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 24px; }
+        h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); line-height: 1.12; letter-spacing: -.035em; }
+        .subtitle { margin: 9px 0 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
+        .date-range { color: var(--muted); font-size: 14px; white-space: nowrap; }
+        .review-guidance { margin: -8px 0 24px; padding: 13px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); color: var(--ink-2); font-size: 14px; line-height: 1.65; }
+        .metric-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--paper); margin-bottom: 24px; }
+        .metric { padding: 18px 20px; border-right: 1px solid var(--line); }
+        .metric:last-child { border-right: 0; }
+        .metric-label { color: var(--muted); font-size: 12px; font-weight: 700; }
+        .metric-value { margin-top: 6px; font-size: 25px; font-weight: 780; letter-spacing: -.04em; }
+        .metric-value small { margin-left: 4px; color: var(--muted); font-size: 13px; font-weight: 650; letter-spacing: 0; }
+        .workspace { display: grid; grid-template-columns: minmax(360px, .92fr) minmax(560px, 1.38fr); gap: 24px; align-items: start; }
+        .column { display: grid; gap: 24px; min-width: 0; }
+        .panel { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+        .panel-header { padding: 18px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .panel-title { margin: 0; font-size: 16px; letter-spacing: -.015em; }
+        .focus-body { padding: 22px 20px 20px; }
+        .focus-subject { margin: 4px 0 20px; font-size: 30px; line-height: 1; letter-spacing: -.045em; }
+        .focus-caption { color: var(--muted); font-size: 14px; }
+        .focus-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 22px 0; }
+        .focus-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+        .focus-item:nth-child(odd) { padding-right: 14px; }
+        .focus-item:nth-child(even) { padding-left: 14px; border-left: 1px solid var(--line); }
+        .focus-item:nth-last-child(-n+2) { border-bottom: 0; }
+        .focus-item span { display: block; color: var(--muted); font-size: 12px; }
+        .focus-item strong { display: block; margin-top: 4px; font-size: 15px; }
+        .progress-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; color: var(--muted); }
+        .progress-line strong { color: var(--blue); font-size: 24px; letter-spacing: -.04em; }
+        .track { height: 7px; background: #e7edf4; border-radius: 99px; overflow: hidden; margin-top: 9px; }
+        .fill { height: 100%; width: min(100%, var(--progress)); background: var(--blue); border-radius: inherit; }
+        .timeline { max-height: 580px; overflow: auto; }
+        .week-row { display: grid; grid-template-columns: 33px minmax(106px, 1fr) minmax(104px, .95fr) 84px; gap: 10px; align-items: center; padding: 13px 18px; border-bottom: 1px solid var(--line); }
+        .week-row:last-child { border-bottom: 0; }
+        .week-row.active { background: var(--blue-soft); }
+        .week-index { width: 23px; height: 23px; display: grid; place-items: center; border: 1px solid #b9c7d8; border-radius: 50%; color: var(--muted); font-size: 12px; font-weight: 750; }
+        .week-row.complete .week-index { color: #fff; background: var(--green); border-color: var(--green); }
+        .week-row.active .week-index { color: var(--blue); border: 2px solid var(--blue); background: #fff; }
+        .week-subject { font-size: 14px; font-weight: 720; }
+        .week-meta { color: var(--muted); font-size: 12px; line-height: 1.45; }
+        .week-target { color: var(--ink-2); font-size: 12px; text-align: right; }
+        .state { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font-size: 11px; font-weight: 720; }
+        .state.complete { color: var(--green); background: var(--green-soft); border-color: #b9e0c6; }
+        .state.active { color: var(--blue); background: #fff; border-color: #9ebdf3; }
+        .state.behind { color: var(--amber); background: var(--amber-soft); border-color: #f0d6a5; }
+        .subject-filter { padding: 15px 20px; display: flex; align-items: end; gap: 12px; border-bottom: 1px solid var(--line); background: #fff; }
+        .subject-filter .field { width: min(100%, 270px); }
+        .log-form { padding: 19px 20px; display: grid; grid-template-columns: minmax(220px, 1.25fr) minmax(136px, .72fr) minmax(220px, 1.35fr) auto; gap: 10px; border-bottom: 1px solid var(--line); background: #fbfdff; }
+        .field { min-width: 0; }
+        .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 740; }
+        input, select, textarea { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid #cdd9e6; border-radius: 6px; color: var(--ink); background: #fff; outline: none; }
+        input:focus, select:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(20, 99, 217, .12); }
+        textarea { min-height: 38px; resize: vertical; }
+        .duration-hint { display: block; min-height: 14px; margin-top: 5px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+        .save-button { align-self: end; min-height: 38px; padding: 0 15px; border: 0; border-radius: 6px; background: var(--blue); color: #fff; font-weight: 760; cursor: pointer; white-space: nowrap; }
+        .table-wrap { min-width: 0; overflow: visible; }
+        table { width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; }
+        th { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--muted); background: #fbfcfe; text-align: left; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; }
+        td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; overflow-wrap: anywhere; }
+        tr:last-child td { border-bottom: 0; }
+        .log-note { max-width: none; color: var(--ink-2); line-height: 1.5; word-break: break-word; }
+        .log-numbers { white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .mini-track { width: 84px; height: 5px; margin-top: 5px; }
+        .delete-form { display: inline; }
+        .record-action { width: 32px; min-width: 32px; padding-left: 6px; padding-right: 6px; text-align: center; }
+        .delete-button { padding: 4px; border: 0; background: transparent; color: #91a2b4; cursor: pointer; }
+        .delete-button:hover { color: var(--red); }
+        .empty { padding: 46px 24px; color: var(--muted); text-align: center; }
+        .flash-stack { display: grid; gap: 8px; margin-bottom: 16px; }
+        .flash { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 10px 12px; color: var(--ink-2); font-size: 14px; }
+        @media (min-width: 1121px) and (max-width: 1500px) { .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } }
+        @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } .timeline { max-height: 420px; } .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } .save-button { grid-column: span 2; } }
+        @media (max-width: 820px) { .table-wrap { padding: 12px; } .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; } .table-wrap table { table-layout: auto; } .table-wrap thead { display: none; } .table-wrap tbody { display: grid; gap: 12px; } .table-wrap tr { padding: 4px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; } .table-wrap td { display: grid; grid-template-columns: minmax(88px, .8fr) minmax(0, 1.4fr); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); } .table-wrap td:last-child { border-bottom: 0; } .table-wrap td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 740; } .table-wrap td.record-action:not(.has-record) { display: none; } .table-wrap .log-numbers { white-space: normal; } .table-wrap .mini-track { width: 100%; max-width: 160px; } .table-wrap .delete-form { justify-self: start; } }
+        @media (max-width: 760px) { .topbar { height: auto; min-height: 62px; padding: 14px 18px; } .crumb { display: none; } .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <main class="main">
+            <header class="topbar">
+                <div class="crumb"><a class="back-link" href="{{ url_for('index') }}">← 回 E3 作業系統</a><span>/</span><span>讀書計畫</span></div>
+                <div class="admin-identity"><span class="identity-dot"></span>{{ admin_user.username }}・管理員</div>
+            </header>
+            <div class="content">
+                <div class="title-row">
+                    <div><h1>研究所讀書計畫</h1><p class="subtitle">單科順讀：上一科影片全部完成後，才進入下一科。</p></div>
+                    <div class="date-range">{{ plan_start }} 至 {{ plan_end }}・{{ plan_total_weeks }} 週</div>
+                </div>
+
+                <div class="review-guidance"><strong>本版安排已保留複習空間：</strong>數學共 8 週、演算法 2 週；每週至少安排 2 個半天寫課本題與整理錯題，最後保留 1 天彈性補進度。12/7 起進入總複習、考古題與弱點回補。</div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash">{{ message }}</div>{% endfor %}</div>{% endif %}
+                {% endwith %}
+
+                <section class="metric-row" aria-label="讀書計畫摘要">
+                    <div class="metric"><div class="metric-label">影片總片長</div><div class="metric-value">{{ (summary.total_target / 60)|round(1) }}<small>小時</small></div></div>
+                    <div class="metric"><div class="metric-label">已觀看片長</div><div class="metric-value">{{ (summary.total_watched / 60)|round(1) }}<small>小時</small></div></div>
+                    <div class="metric"><div class="metric-label">累積完成率</div><div class="metric-value">{{ summary.completion|round(1) }}<small>%</small></div></div>
+                    <div class="metric"><div class="metric-label">已完成影片</div><div class="metric-value">{{ summary.completed_videos }}<small>/ {{ summary.total_videos }} 支</small></div></div>
+                </section>
+
+                <div class="workspace">
+                    <div class="column">
+                        <section class="panel">
+                            <div class="panel-header"><h2 class="panel-title">目前專注科目</h2><span class="state {{ current_week.state }}">{{ current_week.state_label }}</span></div>
+                            <div class="focus-body">
+                                <div class="focus-caption">第 {{ current_week.number }} 週・{{ current_week.start }} 至 {{ current_week.end }}</div>
+                                <div class="focus-subject">{{ current_week.subject }}</div>
+                                <div class="focus-grid">
+                                    <div class="focus-item"><span>本週影片總片長</span><strong>{{ current_week.target_minutes|round(1) }} 分鐘</strong></div>
+                                    <div class="focus-item"><span>本週影片數</span><strong>{{ current_week.video_count }} 支</strong></div>
+                                    <div class="focus-item"><span>影片里程碑</span><strong>至第 {{ '%03d'|format(current_week.lesson_target) }} 支</strong></div>
+                                    <div class="focus-item"><span>本週實際觀看</span><strong>{{ current_week.watched_minutes }} 分鐘</strong></div>
+                                </div>
+                                <div class="progress-line"><span>本週進度</span><strong>{{ current_week.completion|round(1) }}%</strong></div>
+                                <div class="track"><div class="fill" style="--progress:{{ current_week.completion }}%"></div></div>
+                            </div>
+                        </section>
+
+                        <section class="panel">
+                            <div class="panel-header"><h2 class="panel-title">{{ plan_total_weeks }} 週單科時間軸</h2><span class="focus-caption">依影片原始片長</span></div>
+                            <div class="timeline">
+                                {% for week in week_rows %}
+                                <div class="week-row {{ week.state }}">
+                                    <div class="week-index">{{ week.number }}</div>
+                                    <div><div class="week-subject">{{ week.subject }}</div><div class="week-meta">{{ week.start }} — {{ week.end }}・{{ week.video_count }} 支，至第 {{ '%03d'|format(week.lesson_target) }} 支</div></div>
+                                    <div class="week-target">{{ week.watched_minutes }} / {{ week.target_minutes|round(1) }} 分鐘</div>
+                                    <div><span class="state {{ week.state }}">{{ week.state_label }}</span></div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </section>
+                    </div>
+
+                    <section class="panel">
+                        <div class="panel-header"><h2 class="panel-title">影片進度紀錄</h2><span class="focus-caption">以影片為單位，片長已依原始 MP4 整理</span></div>
+                        <form class="subject-filter" method="get" action="{{ url_for('admin_study_plan') }}">
+                            <div class="field"><label for="subject">目前科目</label><select id="subject" name="subject" onchange="this.form.submit()">{% for subject in subjects %}<option value="{{ subject }}" {% if subject == selected_subject %}selected{% endif %}>{{ subject }}</option>{% endfor %}</select></div>
+                            <noscript><button class="save-button" type="submit">切換科目</button></noscript>
+                        </form>
+                        <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
+                            <input type="hidden" name="action" value="save_video">
+                            <input type="hidden" name="subject" value="{{ selected_subject }}">
+                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required>{% for video in videos %}<option value="{{ video.id }}" data-duration="{{ video.duration_minutes }}">第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">原始片長：{{ videos[0].duration_minutes if videos else 0 }} 分鐘</span></div>
+                            <div class="field"><label for="watched_minutes">實際觀看分鐘</label><input id="watched_minutes" name="watched_minutes" type="number" min="0" max="1440" step="0.1" value="0" required></div>
+                            <div class="field notes"><label for="notes">筆記／卡關點</label><textarea id="notes" name="notes" rows="1" maxlength="2000" placeholder="例：複習矩陣分解的推導。"></textarea></div>
+                            <button class="save-button" type="submit">儲存影片紀錄</button>
+                        </form>
+                        <div class="table-wrap">
+                            <table>
+                                <thead><tr><th>#</th><th>影片</th><th>原始片長</th><th>已觀看</th><th>觀看進度</th><th>筆記</th><th>最後更新</th><th aria-label="清除"></th></tr></thead>
+                                <tbody>
+                                    {% for video in videos %}
+                                    <tr>
+                                        <td class="log-numbers" data-label="#">{{ '%03d'|format(video.sequence) }}</td>
+                                        <td class="log-note" data-label="影片">{{ video.title }}</td>
+                                        <td class="log-numbers" data-label="原始片長">{{ video.duration_minutes }} 分</td>
+                                        <td class="log-numbers" data-label="已觀看">{{ video.watched_minutes }} 分</td>
+                                        <td class="log-numbers" data-label="觀看進度">{{ video.completion|round(0) }}%<div class="track mini-track"><div class="fill" style="--progress:{{ video.completion }}%"></div></div></td>
+                                        <td class="log-note" data-label="筆記">{{ video.notes or '—' }}</td>
+                                        <td class="log-numbers" data-label="最後更新">{{ video.updated_at[:16]|replace('T', ' ') if video.updated_at else '—' }}</td>
+                                        <td class="record-action{% if video.watched_seconds or video.notes %} has-record{% endif %}" data-label="紀錄">{% if video.watched_seconds or video.notes %}<form class="delete-form" method="post" action="{{ url_for('admin_study_plan') }}"><input type="hidden" name="action" value="delete_video"><input type="hidden" name="subject" value="{{ selected_subject }}"><input type="hidden" name="video_id" value="{{ video.id }}"><button class="delete-button" type="submit" title="清除這支影片的紀錄" aria-label="清除第 {{ '%03d'|format(video.sequence) }} 支影片的紀錄">✕</button></form>{% endif %}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script>
+        (function () {
+            const videoSelect = document.getElementById('video_id');
+            const durationHint = document.getElementById('duration-hint');
+            if (!videoSelect || !durationHint) return;
+            const updateDuration = function () {
+                const option = videoSelect.options[videoSelect.selectedIndex];
+                const duration = option ? option.dataset.duration : '0';
+                durationHint.textContent = '原始片長：' + duration + ' 分鐘';
+            };
+            videoSelect.addEventListener('change', updateDuration);
+            updateDuration();
+        }());
+    </script>
+</body>
+</html>

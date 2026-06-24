@@ -32,6 +32,7 @@ from ..services.http import login_with_password
 from ..shared.config import load_env_defaults
 from ..shared.constants import TAIPEI_TZ
 from ..shared.storage import PersistentStorage
+from ..shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 from ..shared.excel import build_excel
 from ..shared.utils import json_safe
 
@@ -57,6 +58,20 @@ FEEDBACK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "feedback.html"
 FEEDBACK_TEMPLATE = FEEDBACK_TEMPLATE_PATH.read_text(encoding="utf-8")
 ADMIN_FEEDBACK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_feedback.html"
 ADMIN_FEEDBACK_TEMPLATE = ADMIN_FEEDBACK_TEMPLATE_PATH.read_text(encoding="utf-8")
+STUDY_PLAN_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_plan.html"
+STUDY_PLAN_TEMPLATE = STUDY_PLAN_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+STUDY_PLAN_BLOCKS = (
+    {"subject": "線性代數", "weeks": 4, "total_minutes": 4107.8, "lesson_targets": (11, 22, 32, 42)},
+    {"subject": "離散數學", "weeks": 4, "total_minutes": 4770.4, "lesson_targets": (6, 12, 17, 23)},
+    {"subject": "資料結構", "weeks": 5, "total_minutes": 6590.0, "lesson_targets": (13, 26, 40, 53, 67)},
+    {"subject": "演算法", "weeks": 2, "total_minutes": 1610.5, "lesson_targets": (8, 16)},
+    {"subject": "作業系統", "weeks": 3, "total_minutes": 5478.3, "lesson_targets": (19, 39, 58)},
+    {"subject": "計算機組織", "weeks": 5, "total_minutes": 8633.8, "lesson_targets": (17, 34, 51, 68, 78)},
+)
+STUDY_PLAN_START = "2026-06-29"
+STUDY_PLAN_END = "2026-12-06"
+STUDY_PLAN_SUBJECTS = tuple(block["subject"] for block in STUDY_PLAN_BLOCKS)
 
 
 class TrafficTracker:
@@ -751,6 +766,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     else:
         db_location = str((data_root / "e3_tracker.sqlite3").resolve())
     storage = PersistentStorage(db_location)
+    storage.sync_study_plan_videos(STUDY_PLAN_VIDEO_INVENTORY)
 
     app = Flask(__name__)
     app.secret_key = env_defaults["web_secret"]
@@ -894,6 +910,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         def wrapper(*args, **kwargs):
             if not current_user():
                 return redirect(url_for("login"))
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    def admin_required(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user = current_user()
+            if not user:
+                return redirect(url_for("login"))
+            if not user.get("is_admin"):
+                flash("僅限管理員使用讀書計畫。", "error")
+                return redirect(url_for("index"))
             return fn(*args, **kwargs)
 
         return wrapper
@@ -1522,6 +1551,108 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "admin_view_options": admin_view_options,
         }
 
+    def _study_plan_week_rows(videos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
+        start_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
+        end_day = datetime.strptime(STUDY_PLAN_END, "%Y-%m-%d").date()
+        today = datetime.now(TAIPEI_TZ).date()
+        videos_by_subject: Dict[str, List[Dict[str, Any]]] = {}
+        for video in videos:
+            subject = str(video.get("subject") or "")
+            videos_by_subject.setdefault(subject, []).append(video)
+        week_rows: List[Dict[str, Any]] = []
+        cursor = start_day
+        week_number = 1
+        for block in STUDY_PLAN_BLOCKS:
+            prior_lesson_target = 0
+            for lesson_target in block["lesson_targets"]:
+                week_start = cursor
+                week_end = cursor + timedelta(days=6)
+                weekly_videos = [
+                    item
+                    for item in videos_by_subject.get(block["subject"], [])
+                    if prior_lesson_target < int(item.get("sequence") or 0) <= int(lesson_target)
+                ]
+                target_seconds = sum(float(item.get("duration_seconds") or 0) for item in weekly_videos)
+                watched_seconds = sum(
+                    min(float(item.get("watched_seconds") or 0), float(item.get("duration_seconds") or 0))
+                    for item in weekly_videos
+                )
+                completed_videos = sum(
+                    1
+                    for item in weekly_videos
+                    if float(item.get("duration_seconds") or 0) > 0
+                    and float(item.get("watched_seconds") or 0) >= float(item.get("duration_seconds") or 0)
+                )
+                completion = min(100.0, (watched_seconds / target_seconds * 100) if target_seconds else 0.0)
+                if completion >= 100:
+                    state = "complete"
+                    state_label = "已達標"
+                elif week_start <= today <= week_end:
+                    state = "active"
+                    state_label = "進行中"
+                elif today > week_end:
+                    state = "behind"
+                    state_label = "待補"
+                else:
+                    state = "upcoming"
+                    state_label = "未開始"
+                week_rows.append(
+                    {
+                        "number": week_number,
+                        "subject": block["subject"],
+                        "start": week_start.isoformat(),
+                        "end": week_end.isoformat(),
+                        "target_minutes": target_seconds / 60,
+                        "target_seconds": target_seconds,
+                        "lesson_target": int(lesson_target),
+                        "video_count": len(weekly_videos),
+                        "completed_videos": completed_videos,
+                        "watched_minutes": round(watched_seconds / 60, 1),
+                        "completion": completion,
+                        "state": state,
+                        "state_label": state_label,
+                    }
+                )
+                cursor = week_end + timedelta(days=1)
+                week_number += 1
+                prior_lesson_target = int(lesson_target)
+
+        active_week = next((row for row in week_rows if row["start"] <= today.isoformat() <= row["end"]), None)
+        if active_week is None:
+            active_week = week_rows[0] if today < start_day else week_rows[-1]
+        total_target = sum(float(item.get("duration_seconds") or 0) for item in videos) / 60
+        total_watched = sum(
+            min(float(item.get("watched_seconds") or 0), float(item.get("duration_seconds") or 0))
+            for item in videos
+        ) / 60
+        completed_videos = sum(
+            1
+            for item in videos
+            if float(item.get("duration_seconds") or 0) > 0
+            and float(item.get("watched_seconds") or 0) >= float(item.get("duration_seconds") or 0)
+        )
+        recorded_videos = sum(
+            1
+            for item in videos
+            if float(item.get("watched_seconds") or 0) > 0 or bool(str(item.get("notes") or "").strip())
+        )
+        summary = {
+            "total_target": total_target,
+            "total_watched": total_watched,
+            "completion": min(100.0, (total_watched / total_target * 100) if total_target else 0.0),
+            "completed_videos": completed_videos,
+            "recorded_videos": recorded_videos,
+            "total_videos": len(videos),
+        }
+        return week_rows, active_week, summary
+
+    def _study_plan_minutes(value: Any) -> float:
+        try:
+            parsed = float(str(value or "0").strip())
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, min(parsed, 1_440.0))
+
     def fetch_assignments_for(user: Dict[str, str]) -> Tuple[Dict[str, Any], Optional[str]]:
         opts = CollectOptions(
             base_url=base_url,
@@ -2116,6 +2247,78 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             calendar,
             mimetype="text/calendar",
             headers={"Content-Disposition": "attachment; filename=pending_assignments.ics"},
+        )
+
+    @app.route("/admin/study-plan", methods=["GET", "POST"])
+    @admin_required
+    def admin_study_plan():
+        user = current_user()
+        if request.method == "POST":
+            action = (request.form.get("action") or "save_video").strip()
+            selected_subject = (request.form.get("subject") or "").strip()
+            if selected_subject not in STUDY_PLAN_SUBJECTS:
+                selected_subject = STUDY_PLAN_SUBJECTS[0]
+            try:
+                video_id = int(request.form.get("video_id") or 0)
+            except (TypeError, ValueError):
+                video_id = 0
+            if action == "delete_video":
+                if video_id and storage.delete_study_plan_video_record(video_id):
+                    flash("已清除這支影片的觀看紀錄。", "success")
+                    record_ui_event("study_plan_video_record_deleted", meta={"video_id": video_id})
+                else:
+                    flash("找不到要清除的影片紀錄。", "warning")
+            else:
+                watched_minutes = _study_plan_minutes(request.form.get("watched_minutes"))
+                notes = (request.form.get("notes") or "").strip()[:2000]
+                if not video_id:
+                    flash("請先選擇一支影片。", "error")
+                elif storage.upsert_study_plan_video_record(
+                    video_id=video_id,
+                    watched_seconds=watched_minutes * 60,
+                    notes=notes,
+                ):
+                    flash("影片觀看紀錄已儲存。", "success")
+                    record_ui_event(
+                        "study_plan_video_record_saved",
+                        meta={"video_id": video_id, "watched_minutes": watched_minutes},
+                    )
+                else:
+                    flash("找不到選擇的影片，請重新整理頁面後再試。", "warning")
+            return redirect(url_for("admin_study_plan", subject=selected_subject))
+
+        videos = storage.list_study_plan_videos_with_records()
+        week_rows, current_week, summary = _study_plan_week_rows(videos)
+        selected_subject = (request.args.get("subject") or current_week["subject"]).strip()
+        if selected_subject not in STUDY_PLAN_SUBJECTS:
+            selected_subject = current_week["subject"]
+        videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
+        for video in videos:
+            video["duration_minutes"] = round(float(video["duration_seconds"]) / 60, 1)
+            video["watched_minutes"] = round(
+                min(float(video["watched_seconds"]), float(video["duration_seconds"])) / 60,
+                1,
+            )
+            video["completion"] = min(
+                100.0,
+                (float(video["watched_seconds"]) / float(video["duration_seconds"]) * 100)
+                if float(video["duration_seconds"]) else 0.0,
+            )
+            videos_by_subject.setdefault(video["subject"], []).append(video)
+        visible_videos = videos_by_subject.get(selected_subject, [])
+        return render_template_string(
+            STUDY_PLAN_TEMPLATE,
+            admin_user=user,
+            week_rows=week_rows,
+            current_week=current_week,
+            summary=summary,
+            subjects=STUDY_PLAN_SUBJECTS,
+            selected_subject=selected_subject,
+            videos=visible_videos,
+            video_count=len(visible_videos),
+            plan_total_weeks=len(week_rows),
+            plan_start=STUDY_PLAN_START,
+            plan_end=STUDY_PLAN_END,
         )
 
     @app.route("/admin/traffic", methods=["GET"])

@@ -1,0 +1,1706 @@
+[
+  {
+    "subject": "線性代數",
+    "sequence": 1,
+    "title": "001_01-01_P.1-3(1時33分52秒)",
+    "duration_seconds": 5632.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 2,
+    "title": "002_01-02_P.1-21(1時46分55秒)",
+    "duration_seconds": 6415.9
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 3,
+    "title": "003_02-01_P.1-40(1時34分32秒)",
+    "duration_seconds": 5672.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 4,
+    "title": "004_02-02_P.1-55(1時47分20秒)",
+    "duration_seconds": 6440.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 5,
+    "title": "005_03-01_線性方程組 P2-3 (1時12分53秒)",
+    "duration_seconds": 4373.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 6,
+    "title": "006_03-02_98年台大資工 P1-53 (1時50分07秒)",
+    "duration_seconds": 6607.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 7,
+    "title": "007_04-01_行列式 P2-53 (1時09分57秒)",
+    "duration_seconds": 4197.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 8,
+    "title": "008_04-02_107年中央 例題6 P2-74 (1時17分49秒)",
+    "duration_seconds": 4887.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 9,
+    "title": "009_04-03_三線矩陣 P2-90 (0時58分28秒)",
+    "duration_seconds": 3508.7
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 10,
+    "title": "010_05-01_P.2-105(1時49分33秒)",
+    "duration_seconds": 6573.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 11,
+    "title": "011_05-02_P.3-22(1時42分48秒)",
+    "duration_seconds": 6168.6
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 12,
+    "title": "012_06-01_100年中興資料類題 P3-41 (1時18分26秒)",
+    "duration_seconds": 4707
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 13,
+    "title": "013_06-02_3-3 基底與維度 P3-63 (1時55分59秒)",
+    "duration_seconds": 6959.7
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 14,
+    "title": "014_07-01_例題8 P3-90 (1時23分20秒)",
+    "duration_seconds": 5000.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 15,
+    "title": "015_07-02_例題17 P3-109 (1時16分40秒)",
+    "duration_seconds": 4600.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 16,
+    "title": "016_07-03_座標化 P3-125 (1時15分54秒)",
+    "duration_seconds": 4554.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 17,
+    "title": "017_08-01_94年中央資工.P3-148.(1時55分05秒)",
+    "duration_seconds": 6905.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 18,
+    "title": "018_08-02_102年成大統計.P3-159.(1時36分04秒)",
+    "duration_seconds": 5764.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 19,
+    "title": "019_09-01_100年台科資工.P4-12.(1時23分19秒)",
+    "duration_seconds": 4999
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 20,
+    "title": "020_09-02_矩陣表示.P4-35.(2時07分07秒)",
+    "duration_seconds": 7627.8
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 21,
+    "title": "021_10-01_可逆函數p.4-68(1時36分23秒)",
+    "duration_seconds": 5783.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 22,
+    "title": "022_10-02_例3.求kerT.p.4-74(1時54分25秒)",
+    "duration_seconds": 6865.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 23,
+    "title": "023_11-01_保獨立類3 p.4-103 (1時46分37秒)",
+    "duration_seconds": 6397.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 24,
+    "title": "024_11-02_特徵根的重要性質p.5-19(1時41分15秒)",
+    "duration_seconds": 6075.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 25,
+    "title": "025_12-01_特徵多項式 P5-30 (1時42分36秒)",
+    "duration_seconds": 6156.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 26,
+    "title": "026_12-02_例題14 P5-47 (1時46分52秒)",
+    "duration_seconds": 6412.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 27,
+    "title": "027_13-01_代數重數 P5-68 (1時50分44秒)",
+    "duration_seconds": 6644.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 28,
+    "title": "028_13-02_103年師大資工 P5-92 (1時30分57秒)",
+    "duration_seconds": 5457.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 29,
+    "title": "029_14-01_CH5-5.對角化應用.P5-11.(1時45分01秒)",
+    "duration_seconds": 6301.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 30,
+    "title": "030_14-02_例題解析.EX10.P5-138.(1時43分02秒)",
+    "duration_seconds": 6182.8
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 31,
+    "title": "031_15-01_找可逆矩陣的方法 p.6-21(1時50分26秒)",
+    "duration_seconds": 6626.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 32,
+    "title": "032_15-02_內積空間 p.7-1(1時44分54秒)",
+    "duration_seconds": 6294.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 33,
+    "title": "033_16-01_稱向量 UV 正交 P7-23 (1時36分20秒)",
+    "duration_seconds": 5780.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 34,
+    "title": "034_16-02_7-3 正交投影 (1時51分35秒)",
+    "duration_seconds": 6695.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 35,
+    "title": "035_17-01_正交投影應用 p.7-80 (1時50分40秒)",
+    "duration_seconds": 6640.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 36,
+    "title": "036_17-02_CH7.4 矩陣的四大子空間 p.7-121 (1時49分30秒)",
+    "duration_seconds": 6570.1
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 37,
+    "title": "037_18-01_CH8.自伴、斜自伴 p.8-12 (1時23分24秒)",
+    "duration_seconds": 5004.7
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 38,
+    "title": "038_18-02_CH8.么正矩陣 p.8-37 (1時04分12秒)",
+    "duration_seconds": 3852.9
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 39,
+    "title": "039_19-01_例題9 p.8-58 (1時57分10秒)",
+    "duration_seconds": 7030.6
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 40,
+    "title": "040_19-02_例題3 p.8-96 (1時31分46秒)",
+    "duration_seconds": 5507
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 41,
+    "title": "041_20-01_CH8-4.二次式應用 p.8-98 (2時01分26秒)",
+    "duration_seconds": 7286.5
+  },
+  {
+    "subject": "線性代數",
+    "sequence": 42,
+    "title": "042_20-02_CH8-6.奇異值分解 p.145 (1時28分33秒)",
+    "duration_seconds": 5313.1
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 1,
+    "title": "001_01_考科、課程簡介，第一章基本數學-集合論P1-1(2時56分36秒)",
+    "duration_seconds": 10596.6
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 2,
+    "title": "002_02_CH1-1集合論P1-16(3時28分29秒)",
+    "duration_seconds": 12509
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 3,
+    "title": "003_03_CH1-3基礎數論P1-57(3時36分01秒)",
+    "duration_seconds": 12962
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 4,
+    "title": "004_04_2-2基本關係P2-16(3時21分14秒)",
+    "duration_seconds": 12074.6
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 5,
+    "title": "005_05_2-3等價關係P2-34(3時31分48秒)",
+    "duration_seconds": 12708.2
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 6,
+    "title": "006_06_CH2-6鴿籠原理P2-82(3時41分15秒)",
+    "duration_seconds": 13275.8
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 7,
+    "title": "007_07_CH3-2排列P3-8(3時12分19秒)",
+    "duration_seconds": 11539.6
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 8,
+    "title": "008_08_3-3組合P3-25(3時28分40秒)",
+    "duration_seconds": 12520.6
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 9,
+    "title": "009_09_4-1ㄧ般生成函數P4-3(3時44分02秒)",
+    "duration_seconds": 13442.9
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 10,
+    "title": "010_10_4-3指數生成函數P4-37(3時29分05秒)",
+    "duration_seconds": 12545.6
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 11,
+    "title": "011_11_5-3轉換法求解遞迴關係式P5-48(3時23分42秒)",
+    "duration_seconds": 12222.8
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 12,
+    "title": "012_12_5-5應用問題P5-77(3時37分18秒)",
+    "duration_seconds": 13038.1
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 13,
+    "title": "013_13_6-1圖的種類及術語-板書(3時21分09秒)",
+    "duration_seconds": 12069.1
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 14,
+    "title": "014_14_6-4尤拉迴路及漢米爾頓環路P6-62(3時21分32秒)",
+    "duration_seconds": 12092.1
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 15,
+    "title": "015_15_6-5平面圖(3時46分25秒)",
+    "duration_seconds": 13585.6
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 16,
+    "title": "016_16_7-2有根樹P7-13(3時25分38秒)",
+    "duration_seconds": 12338.4
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 17,
+    "title": "017_17_7-5前置碼P7-57(3時32分18秒)",
+    "duration_seconds": 12738.3
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 18,
+    "title": "018_18_9-1代數系統P9-3(3時38分45秒)",
+    "duration_seconds": 13125.2
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 19,
+    "title": "019_19_9-4子群P9-43(3時30分05秒)",
+    "duration_seconds": 12605.1
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 20,
+    "title": "020_20_9.9環.P9-89(3時24分54秒)",
+    "duration_seconds": 12294.3
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 21,
+    "title": "021_21_10-2絡P10-28(3時35分58秒)",
+    "duration_seconds": 12958.5
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 22,
+    "title": "022_22_10-7.一階邏輯P10-100(3時30分23秒)",
+    "duration_seconds": 12623.7
+  },
+  {
+    "subject": "離散數學",
+    "sequence": 23,
+    "title": "023_23_13-3語言(板書)(2時52分39秒)",
+    "duration_seconds": 10359.9
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 1,
+    "title": "001_01-01_CH1 P.3(1時44分24秒)",
+    "duration_seconds": 6264.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 2,
+    "title": "002_01-02_CH1 P.7(1時45分56秒)",
+    "duration_seconds": 6356.7
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 3,
+    "title": "003_02-01_CH1 P.8(2時07分20秒)",
+    "duration_seconds": 7640
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 4,
+    "title": "004_02-02_CH1 程式碼(0時56分12秒)",
+    "duration_seconds": 3372.9
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 5,
+    "title": "005_03-01_例2.Permutation 列印 (1時47分33秒)",
+    "duration_seconds": 6453.1
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 6,
+    "title": "006_03-02_複習.數學公式.等差數列 (1時45分58秒)",
+    "duration_seconds": 6358.7
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 7,
+    "title": "007_04-01_例題(1時55分53秒)",
+    "duration_seconds": 6953.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 8,
+    "title": "008_04-02_例題(0時55分44秒)",
+    "duration_seconds": 3344.6
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 9,
+    "title": "009_05-01_Theta(1時55分26秒)",
+    "duration_seconds": 6926.4
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 10,
+    "title": "010_05-02_Recursive Time function(1時43分10秒)",
+    "duration_seconds": 6189.7
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 11,
+    "title": "011_06-01_CH2 例題(1時57分10秒)",
+    "duration_seconds": 7030.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 12,
+    "title": "012_06-02_例題(0時55分59秒)",
+    "duration_seconds": 3359.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 13,
+    "title": "013_07-01_CH3(2時01分50秒)",
+    "duration_seconds": 7310.5
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 14,
+    "title": "014_07-02_Infix 轉換(1時40分34秒)",
+    "duration_seconds": 6034.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 15,
+    "title": "015_08-01_CH3 例題解析(1時57分00秒)",
+    "duration_seconds": 7020.9
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 16,
+    "title": "016_08-02_CH3 例題解析(1時03分07秒)",
+    "duration_seconds": 3787.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 17,
+    "title": "017_09-01_CH3.Linear array (2時07分03秒)",
+    "duration_seconds": 7623
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 18,
+    "title": "018_09-02_CH3.練習題 (1時29分11秒)",
+    "duration_seconds": 5351.9
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 19,
+    "title": "019_10-01_CH5.tree的表示方法 (1時59分37秒)",
+    "duration_seconds": 7177.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 20,
+    "title": "020_10-02_CH5.練習題 (1時04分53秒)",
+    "duration_seconds": 3893.6
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 21,
+    "title": "021_11-01_CH3 Strict BT(2時10分41秒)",
+    "duration_seconds": 7841.5
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 22,
+    "title": "022_11-02_ex.5(1時26分39秒)",
+    "duration_seconds": 5199.4
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 23,
+    "title": "023_12-01_Count B.T. Node(1時52分01秒)",
+    "duration_seconds": 6721.9
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 24,
+    "title": "024_12-02_Search X in BST(1時06分49秒)",
+    "duration_seconds": 4009.1
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 25,
+    "title": "025_13-01_5 EX-Insert a key mto BST 之 Algo (2時12分08秒)",
+    "duration_seconds": 7928.4
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 26,
+    "title": "026_13-02_5 Thread B.T. 引線二元樹 (1時25分03秒)",
+    "duration_seconds": 5103.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 27,
+    "title": "027_14-01_CH5 Tree化為B.T(1時48分52秒)",
+    "duration_seconds": 6532.1
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 28,
+    "title": "028_14-02_CH5 Union by Height(0時57分37秒)",
+    "duration_seconds": 3457.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 29,
+    "title": "029_15-01_CH9 高等樹 (2時04分11秒)",
+    "duration_seconds": 7451.8
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 30,
+    "title": "030_15-02_CH9 Delete-min in Deap (1時32分32秒)",
+    "duration_seconds": 5553
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 31,
+    "title": "031_16-01_CH9 I - Internal path length (1時50分02秒)",
+    "duration_seconds": 6602.1
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 32,
+    "title": "032_16-02_五補充 Huffman 採用 Greedy (1時03分28秒)",
+    "duration_seconds": 3808.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 33,
+    "title": "033_17-01_AVL Tree 不平衡 (1時50分08秒)",
+    "duration_seconds": 6608.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 34,
+    "title": "034_17-02_AVL Tree Array Link List 比較表 P408 (1時32分55秒)",
+    "duration_seconds": 5575.6
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 35,
+    "title": "035_18-01_Insert X in B tree (2時09分02秒)",
+    "duration_seconds": 7742.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 36,
+    "title": "036_18-02_Red-Black Tree (0時59分46秒)",
+    "duration_seconds": 3586.7
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 37,
+    "title": "037_19-01_CH9 建立 R-B Tree(1時56分44秒)",
+    "duration_seconds": 7004.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 38,
+    "title": "038_19-02_公式導出(1時37分31秒)",
+    "duration_seconds": 5851.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 39,
+    "title": "039_20-01_CH9 Splay Tree (2時04分42秒)",
+    "duration_seconds": 7482.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 40,
+    "title": "040_20-02_CH9 Merge Two Binomial Heap (0時51分15秒)",
+    "duration_seconds": 3075.7
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 41,
+    "title": "041_21-01_CH9 Binomial Heap (2時12分27秒)",
+    "duration_seconds": 7947.7
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 42,
+    "title": "042_21-02_CH7 Sorting 部分 名詞解釋 (1時23分14秒)",
+    "duration_seconds": 4994.9
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 43,
+    "title": "043_22-01_CH7 Selection Sort 選擇排序 (1時53分03秒)",
+    "duration_seconds": 6783.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 44,
+    "title": "044_22-02_CH7 Shell Sort 練習題 (0時59分14秒)",
+    "duration_seconds": 3554.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 45,
+    "title": "045_23-01_CH7 Quick sort 練習 (2時06分00秒)",
+    "duration_seconds": 7560.6
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 46,
+    "title": "046_23-02_CH7 例題Merge sort(1時38分05秒)",
+    "duration_seconds": 5885.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 47,
+    "title": "047_24-01_CH7 winner tree (2時01分46秒)",
+    "duration_seconds": 7306.9
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 48,
+    "title": "048_24-02_CH7 LSD sort 練習 (0時49分04秒)",
+    "duration_seconds": 2944.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 49,
+    "title": "049_25-01_CH7 Counting Sort 計數排序(2時01分57秒)",
+    "duration_seconds": 7317.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 50,
+    "title": "050_25-02_CH7 使用 median-of-medians 作為PK (1時26分20秒)",
+    "duration_seconds": 5180.6
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 51,
+    "title": "051_26-01_CH8 Hashing Address (2時17分32秒)",
+    "duration_seconds": 8253
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 52,
+    "title": "052_26-02_CH8 chain or chaining (0時42分06秒)",
+    "duration_seconds": 2526.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 53,
+    "title": "053_27-01_CH6 Graph (2時01分31秒)",
+    "duration_seconds": 7291.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 54,
+    "title": "054_27-02_CH6 Adjacency Multilists 相鄰多元串列 (1時32分14秒)",
+    "duration_seconds": 5534.1
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 55,
+    "title": "055_28-01_CH6 B.F.S.(2時08分20秒)",
+    "duration_seconds": 7700.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 56,
+    "title": "056_28-02_CH6 判斷無向圖有無cycle(0時58分35秒)",
+    "duration_seconds": 3516.5
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 57,
+    "title": "057_29-01_CH6 Kruskal.s Algo(2時15分24秒)",
+    "duration_seconds": 8124.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 58,
+    "title": "058_29-02_例題解析(1時19分46秒)",
+    "duration_seconds": 4786.1
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 59,
+    "title": "059_30-01_Dijkstra.s Algo(1時55分08秒)",
+    "duration_seconds": 6908.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 60,
+    "title": "060_30-02_例題解析(1時00分53秒)",
+    "duration_seconds": 3653.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 61,
+    "title": "061_31-01_Topological Sort (2時07分04秒)",
+    "duration_seconds": 7624.1
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 62,
+    "title": "062_31-02_Articulation Point (0時54分22秒)",
+    "duration_seconds": 3262.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 63,
+    "title": "063_32-01_CH2.CH4 Array 與 Link List (1時53分28秒)",
+    "duration_seconds": 6809
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 64,
+    "title": "064_32-02_特殊矩陣元素之儲存 (1時16分26秒)",
+    "duration_seconds": 4586.4
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 65,
+    "title": "065_33-01_三例1：An.2.2是Band Matnx (2時08分00秒)",
+    "duration_seconds": 7680.3
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 66,
+    "title": "066_33-02_四Data Structure 設計 (1時44分17秒)",
+    "duration_seconds": 6257.2
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 67,
+    "title": "067_34_Sparse Matnx 之表示 (1時37分08秒)",
+    "duration_seconds": 5828.8
+  },
+  {
+    "subject": "演算法",
+    "sequence": 1,
+    "title": "001_01-01_CH1.1.Analyzing algorithm.P1 (1時05分53秒)",
+    "duration_seconds": 3953.5
+  },
+  {
+    "subject": "演算法",
+    "sequence": 2,
+    "title": "002_01-02_groups.google.com (2時10分41秒)",
+    "duration_seconds": 7841.9
+  },
+  {
+    "subject": "演算法",
+    "sequence": 3,
+    "title": "003_02-01_1.2.Recurrence relation (2時04分56秒)",
+    "duration_seconds": 7496
+  },
+  {
+    "subject": "演算法",
+    "sequence": 4,
+    "title": "004_02-02_1.3.Aomortized analysis (1時05分09秒)",
+    "duration_seconds": 3909.1
+  },
+  {
+    "subject": "演算法",
+    "sequence": 5,
+    "title": "005_03-01_2.4 The select problem P51 (1時41分59秒)",
+    "duration_seconds": 6119.1
+  },
+  {
+    "subject": "演算法",
+    "sequence": 6,
+    "title": "006_03-02_3.2 The rod cutting problem P67 (1時11分06秒)",
+    "duration_seconds": 4266.7
+  },
+  {
+    "subject": "演算法",
+    "sequence": 7,
+    "title": "007_04-01_3.3 例題 recursion遞回 P71 (2時07分37秒)",
+    "duration_seconds": 7657.2
+  },
+  {
+    "subject": "演算法",
+    "sequence": 8,
+    "title": "008_04-02_3.6 Longest commom subsequence P78 (1時37分55秒)",
+    "duration_seconds": 5875.3
+  },
+  {
+    "subject": "演算法",
+    "sequence": 9,
+    "title": "009_05-01_CH4.1 圖形演算法(1時54分08秒)",
+    "duration_seconds": 6848.9
+  },
+  {
+    "subject": "演算法",
+    "sequence": 10,
+    "title": "010_05-02_公式(1時26分00秒)",
+    "duration_seconds": 5160.1
+  },
+  {
+    "subject": "演算法",
+    "sequence": 11,
+    "title": "011_06-01_公式(1時59分39秒)",
+    "duration_seconds": 7179.2
+  },
+  {
+    "subject": "演算法",
+    "sequence": 12,
+    "title": "012_06-02_例題演算(1時22分17秒)",
+    "duration_seconds": 4937.5
+  },
+  {
+    "subject": "演算法",
+    "sequence": 13,
+    "title": "013_07-01_CH4-6 Maximum flow P148 (1時54分11秒)",
+    "duration_seconds": 6851.9
+  },
+  {
+    "subject": "演算法",
+    "sequence": 14,
+    "title": "014_07-02_CH4-6 札記-問題轉換 P152 (1時32分49秒)",
+    "duration_seconds": 5569.6
+  },
+  {
+    "subject": "演算法",
+    "sequence": 15,
+    "title": "015_08-01_convex hull problem (1時51分24秒)",
+    "duration_seconds": 6684.2
+  },
+  {
+    "subject": "演算法",
+    "sequence": 16,
+    "title": "016_08-02_CH6-2 NP-complete problems (1時44分41秒)",
+    "duration_seconds": 6281.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 1,
+    "title": "001_01-01_課程講解(2時04分25秒)",
+    "duration_seconds": 7465.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 2,
+    "title": "002_01-02_Multiprogramming system.(1時02分11秒)",
+    "duration_seconds": 3732.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 3,
+    "title": "003_02-01_Multiprocessors system.P2-15(1時52分39秒)",
+    "duration_seconds": 6759.6
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 4,
+    "title": "004_02-02_Real-Time System.P4-32(1時24分35秒)",
+    "duration_seconds": 5075.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 5,
+    "title": "005_03-01_CH2.I_O運作與Hw resources Protection(2時11分13秒)",
+    "duration_seconds": 7873.6
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 6,
+    "title": "006_03-02_機器指令Stages(0時58分39秒)",
+    "duration_seconds": 3519.4
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 7,
+    "title": "007_04-01_Blocking and Non-Blocking(1時41分50秒)",
+    "duration_seconds": 6110.9
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 8,
+    "title": "008_04-02_例題34 P.3-24(1時36分07秒)",
+    "duration_seconds": 5767.6
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 9,
+    "title": "009_05-01_System call(2時15分12秒)",
+    "duration_seconds": 8112.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 10,
+    "title": "010_05-02_Virtual Machine(0時54分39秒)",
+    "duration_seconds": 3279.7
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 11,
+    "title": "011_06-01_VMM(1時36分24秒)",
+    "duration_seconds": 5785.5
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 12,
+    "title": "012_06-02_Process(1時42分24秒)",
+    "duration_seconds": 6144.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 13,
+    "title": "013_07-01_7個states(2時07分21秒)",
+    "duration_seconds": 7641.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 14,
+    "title": "014_07-02_UNIX(0時59分04秒)",
+    "duration_seconds": 3544.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 15,
+    "title": "015_08-01_例題解析.(1時54分49秒)",
+    "duration_seconds": 6889.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 16,
+    "title": "016_08-02_評估CPU Scheduling的效能之五個criteria.(1時24分55秒)",
+    "duration_seconds": 5095.9
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 17,
+    "title": "017_09-01_Preemptive法則(1時57分16秒)",
+    "duration_seconds": 7036.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 18,
+    "title": "018_09-02_RR.Round-Robin法則(0時55分03秒)",
+    "duration_seconds": 3303.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 19,
+    "title": "019_10-01_RR.三分析Time-Sharing採用(2時09分32秒)",
+    "duration_seconds": 7772.6
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 20,
+    "title": "020_10-02_Processor affinity.(0時58分38秒)",
+    "duration_seconds": 3518.8
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 21,
+    "title": "021_11-01_CH4-9.EDF法則.P4-38(1時51分02秒)",
+    "duration_seconds": 6662.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 22,
+    "title": "022_11-02_CH4-10.Thread執行緒Management.P4-41(1時16分09秒)",
+    "duration_seconds": 4569.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 23,
+    "title": "023_12-01_Thread分類：user-Thread與kernel-Thread(2時01分13秒)",
+    "duration_seconds": 7273.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 24,
+    "title": "024_12-02_signal Delivery issue(0時47分38秒)",
+    "duration_seconds": 2858.9
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 25,
+    "title": "025_13-01_CH4 PThread 程式追蹤.例2.P4-50.程式二(1時55分17秒)",
+    "duration_seconds": 6917.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 26,
+    "title": "026_13-02_CH5.Deadlock 處理方法.P5-7(1時16分27秒)",
+    "duration_seconds": 4587.9
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 27,
+    "title": "027_14-01_Safety Algorithm(2時00分45秒)",
+    "duration_seconds": 7245.7
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 28,
+    "title": "028_14-02_定理~Resoures Preemption(0時50分05秒)",
+    "duration_seconds": 3005.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 29,
+    "title": "029_15-01_Deadlock Detection algo.P5-17(1時53分32秒)",
+    "duration_seconds": 6812.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 30,
+    "title": "030_15-02_解決Race Condition之兩大策略.(1時12分28秒)",
+    "duration_seconds": 4348.5
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 31,
+    "title": "031_16-01_Busy-waiting Skill.(2時04分08秒)",
+    "duration_seconds": 7448.3
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 32,
+    "title": "032_16-02_Algo2(0時57分55秒)",
+    "duration_seconds": 3476
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 33,
+    "title": "033_17-01_CH6 P.6-7(1時46分03秒)",
+    "duration_seconds": 6363.9
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 34,
+    "title": "034_17-02_CH6 P.6-7(1時24分02秒)",
+    "duration_seconds": 5042.4
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 35,
+    "title": "035_18-01_6-6.Semaphone號誌.P6-17(2時13分36秒)",
+    "duration_seconds": 8016.3
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 36,
+    "title": "036_18-02_CH6-7.Readen_Writer Problem.P6-22(0時46分54秒)",
+    "duration_seconds": 2815
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 37,
+    "title": "037_19-01_CH6.何謂對write有利.readeu不利.P6-24(1時45分46秒)",
+    "duration_seconds": 6346.3
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 38,
+    "title": "038_19-02_Semaphore種頻(1時30分08秒)",
+    "duration_seconds": 5408.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 39,
+    "title": "039_20-01_6-8 P.6-32(2時07分36秒)",
+    "duration_seconds": 7656.3
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 40,
+    "title": "040_20-02_例題7 P.6-56(0時56分44秒)",
+    "duration_seconds": 3404.6
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 41,
+    "title": "041_21-01_Monitor的種類.(1時57分03秒)",
+    "duration_seconds": 7023.3
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 42,
+    "title": "042_21-02_Semaphore.Algo3.(1時07分09秒)",
+    "duration_seconds": 4029.8
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 43,
+    "title": "043_22-01_CH7.記憶管理.P7-3.(1時55分12秒)",
+    "duration_seconds": 6912.7
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 44,
+    "title": "044_22-02_動態載入Dynamic Loading.P7-4(1時19分08秒)",
+    "duration_seconds": 4748.5
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 45,
+    "title": "045_23-01_解決External fragmentation(1時53分17秒)",
+    "duration_seconds": 6797.9
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 46,
+    "title": "046_23-02_Paging相關計算(1時12分48秒)",
+    "duration_seconds": 4368.5
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 47,
+    "title": "047_24-01_Hashing Page Table雜湊分頁表.P7-24(1時50分08秒)",
+    "duration_seconds": 6608.7
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 48,
+    "title": "048_24-02_CH8-1.Virtual Memory.P8-3.(1時12分40秒)",
+    "duration_seconds": 4360.4
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 49,
+    "title": "049_25-01_Page Relacement頁面替換(1時54分03秒)",
+    "duration_seconds": 6843.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 50,
+    "title": "050_25-02_Additional Reference Bits usage(1時12分16秒)",
+    "duration_seconds": 4336.4
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 51,
+    "title": "051_26-01_Page Buffering機制.(2時10分21秒)",
+    "duration_seconds": 7821.1
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 52,
+    "title": "052_26-02_例題解析.(1時02分16秒)",
+    "duration_seconds": 3736.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 53,
+    "title": "053_27-01_Program structures之影響.P8-29(1時52分40秒)",
+    "duration_seconds": 6760.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 54,
+    "title": "054_27-02_Disk Access Time組成.P9-13(1時35分48秒)",
+    "duration_seconds": 5748.7
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 55,
+    "title": "055_28-01_Linked Allocation P.9-8(2時07分10秒)",
+    "duration_seconds": 7630.7
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 56,
+    "title": "056_28-02_SCAN P.9-15(1時22分17秒)",
+    "duration_seconds": 4937.2
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 57,
+    "title": "057_29-01_Bad Sectors之處理方法.P9-20(2時06分47秒)",
+    "duration_seconds": 7607.3
+  },
+  {
+    "subject": "作業系統",
+    "sequence": 58,
+    "title": "058_29-02_CH10.Flie Management.P10-1.(1時02分26秒)",
+    "duration_seconds": 3746.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 1,
+    "title": "001_01-01_課程說明(1時40分46秒)",
+    "duration_seconds": 6046.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 2,
+    "title": "002_01-02_CH1 P.9(1時31分28秒)",
+    "duration_seconds": 5488.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 3,
+    "title": "003_02-01_CH1 P.13(1時57分31秒)",
+    "duration_seconds": 7051.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 4,
+    "title": "004_02-02_CH1 P.20(1時46分28秒)",
+    "duration_seconds": 6388.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 5,
+    "title": "005_03-01_CH1 重點八：資料轉移指令 P26(1時53分27秒)",
+    "duration_seconds": 6807.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 6,
+    "title": "006_03-02_CH1 重點九：流程控制指令 P32(0時56分16秒)",
+    "duration_seconds": 3376.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 7,
+    "title": "007_04-01_CH1 重點十：邏輯運算 P35 (1時29分33秒)",
+    "duration_seconds": 5373.3
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 8,
+    "title": "008_04-02_CH1 重點十一：常數 P42(1時45分17秒)",
+    "duration_seconds": 6317.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 9,
+    "title": "009_04-03_CH1 重點十二：組合語言與機器語言 P46(1時21分14秒)",
+    "duration_seconds": 4874.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 10,
+    "title": "010_05-01_CH1 P.49(2時01分22秒)",
+    "duration_seconds": 7282.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 11,
+    "title": "011_05-02_CH1 P.61(1時15分22秒)",
+    "duration_seconds": 4522.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 12,
+    "title": "012_06-01_CH1 P.73(1時59分51秒)",
+    "duration_seconds": 7191.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 13,
+    "title": "013_06-02_CH1 P.77(2時13分23秒)",
+    "duration_seconds": 8003.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 14,
+    "title": "014_07-01_CH2.數的表示.P142(2時00分35秒)",
+    "duration_seconds": 7235.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 15,
+    "title": "015_07-02_CH2.有號數乘法.P170(1時24分07秒)",
+    "duration_seconds": 5047.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 16,
+    "title": "016_08-01_CH2.快速乘法硬體.P173(1時48分30秒)",
+    "duration_seconds": 6510.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 17,
+    "title": "017_08-02_CH2.硬體最佳化除法.P181(1時56分57秒)",
+    "duration_seconds": 7017.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 18,
+    "title": "018_09-01_CH2 P.192(1時53分34秒)",
+    "duration_seconds": 6814.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 19,
+    "title": "019_09-02_CH2 P.199(1時38分13秒)",
+    "duration_seconds": 5893.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 20,
+    "title": "020_10-01_CH2 P.208(1時34分42秒)",
+    "duration_seconds": 5682.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 21,
+    "title": "021_10-02_CH3 P.279(1時55分36秒)",
+    "duration_seconds": 6936.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 22,
+    "title": "022_11-01_CH3.重點二.影響CPU效能的因素p.284(2時04分05秒)",
+    "duration_seconds": 7445.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 23,
+    "title": "023_11-02_重點四.Amdahls處理p.298(1時29分53秒)",
+    "duration_seconds": 5393.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 24,
+    "title": "024_12-01_CH3.重點四.阿姆達爾定律練習.p303(2時05分44秒)",
+    "duration_seconds": 7544.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 25,
+    "title": "025_12-02_CH4.重點一.抽象化計設.P357(2時00分24秒)",
+    "duration_seconds": 7224.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 26,
+    "title": "026_13-01_CH4 重點二：單一時脈計算機資路程的建構 P362(1時49分50秒)",
+    "duration_seconds": 6590.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 27,
+    "title": "027_13-02_CH4 重點三：單一時脈計算機控制單元的建構 P378 (1時34分27秒)",
+    "duration_seconds": 5667.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 28,
+    "title": "028_14-01_CH4 重點三：單一時脈計算機控制單元的建構 P372(0時55分20秒)",
+    "duration_seconds": 3320.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 29,
+    "title": "029_14-02_CH4 重點三：例題解說 P383(0時19分04秒)",
+    "duration_seconds": 1144.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 30,
+    "title": "030_15-01_重點四-單一時脈計算機的效能 p.385(1時52分42秒)",
+    "duration_seconds": 6762.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 31,
+    "title": "031_15-02_重點五-多重時脈計算機 p.391 (2時02分13秒)",
+    "duration_seconds": 7333.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 32,
+    "title": "032_16_ch5.管線資料路徑 p.431 (1時42分38秒)",
+    "duration_seconds": 6158.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 33,
+    "title": "033_17-01_重點三、管線控制單元 p.441(2時03分24秒)",
+    "duration_seconds": 7404.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 34,
+    "title": "034_17-02_重點六、資料危障的解決 p.455(1時32分56秒)",
+    "duration_seconds": 5576.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 35,
+    "title": "035_18-01_重點六、資料危障的解決 p.461(2時07分02秒)",
+    "duration_seconds": 7622.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 36,
+    "title": "036_18-02_重點六、資料危障的解決 p.478(1時38分42秒)",
+    "duration_seconds": 5922.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 37,
+    "title": "037_19-01_CH5.重點八-控制危障的解決 p.484(2時00分47秒)",
+    "duration_seconds": 7247.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 38,
+    "title": "038_19-02_CH5.重點八-控制危障的解決 p.490(1時23分39秒)",
+    "duration_seconds": 5019.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 39,
+    "title": "039_20-01_CH5.重點九-進階的管線 p.502(2時10分28秒)",
+    "duration_seconds": 7828.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 40,
+    "title": "040_20-02_CH5.重點九-進階的管線 p.512(1時41分54秒)",
+    "duration_seconds": 6114.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 41,
+    "title": "041_21-01_CH6.重點二、記憶體階層 p.8(2時19分17秒)",
+    "duration_seconds": 8357.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 42,
+    "title": "042_21-02_重點四、快取的基礎概念 p.24(1時18分40秒)",
+    "duration_seconds": 4720.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 43,
+    "title": "043_22_CH6.重點四、快取的基礎慨念 p.29(1時42分15秒)",
+    "duration_seconds": 6135.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 44,
+    "title": "044_23-01_CH6.重點六.集合關聯式快取.P35(1時50分42秒)",
+    "duration_seconds": 6642.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 45,
+    "title": "045_23-02_CH6.考古題.EX52.99年台大電機.P135(1時01分27秒)",
+    "duration_seconds": 3687.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 46,
+    "title": "046_24-01_P.48(1時58分56秒)",
+    "duration_seconds": 7136.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 47,
+    "title": "047_24-02_P.60(0時56分43秒)",
+    "duration_seconds": 3403.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 48,
+    "title": "048_25-01_P.65(1時50分45秒)",
+    "duration_seconds": 6645.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 49,
+    "title": "049_25-02_P.72(1時02分57秒)",
+    "duration_seconds": 3777.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 50,
+    "title": "050_26-01_P.78(1時57分24秒)",
+    "duration_seconds": 7044.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 51,
+    "title": "051_26-02_例題解析(0時56分13秒)",
+    "duration_seconds": 3373.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 52,
+    "title": "052_27-01_CH6.十三、3C降低失誤處罰時間 p.88(2時03分21秒)",
+    "duration_seconds": 7401.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 53,
+    "title": "053_27-02_CH6.八、虛擬記憶體 p.68(0時54分19秒)",
+    "duration_seconds": 3259.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 54,
+    "title": "054_28-01_CH7 P.206(2時02分51秒)",
+    "duration_seconds": 7371.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 55,
+    "title": "055_28-02_CH7 P.222(0時43分58秒)",
+    "duration_seconds": 2638.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 56,
+    "title": "056_29-01_CH7-對I_O裝置下命令 p.243(2時15分08秒)",
+    "duration_seconds": 8108.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 57,
+    "title": "057_29-02_CH8-遞傳訊息之多處理器 p.314(1時13分53秒)",
+    "duration_seconds": 4433.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 58,
+    "title": "058_30-01_CH8-平行電腦的分類 p.329(1時47分57秒)",
+    "duration_seconds": 6477.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 59,
+    "title": "059_30-02_CH9-積體電路製作流程 p.369(1時18分53秒)",
+    "duration_seconds": 4733.8
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 60,
+    "title": "060_進階補充單元-01-01_CH1 重點18 P.73(1時55分06秒)",
+    "duration_seconds": 6906
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 61,
+    "title": "061_進階補充單元-01-02_CH2 重點1 P.136(1時38分38秒)",
+    "duration_seconds": 5918.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 62,
+    "title": "062_進階補充單元-02-01_CH2.重點2.加法與減法.P14(2時22分12秒)",
+    "duration_seconds": 8532.7
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 63,
+    "title": "063_進階補充單元-02-02_重點5.前瞻進位加法器.P15(1時23分51秒)",
+    "duration_seconds": 5031.6
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 64,
+    "title": "064_進階補充單元-03-01_CH7.硬碟.P202(1時41分46秒)",
+    "duration_seconds": 6106.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 65,
+    "title": "065_進階補充單元-03-02_CH7.磁碟陣列.P213(1時41分16秒)",
+    "duration_seconds": 6076.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 66,
+    "title": "066_進階補充單元-04-01_CH7.考古題例題27.P280(1時53分58秒)",
+    "duration_seconds": 6838.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 67,
+    "title": "067_進階補充單元-04-02_CH8.多重處理器.P302(2時26分55秒)",
+    "duration_seconds": 8815.2
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 68,
+    "title": "068_進階補充單元-05-01_重點8.圖型處理器.P331(2時14分56秒)",
+    "duration_seconds": 8096.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 69,
+    "title": "069_進階補充單元-05-02_重點5.多重處理器的快取一致性(1時07分34秒)",
+    "duration_seconds": 4054.1
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 70,
+    "title": "070_邏輯設計_01_課程介紹~第二章布林代數重點P25(2時47分42秒)",
+    "duration_seconds": 10062.7
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 71,
+    "title": "071_邏輯設計_02_重點八-布林函數的化簡(2時16分08秒)",
+    "duration_seconds": 8168.7
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 72,
+    "title": "072_邏輯設計_03_3.列表法P50(2時53分42秒)",
+    "duration_seconds": 10422.5
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 73,
+    "title": "073_邏輯設計_04_重點三-比較器P78(2時55分29秒)",
+    "duration_seconds": 10529.6
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 74,
+    "title": "074_邏輯設計_05_第四章序向邏輯電路P105(3時02分26秒)",
+    "duration_seconds": 10946
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 75,
+    "title": "075_邏輯設計_06_第四章序向邏輯電路(3時24分14秒)",
+    "duration_seconds": 12254.8
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 76,
+    "title": "076_邏輯設計_07_第五章.暫存器與記數器P142(3時29分44秒)",
+    "duration_seconds": 12584.6
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 77,
+    "title": "077_邏輯設計_08_CH5並列載入 P158(3時02分06秒)",
+    "duration_seconds": 10926.5
+  },
+  {
+    "subject": "計算機組織",
+    "sequence": 78,
+    "title": "078_邏輯設計_09_重點5-唯讀記憶體(3時40分45秒)",
+    "duration_seconds": 13245.3
+  }
+]
