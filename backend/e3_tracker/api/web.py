@@ -72,6 +72,39 @@ STUDY_PLAN_BLOCKS = (
 STUDY_PLAN_START = "2026-06-29"
 STUDY_PLAN_END = "2026-12-06"
 STUDY_PLAN_SUBJECTS = tuple(block["subject"] for block in STUDY_PLAN_BLOCKS)
+STUDY_PLAN_PRACTICE_MULTIPLIERS = {
+    "線性代數": 1.65,
+    "離散數學": 1.65,
+    "資料結構": 1.45,
+    "演算法": 1.55,
+    "作業系統": 1.35,
+    "計算機組織": 1.35,
+}
+STUDY_PLAN_DAILY_WEIGHTS = (
+    {"label": "週一", "weight": 1.0, "focus": "影片＋筆記"},
+    {"label": "週二", "weight": 1.0, "focus": "影片＋筆記"},
+    {"label": "週三", "weight": 1.0, "focus": "影片＋筆記"},
+    {"label": "週四", "weight": 1.0, "focus": "影片＋筆記"},
+    {"label": "週五", "weight": 0.85, "focus": "題目練習"},
+    {"label": "週六", "weight": 0.95, "focus": "複習＋錯題"},
+    {"label": "週日", "weight": 0.35, "focus": "彈性補進度"},
+)
+
+
+def _study_plan_daily_recommendations(subject: str, target_seconds: float) -> Tuple[float, float, List[Dict[str, Any]]]:
+    video_hours = target_seconds / 3600 if target_seconds else 0.0
+    multiplier = STUDY_PLAN_PRACTICE_MULTIPLIERS.get(subject, 1.45)
+    weekly_hours = video_hours * multiplier
+    total_weight = sum(float(item["weight"]) for item in STUDY_PLAN_DAILY_WEIGHTS)
+    daily_rows = [
+        {
+            "label": item["label"],
+            "focus": item["focus"],
+            "hours": round((weekly_hours * float(item["weight"]) / total_weight) if total_weight else 0.0, 1),
+        }
+        for item in STUDY_PLAN_DAILY_WEIGHTS
+    ]
+    return round(video_hours, 1), round(weekly_hours, 1), daily_rows
 
 
 class TrafficTracker:
@@ -1583,6 +1616,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     if float(item.get("duration_seconds") or 0) > 0
                     and float(item.get("watched_seconds") or 0) >= float(item.get("duration_seconds") or 0)
                 )
+                video_hours, suggested_weekly_hours, daily_recommendations = _study_plan_daily_recommendations(
+                    str(block["subject"]),
+                    target_seconds,
+                )
                 completion = min(100.0, (watched_seconds / target_seconds * 100) if target_seconds else 0.0)
                 if completion >= 100:
                     state = "complete"
@@ -1604,6 +1641,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "end": week_end.isoformat(),
                         "target_minutes": target_seconds / 60,
                         "target_seconds": target_seconds,
+                        "video_hours": video_hours,
+                        "suggested_weekly_hours": suggested_weekly_hours,
+                        "daily_recommendations": daily_recommendations,
                         "lesson_target": int(lesson_target),
                         "video_count": len(weekly_videos),
                         "completed_videos": completed_videos,
