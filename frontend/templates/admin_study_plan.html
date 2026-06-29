@@ -127,6 +127,23 @@
         .state.behind { color: var(--amber); background: var(--amber-soft); border-color: #f0d6a5; }
         .subject-filter { padding: 15px 20px; display: flex; align-items: end; gap: 12px; border-bottom: 1px solid var(--line); background: #fff; }
         .subject-filter .field { width: min(100%, 270px); }
+        .youtube-player { display: grid; grid-template-columns: minmax(300px, .95fr) minmax(280px, 1.05fr); gap: 18px; padding: 20px; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, #fff 0%, #fbfdff 60%, #eef5ff 100%); }
+        .player-frame { position: relative; min-height: 250px; border: 1px solid #cdd9e6; border-radius: 12px; background: #0d1724; overflow: hidden; box-shadow: 0 12px 28px rgba(16, 42, 67, .10); }
+        .player-frame iframe, #youtube-player { width: 100%; height: 100%; min-height: 250px; border: 0; }
+        .player-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9c7d8; text-align: center; line-height: 1.65; }
+        .player-copy { display: grid; align-content: start; gap: 12px; min-width: 0; }
+        .player-kicker { color: #c4302b; font-size: 12px; font-weight: 820; letter-spacing: .04em; text-transform: uppercase; }
+        .player-title { margin: 0; color: var(--ink); font-size: 22px; line-height: 1.25; letter-spacing: -.035em; }
+        .player-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
+        .player-pill { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; background: #fff; white-space: nowrap; }
+        .player-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .player-button { min-height: 36px; padding: 0 12px; border: 1px solid #cdd9e6; border-radius: 8px; background: #fff; color: var(--ink-2); font-weight: 760; cursor: pointer; }
+        .player-button.primary { border-color: var(--blue); background: var(--blue); color: #fff; }
+        .player-button:disabled { cursor: not-allowed; opacity: .55; }
+        .player-status { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, .78); }
+        .player-status-line { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; }
+        .player-status-line strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+        .player-note { color: var(--muted); font-size: 12px; line-height: 1.55; }
         .log-form { padding: 19px 20px; display: grid; grid-template-columns: minmax(220px, 1.25fr) minmax(136px, .72fr) minmax(220px, 1.35fr) auto; gap: 10px; border-bottom: 1px solid var(--line); background: #fbfdff; }
         .field { min-width: 0; }
         .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 740; }
@@ -142,6 +159,9 @@
         td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; overflow-wrap: anywhere; }
         tr:last-child td { border-bottom: 0; }
         .log-note { max-width: none; color: var(--ink-2); line-height: 1.5; word-break: break-word; }
+        .video-title-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .youtube-link { display: inline-flex; align-items: center; justify-content: center; padding: 2px 6px; border-radius: 999px; background: #fff1f1; color: #c4302b; font-size: 10px; font-weight: 800; white-space: nowrap; }
+        .youtube-link:hover { background: #ffe1e1; }
         .log-numbers { white-space: nowrap; font-variant-numeric: tabular-nums; }
         .mini-track { width: 84px; height: 5px; margin-top: 5px; }
         .delete-form { display: inline; }
@@ -152,10 +172,10 @@
         .empty { padding: 46px 24px; color: var(--muted); text-align: center; }
         .flash-stack { display: grid; gap: 8px; margin-bottom: 16px; }
         .flash { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 10px 12px; color: var(--ink-2); font-size: 14px; }
-        @media (min-width: 1121px) and (max-width: 1500px) { .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } }
-        @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } .timeline { max-height: 420px; } .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } .save-button { grid-column: span 2; } }
+        @media (min-width: 1121px) and (max-width: 1500px) { .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } .youtube-player { grid-template-columns: 1fr; } }
+        @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } .timeline { max-height: 420px; } .youtube-player { grid-template-columns: 1fr; } .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } .save-button { grid-column: span 2; } }
         @media (max-width: 820px) { .table-wrap { padding: 12px; } .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; } .table-wrap table { table-layout: auto; } .table-wrap thead { display: none; } .table-wrap tbody { display: grid; gap: 12px; } .table-wrap tr { padding: 4px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; } .table-wrap td { display: grid; grid-template-columns: minmax(88px, .8fr) minmax(0, 1.4fr); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); } .table-wrap td:last-child { border-bottom: 0; } .table-wrap td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 740; } .table-wrap td.record-action:not(.has-record) { display: none; } .table-wrap .log-numbers { white-space: normal; } .table-wrap .mini-track { width: 100%; max-width: 160px; } .table-wrap .delete-form { justify-self: start; } }
-        @media (max-width: 760px) { .topbar { height: auto; min-height: 62px; padding: 14px 18px; } .crumb { display: none; } .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } .week-row { padding: 13px 14px; } }
+        @media (max-width: 760px) { .topbar { height: auto; min-height: 62px; padding: 14px 18px; } .crumb { display: none; } .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .youtube-player { padding: 16px; } .player-frame, .player-frame iframe, #youtube-player { min-height: 210px; } .player-title { font-size: 19px; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } .week-row { padding: 13px 14px; } }
     </style>
 </head>
 <body>
@@ -181,9 +201,9 @@
 
                 <section class="metric-row" aria-label="讀書計畫摘要">
                     <div class="metric"><div class="metric-label">影片總片長</div><div class="metric-value">{{ (summary.total_target / 60)|round(1) }}<small>小時</small></div></div>
-                    <div class="metric"><div class="metric-label">已觀看片長</div><div class="metric-value">{{ (summary.total_watched / 60)|round(1) }}<small>小時</small></div></div>
-                    <div class="metric"><div class="metric-label">累積完成率</div><div class="metric-value">{{ summary.completion|round(1) }}<small>%</small></div></div>
-                    <div class="metric"><div class="metric-label">已完成影片</div><div class="metric-value">{{ summary.completed_videos }}<small>/ {{ summary.total_videos }} 支</small></div></div>
+                    <div class="metric"><div class="metric-label">已觀看片長</div><div class="metric-value"><span id="summary-watched-hours">{{ (summary.total_watched / 60)|round(1) }}</span><small>小時</small></div></div>
+                    <div class="metric"><div class="metric-label">累積完成率</div><div class="metric-value"><span id="summary-completion">{{ summary.completion|round(1) }}</span><small>%</small></div></div>
+                    <div class="metric"><div class="metric-label">已完成影片</div><div class="metric-value"><span id="summary-completed-videos">{{ summary.completed_videos }}</span><small>/ <span id="summary-total-videos">{{ summary.total_videos }}</span> 支</small></div></div>
                 </section>
 
                 <div class="workspace">
@@ -198,11 +218,11 @@
                                     <div class="focus-item"><span>建議讀書總時數</span><strong>{{ current_week.suggested_weekly_hours }} 小時</strong></div>
                                     <div class="focus-item"><span>本週影片數</span><strong>{{ current_week.video_count }} 支</strong></div>
                                     <div class="focus-item"><span>影片里程碑</span><strong>至第 {{ '%03d'|format(current_week.lesson_target) }} 支</strong></div>
-                                    <div class="focus-item"><span>本週實際觀看</span><strong>{{ current_week.watched_minutes }} 分鐘</strong></div>
+                                    <div class="focus-item"><span>本週實際觀看</span><strong><span id="current-week-watched">{{ current_week.watched_minutes }}</span> 分鐘</strong></div>
                                     <div class="focus-item"><span>每日平均建議</span><strong>{{ (current_week.suggested_weekly_hours / 7)|round(1) }} 小時</strong></div>
                                 </div>
-                                <div class="progress-line"><span>本週進度</span><strong>{{ current_week.completion|round(1) }}%</strong></div>
-                                <div class="track"><div class="fill" style="--progress:{{ current_week.completion }}%"></div></div>
+                                <div class="progress-line"><span>本週進度</span><strong><span id="current-week-completion">{{ current_week.completion|round(1) }}</span>%</strong></div>
+                                <div class="track"><div id="current-week-fill" class="fill" style="--progress:{{ current_week.completion }}%"></div></div>
                                 <div class="daily-plan-head">
                                     <div class="daily-plan-title">本週每日建議與完成度</div>
                                     <div class="daily-legend" aria-label="每日狀態圖例">
@@ -215,7 +235,7 @@
                                 </div>
                                 <div class="daily-plan" aria-label="本週每日建議與完成度">
                                     {% for day in current_week.daily_recommendations %}
-                                    <div class="day-chip {{ day.state }}" style="--day-progress:{{ day.completion }}%">
+                                    <div class="day-chip {{ day.state }}" data-focus-day-index="{{ loop.index0 }}" style="--day-progress:{{ day.completion }}%">
                                         <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-status">{{ day.state_label }}</span></div>
                                         <span class="day-hours">{{ day.hours }}h</span>
                                         <span class="day-focus">{{ day.focus }}</span>
@@ -263,10 +283,36 @@
                             <div class="field"><label for="subject">目前科目</label><select id="subject" name="subject" onchange="this.form.submit()">{% for subject in subjects %}<option value="{{ subject }}" {% if subject == selected_subject %}selected{% endif %}>{{ subject }}</option>{% endfor %}</select></div>
                             <noscript><button class="save-button" type="submit">切換科目</button></noscript>
                         </form>
+                        <div class="youtube-player" aria-label="YouTube 播放模式">
+                            <div class="player-frame">
+                                <div id="youtube-player"></div>
+                                <div id="player-empty" class="player-empty">選擇已對應 YouTube 的影片後，就能在這裡播放並自動紀錄進度。</div>
+                            </div>
+                            <div class="player-copy">
+                                <div class="player-kicker">YouTube 播放模式</div>
+                                <h3 id="player-title" class="player-title">尚未載入影片</h3>
+                                <div class="player-meta">
+                                    <span class="player-pill" id="player-duration">片長 —</span>
+                                    <span class="player-pill" id="player-watched">已看 —</span>
+                                    <span class="player-pill" id="player-sync-state">等待選擇影片</span>
+                                </div>
+                                <div class="player-status">
+                                    <div class="player-status-line"><span>播放位置</span><strong id="player-current-time">0:00</strong></div>
+                                    <div class="track"><div id="player-progress-fill" class="fill" style="--progress:0%"></div></div>
+                                    <div class="player-status-line"><span>自動儲存</span><strong id="player-last-saved">尚未儲存</strong></div>
+                                </div>
+                                <div class="player-actions">
+                                    <button class="player-button primary" type="button" id="player-load-button">載入選取影片</button>
+                                    <button class="player-button" type="button" id="player-save-button">立即儲存進度</button>
+                                    <a class="player-button" id="player-open-link" href="#" target="_blank" rel="noopener noreferrer">在 YouTube 開啟</a>
+                                </div>
+                                <div class="player-note">播放時每 15 秒會自動儲存；暫停、播完、離開頁面時也會儲存。手動輸入分鐘數仍保留，方便補登手機或 YouTube App 上看的進度。</div>
+                            </div>
+                        </div>
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
-                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required>{% for video in videos %}<option value="{{ video.id }}" data-duration="{{ video.duration_minutes }}">第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">原始片長：{{ videos[0].duration_minutes if videos else 0 }} 分鐘</span></div>
+                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required>{% for video in videos %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}">第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">原始片長：{{ videos[0].duration_minutes if videos else 0 }} 分鐘{% if videos and videos[0].youtube_url %}・YouTube 已對應{% endif %}</span></div>
                             <div class="field"><label for="watched_minutes">實際觀看分鐘</label><input id="watched_minutes" name="watched_minutes" type="number" min="0" max="1440" step="0.1" value="0" required></div>
                             <div class="field notes"><label for="notes">筆記／卡關點</label><textarea id="notes" name="notes" rows="1" maxlength="2000" placeholder="例：複習矩陣分解的推導。"></textarea></div>
                             <button class="save-button" type="submit">儲存影片紀錄</button>
@@ -286,12 +332,12 @@
                                 </tr></thead>
                                 <tbody>
                                     {% for video in videos %}
-                                    <tr>
+                                    <tr data-video-row="{{ video.id }}">
                                         <td class="log-numbers" data-label="#">{{ '%03d'|format(video.sequence) }}</td>
-                                        <td class="log-note" data-label="影片">{{ video.title }}</td>
+                                        <td class="log-note" data-label="影片"><div class="video-title-line"><span>{{ video.title }}</span>{% if video.youtube_url %}<a class="youtube-link" href="{{ video.youtube_url }}" target="_blank" rel="noopener noreferrer">YouTube</a>{% endif %}</div></td>
                                         <td class="log-numbers" data-label="原始片長">{{ video.duration_minutes }} 分</td>
-                                        <td class="log-numbers" data-label="已觀看">{{ video.watched_minutes }} 分</td>
-                                        <td class="log-numbers" data-label="觀看進度">{{ video.completion|round(0) }}%<div class="track mini-track"><div class="fill" style="--progress:{{ video.completion }}%"></div></div></td>
+                                        <td class="log-numbers" data-label="已觀看"><span data-video-watched="{{ video.id }}">{{ video.watched_minutes }}</span> 分</td>
+                                        <td class="log-numbers" data-label="觀看進度"><span data-video-completion="{{ video.id }}">{{ video.completion|round(0) }}</span>%<div class="track mini-track"><div class="fill" data-video-fill="{{ video.id }}" style="--progress:{{ video.completion }}%"></div></div></td>
                                         <td class="log-note" data-label="筆記">{{ video.notes or '—' }}</td>
                                         <td class="log-numbers" data-label="最後更新">{{ video.updated_at or '—' }}</td>
                                         <td class="record-action{% if video.watched_seconds or video.notes %} has-record{% endif %}" data-label="紀錄">{% if video.watched_seconds or video.notes %}<form class="delete-form" method="post" action="{{ url_for('admin_study_plan') }}"><input type="hidden" name="action" value="delete_video"><input type="hidden" name="subject" value="{{ selected_subject }}"><input type="hidden" name="video_id" value="{{ video.id }}"><button class="delete-button" type="submit" title="清除這支影片的紀錄" aria-label="清除第 {{ '%03d'|format(video.sequence) }} 支影片的紀錄">✕</button></form>{% endif %}</td>
@@ -309,13 +355,193 @@
         (function () {
             const videoSelect = document.getElementById('video_id');
             const durationHint = document.getElementById('duration-hint');
+            const watchedInput = document.getElementById('watched_minutes');
+            const playerEmpty = document.getElementById('player-empty');
+            const playerTitle = document.getElementById('player-title');
+            const playerDuration = document.getElementById('player-duration');
+            const playerWatched = document.getElementById('player-watched');
+            const playerSyncState = document.getElementById('player-sync-state');
+            const playerCurrentTime = document.getElementById('player-current-time');
+            const playerProgressFill = document.getElementById('player-progress-fill');
+            const playerLastSaved = document.getElementById('player-last-saved');
+            const playerLoadButton = document.getElementById('player-load-button');
+            const playerSaveButton = document.getElementById('player-save-button');
+            const playerOpenLink = document.getElementById('player-open-link');
+            let player = null;
+            let youtubeApiReady = false;
+            let activeVideoId = '';
+            let saveTimer = null;
+            let pendingSave = false;
+
             if (!videoSelect || !durationHint) return;
-            const updateDuration = function () {
-                const option = videoSelect.options[videoSelect.selectedIndex];
-                const duration = option ? option.dataset.duration : '0';
-                durationHint.textContent = '原始片長：' + duration + ' 分鐘';
+
+            const formatMinutes = function (seconds) {
+                return (Math.max(0, Number(seconds) || 0) / 60).toFixed(1);
             };
+            const formatClock = function (seconds) {
+                const value = Math.max(0, Math.floor(Number(seconds) || 0));
+                const minutes = Math.floor(value / 60);
+                const rest = value % 60;
+                return minutes + ':' + String(rest).padStart(2, '0');
+            };
+            const selectedOption = function () {
+                return videoSelect.options[videoSelect.selectedIndex] || null;
+            };
+            const updateDuration = function () {
+                const option = selectedOption();
+                const duration = option ? option.dataset.duration : '0';
+                const youtube = option ? option.dataset.youtubeUrl : '';
+                durationHint.textContent = '原始片長：' + duration + ' 分鐘' + (youtube ? '・YouTube 已對應' : '');
+                if (watchedInput && option) watchedInput.value = formatMinutes(option.dataset.watchedSeconds);
+                updatePlayerPanel(option);
+            };
+            const updatePlayerPanel = function (option) {
+                const youtubeId = option ? option.dataset.youtubeVideoId : '';
+                const youtubeUrl = option ? option.dataset.youtubeUrl : '';
+                const title = option ? option.dataset.title : '';
+                const sequence = option ? String(option.dataset.sequence || '').padStart(3, '0') : '';
+                const durationSeconds = option ? Number(option.dataset.durationSeconds || 0) : 0;
+                const watchedSeconds = option ? Number(option.dataset.watchedSeconds || 0) : 0;
+                playerTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '尚未載入影片';
+                playerDuration.textContent = '片長 ' + formatMinutes(durationSeconds) + ' 分';
+                playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
+                playerCurrentTime.textContent = formatClock(watchedSeconds);
+                playerProgressFill.style.setProperty('--progress', durationSeconds ? Math.min(100, watchedSeconds / durationSeconds * 100) + '%' : '0%');
+                playerOpenLink.href = youtubeUrl || '#';
+                playerOpenLink.style.pointerEvents = youtubeUrl ? 'auto' : 'none';
+                playerLoadButton.disabled = !youtubeId;
+                playerSaveButton.disabled = !youtubeId;
+                playerSyncState.textContent = youtubeId ? '可播放並自動儲存' : '這支影片尚未對應 YouTube';
+                playerEmpty.style.display = youtubeId ? 'none' : 'grid';
+            };
+            const applyProgressResult = function (result) {
+                const option = selectedOption();
+                if (!result || !result.ok || !option) return;
+                const watchedSeconds = Number(result.watched_seconds || 0);
+                const durationSeconds = Number(result.duration_seconds || option.dataset.durationSeconds || 0);
+                option.dataset.watchedSeconds = String(watchedSeconds);
+                if (watchedInput) watchedInput.value = formatMinutes(watchedSeconds);
+                playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
+                playerProgressFill.style.setProperty('--progress', durationSeconds ? Math.min(100, watchedSeconds / durationSeconds * 100) + '%' : '0%');
+                const watchedCell = document.querySelector('[data-video-watched="' + result.video_id + '"]');
+                const completionCell = document.querySelector('[data-video-completion="' + result.video_id + '"]');
+                const fill = document.querySelector('[data-video-fill="' + result.video_id + '"]');
+                if (watchedCell) watchedCell.textContent = formatMinutes(watchedSeconds);
+                if (completionCell) completionCell.textContent = Math.round(Number(result.completion || 0));
+                if (fill) fill.style.setProperty('--progress', Math.min(100, Number(result.completion || 0)) + '%');
+                if (result.summary) {
+                    const summaryWatched = document.getElementById('summary-watched-hours');
+                    const summaryCompletion = document.getElementById('summary-completion');
+                    const summaryCompleted = document.getElementById('summary-completed-videos');
+                    const summaryTotal = document.getElementById('summary-total-videos');
+                    if (summaryWatched) summaryWatched.textContent = result.summary.total_watched_hours;
+                    if (summaryCompletion) summaryCompletion.textContent = result.summary.completion;
+                    if (summaryCompleted) summaryCompleted.textContent = result.summary.completed_videos;
+                    if (summaryTotal) summaryTotal.textContent = result.summary.total_videos;
+                }
+                if (result.current_week) {
+                    const weekWatched = document.getElementById('current-week-watched');
+                    const weekCompletion = document.getElementById('current-week-completion');
+                    const weekFill = document.getElementById('current-week-fill');
+                    if (weekWatched) weekWatched.textContent = result.current_week.watched_minutes;
+                    if (weekCompletion) weekCompletion.textContent = result.current_week.completion;
+                    if (weekFill) weekFill.style.setProperty('--progress', result.current_week.completion + '%');
+                    (result.current_week.daily_recommendations || []).forEach(function (day, index) {
+                        const card = document.querySelector('[data-focus-day-index="' + index + '"]');
+                        if (!card) return;
+                        card.className = 'day-chip ' + day.state;
+                        card.style.setProperty('--day-progress', day.completion + '%');
+                        const status = card.querySelector('.day-status');
+                        const completion = card.querySelector('.day-completion strong');
+                        if (status) status.textContent = day.state_label;
+                        if (completion) completion.textContent = Math.round(Number(day.completion || 0)) + '%';
+                    });
+                }
+            };
+            const saveProgress = function (reason, useKeepalive) {
+                const option = selectedOption();
+                const youtubeId = option ? option.dataset.youtubeVideoId : '';
+                if (!option || !youtubeId || !player || typeof player.getCurrentTime !== 'function') return Promise.resolve();
+                if (pendingSave && reason === 'interval') return Promise.resolve();
+                const currentSeconds = Math.max(Number(option.dataset.watchedSeconds || 0), Number(player.getCurrentTime() || 0));
+                pendingSave = true;
+                playerSyncState.textContent = '儲存中…';
+                return fetch('{{ url_for("admin_study_plan_video_progress") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ video_id: Number(option.value), watched_seconds: currentSeconds }),
+                    keepalive: Boolean(useKeepalive)
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('save_failed');
+                    return response.json();
+                }).then(function (data) {
+                    applyProgressResult(data);
+                    playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+                    playerSyncState.textContent = reason === 'ended' ? '已完成並儲存' : '已自動儲存';
+                }).catch(function () {
+                    playerSyncState.textContent = '儲存失敗，稍後重試';
+                }).finally(function () {
+                    pendingSave = false;
+                });
+            };
+            const startSaveTimer = function () {
+                if (saveTimer) return;
+                saveTimer = window.setInterval(function () { saveProgress('interval', false); }, 15000);
+            };
+            const stopSaveTimer = function () {
+                if (saveTimer) window.clearInterval(saveTimer);
+                saveTimer = null;
+            };
+            const loadSelectedVideo = function () {
+                const option = selectedOption();
+                const youtubeId = option ? option.dataset.youtubeVideoId : '';
+                if (!youtubeId || !youtubeApiReady) return;
+                const startSeconds = Math.floor(Number(option.dataset.watchedSeconds || 0));
+                activeVideoId = youtubeId;
+                playerEmpty.style.display = 'none';
+                if (!player) {
+                    player = new YT.Player('youtube-player', {
+                        videoId: youtubeId,
+                        playerVars: { rel: 0, modestbranding: 1, start: startSeconds > 5 ? startSeconds : 0 },
+                        events: {
+                            onReady: function () {
+                                playerSyncState.textContent = '播放器已就緒';
+                            },
+                            onStateChange: function (event) {
+                                if (event.data === YT.PlayerState.PLAYING) {
+                                    startSaveTimer();
+                                    playerSyncState.textContent = '播放中，自動儲存啟用';
+                                } else if (event.data === YT.PlayerState.PAUSED) {
+                                    stopSaveTimer();
+                                    saveProgress('paused', false);
+                                } else if (event.data === YT.PlayerState.ENDED) {
+                                    stopSaveTimer();
+                                    saveProgress('ended', false);
+                                }
+                            }
+                        }
+                    });
+                } else if (typeof player.loadVideoById === 'function') {
+                    player.loadVideoById({ videoId: youtubeId, startSeconds: startSeconds > 5 ? startSeconds : 0 });
+                }
+            };
+            window.onYouTubeIframeAPIReady = function () {
+                youtubeApiReady = true;
+                if (selectedOption() && selectedOption().dataset.youtubeVideoId) loadSelectedVideo();
+            };
+            const tag = document.createElement('script');
+            tag.src = 'https://www.youtube.com/iframe_api';
+            document.head.appendChild(tag);
+
             videoSelect.addEventListener('change', updateDuration);
+            videoSelect.addEventListener('change', function () {
+                stopSaveTimer();
+                const option = selectedOption();
+                if (option && option.dataset.youtubeVideoId && youtubeApiReady) loadSelectedVideo();
+            });
+            playerLoadButton.addEventListener('click', loadSelectedVideo);
+            playerSaveButton.addEventListener('click', function () { saveProgress('manual', false); });
+            window.addEventListener('beforeunload', function () { saveProgress('leave', true); });
             updateDuration();
         }());
     </script>

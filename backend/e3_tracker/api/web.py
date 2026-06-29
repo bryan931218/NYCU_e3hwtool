@@ -2399,6 +2399,42 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             plan_end=STUDY_PLAN_END,
         )
 
+    @app.post("/admin/study-plan/video-progress")
+    @admin_required
+    def admin_study_plan_video_progress():
+        payload = request.get_json(silent=True) or {}
+        try:
+            video_id = int(payload.get("video_id") or 0)
+            watched_seconds = float(payload.get("watched_seconds") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "invalid_payload"}, 400
+        if video_id <= 0:
+            return {"ok": False, "error": "missing_video"}, 400
+        result = storage.update_study_plan_video_progress(video_id=video_id, watched_seconds=watched_seconds)
+        if not result:
+            return {"ok": False, "error": "video_not_found"}, 404
+        videos = storage.list_study_plan_videos_with_records()
+        _week_rows, current_week, summary = _study_plan_week_rows(videos)
+        record_ui_event(
+            "study_plan_youtube_progress_saved",
+            meta={"video_id": video_id, "watched_seconds": round(float(result["watched_seconds"]), 1)},
+        )
+        return {
+            "ok": True,
+            **result,
+            "summary": {
+                "total_watched_hours": round(float(summary["total_watched"]) / 60, 1),
+                "completion": round(float(summary["completion"]), 1),
+                "completed_videos": int(summary["completed_videos"]),
+                "total_videos": int(summary["total_videos"]),
+            },
+            "current_week": {
+                "watched_minutes": round(float(current_week["watched_minutes"]), 1),
+                "completion": round(float(current_week["completion"]), 1),
+                "daily_recommendations": current_week["daily_recommendations"],
+            },
+        }
+
     @app.route("/admin/traffic", methods=["GET"])
     @login_required
     def admin_traffic():

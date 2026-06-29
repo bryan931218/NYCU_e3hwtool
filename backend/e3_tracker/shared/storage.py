@@ -221,6 +221,9 @@ study_plan_videos_table = Table(
     Column("sequence", Integer, nullable=False),
     Column("title", Text, nullable=False),
     Column("duration_seconds", Float, nullable=False),
+    Column("youtube_video_id", String(64)),
+    Column("youtube_playlist_id", String(128)),
+    Column("youtube_url", Text),
     Column("created_at", String(64), nullable=False),
     Column("updated_at", String(64), nullable=False),
     UniqueConstraint("subject", "sequence", name="uq_study_plan_video_subject_sequence"),
@@ -272,6 +275,19 @@ class PersistentStorage:
             metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
         if not inspector.has_table("assignment_views"):
             metadata.tables["assignment_views"].create(self._engine, checkfirst=True)
+        if inspector.has_table("study_plan_videos"):
+            study_video_columns = {col["name"] for col in inspector.get_columns("study_plan_videos")}
+            missing_study_video_columns = []
+            if "youtube_video_id" not in study_video_columns:
+                missing_study_video_columns.append(("youtube_video_id", "VARCHAR(64)"))
+            if "youtube_playlist_id" not in study_video_columns:
+                missing_study_video_columns.append(("youtube_playlist_id", "VARCHAR(128)"))
+            if "youtube_url" not in study_video_columns:
+                missing_study_video_columns.append(("youtube_url", "TEXT"))
+            if missing_study_video_columns:
+                with self._lock, self._engine.begin() as conn:
+                    for column_name, column_type in missing_study_video_columns:
+                        conn.execute(text(f"ALTER TABLE study_plan_videos ADD COLUMN {column_name} {column_type}"))
         if not inspector.has_table("assignments"):
             return
         existing_columns = {col["name"] for col in inspector.get_columns("assignments")}
@@ -482,6 +498,9 @@ class PersistentStorage:
                     "sequence": sequence,
                     "title": title,
                     "duration_seconds": duration_seconds,
+                    "youtube_video_id": str(item.get("youtube_video_id") or "").strip() or None,
+                    "youtube_playlist_id": str(item.get("youtube_playlist_id") or "").strip() or None,
+                    "youtube_url": str(item.get("youtube_url") or "").strip() or None,
                 }
             )
         if not normalized:
@@ -517,6 +536,9 @@ class PersistentStorage:
                     study_plan_videos_table.c.sequence,
                     study_plan_videos_table.c.title,
                     study_plan_videos_table.c.duration_seconds,
+                    study_plan_videos_table.c.youtube_video_id,
+                    study_plan_videos_table.c.youtube_playlist_id,
+                    study_plan_videos_table.c.youtube_url,
                     study_plan_video_records_table.c.watched_seconds,
                     study_plan_video_records_table.c.notes,
                     study_plan_video_records_table.c.updated_at,
@@ -545,6 +567,9 @@ class PersistentStorage:
                 "sequence": int(row.sequence),
                 "title": row.title,
                 "duration_seconds": float(row.duration_seconds or 0),
+                "youtube_video_id": row.youtube_video_id or "",
+                "youtube_playlist_id": row.youtube_playlist_id or "",
+                "youtube_url": row.youtube_url or "",
                 "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
                 "notes": row.notes or "",
                 "updated_at": _to_taipei(row.updated_at),
@@ -590,6 +615,50 @@ class PersistentStorage:
                     insert(study_plan_video_records_table).values(video_id=video_id, **values)
                 )
         return True
+
+    def update_study_plan_video_progress(self, *, video_id: int, watched_seconds: float) -> Optional[Dict[str, Any]]:
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            video = conn.execute(
+                select(
+                    study_plan_videos_table.c.id,
+                    study_plan_videos_table.c.duration_seconds,
+                    study_plan_videos_table.c.youtube_video_id,
+                ).where(study_plan_videos_table.c.id == video_id)
+            ).fetchone()
+            if not video:
+                return None
+            existing = conn.execute(
+                select(
+                    study_plan_video_records_table.c.watched_seconds,
+                    study_plan_video_records_table.c.notes,
+                ).where(study_plan_video_records_table.c.video_id == video_id)
+            ).fetchone()
+            duration_seconds = max(0.0, float(video.duration_seconds or 0))
+            current_seconds = max(0.0, min(float(watched_seconds or 0), duration_seconds))
+            existing_seconds = max(0.0, float(existing.watched_seconds or 0)) if existing else 0.0
+            normalized_seconds = min(max(existing_seconds, current_seconds), duration_seconds)
+            notes = existing.notes if existing else ""
+            values = {
+                "watched_seconds": normalized_seconds,
+                "notes": notes or "",
+                "updated_at": now,
+            }
+            if existing:
+                conn.execute(
+                    update(study_plan_video_records_table)
+                    .where(study_plan_video_records_table.c.video_id == video_id)
+                    .values(**values)
+                )
+            else:
+                conn.execute(insert(study_plan_video_records_table).values(video_id=video_id, **values))
+            return {
+                "video_id": int(video.id),
+                "duration_seconds": duration_seconds,
+                "watched_seconds": normalized_seconds,
+                "completion": min(100.0, (normalized_seconds / duration_seconds * 100) if duration_seconds else 0.0),
+                "youtube_video_id": video.youtube_video_id or "",
+            }
 
     def delete_study_plan_video_record(self, video_id: int) -> bool:
         with self._lock, self._engine.begin() as conn:
