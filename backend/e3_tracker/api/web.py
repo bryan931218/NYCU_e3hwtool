@@ -6,7 +6,7 @@ import threading
 import time
 import hashlib
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -91,19 +91,54 @@ STUDY_PLAN_DAILY_WEIGHTS = (
 )
 
 
-def _study_plan_daily_recommendations(subject: str, target_seconds: float) -> Tuple[float, float, List[Dict[str, Any]]]:
+def _study_plan_daily_recommendations(
+    subject: str,
+    target_seconds: float,
+    watched_seconds: float,
+    week_start: date,
+    today: date,
+) -> Tuple[float, float, List[Dict[str, Any]]]:
     video_hours = target_seconds / 3600 if target_seconds else 0.0
+    watched_hours = watched_seconds / 3600 if watched_seconds else 0.0
     multiplier = STUDY_PLAN_PRACTICE_MULTIPLIERS.get(subject, 1.45)
     weekly_hours = video_hours * multiplier
     total_weight = sum(float(item["weight"]) for item in STUDY_PLAN_DAILY_WEIGHTS)
-    daily_rows = [
-        {
-            "label": item["label"],
-            "focus": item["focus"],
-            "hours": round((weekly_hours * float(item["weight"]) / total_weight) if total_weight else 0.0, 1),
-        }
-        for item in STUDY_PLAN_DAILY_WEIGHTS
-    ]
+    daily_rows: List[Dict[str, Any]] = []
+    remaining_hours = watched_hours
+    for index, item in enumerate(STUDY_PLAN_DAILY_WEIGHTS):
+        target_hours = (weekly_hours * float(item["weight"]) / total_weight) if total_weight else 0.0
+        credited_hours = min(max(remaining_hours, 0.0), target_hours)
+        remaining_hours -= target_hours
+        completion = min(100.0, (credited_hours / target_hours * 100) if target_hours else 0.0)
+        current_day = week_start + timedelta(days=index)
+        if completion >= 100:
+            state = "complete"
+            state_label = "完成"
+        elif completion > 0:
+            state = "partial"
+            state_label = "部分"
+        elif current_day == today:
+            state = "active"
+            state_label = "進行中"
+        elif today > current_day:
+            state = "behind"
+            state_label = "待補"
+        else:
+            state = "upcoming"
+            state_label = "未開始"
+        daily_rows.append(
+            {
+                "label": item["label"],
+                "date": current_day.isoformat(),
+                "short_date": current_day.strftime("%m/%d"),
+                "focus": item["focus"],
+                "hours": round(target_hours, 1),
+                "credited_hours": round(credited_hours, 1),
+                "completion": round(completion, 1),
+                "state": state,
+                "state_label": state_label,
+            }
+        )
     return round(video_hours, 1), round(weekly_hours, 1), daily_rows
 
 
@@ -1619,6 +1654,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 video_hours, suggested_weekly_hours, daily_recommendations = _study_plan_daily_recommendations(
                     str(block["subject"]),
                     target_seconds,
+                    watched_seconds,
+                    week_start,
+                    today,
                 )
                 completion = min(100.0, (watched_seconds / target_seconds * 100) if target_seconds else 0.0)
                 if completion >= 100:

@@ -17,6 +17,8 @@
             --muted: #62768b;
             --green: #258957;
             --green-soft: #eaf7ef;
+            --purple: #6d4bd7;
+            --purple-soft: #f1edff;
             --amber: #b86d00;
             --amber-soft: #fff5df;
             --red: #b33a3a;
@@ -65,12 +67,40 @@
         .progress-line strong { color: var(--blue); font-size: 24px; letter-spacing: -.04em; }
         .track { height: 7px; background: #e7edf4; border-radius: 99px; overflow: hidden; margin-top: 9px; }
         .fill { height: 100%; width: min(100%, var(--progress)); background: var(--blue); border-radius: inherit; }
-        .daily-plan-title { margin-top: 18px; color: var(--muted); font-size: 12px; font-weight: 760; }
+        .daily-plan-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 18px; }
+        .daily-plan-title { color: var(--muted); font-size: 12px; font-weight: 760; }
+        .daily-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; color: var(--muted); font-size: 10px; }
+        .legend-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+        .legend-dot { width: 7px; height: 7px; border-radius: 50%; background: #b8c4d2; }
+        .legend-dot.complete { background: var(--green); }
+        .legend-dot.partial { background: var(--purple); }
+        .legend-dot.active { background: var(--blue); }
+        .legend-dot.behind { background: var(--amber); }
         .daily-plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 7px; margin-top: 9px; }
-        .day-chip { min-width: 0; padding: 8px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fbfdff; }
-        .day-label { display: block; color: var(--muted); font-size: 11px; font-weight: 740; }
-        .day-hours { display: block; margin-top: 3px; color: var(--ink); font-size: 17px; font-weight: 800; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+        .day-chip { position: relative; min-width: 0; padding: 8px 8px; border: 1px solid var(--line); border-radius: 10px; background: #fbfdff; overflow: hidden; }
+        .day-chip.complete { border-color: #b9e0c6; background: linear-gradient(180deg, #f4fbf6 0%, #ffffff 100%); }
+        .day-chip.partial { border-color: #cabdf6; background: linear-gradient(180deg, #f7f4ff 0%, #ffffff 100%); }
+        .day-chip.active { border-color: #9ebdf3; background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(20, 99, 217, .08); }
+        .day-chip.behind { border-color: #f0d6a5; background: linear-gradient(180deg, #fff8e8 0%, #ffffff 100%); }
+        .day-chip.upcoming { background: #fbfdff; }
+        .day-topline { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+        .day-label { display: block; color: var(--muted); font-size: 11px; font-weight: 780; }
+        .day-date { display: block; color: #8aa0b6; font-size: 10px; font-weight: 650; }
+        .day-hours { display: block; margin-top: 5px; color: var(--ink); font-size: 17px; font-weight: 800; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
         .day-focus { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+        .day-status { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding: 2px 5px; border-radius: 999px; background: #eef3f8; color: var(--muted); font-size: 10px; font-weight: 760; }
+        .day-chip.complete .day-status { background: var(--green-soft); color: var(--green); }
+        .day-chip.partial .day-status { background: var(--purple-soft); color: var(--purple); }
+        .day-chip.active .day-status { background: #fff; color: var(--blue); }
+        .day-chip.behind .day-status { background: var(--amber-soft); color: var(--amber); }
+        .day-completion { display: flex; justify-content: space-between; gap: 6px; margin-top: 7px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+        .day-completion strong { color: var(--ink-2); }
+        .day-progress { height: 5px; margin-top: 5px; border-radius: 99px; background: #e6edf4; overflow: hidden; }
+        .day-progress-fill { height: 100%; width: min(100%, var(--day-progress)); border-radius: inherit; background: #a8b7c8; }
+        .day-chip.complete .day-progress-fill { background: var(--green); }
+        .day-chip.partial .day-progress-fill { background: var(--purple); }
+        .day-chip.active .day-progress-fill { background: var(--blue); }
+        .day-chip.behind .day-progress-fill { background: var(--amber); }
         .timeline { max-height: 580px; overflow: auto; }
         .week-row { display: grid; grid-template-columns: 33px minmax(0, 1fr) 64px; gap: 10px; align-items: center; padding: 13px 18px; border-bottom: 1px solid var(--line); }
         .week-row:last-child { border-bottom: 0; }
@@ -85,9 +115,12 @@
         .week-load { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: 11px; }
         .week-load strong { color: var(--ink-2); }
         .week-daily { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 5px; }
-        .week-daily .day-chip { padding: 5px 6px; border-radius: 6px; background: #fff; }
+        .week-daily .day-chip { padding: 5px 6px; border-radius: 6px; }
         .week-daily .day-hours { font-size: 13px; }
         .week-daily .day-focus { display: none; }
+        .week-daily .day-date, .week-daily .day-status { display: none; }
+        .week-daily .day-completion { margin-top: 4px; }
+        .week-daily .day-progress { height: 4px; }
         .state { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font-size: 11px; font-weight: 720; }
         .state.complete { color: var(--green); background: var(--green-soft); border-color: #b9e0c6; }
         .state.active { color: var(--blue); background: #fff; border-color: #9ebdf3; }
@@ -170,10 +203,25 @@
                                 </div>
                                 <div class="progress-line"><span>本週進度</span><strong>{{ current_week.completion|round(1) }}%</strong></div>
                                 <div class="track"><div class="fill" style="--progress:{{ current_week.completion }}%"></div></div>
-                                <div class="daily-plan-title">本週每日建議讀書時數</div>
-                                <div class="daily-plan" aria-label="本週每日建議讀書時數">
+                                <div class="daily-plan-head">
+                                    <div class="daily-plan-title">本週每日建議與完成度</div>
+                                    <div class="daily-legend" aria-label="每日狀態圖例">
+                                        <span class="legend-item"><span class="legend-dot complete"></span>完成</span>
+                                        <span class="legend-item"><span class="legend-dot partial"></span>部分</span>
+                                        <span class="legend-item"><span class="legend-dot active"></span>今天</span>
+                                        <span class="legend-item"><span class="legend-dot behind"></span>待補</span>
+                                        <span class="legend-item"><span class="legend-dot"></span>未開始</span>
+                                    </div>
+                                </div>
+                                <div class="daily-plan" aria-label="本週每日建議與完成度">
                                     {% for day in current_week.daily_recommendations %}
-                                    <div class="day-chip"><span class="day-label">{{ day.label }}</span><span class="day-hours">{{ day.hours }}h</span><span class="day-focus">{{ day.focus }}</span></div>
+                                    <div class="day-chip {{ day.state }}" style="--day-progress:{{ day.completion }}%">
+                                        <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-status">{{ day.state_label }}</span></div>
+                                        <span class="day-hours">{{ day.hours }}h</span>
+                                        <span class="day-focus">{{ day.focus }}</span>
+                                        <div class="day-completion"><span>完成度</span><strong>{{ day.completion|round(0) }}%</strong></div>
+                                        <div class="day-progress"><div class="day-progress-fill"></div></div>
+                                    </div>
                                     {% endfor %}
                                 </div>
                             </div>
@@ -195,7 +243,12 @@
                                     </div>
                                     <div class="week-daily" aria-label="第 {{ week.number }} 週每日建議讀書時數">
                                         {% for day in week.daily_recommendations %}
-                                        <div class="day-chip"><span class="day-label">{{ day.label }}</span><span class="day-hours">{{ day.hours }}h</span></div>
+                                        <div class="day-chip {{ day.state }}" style="--day-progress:{{ day.completion }}%">
+                                            <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-status">{{ day.state_label }}</span></div>
+                                            <span class="day-hours">{{ day.hours }}h</span>
+                                            <div class="day-completion"><span>完成度</span><strong>{{ day.completion|round(0) }}%</strong></div>
+                                            <div class="day-progress"><div class="day-progress-fill"></div></div>
+                                        </div>
                                         {% endfor %}
                                     </div>
                                 </div>
