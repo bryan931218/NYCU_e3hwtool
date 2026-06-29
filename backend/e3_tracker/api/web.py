@@ -72,22 +72,15 @@ STUDY_PLAN_BLOCKS = (
 STUDY_PLAN_START = "2026-06-29"
 STUDY_PLAN_END = "2026-12-06"
 STUDY_PLAN_SUBJECTS = tuple(block["subject"] for block in STUDY_PLAN_BLOCKS)
-STUDY_PLAN_PRACTICE_MULTIPLIERS = {
-    "線性代數": 1.65,
-    "離散數學": 1.65,
-    "資料結構": 1.45,
-    "演算法": 1.55,
-    "作業系統": 1.35,
-    "計算機組織": 1.35,
-}
-STUDY_PLAN_DAILY_WEIGHTS = (
-    {"label": "週一", "weight": 1.0, "focus": "影片＋筆記"},
-    {"label": "週二", "weight": 1.0, "focus": "影片＋筆記"},
-    {"label": "週三", "weight": 1.0, "focus": "影片＋筆記"},
-    {"label": "週四", "weight": 1.0, "focus": "影片＋筆記"},
-    {"label": "週五", "weight": 0.85, "focus": "題目練習"},
-    {"label": "週六", "weight": 0.95, "focus": "複習＋錯題"},
-    {"label": "週日", "weight": 0.35, "focus": "彈性補進度"},
+STUDY_PLAN_WEEKEND_VIDEO_HOUR_CAP = 4.0
+STUDY_PLAN_DAILY_LABELS = (
+    "週一",
+    "週二",
+    "週三",
+    "週四",
+    "週五",
+    "週六",
+    "週日",
 )
 
 
@@ -100,16 +93,23 @@ def _study_plan_daily_recommendations(
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
     video_hours = target_seconds / 3600 if target_seconds else 0.0
     watched_hours = watched_seconds / 3600 if watched_seconds else 0.0
-    multiplier = STUDY_PLAN_PRACTICE_MULTIPLIERS.get(subject, 1.45)
-    weekly_hours = video_hours * multiplier
-    total_weight = sum(float(item["weight"]) for item in STUDY_PLAN_DAILY_WEIGHTS)
+    weekly_hours = video_hours
+    average_hours = weekly_hours / 7 if weekly_hours else 0.0
+    weekend_hours = min(average_hours, STUDY_PLAN_WEEKEND_VIDEO_HOUR_CAP)
+    weekday_hours = max(0.0, (weekly_hours - weekend_hours * 2) / 5) if weekly_hours else 0.0
+    daily_targets = [weekday_hours] * 5 + [weekend_hours] * 2
     daily_rows: List[Dict[str, Any]] = []
     remaining_hours = watched_hours
-    for index, item in enumerate(STUDY_PLAN_DAILY_WEIGHTS):
-        target_hours = (weekly_hours * float(item["weight"]) / total_weight) if total_weight else 0.0
-        credited_hours = min(max(remaining_hours, 0.0), target_hours)
+    week_is_complete = weekly_hours > 0 and watched_hours >= weekly_hours - 1e-6
+    for index, label in enumerate(STUDY_PLAN_DAILY_LABELS):
+        target_hours = daily_targets[index]
+        if week_is_complete:
+            credited_hours = target_hours
+            completion = 100.0 if target_hours else 0.0
+        else:
+            credited_hours = min(max(remaining_hours, 0.0), target_hours)
+            completion = min(100.0, (credited_hours / target_hours * 100) if target_hours else 0.0)
         remaining_hours -= target_hours
-        completion = min(100.0, (credited_hours / target_hours * 100) if target_hours else 0.0)
         current_day = week_start + timedelta(days=index)
         if completion >= 100:
             state = "complete"
@@ -128,10 +128,10 @@ def _study_plan_daily_recommendations(
             state_label = "未開始"
         daily_rows.append(
             {
-                "label": item["label"],
+                "label": label,
                 "date": current_day.isoformat(),
                 "short_date": current_day.strftime("%m/%d"),
-                "focus": item["focus"],
+                "focus": "看影片",
                 "hours": round(target_hours, 1),
                 "credited_hours": round(credited_hours, 1),
                 "completion": round(completion, 1),
@@ -2342,27 +2342,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 video_id = 0
             if action == "delete_video":
                 if video_id and storage.delete_study_plan_video_record(video_id):
-                    flash("已清除這支影片的觀看紀錄。", "success")
                     record_ui_event("study_plan_video_record_deleted", meta={"video_id": video_id})
-                else:
-                    flash("找不到要清除的影片紀錄。", "warning")
             else:
                 watched_minutes = _study_plan_minutes(request.form.get("watched_minutes"))
                 notes = (request.form.get("notes") or "").strip()[:2000]
-                if not video_id:
-                    flash("請先選擇一支影片。", "error")
-                elif storage.upsert_study_plan_video_record(
+                if video_id and storage.upsert_study_plan_video_record(
                     video_id=video_id,
                     watched_seconds=watched_minutes * 60,
                     notes=notes,
                 ):
-                    flash("影片觀看紀錄已儲存。", "success")
                     record_ui_event(
                         "study_plan_video_record_saved",
                         meta={"video_id": video_id, "watched_minutes": watched_minutes},
                     )
-                else:
-                    flash("找不到選擇的影片，請重新整理頁面後再試。", "warning")
             return redirect(url_for("admin_study_plan", subject=selected_subject))
 
         videos = storage.list_study_plan_videos_with_records()

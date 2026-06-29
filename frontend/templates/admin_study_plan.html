@@ -41,7 +41,6 @@
         h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); line-height: 1.12; letter-spacing: -.035em; }
         .subtitle { margin: 9px 0 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
         .date-range { color: var(--muted); font-size: 14px; white-space: nowrap; }
-        .review-guidance { margin: -8px 0 24px; padding: 13px 16px; border-left: 3px solid var(--blue); background: var(--blue-soft); color: var(--ink-2); font-size: 14px; line-height: 1.65; }
         .metric-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--paper); margin-bottom: 24px; }
         .metric { padding: 18px 20px; border-right: 1px solid var(--line); }
         .metric:last-child { border-right: 0; }
@@ -128,6 +127,7 @@
         .subject-filter { padding: 15px 20px; display: flex; align-items: end; gap: 12px; border-bottom: 1px solid var(--line); background: #fff; }
         .subject-filter .field { width: min(100%, 270px); }
         .youtube-player { display: grid; grid-template-columns: minmax(300px, .95fr) minmax(280px, 1.05fr); gap: 18px; padding: 20px; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, #fff 0%, #fbfdff 60%, #eef5ff 100%); }
+        .youtube-player.is-hidden { display: none; }
         .player-frame { position: relative; min-height: 250px; border: 1px solid #cdd9e6; border-radius: 12px; background: #0d1724; overflow: hidden; box-shadow: 0 12px 28px rgba(16, 42, 67, .10); }
         .player-frame iframe, #youtube-player { width: 100%; height: 100%; min-height: 250px; border: 0; }
         .player-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9c7d8; text-align: center; line-height: 1.65; }
@@ -136,14 +136,9 @@
         .player-title { margin: 0; color: var(--ink); font-size: 22px; line-height: 1.25; letter-spacing: -.035em; }
         .player-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
         .player-pill { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; background: #fff; white-space: nowrap; }
-        .player-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-        .player-button { min-height: 36px; padding: 0 12px; border: 1px solid #cdd9e6; border-radius: 8px; background: #fff; color: var(--ink-2); font-weight: 760; cursor: pointer; }
-        .player-button.primary { border-color: var(--blue); background: var(--blue); color: #fff; }
-        .player-button:disabled { cursor: not-allowed; opacity: .55; }
         .player-status { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, .78); }
         .player-status-line { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; }
         .player-status-line strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-        .player-note { color: var(--muted); font-size: 12px; line-height: 1.55; }
         .log-form { padding: 19px 20px; display: grid; grid-template-columns: minmax(220px, 1.25fr) minmax(136px, .72fr) minmax(220px, 1.35fr) auto; gap: 10px; border-bottom: 1px solid var(--line); background: #fbfdff; }
         .field { min-width: 0; }
         .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 740; }
@@ -191,14 +186,6 @@
                     <div class="date-range">{{ plan_start }} 至 {{ plan_end }}・{{ plan_total_weeks }} 週</div>
                 </div>
 
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash">{{ message }}</div>{% endfor %}</div>{% endif %}
-                {% endwith %}
-
-                <div class="review-guidance">
-                    建議時數已把影片觀看、複習與題目練習一起估進去；週一到週四偏影片與筆記，週五週六集中寫題目與整理錯題，週日保留彈性補進度。
-                </div>
-
                 <section class="metric-row" aria-label="讀書計畫摘要">
                     <div class="metric"><div class="metric-label">影片總片長</div><div class="metric-value">{{ (summary.total_target / 60)|round(1) }}<small>小時</small></div></div>
                     <div class="metric"><div class="metric-label">已觀看片長</div><div class="metric-value"><span id="summary-watched-hours">{{ (summary.total_watched / 60)|round(1) }}</span><small>小時</small></div></div>
@@ -215,16 +202,16 @@
                                 <div class="focus-subject">{{ current_week.subject }}</div>
                                 <div class="focus-grid">
                                     <div class="focus-item"><span>本週影片總片長</span><strong>{{ current_week.target_minutes|round(1) }} 分鐘</strong></div>
-                                    <div class="focus-item"><span>建議讀書總時數</span><strong>{{ current_week.suggested_weekly_hours }} 小時</strong></div>
+                                    <div class="focus-item"><span>本週看影片時數</span><strong>{{ current_week.suggested_weekly_hours }} 小時</strong></div>
                                     <div class="focus-item"><span>本週影片數</span><strong>{{ current_week.video_count }} 支</strong></div>
                                     <div class="focus-item"><span>影片里程碑</span><strong>至第 {{ '%03d'|format(current_week.lesson_target) }} 支</strong></div>
                                     <div class="focus-item"><span>本週實際觀看</span><strong><span id="current-week-watched">{{ current_week.watched_minutes }}</span> 分鐘</strong></div>
-                                    <div class="focus-item"><span>每日平均建議</span><strong>{{ (current_week.suggested_weekly_hours / 7)|round(1) }} 小時</strong></div>
+                                    <div class="focus-item"><span>每日平均影片</span><strong>{{ (current_week.suggested_weekly_hours / 7)|round(1) }} 小時</strong></div>
                                 </div>
                                 <div class="progress-line"><span>本週進度</span><strong><span id="current-week-completion">{{ current_week.completion|round(1) }}</span>%</strong></div>
                                 <div class="track"><div id="current-week-fill" class="fill" style="--progress:{{ current_week.completion }}%"></div></div>
                                 <div class="daily-plan-head">
-                                    <div class="daily-plan-title">本週每日建議與完成度</div>
+                                    <div class="daily-plan-title">本週每日看影片建議與完成度</div>
                                     <div class="daily-legend" aria-label="每日狀態圖例">
                                         <span class="legend-item"><span class="legend-dot complete"></span>完成</span>
                                         <span class="legend-item"><span class="legend-dot partial"></span>部分</span>
@@ -257,7 +244,7 @@
                                     <div><span class="state {{ week.state }}">{{ week.state_label }}</span></div>
                                     <div class="week-load">
                                         <span>影片 {{ week.video_hours }}h</span>
-                                        <strong>建議 {{ week.suggested_weekly_hours }}h / 週</strong>
+                                        <strong>影片 {{ week.suggested_weekly_hours }}h / 週</strong>
                                         <span>日均 {{ (week.suggested_weekly_hours / 7)|round(1) }}h</span>
                                         <span>已看 {{ (week.watched_minutes / 60)|round(1) }}h</span>
                                     </div>
@@ -278,18 +265,17 @@
                     </div>
 
                     <section class="panel">
-                        <div class="panel-header"><h2 class="panel-title">影片進度紀錄</h2><span class="focus-caption">以影片為單位，片長已依原始 MP4 整理</span></div>
+                        <div class="panel-header"><h2 class="panel-title">影片進度紀錄</h2></div>
                         <form class="subject-filter" method="get" action="{{ url_for('admin_study_plan') }}">
                             <div class="field"><label for="subject">目前科目</label><select id="subject" name="subject" onchange="this.form.submit()">{% for subject in subjects %}<option value="{{ subject }}" {% if subject == selected_subject %}selected{% endif %}>{{ subject }}</option>{% endfor %}</select></div>
                             <noscript><button class="save-button" type="submit">切換科目</button></noscript>
                         </form>
-                        <div class="youtube-player" aria-label="YouTube 播放模式">
+                        <div class="youtube-player is-hidden" aria-label="YouTube 播放模式">
                             <div class="player-frame">
                                 <div id="youtube-player"></div>
-                                <div id="player-empty" class="player-empty">選擇已對應 YouTube 的影片後，就能在這裡播放並自動紀錄進度。</div>
+                                <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
                             </div>
                             <div class="player-copy">
-                                <div class="player-kicker">YouTube 播放模式</div>
                                 <h3 id="player-title" class="player-title">尚未載入影片</h3>
                                 <div class="player-meta">
                                     <span class="player-pill" id="player-duration">片長 —</span>
@@ -301,18 +287,12 @@
                                     <div class="track"><div id="player-progress-fill" class="fill" style="--progress:0%"></div></div>
                                     <div class="player-status-line"><span>自動儲存</span><strong id="player-last-saved">尚未儲存</strong></div>
                                 </div>
-                                <div class="player-actions">
-                                    <button class="player-button primary" type="button" id="player-load-button">載入選取影片</button>
-                                    <button class="player-button" type="button" id="player-save-button">立即儲存進度</button>
-                                    <a class="player-button" id="player-open-link" href="#" target="_blank" rel="noopener noreferrer">在 YouTube 開啟</a>
-                                </div>
-                                <div class="player-note">播放時每 15 秒會自動儲存；暫停、播完、離開頁面時也會儲存。手動輸入分鐘數仍保留，方便補登手機或 YouTube App 上看的進度。</div>
                             </div>
                         </div>
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
-                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required>{% for video in videos %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}">第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">原始片長：{{ videos[0].duration_minutes if videos else 0 }} 分鐘{% if videos and videos[0].youtube_url %}・YouTube 已對應{% endif %}</span></div>
+                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required><option value="" selected disabled data-sequence="" data-title="" data-duration="0" data-duration-seconds="0" data-watched-seconds="0" data-youtube-video-id="" data-youtube-url="">請選擇影片</option>{% for video in videos %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}">第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">請先選擇影片</span></div>
                             <div class="field"><label for="watched_minutes">實際觀看分鐘</label><input id="watched_minutes" name="watched_minutes" type="number" min="0" max="1440" step="0.1" value="0" required></div>
                             <div class="field notes"><label for="notes">筆記／卡關點</label><textarea id="notes" name="notes" rows="1" maxlength="2000" placeholder="例：複習矩陣分解的推導。"></textarea></div>
                             <button class="save-button" type="submit">儲存影片紀錄</button>
@@ -356,6 +336,7 @@
             const videoSelect = document.getElementById('video_id');
             const durationHint = document.getElementById('duration-hint');
             const watchedInput = document.getElementById('watched_minutes');
+            const youtubePlayerPanel = document.querySelector('.youtube-player');
             const playerEmpty = document.getElementById('player-empty');
             const playerTitle = document.getElementById('player-title');
             const playerDuration = document.getElementById('player-duration');
@@ -364,9 +345,6 @@
             const playerCurrentTime = document.getElementById('player-current-time');
             const playerProgressFill = document.getElementById('player-progress-fill');
             const playerLastSaved = document.getElementById('player-last-saved');
-            const playerLoadButton = document.getElementById('player-load-button');
-            const playerSaveButton = document.getElementById('player-save-button');
-            const playerOpenLink = document.getElementById('player-open-link');
             let player = null;
             let youtubeApiReady = false;
             let activeVideoId = '';
@@ -385,34 +363,51 @@
                 return minutes + ':' + String(rest).padStart(2, '0');
             };
             const selectedOption = function () {
-                return videoSelect.options[videoSelect.selectedIndex] || null;
+                const option = videoSelect.options[videoSelect.selectedIndex] || null;
+                return option && option.value ? option : null;
             };
             const updateDuration = function () {
                 const option = selectedOption();
-                const duration = option ? option.dataset.duration : '0';
-                const youtube = option ? option.dataset.youtubeUrl : '';
+                if (!option) {
+                    durationHint.textContent = '請先選擇影片';
+                    if (watchedInput) watchedInput.value = '0';
+                    updatePlayerPanel(null);
+                    return;
+                }
+                const duration = option.dataset.duration;
+                const youtube = option.dataset.youtubeUrl;
                 durationHint.textContent = '原始片長：' + duration + ' 分鐘' + (youtube ? '・YouTube 已對應' : '');
-                if (watchedInput && option) watchedInput.value = formatMinutes(option.dataset.watchedSeconds);
+                if (watchedInput) watchedInput.value = formatMinutes(option.dataset.watchedSeconds);
                 updatePlayerPanel(option);
             };
             const updatePlayerPanel = function (option) {
+                if (!option) {
+                    if (youtubePlayerPanel) youtubePlayerPanel.classList.add('is-hidden');
+                    playerTitle.textContent = '尚未載入影片';
+                    playerDuration.textContent = '片長 —';
+                    playerWatched.textContent = '已看 —';
+                    playerCurrentTime.textContent = '0:00';
+                    playerProgressFill.style.setProperty('--progress', '0%');
+                    playerSyncState.textContent = '等待選擇影片';
+                    playerEmpty.style.display = 'grid';
+                    if (player && typeof player.stopVideo === 'function') player.stopVideo();
+                    return;
+                }
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 const youtubeUrl = option ? option.dataset.youtubeUrl : '';
                 const title = option ? option.dataset.title : '';
                 const sequence = option ? String(option.dataset.sequence || '').padStart(3, '0') : '';
                 const durationSeconds = option ? Number(option.dataset.durationSeconds || 0) : 0;
                 const watchedSeconds = option ? Number(option.dataset.watchedSeconds || 0) : 0;
+                if (youtubePlayerPanel) youtubePlayerPanel.classList.toggle('is-hidden', !youtubeId);
                 playerTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '尚未載入影片';
                 playerDuration.textContent = '片長 ' + formatMinutes(durationSeconds) + ' 分';
                 playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
                 playerCurrentTime.textContent = formatClock(watchedSeconds);
                 playerProgressFill.style.setProperty('--progress', durationSeconds ? Math.min(100, watchedSeconds / durationSeconds * 100) + '%' : '0%');
-                playerOpenLink.href = youtubeUrl || '#';
-                playerOpenLink.style.pointerEvents = youtubeUrl ? 'auto' : 'none';
-                playerLoadButton.disabled = !youtubeId;
-                playerSaveButton.disabled = !youtubeId;
                 playerSyncState.textContent = youtubeId ? '可播放並自動儲存' : '這支影片尚未對應 YouTube';
                 playerEmpty.style.display = youtubeId ? 'none' : 'grid';
+                if (!youtubeId && player && typeof player.stopVideo === 'function') player.stopVideo();
             };
             const applyProgressResult = function (result) {
                 const option = selectedOption();
@@ -527,7 +522,8 @@
             };
             window.onYouTubeIframeAPIReady = function () {
                 youtubeApiReady = true;
-                if (selectedOption() && selectedOption().dataset.youtubeVideoId) loadSelectedVideo();
+                const option = selectedOption();
+                if (option && option.dataset.youtubeVideoId) loadSelectedVideo();
             };
             const tag = document.createElement('script');
             tag.src = 'https://www.youtube.com/iframe_api';
@@ -539,8 +535,6 @@
                 const option = selectedOption();
                 if (option && option.dataset.youtubeVideoId && youtubeApiReady) loadSelectedVideo();
             });
-            playerLoadButton.addEventListener('click', loadSelectedVideo);
-            playerSaveButton.addEventListener('click', function () { saveProgress('manual', false); });
             window.addEventListener('beforeunload', function () { saveProgress('leave', true); });
             updateDuration();
         }());
