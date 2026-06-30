@@ -221,16 +221,16 @@
         .journey-stage::after {
             content: "";
             position: absolute;
-            width: min(62%, 420px);
-            height: min(74%, 360px);
+            width: 62%;
+            height: 74%;
             border: 1px dashed rgba(138, 160, 182, .45);
             border-radius: 50%;
         }
-        .journey-stage::after { width: min(44%, 300px); height: min(54%, 260px); opacity: .78; }
+        .journey-stage::after { width: 44%; height: 54%; opacity: .78; }
         .orbit-line {
             position: absolute;
-            width: min(30%, 214px);
-            height: min(38%, 184px);
+            width: 30%;
+            height: 38%;
             border: 1px dashed rgba(138, 160, 182, .36);
             border-radius: 50%;
         }
@@ -283,7 +283,7 @@
         .topic {
             position: absolute;
             z-index: 3;
-            transform: translate(-50%, -50%);
+            transform: translate(-50%, -26px);
             display: grid;
             justify-items: center;
             gap: 7px;
@@ -316,11 +316,11 @@
             box-shadow: 0 10px 24px rgba(16, 42, 67, .08);
         }
         .topic-0 { left: 50%; top: 13%; --topic-color: var(--blue); }
-        .topic-1 { left: 66.1%; top: 31.5%; --topic-color: var(--teal); }
-        .topic-2 { left: 66.1%; top: 68.5%; --topic-color: var(--purple); }
+        .topic-1 { left: 76.8%; top: 31.5%; --topic-color: var(--teal); }
+        .topic-2 { left: 76.8%; top: 68.5%; --topic-color: var(--purple); }
         .topic-3 { left: 50%; top: 87%; --topic-color: var(--amber); }
-        .topic-4 { left: 33.9%; top: 68.5%; --topic-color: var(--green); }
-        .topic-5 { left: 33.9%; top: 31.5%; --topic-color: #4460a8; }
+        .topic-4 { left: 23.2%; top: 68.5%; --topic-color: var(--green); }
+        .topic-5 { left: 23.2%; top: 31.5%; --topic-color: #4460a8; }
 
         .map-legend {
             display: grid;
@@ -507,6 +507,7 @@
             .journey-stage { min-height: 540px; margin: 8px 12px 0; }
             .planet { width: 210px; }
             .topic { min-width: 88px; }
+            .topic { transform: translate(-50%, -22px); }
             .topic-orb { width: 44px; height: 44px; }
             .topic-label { max-width: 104px; padding: 6px 8px; font-size: 11px; }
             .map-legend { grid-template-columns: 1fr 1fr; padding: 14px; }
@@ -525,12 +526,12 @@
             .date-pill { white-space: normal; }
             .journey-stage { min-height: 500px; }
             .planet { width: 180px; }
-            .topic-0 { left: 50%; top: 15%; }
-            .topic-1 { left: 72%; top: 33%; }
-            .topic-2 { left: 72%; top: 67%; }
-            .topic-3 { left: 50%; top: 85%; }
-            .topic-4 { left: 28%; top: 67%; }
-            .topic-5 { left: 28%; top: 33%; }
+            .topic-0 { left: 50%; top: 13%; }
+            .topic-1 { left: 76.8%; top: 31.5%; }
+            .topic-2 { left: 76.8%; top: 68.5%; }
+            .topic-3 { left: 50%; top: 87%; }
+            .topic-4 { left: 23.2%; top: 68.5%; }
+            .topic-5 { left: 23.2%; top: 31.5%; }
         }
     </style>
 </head>
@@ -745,6 +746,7 @@
                             <line x1="48" y1="132" x2="336" y2="132" stroke="#b9c8d7" stroke-width="1.4"/>
                             {% for row in week_chart['rows'] %}
                             <line x1="{{ row.x }}" y1="28" x2="{{ row.x }}" y2="132" stroke="#edf3f8" stroke-width="1"/>
+                            <text x="{{ row.x }}" y="154" text-anchor="middle" font-size="10" font-weight="800" fill="#65758a">{{ row.label }}</text>
                             {% endfor %}
                             <polyline points="{{ week_chart.target_points }}" fill="none" stroke="#9fafbf" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
                             {% for row in week_chart['rows'] %}
@@ -760,11 +762,6 @@
                             {% endif %}
                             {% endfor %}
                         </svg>
-                        <div class="chart-labels">
-                            {% for row in week_chart['rows'] %}
-                            <span>{{ row.label }}</span>
-                            {% endfor %}
-                        </div>
                         <div class="chart-legend">
                             <span class="chart-key"><span class="key-line"></span>本週實際 {{ week_chart.actual_total }}h</span>
                             <span class="chart-key"><span class="key-line target"></span>目標 {{ week_chart.target_total }}h</span>
