@@ -19,6 +19,8 @@
             --green-soft: #eaf7ef;
             --purple: #6d4bd7;
             --purple-soft: #f1edff;
+            --teal: #0f8b8d;
+            --teal-soft: #e8fbfb;
             --amber: #b86d00;
             --amber-soft: #fff5df;
             --red: #b33a3a;
@@ -72,12 +74,14 @@
         .legend-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
         .legend-dot { width: 7px; height: 7px; border-radius: 50%; background: #b8c4d2; }
         .legend-dot.complete { background: var(--green); }
+        .legend-dot.early { background: var(--teal); }
         .legend-dot.partial { background: var(--purple); }
         .legend-dot.active { background: var(--blue); }
         .legend-dot.behind { background: var(--amber); }
         .daily-plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 7px; margin-top: 9px; }
         .day-chip { position: relative; min-width: 0; padding: 8px 8px; border: 1px solid var(--line); border-radius: 10px; background: #fbfdff; overflow: hidden; }
         .day-chip.complete { border-color: #b9e0c6; background: linear-gradient(180deg, #f4fbf6 0%, #ffffff 100%); }
+        .day-chip.early { border-color: #9bdcdd; background: linear-gradient(180deg, #effefe 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(15, 139, 141, .07); }
         .day-chip.partial { border-color: #cabdf6; background: linear-gradient(180deg, #f7f4ff 0%, #ffffff 100%); }
         .day-chip.active { border-color: #9ebdf3; background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(20, 99, 217, .08); }
         .day-chip.behind { border-color: #f0d6a5; background: linear-gradient(180deg, #fff8e8 0%, #ffffff 100%); }
@@ -89,6 +93,7 @@
         .day-focus { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.35; }
         .day-status { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding: 2px 5px; border-radius: 999px; background: #eef3f8; color: var(--muted); font-size: 10px; font-weight: 760; }
         .day-chip.complete .day-status { background: var(--green-soft); color: var(--green); }
+        .day-chip.early .day-status { background: var(--teal-soft); color: var(--teal); }
         .day-chip.partial .day-status { background: var(--purple-soft); color: var(--purple); }
         .day-chip.active .day-status { background: #fff; color: var(--blue); }
         .day-chip.behind .day-status { background: var(--amber-soft); color: var(--amber); }
@@ -97,6 +102,7 @@
         .day-progress { height: 5px; margin-top: 5px; border-radius: 99px; background: #e6edf4; overflow: hidden; }
         .day-progress-fill { height: 100%; width: min(100%, var(--day-progress)); border-radius: inherit; background: #a8b7c8; }
         .day-chip.complete .day-progress-fill { background: var(--green); }
+        .day-chip.early .day-progress-fill { background: var(--teal); }
         .day-chip.partial .day-progress-fill { background: var(--purple); }
         .day-chip.active .day-progress-fill { background: var(--blue); }
         .day-chip.behind .day-progress-fill { background: var(--amber); }
@@ -122,6 +128,7 @@
         .week-daily .day-progress { height: 4px; }
         .state { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font-size: 11px; font-weight: 720; }
         .state.complete { color: var(--green); background: var(--green-soft); border-color: #b9e0c6; }
+        .state.early { color: var(--teal); background: var(--teal-soft); border-color: #9bdcdd; }
         .state.active { color: var(--blue); background: #fff; border-color: #9ebdf3; }
         .state.behind { color: var(--amber); background: var(--amber-soft); border-color: #f0d6a5; }
         .subject-filter { padding: 15px 20px; display: flex; align-items: end; gap: 12px; border-bottom: 1px solid var(--line); background: #fff; }
@@ -196,7 +203,7 @@
                 <div class="workspace">
                     <div class="column">
                         <section class="panel">
-                            <div class="panel-header"><h2 class="panel-title">目前專注科目</h2><span class="state {{ current_week.state }}">{{ current_week.state_label }}</span></div>
+                            <div class="panel-header"><h2 class="panel-title">目前專注科目</h2><span id="current-week-state" class="state {{ current_week.state }}">{{ current_week.state_label }}</span></div>
                             <div class="focus-body">
                                 <div class="focus-caption">第 {{ current_week.number }} 週・{{ current_week.start }} 至 {{ current_week.end }}</div>
                                 <div class="focus-subject">{{ current_week.subject }}</div>
@@ -214,6 +221,7 @@
                                     <div class="daily-plan-title">本週每日看影片建議與完成度</div>
                                     <div class="daily-legend" aria-label="每日狀態圖例">
                                         <span class="legend-item"><span class="legend-dot complete"></span>完成</span>
+                                        <span class="legend-item"><span class="legend-dot early"></span>提早完成</span>
                                         <span class="legend-item"><span class="legend-dot partial"></span>部分</span>
                                         <span class="legend-item"><span class="legend-dot active"></span>今天</span>
                                         <span class="legend-item"><span class="legend-dot behind"></span>待補</span>
@@ -349,6 +357,7 @@
             let youtubeApiReady = false;
             let activeVideoId = '';
             let saveTimer = null;
+            let playbackTimer = null;
             let pendingSave = false;
 
             if (!videoSelect || !durationHint) return;
@@ -362,9 +371,30 @@
                 const rest = value % 60;
                 return minutes + ':' + String(rest).padStart(2, '0');
             };
+            const setPlayerPosition = function (seconds, durationSeconds) {
+                const safeSeconds = Math.max(0, Number(seconds) || 0);
+                const safeDuration = Math.max(0, Number(durationSeconds) || 0);
+                playerCurrentTime.textContent = formatClock(safeSeconds);
+                playerProgressFill.style.setProperty(
+                    '--progress',
+                    safeDuration ? Math.min(100, safeSeconds / safeDuration * 100) + '%' : '0%'
+                );
+            };
             const selectedOption = function () {
                 const option = videoSelect.options[videoSelect.selectedIndex] || null;
                 return option && option.value ? option : null;
+            };
+            const syncPlaybackPosition = function () {
+                const option = selectedOption();
+                if (!option) return 0;
+                const durationSeconds = Number(option.dataset.durationSeconds || 0);
+                const savedSeconds = Number(option.dataset.watchedSeconds || 0);
+                let currentSeconds = savedSeconds;
+                if (player && typeof player.getCurrentTime === 'function') {
+                    currentSeconds = Math.max(0, Number(player.getCurrentTime() || 0));
+                }
+                setPlayerPosition(currentSeconds, durationSeconds);
+                return currentSeconds;
             };
             const updateDuration = function () {
                 const option = selectedOption();
@@ -383,11 +413,11 @@
             const updatePlayerPanel = function (option) {
                 if (!option) {
                     if (youtubePlayerPanel) youtubePlayerPanel.classList.add('is-hidden');
+                    stopPlaybackTimer();
                     playerTitle.textContent = '尚未載入影片';
                     playerDuration.textContent = '片長 —';
                     playerWatched.textContent = '已看 —';
-                    playerCurrentTime.textContent = '0:00';
-                    playerProgressFill.style.setProperty('--progress', '0%');
+                    setPlayerPosition(0, 0);
                     playerSyncState.textContent = '等待選擇影片';
                     playerEmpty.style.display = 'grid';
                     if (player && typeof player.stopVideo === 'function') player.stopVideo();
@@ -403,11 +433,13 @@
                 playerTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '尚未載入影片';
                 playerDuration.textContent = '片長 ' + formatMinutes(durationSeconds) + ' 分';
                 playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
-                playerCurrentTime.textContent = formatClock(watchedSeconds);
-                playerProgressFill.style.setProperty('--progress', durationSeconds ? Math.min(100, watchedSeconds / durationSeconds * 100) + '%' : '0%');
+                setPlayerPosition(watchedSeconds, durationSeconds);
                 playerSyncState.textContent = youtubeId ? '可播放並自動儲存' : '這支影片尚未對應 YouTube';
                 playerEmpty.style.display = youtubeId ? 'none' : 'grid';
-                if (!youtubeId && player && typeof player.stopVideo === 'function') player.stopVideo();
+                if (!youtubeId) {
+                    stopPlaybackTimer();
+                    if (player && typeof player.stopVideo === 'function') player.stopVideo();
+                }
             };
             const applyProgressResult = function (result) {
                 const option = selectedOption();
@@ -415,9 +447,10 @@
                 const watchedSeconds = Number(result.watched_seconds || 0);
                 const durationSeconds = Number(result.duration_seconds || option.dataset.durationSeconds || 0);
                 option.dataset.watchedSeconds = String(watchedSeconds);
+                option.dataset.durationSeconds = String(durationSeconds);
                 if (watchedInput) watchedInput.value = formatMinutes(watchedSeconds);
                 playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
-                playerProgressFill.style.setProperty('--progress', durationSeconds ? Math.min(100, watchedSeconds / durationSeconds * 100) + '%' : '0%');
+                setPlayerPosition(watchedSeconds, durationSeconds);
                 const watchedCell = document.querySelector('[data-video-watched="' + result.video_id + '"]');
                 const completionCell = document.querySelector('[data-video-completion="' + result.video_id + '"]');
                 const fill = document.querySelector('[data-video-fill="' + result.video_id + '"]');
@@ -438,9 +471,14 @@
                     const weekWatched = document.getElementById('current-week-watched');
                     const weekCompletion = document.getElementById('current-week-completion');
                     const weekFill = document.getElementById('current-week-fill');
+                    const weekState = document.getElementById('current-week-state');
                     if (weekWatched) weekWatched.textContent = result.current_week.watched_minutes;
                     if (weekCompletion) weekCompletion.textContent = result.current_week.completion;
                     if (weekFill) weekFill.style.setProperty('--progress', result.current_week.completion + '%');
+                    if (weekState && result.current_week.state) {
+                        weekState.className = 'state ' + result.current_week.state;
+                        weekState.textContent = result.current_week.state_label || '';
+                    }
                     (result.current_week.daily_recommendations || []).forEach(function (day, index) {
                         const card = document.querySelector('[data-focus-day-index="' + index + '"]');
                         if (!card) return;
@@ -458,7 +496,8 @@
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 if (!option || !youtubeId || !player || typeof player.getCurrentTime !== 'function') return Promise.resolve();
                 if (pendingSave && reason === 'interval') return Promise.resolve();
-                const currentSeconds = Math.max(Number(option.dataset.watchedSeconds || 0), Number(player.getCurrentTime() || 0));
+                const playerSeconds = syncPlaybackPosition();
+                const currentSeconds = Math.max(Number(option.dataset.watchedSeconds || 0), playerSeconds);
                 pendingSave = true;
                 playerSyncState.textContent = '儲存中…';
                 return fetch('{{ url_for("admin_study_plan_video_progress") }}', {
@@ -487,6 +526,16 @@
                 if (saveTimer) window.clearInterval(saveTimer);
                 saveTimer = null;
             };
+            const startPlaybackTimer = function () {
+                if (playbackTimer) return;
+                syncPlaybackPosition();
+                playbackTimer = window.setInterval(syncPlaybackPosition, 1000);
+            };
+            const stopPlaybackTimer = function () {
+                if (playbackTimer) window.clearInterval(playbackTimer);
+                playbackTimer = null;
+                syncPlaybackPosition();
+            };
             const loadSelectedVideo = function () {
                 const option = selectedOption();
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
@@ -504,14 +553,19 @@
                             },
                             onStateChange: function (event) {
                                 if (event.data === YT.PlayerState.PLAYING) {
+                                    startPlaybackTimer();
                                     startSaveTimer();
                                     playerSyncState.textContent = '播放中，自動儲存啟用';
                                 } else if (event.data === YT.PlayerState.PAUSED) {
+                                    stopPlaybackTimer();
                                     stopSaveTimer();
                                     saveProgress('paused', false);
                                 } else if (event.data === YT.PlayerState.ENDED) {
+                                    stopPlaybackTimer();
                                     stopSaveTimer();
                                     saveProgress('ended', false);
+                                } else if (event.data === YT.PlayerState.CUED) {
+                                    syncPlaybackPosition();
                                 }
                             }
                         }
@@ -531,6 +585,7 @@
 
             videoSelect.addEventListener('change', updateDuration);
             videoSelect.addEventListener('change', function () {
+                stopPlaybackTimer();
                 stopSaveTimer();
                 const option = selectedOption();
                 if (option && option.dataset.youtubeVideoId && youtubeApiReady) loadSelectedVideo();

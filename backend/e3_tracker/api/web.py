@@ -112,11 +112,19 @@ def _study_plan_daily_recommendations(
         remaining_hours -= target_hours
         current_day = week_start + timedelta(days=index)
         if completion >= 100:
-            state = "complete"
-            state_label = "完成"
+            if today < current_day:
+                state = "early"
+                state_label = "提早完成"
+            else:
+                state = "complete"
+                state_label = "完成"
         elif completion > 0:
-            state = "partial"
-            state_label = "部分"
+            if today < current_day:
+                state = "early"
+                state_label = "超前"
+            else:
+                state = "partial"
+                state_label = "部分"
         elif current_day == today:
             state = "active"
             state_label = "進行中"
@@ -1660,8 +1668,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 )
                 completion = min(100.0, (watched_seconds / target_seconds * 100) if target_seconds else 0.0)
                 if completion >= 100:
-                    state = "complete"
-                    state_label = "已達標"
+                    if today < week_end:
+                        state = "early"
+                        state_label = "提早完成"
+                    else:
+                        state = "complete"
+                        state_label = "已達標"
                 elif week_start <= today <= week_end:
                     state = "active"
                     state_label = "進行中"
@@ -2423,6 +2435,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "current_week": {
                 "watched_minutes": round(float(current_week["watched_minutes"]), 1),
                 "completion": round(float(current_week["completion"]), 1),
+                "state": current_week["state"],
+                "state_label": current_week["state_label"],
                 "daily_recommendations": current_week["daily_recommendations"],
             },
         }
