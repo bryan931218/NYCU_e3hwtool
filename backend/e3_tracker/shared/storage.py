@@ -239,6 +239,15 @@ study_plan_video_records_table = Table(
     Column("updated_at", String(64), nullable=False),
 )
 
+study_plan_daily_snapshots_table = Table(
+    "study_plan_daily_snapshots",
+    metadata,
+    Column("day", String(10), primary_key=True),
+    Column("total_watched_seconds", Float, nullable=False, default=0),
+    Column("updated_at", String(64), nullable=False),
+)
+Index("ix_study_plan_daily_snapshots_day", study_plan_daily_snapshots_table.c.day)
+
 class PersistentStorage:
     """Database-backed persistence with normalized storage."""
 
@@ -275,6 +284,8 @@ class PersistentStorage:
             metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
         if not inspector.has_table("assignment_views"):
             metadata.tables["assignment_views"].create(self._engine, checkfirst=True)
+        if not inspector.has_table("study_plan_daily_snapshots"):
+            metadata.tables["study_plan_daily_snapshots"].create(self._engine, checkfirst=True)
         if inspector.has_table("study_plan_videos"):
             study_video_columns = {col["name"] for col in inspector.get_columns("study_plan_videos")}
             missing_study_video_columns = []
@@ -346,6 +357,42 @@ class PersistentStorage:
 
     def _now_iso(self) -> str:
         return datetime.utcnow().isoformat()
+
+    def _taipei_today_iso(self) -> str:
+        return (datetime.utcnow() + timedelta(hours=8)).date().isoformat()
+
+    def _record_study_plan_daily_snapshot_locked(self, conn, *, now: str) -> None:
+        day = self._taipei_today_iso()
+        rows = conn.execute(
+            select(
+                study_plan_video_records_table.c.watched_seconds,
+                study_plan_videos_table.c.duration_seconds,
+            ).select_from(
+                study_plan_video_records_table.join(
+                    study_plan_videos_table,
+                    study_plan_video_records_table.c.video_id == study_plan_videos_table.c.id,
+                )
+            )
+        ).fetchall()
+        total_watched_seconds = sum(
+            min(max(float(row.watched_seconds or 0), 0.0), max(float(row.duration_seconds or 0), 0.0))
+            for row in rows
+        )
+        existing = conn.execute(
+            select(study_plan_daily_snapshots_table.c.day).where(study_plan_daily_snapshots_table.c.day == day)
+        ).fetchone()
+        values = {
+            "total_watched_seconds": total_watched_seconds,
+            "updated_at": now,
+        }
+        if existing:
+            conn.execute(
+                update(study_plan_daily_snapshots_table)
+                .where(study_plan_daily_snapshots_table.c.day == day)
+                .values(**values)
+            )
+        else:
+            conn.execute(insert(study_plan_daily_snapshots_table).values(day=day, **values))
 
     def _ensure_user(self, conn, username: str, *, is_guest: Optional[bool] = None, is_admin: Optional[bool] = None) -> int:
         row = conn.execute(
@@ -614,6 +661,7 @@ class PersistentStorage:
                 conn.execute(
                     insert(study_plan_video_records_table).values(video_id=video_id, **values)
                 )
+            self._record_study_plan_daily_snapshot_locked(conn, now=now)
         return True
 
     def update_study_plan_video_progress(self, *, video_id: int, watched_seconds: float) -> Optional[Dict[str, Any]]:
@@ -636,8 +684,7 @@ class PersistentStorage:
             ).fetchone()
             duration_seconds = max(0.0, float(video.duration_seconds or 0))
             current_seconds = max(0.0, min(float(watched_seconds or 0), duration_seconds))
-            existing_seconds = max(0.0, float(existing.watched_seconds or 0)) if existing else 0.0
-            normalized_seconds = min(max(existing_seconds, current_seconds), duration_seconds)
+            normalized_seconds = current_seconds
             notes = existing.notes if existing else ""
             values = {
                 "watched_seconds": normalized_seconds,
@@ -652,6 +699,7 @@ class PersistentStorage:
                 )
             else:
                 conn.execute(insert(study_plan_video_records_table).values(video_id=video_id, **values))
+            self._record_study_plan_daily_snapshot_locked(conn, now=now)
             return {
                 "video_id": int(video.id),
                 "duration_seconds": duration_seconds,
@@ -661,11 +709,40 @@ class PersistentStorage:
             }
 
     def delete_study_plan_video_record(self, video_id: int) -> bool:
+        now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
             result = conn.execute(
                 delete(study_plan_video_records_table).where(study_plan_video_records_table.c.video_id == video_id)
             )
+            if result.rowcount:
+                self._record_study_plan_daily_snapshot_locked(conn, now=now)
         return bool(result.rowcount)
+
+    def list_study_plan_daily_snapshots(
+        self,
+        *,
+        start_day: Optional[str] = None,
+        end_day: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        stmt = select(
+            study_plan_daily_snapshots_table.c.day,
+            study_plan_daily_snapshots_table.c.total_watched_seconds,
+            study_plan_daily_snapshots_table.c.updated_at,
+        ).order_by(study_plan_daily_snapshots_table.c.day)
+        if start_day:
+            stmt = stmt.where(study_plan_daily_snapshots_table.c.day >= start_day)
+        if end_day:
+            stmt = stmt.where(study_plan_daily_snapshots_table.c.day <= end_day)
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+        return [
+            {
+                "day": str(row.day),
+                "total_watched_seconds": max(0.0, float(row.total_watched_seconds or 0)),
+                "updated_at": row.updated_at or "",
+            }
+            for row in rows
+        ]
 
     # -- assignments ------------------------------------------------------
     def save_user_cache(self, username: str, payload: Dict[str, Any]) -> None:

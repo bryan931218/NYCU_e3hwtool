@@ -984,7 +984,7 @@ html[data-theme="dark"]{
         </button>
         {% if user %}
             {% if user.is_admin %}
-            <a class="btn" href="{{ url_for('admin_study_plan') }}">讀書計畫</a>
+            <a class="btn" href="{{ url_for('admin_study_home') }}">學習首頁</a>
             <a class="btn" href="{{ url_for('admin_announcements') }}">公告管理</a>
             <a class="btn" href="{{ url_for('admin_traffic', view_user=viewed_username) if is_admin_view else url_for('admin_traffic') }}">流量監控</a>
             {% endif %}

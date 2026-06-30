@@ -195,7 +195,7 @@
     <div class="shell">
         <main class="main">
             <header class="topbar">
-                <div class="crumb"><a class="back-link" href="{{ url_for('index') }}">← 回 E3 作業系統</a><span>/</span><span>讀書計畫</span></div>
+                <div class="crumb"><a class="back-link" href="{{ url_for('index') }}">← 回 E3 作業系統</a><span>/</span><a class="back-link" href="{{ url_for('admin_study_home') }}">學習首頁</a><span>/</span><span>讀書計畫</span></div>
                 <div class="admin-identity"><span class="identity-dot"></span>{{ admin_user.username }}・管理員</div>
             </header>
             <div class="content">
@@ -289,7 +289,7 @@
                             <div class="field"><label for="subject">目前科目</label><select id="subject" name="subject" onchange="this.form.submit()">{% for subject in subjects %}<option value="{{ subject }}" {% if subject == selected_subject %}selected{% endif %}>{{ subject }}</option>{% endfor %}</select></div>
                             <noscript><button class="save-button" type="submit">切換科目</button></noscript>
                         </form>
-                        <div class="youtube-player is-hidden" aria-label="YouTube 播放模式">
+                        <div class="youtube-player is-hidden" id="youtube-player-section" aria-label="YouTube 播放模式" tabindex="-1">
                             <div class="player-frame">
                                 <div id="youtube-player"></div>
                                 <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
@@ -381,6 +381,9 @@
             let saveTimer = null;
             let playbackTimer = null;
             let pendingSave = false;
+            const initialParams = new URLSearchParams(window.location.search);
+            const requestedVideoId = initialParams.get('video_id') || '';
+            const shouldFocusRequestedVideo = Boolean(requestedVideoId || window.location.hash === '#youtube-player-section');
 
             if (!videoSelect || !durationHint) return;
 
@@ -425,6 +428,25 @@
             const selectedOption = function () {
                 const option = videoSelect.options[videoSelect.selectedIndex] || null;
                 return option && option.value ? option : null;
+            };
+            const optionByValue = function (value) {
+                if (!value) return null;
+                return Array.prototype.find.call(videoSelect.options, function (option) {
+                    return option.value === String(value);
+                }) || null;
+            };
+            const focusVideoArea = function () {
+                if (!shouldFocusRequestedVideo) return;
+                const target = youtubePlayerPanel && !youtubePlayerPanel.classList.contains('is-hidden')
+                    ? youtubePlayerPanel
+                    : videoSelect.closest('.panel');
+                if (!target) return;
+                window.setTimeout(function () {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    if (target === youtubePlayerPanel && typeof target.focus === 'function') {
+                        target.focus({ preventScroll: true });
+                    }
+                }, 120);
             };
             const syncPlaybackPosition = function () {
                 const option = selectedOption();
@@ -539,7 +561,8 @@
                 if (!option || !youtubeId || !player || typeof player.getCurrentTime !== 'function') return Promise.resolve();
                 if (pendingSave && reason === 'interval') return Promise.resolve();
                 const playerSeconds = syncPlaybackPosition();
-                const currentSeconds = Math.max(Number(option.dataset.watchedSeconds || 0), playerSeconds);
+                const durationSeconds = Number(option.dataset.durationSeconds || 0);
+                const currentSeconds = reason === 'ended' && durationSeconds > 0 ? durationSeconds : playerSeconds;
                 pendingSave = true;
                 playerSyncState.textContent = '儲存中…';
                 return fetch('{{ url_for("admin_study_plan_video_progress") }}', {
@@ -620,6 +643,7 @@
                 youtubeApiReady = true;
                 const option = selectedOption();
                 if (option && option.dataset.youtubeVideoId) loadSelectedVideo();
+                focusVideoArea();
             };
             const tag = document.createElement('script');
             tag.src = 'https://www.youtube.com/iframe_api';
@@ -633,7 +657,12 @@
                 if (option && option.dataset.youtubeVideoId && youtubeApiReady) loadSelectedVideo();
             });
             window.addEventListener('beforeunload', function () { saveProgress('leave', true); });
+            if (requestedVideoId) {
+                const requestedOption = optionByValue(requestedVideoId);
+                if (requestedOption) videoSelect.value = requestedOption.value;
+            }
             updateDuration();
+            focusVideoArea();
         }());
     </script>
 </body>

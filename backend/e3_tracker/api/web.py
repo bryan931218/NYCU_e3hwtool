@@ -60,6 +60,8 @@ ADMIN_FEEDBACK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_feedback.html"
 ADMIN_FEEDBACK_TEMPLATE = ADMIN_FEEDBACK_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_PLAN_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_plan.html"
 STUDY_PLAN_TEMPLATE = STUDY_PLAN_TEMPLATE_PATH.read_text(encoding="utf-8")
+STUDY_HOME_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_home.html"
+STUDY_HOME_TEMPLATE = STUDY_HOME_TEMPLATE_PATH.read_text(encoding="utf-8")
 
 STUDY_PLAN_BLOCKS = (
     {"subject": "線性代數", "weeks": 4, "total_minutes": 4107.8, "lesson_targets": (11, 22, 32, 42)},
@@ -82,6 +84,32 @@ STUDY_PLAN_DAILY_LABELS = (
     "週六",
     "週日",
 )
+STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS = 5.0
+STUDY_PLAN_COMPLETE_RATIO = 0.995
+
+
+def _study_plan_video_completion(duration_seconds: Any, watched_seconds: Any) -> float:
+    try:
+        duration = max(0.0, float(duration_seconds or 0))
+        watched = max(0.0, float(watched_seconds or 0))
+    except (TypeError, ValueError):
+        return 0.0
+    if duration <= 0:
+        return 0.0
+    if _study_plan_video_is_complete(duration, watched):
+        return 100.0
+    return min(100.0, watched / duration * 100)
+
+
+def _study_plan_video_is_complete(duration_seconds: Any, watched_seconds: Any) -> bool:
+    try:
+        duration = max(0.0, float(duration_seconds or 0))
+        watched = max(0.0, float(watched_seconds or 0))
+    except (TypeError, ValueError):
+        return False
+    if duration <= 0:
+        return False
+    return watched >= duration - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / duration >= STUDY_PLAN_COMPLETE_RATIO
 
 
 def _study_plan_daily_recommendations(
@@ -1656,8 +1684,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 completed_videos = sum(
                     1
                     for item in weekly_videos
-                    if float(item.get("duration_seconds") or 0) > 0
-                    and float(item.get("watched_seconds") or 0) >= float(item.get("duration_seconds") or 0)
+                    if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
                 )
                 video_hours, suggested_weekly_hours, daily_recommendations = _study_plan_daily_recommendations(
                     str(block["subject"]),
@@ -1718,8 +1745,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         completed_videos = sum(
             1
             for item in videos
-            if float(item.get("duration_seconds") or 0) > 0
-            and float(item.get("watched_seconds") or 0) >= float(item.get("duration_seconds") or 0)
+            if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
         )
         recorded_videos = sum(
             1
@@ -1735,6 +1761,323 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "total_videos": len(videos),
         }
         return week_rows, active_week, summary
+
+    def _build_study_home_context(
+        videos: List[Dict[str, Any]],
+        week_rows: List[Dict[str, Any]],
+        current_week: Dict[str, Any],
+        summary: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        today = datetime.now(TAIPEI_TZ).date()
+        plan_start = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
+        plan_end = datetime.strptime(STUDY_PLAN_END, "%Y-%m-%d").date()
+        total_plan_days = max(1, (plan_end - plan_start).days + 1)
+        elapsed_days = min(max((today - plan_start).days + 1, 0), total_plan_days)
+        elapsed_percent = min(100.0, max(0.0, elapsed_days / total_plan_days * 100))
+        completion = float(summary.get("completion") or 0)
+        pace_delta = completion - elapsed_percent
+        if pace_delta >= 3:
+            pace_state = "early"
+            pace_label = "提早完成"
+            pace_message = f"目前比時間軸快 {abs(pace_delta):.1f} 個百分點。"
+        elif pace_delta <= -3:
+            pace_state = "behind"
+            pace_label = "待補"
+            pace_message = f"目前比時間軸慢 {abs(pace_delta):.1f} 個百分點。"
+        else:
+            pace_state = "active"
+            pace_label = "穩定推進"
+            pace_message = "目前大致貼近計畫時間軸。"
+
+        subject_rows: List[Dict[str, Any]] = []
+        videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
+        for video in videos:
+            videos_by_subject.setdefault(str(video.get("subject") or ""), []).append(video)
+        for subject in STUDY_PLAN_SUBJECTS:
+            subject_videos = videos_by_subject.get(subject, [])
+            target_seconds = sum(float(item.get("duration_seconds") or 0) for item in subject_videos)
+            watched_seconds = sum(
+                min(float(item.get("watched_seconds") or 0), float(item.get("duration_seconds") or 0))
+                for item in subject_videos
+            )
+            completed_count = sum(
+                1
+                for item in subject_videos
+                if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
+            )
+            subject_weeks = [row for row in week_rows if row["subject"] == subject]
+            active_subject_week = next(
+                (row for row in subject_weeks if row["start"] <= today.isoformat() <= row["end"]),
+                subject_weeks[0] if subject_weeks else None,
+            )
+            subject_completion = min(100.0, (watched_seconds / target_seconds * 100) if target_seconds else 0.0)
+            subject_rows.append(
+                {
+                    "name": subject,
+                    "completion": round(subject_completion, 1),
+                    "target_hours": round(target_seconds / 3600, 1),
+                    "watched_hours": round(watched_seconds / 3600, 1),
+                    "completed_videos": completed_count,
+                    "total_videos": len(subject_videos),
+                    "state": active_subject_week["state"] if active_subject_week else "upcoming",
+                    "state_label": active_subject_week["state_label"] if active_subject_week else "未開始",
+                }
+            )
+        weak_subjects = sorted(
+            [item for item in subject_rows if item["completion"] < 100],
+            key=lambda item: (item["completion"], -item["total_videos"]),
+        )[:3]
+
+        today_row = next(
+            (row for row in current_week.get("daily_recommendations", []) if row.get("date") == today.isoformat()),
+            None,
+        )
+        if today_row is None:
+            today_row = next(
+                (row for row in current_week.get("daily_recommendations", []) if row.get("state") in {"active", "upcoming", "behind"}),
+                (current_week.get("daily_recommendations") or [{}])[0],
+            )
+        current_subject_videos = videos_by_subject.get(str(current_week.get("subject") or ""), [])
+        next_videos: List[Dict[str, Any]] = []
+        for video in current_subject_videos:
+            duration = float(video.get("duration_seconds") or 0)
+            watched = min(float(video.get("watched_seconds") or 0), duration)
+            if duration <= 0 or _study_plan_video_is_complete(duration, watched):
+                continue
+            next_videos.append(
+                {
+                    "id": int(video.get("id") or 0),
+                    "subject": str(video.get("subject") or current_week.get("subject") or ""),
+                    "sequence": int(video.get("sequence") or 0),
+                    "title": str(video.get("title") or ""),
+                    "remaining_minutes": round(max(0.0, duration - watched) / 60, 1),
+                    "completion": round(min(100.0, watched / duration * 100), 1),
+                }
+            )
+            if len(next_videos) >= 1:
+                break
+
+        recorded_days: Set[str] = set()
+        last_updated_label = "尚未開始"
+        latest_dt: Optional[datetime] = None
+        for video in videos:
+            updated = str(video.get("updated_at") or "").strip()
+            if not updated:
+                continue
+            day_part = updated[:10]
+            if len(day_part) == 10:
+                recorded_days.add(day_part)
+            try:
+                parsed = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                if latest_dt is None or parsed > latest_dt:
+                    latest_dt = parsed
+                    last_updated_label = updated
+            except ValueError:
+                last_updated_label = updated
+        recent_days = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
+        momentum_days = [{"date": day, "active": day in recorded_days, "label": day[5:]} for day in recent_days]
+        active_recent_days = sum(1 for item in momentum_days if item["active"])
+        momentum_score = min(100, int(round(active_recent_days / 7 * 100)))
+
+        timeline_nodes = [
+            {
+                "number": row["number"],
+                "subject": row["subject"],
+                "completion": round(float(row["completion"]), 1),
+                "state": row["state"],
+                "state_label": row["state_label"],
+            }
+            for row in week_rows
+        ]
+        remaining_hours = max(0.0, (float(summary.get("total_target") or 0) - float(summary.get("total_watched") or 0)) / 60)
+        total_hours = max(0.0, float(summary.get("total_target") or 0) / 60)
+        watched_hours = max(0.0, float(summary.get("total_watched") or 0) / 60)
+        visual_angle = round(completion / 100 * 360, 1)
+
+        metric_cards = [
+            {
+                "label": "影片總時長",
+                "value": f"{total_hours:.1f}",
+                "unit": "小時",
+                "icon": "play",
+                "state": "blue",
+            },
+            {
+                "label": "已觀看時長",
+                "value": f"{watched_hours:.1f}",
+                "unit": "小時",
+                "icon": "clock",
+                "state": "green",
+            },
+            {
+                "label": "目前進度",
+                "value": f"{completion:.1f}",
+                "unit": "%",
+                "icon": "progress",
+                "state": pace_state,
+            },
+            {
+                "label": "預估完成率",
+                "value": pace_label,
+                "unit": "",
+                "icon": "target",
+                "state": pace_state,
+            },
+            {
+                "label": "已完成影片",
+                "value": str(int(summary.get("completed_videos") or 0)),
+                "unit": f"/ {int(summary.get('total_videos') or 0)} 支",
+                "icon": "check",
+                "state": "purple",
+            },
+        ]
+
+        chart_days = list(current_week.get("daily_recommendations") or [])
+        week_start_date = str(current_week.get("start") or "")
+        week_end_date = str(current_week.get("end") or "")
+        daily_snapshots = storage.list_study_plan_daily_snapshots(end_day=week_end_date or None)
+        snapshot_by_day = {
+            str(item["day"]): float(item.get("total_watched_seconds") or 0)
+            for item in daily_snapshots
+        }
+        prior_snapshot_seconds = 0.0
+        if week_start_date:
+            for item in daily_snapshots:
+                day_key = str(item.get("day") or "")
+                if day_key and day_key < week_start_date:
+                    prior_snapshot_seconds = float(item.get("total_watched_seconds") or 0)
+                elif day_key >= week_start_date:
+                    break
+
+        legacy_recorded_hours_by_day: Dict[str, float] = {}
+        if not snapshot_by_day:
+            for video in videos:
+                updated = str(video.get("updated_at") or "").strip()
+                if len(updated) < 10:
+                    continue
+                updated_day = updated[:10]
+                if week_start_date and updated_day < week_start_date:
+                    continue
+                if week_end_date and updated_day > week_end_date:
+                    continue
+                duration_seconds = float(video.get("duration_seconds") or 0)
+                watched_seconds = min(float(video.get("watched_seconds") or 0), duration_seconds)
+                if watched_seconds <= 0:
+                    continue
+                legacy_recorded_hours_by_day[updated_day] = legacy_recorded_hours_by_day.get(updated_day, 0.0) + watched_seconds / 3600
+
+        chart_rows: List[Dict[str, Any]] = []
+        target_total = 0.0
+        actual_total = 0.0
+        target_cumulative = 0.0
+        actual_cumulative = 0.0
+        previous_total_seconds = prior_snapshot_seconds
+        for day in chart_days:
+            day_key = str(day.get("date") or "")
+            is_future_day = bool(day_key and day_key > today.isoformat())
+            target_hours = float(day.get("hours") or 0)
+            if is_future_day:
+                actual_hours: Optional[float] = None
+            elif day_key in snapshot_by_day:
+                day_total_seconds = float(snapshot_by_day.get(day_key) or 0)
+                actual_seconds = max(0.0, day_total_seconds - previous_total_seconds)
+                previous_total_seconds = day_total_seconds
+                actual_hours = actual_seconds / 3600
+            else:
+                actual_hours = float(legacy_recorded_hours_by_day.get(day_key, 0.0))
+            target_total += target_hours
+            target_cumulative += target_hours
+            if actual_hours is not None:
+                actual_total += actual_hours
+                actual_cumulative += actual_hours
+            chart_rows.append(
+                {
+                    "label": str(day.get("label") or ""),
+                    "short_date": str(day.get("short_date") or ""),
+                    "state": str(day.get("state") or ""),
+                    "state_label": str(day.get("state_label") or ""),
+                    "target_hours": round(target_cumulative, 2),
+                    "actual_hours": round(actual_cumulative, 2) if actual_hours is not None else None,
+                    "actual_daily_hours": round(actual_hours, 2) if actual_hours is not None else None,
+                    "is_future": is_future_day,
+                }
+            )
+        chart_max_candidates = [1.0]
+        chart_max_candidates.extend(float(row["target_hours"]) for row in chart_rows)
+        chart_max_candidates.extend(float(row["actual_hours"]) for row in chart_rows if row["actual_hours"] is not None)
+        chart_max_hours = max(chart_max_candidates)
+        chart_max_hours = max(1.0, chart_max_hours * 1.08)
+
+        def _chart_point(index: int, value: float) -> str:
+            total_points = max(1, len(chart_rows) - 1)
+            x = 48 + (288 * (index / total_points))
+            y = 132 - (104 * min(max(value / chart_max_hours, 0.0), 1.0))
+            return f"{round(x, 1)},{round(y, 1)}"
+
+        for index, row in enumerate(chart_rows):
+            target_y = 132 - (104 * min(max(float(row["target_hours"]) / chart_max_hours, 0.0), 1.0))
+            row["target_point"] = _chart_point(index, float(row["target_hours"]))
+            if row["actual_hours"] is not None:
+                actual_y = 132 - (104 * min(max(float(row["actual_hours"]) / chart_max_hours, 0.0), 1.0))
+                row["actual_point"] = _chart_point(index, float(row["actual_hours"]))
+                row["actual_y"] = round(actual_y, 1)
+                row["actual_label_y"] = round(max(16.0, actual_y - 9), 1)
+            else:
+                row["actual_point"] = ""
+                row["actual_y"] = None
+                row["actual_label_y"] = None
+            row["x"] = round(48 + (288 * (index / max(1, len(chart_rows) - 1))), 1)
+            row["target_y"] = round(target_y, 1)
+
+        y_tick_values = [0.0, chart_max_hours / 2, chart_max_hours]
+        y_ticks = []
+        for tick_value in y_tick_values:
+            tick_y = 132 - (104 * min(max(tick_value / chart_max_hours, 0.0), 1.0))
+            y_ticks.append(
+                {
+                    "value": round(tick_value, 1),
+                    "label": f"{tick_value:.1f}h",
+                    "y": round(tick_y, 1),
+                    "label_y": round(tick_y + 3, 1),
+                }
+            )
+
+        week_chart = {
+            "rows": chart_rows,
+            "target_points": " ".join(str(row["target_point"]) for row in chart_rows),
+            "actual_points": " ".join(str(row["actual_point"]) for row in chart_rows if row["actual_point"]),
+            "y_ticks": y_ticks,
+            "target_total": round(target_total, 1),
+            "actual_total": round(actual_total, 1),
+            "max_hours": round(chart_max_hours, 1),
+        }
+        return {
+            "plan_start": STUDY_PLAN_START,
+            "plan_end": STUDY_PLAN_END,
+            "plan_total_weeks": len(week_rows),
+            "summary": summary,
+            "total_hours": round(total_hours, 1),
+            "remaining_hours": round(remaining_hours, 1),
+            "elapsed_percent": round(elapsed_percent, 1),
+            "pace_delta": round(pace_delta, 1),
+            "pace_state": pace_state,
+            "pace_label": pace_label,
+            "pace_message": pace_message,
+            "visual_angle": visual_angle,
+            "metric_cards": metric_cards,
+            "subject_rows": subject_rows,
+            "weak_subjects": weak_subjects,
+            "current_week": current_week,
+            "today_row": today_row,
+            "next_videos": next_videos,
+            "momentum_days": momentum_days,
+            "momentum_score": momentum_score,
+            "momentum_angle": round(momentum_score * 3.6, 1),
+            "active_recent_days": active_recent_days,
+            "last_updated_label": last_updated_label,
+            "timeline_nodes": timeline_nodes,
+            "week_chart": week_chart,
+        }
 
     def _study_plan_minutes(value: Any) -> float:
         try:
@@ -2339,6 +2682,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             headers={"Content-Disposition": "attachment; filename=pending_assignments.ics"},
         )
 
+    @app.get("/admin/study-home")
+    @admin_required
+    def admin_study_home():
+        user = current_user()
+        videos = storage.list_study_plan_videos_with_records()
+        week_rows, current_week, summary = _study_plan_week_rows(videos)
+        home_context = _build_study_home_context(videos, week_rows, current_week, summary)
+        return render_template_string(
+            STUDY_HOME_TEMPLATE,
+            admin_user=user,
+            **home_context,
+        )
+
     @app.route("/admin/study-plan", methods=["GET", "POST"])
     @admin_required
     def admin_study_plan():
@@ -2381,11 +2737,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 min(float(video["watched_seconds"]), float(video["duration_seconds"])) / 60,
                 1,
             )
-            video["completion"] = min(
-                100.0,
-                (float(video["watched_seconds"]) / float(video["duration_seconds"]) * 100)
-                if float(video["duration_seconds"]) else 0.0,
-            )
+            video["completion"] = _study_plan_video_completion(video["duration_seconds"], video["watched_seconds"])
             videos_by_subject.setdefault(video["subject"], []).append(video)
         visible_videos = videos_by_subject.get(selected_subject, [])
         return render_template_string(
