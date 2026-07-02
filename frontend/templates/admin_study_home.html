@@ -540,6 +540,7 @@
         <header class="topbar">
             <div class="crumb"><a href="{{ url_for('index') }}">← 回 E3 作業系統</a><span>/</span><span>學習首頁</span></div>
             <div class="nav-actions">
+                <a class="nav-link" href="{{ url_for('public_study_progress') }}">公開頁面</a>
                 <a class="nav-link" href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
                 <div class="admin-pill"><span class="admin-dot"></span>{{ admin_user.username }}・管理員</div>
             </div>

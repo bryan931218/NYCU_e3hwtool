@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>研究所備考進度｜公開學習紀錄</title>
+    <meta name="description" content="公開查看研究所備考影片學習進度、各科完成率與本週觀看軌跡。">
+    <meta property="og:title" content="研究所備考進度">
+    <meta property="og:description" content="公開查看目前影片學習進度、各科完成率與本週觀看軌跡。">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
+    <style>
+        :root {
+            --ink: #102a43;
+            --ink-2: #243b53;
+            --muted: #65758a;
+            --canvas: #f4f8fd;
+            --paper: #ffffff;
+            --line: #dbe6f2;
+            --blue: #1463d9;
+            --blue-soft: #eaf3ff;
+            --green: #258957;
+            --green-soft: #eaf8f0;
+            --teal: #0f8b8d;
+            --teal-soft: #e8fbfb;
+            --purple: #6d4bd7;
+            --purple-soft: #f2edff;
+            --amber: #b86d00;
+            --amber-soft: #fff5df;
+            --shadow: 0 18px 52px rgba(16, 42, 67, .08);
+            font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; min-width: 0; overflow-x: hidden; }
+        body {
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 10% 5%, rgba(181, 222, 255, .72) 0, transparent 28%),
+                radial-gradient(circle at 88% 4%, rgba(226, 218, 255, .72) 0, transparent 25%),
+                linear-gradient(180deg, #f8fbff 0%, var(--canvas) 100%);
+        }
+        a { color: inherit; text-decoration: none; }
+        .shell { width: min(1180px, 100%); margin: 0 auto; padding: 28px 28px 40px; }
+        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 22px; }
+        .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 13px; font-weight: 850; }
+        .brand-mark { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--blue), var(--teal)); box-shadow: 0 10px 24px rgba(20, 99, 217, .18); }
+        .share-pill { display: inline-flex; align-items: center; min-height: 36px; padding: 0 13px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.9); color: var(--ink-2); font-size: 13px; font-weight: 800; white-space: nowrap; }
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+            gap: 18px;
+            align-items: stretch;
+        }
+        .hero-main, .hero-side, .panel, .stat-card {
+            border: 1px solid rgba(219, 230, 242, .95);
+            background: rgba(255,255,255,.94);
+            box-shadow: var(--shadow);
+        }
+        .hero-main { min-height: 330px; padding: 28px; border-radius: 30px; position: relative; overflow: hidden; }
+        .hero-main::after { content: ""; position: absolute; right: -90px; bottom: -120px; width: 310px; height: 310px; border-radius: 50%; background: radial-gradient(circle, rgba(20, 99, 217, .13), transparent 68%); }
+        h1 { position: relative; z-index: 1; margin: 0; font-size: clamp(38px, 6vw, 72px); line-height: .95; letter-spacing: -.075em; }
+        .lead { position: relative; z-index: 1; max-width: 650px; margin: 14px 0 0; color: var(--muted); font-size: 15px; line-height: 1.75; }
+        .hero-meta { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+        .meta-pill { display: inline-flex; align-items: center; padding: 9px 12px; border-radius: 999px; background: #f8fbff; border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; font-weight: 850; }
+        .hero-side { padding: 24px; border-radius: 30px; display: grid; place-items: center; text-align: center; }
+        .progress-orb {
+            --angle: {{ visual_angle }}deg;
+            width: 220px;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: conic-gradient(var(--blue) 0deg var(--angle), #dbe6f2 var(--angle) 360deg);
+            box-shadow: 0 24px 60px rgba(20, 99, 217, .18);
+            position: relative;
+        }
+        .progress-orb::before { content: ""; position: absolute; inset: 18px; border-radius: 50%; background: linear-gradient(145deg, #fff, #eef6ff); }
+        .progress-core { position: relative; z-index: 1; }
+        .progress-value { color: var(--blue); font-size: 52px; font-weight: 950; letter-spacing: -.08em; }
+        .progress-label { margin-top: 4px; color: var(--muted); font-size: 13px; font-weight: 820; }
+        .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+        .stat-card { min-height: 118px; padding: 17px; border-radius: 22px; display: grid; align-content: space-between; }
+        .stat-label { color: var(--muted); font-size: 12px; font-weight: 850; }
+        .stat-value { margin-top: 8px; font-size: clamp(24px, 3vw, 34px); font-weight: 950; letter-spacing: -.055em; }
+        .stat-value small { margin-left: 4px; color: var(--muted); font-size: 13px; font-weight: 780; letter-spacing: 0; }
+        .week-progress-panel { margin-top: 18px; padding: 22px; border-radius: 28px; }
+        .week-progress-top { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+        .week-progress-title { margin: 0; font-size: 20px; letter-spacing: -.025em; }
+        .week-progress-value { color: var(--blue); font-size: clamp(34px, 5vw, 48px); font-weight: 950; line-height: .95; letter-spacing: -.07em; font-variant-numeric: tabular-nums; }
+        .week-progress-track { height: 12px; border-radius: 999px; background: #e6edf4; overflow: hidden; }
+        .week-progress-fill { height: 100%; width: min(100%, var(--week-progress)); border-radius: inherit; background: linear-gradient(90deg, var(--blue), #2b78e4); }
+        .daily-plan-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 26px; }
+        .daily-plan-title { margin: 0; color: var(--ink-2); font-size: 16px; font-weight: 900; letter-spacing: -.015em; }
+        .daily-legend { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; color: var(--muted); font-size: 12px; font-weight: 760; }
+        .legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .legend-dot { width: 9px; height: 9px; border-radius: 50%; background: #b8c4d2; }
+        .legend-dot.complete { background: var(--green); }
+        .legend-dot.early { background: var(--teal); }
+        .legend-dot.partial { background: var(--purple); }
+        .legend-dot.active { background: var(--blue); }
+        .legend-dot.behind { background: var(--amber); }
+        .daily-plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); gap: 12px; margin-top: 14px; }
+        .day-chip { position: relative; min-width: 0; padding: 15px 14px 13px; border: 1px solid var(--line); border-radius: 18px; background: #fbfdff; overflow: hidden; }
+        .day-chip.complete { border-color: #b9e0c6; background: linear-gradient(180deg, #f4fbf6 0%, #ffffff 100%); }
+        .day-chip.early { border-color: #9bdcdd; background: linear-gradient(180deg, #effefe 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(15, 139, 141, .06); }
+        .day-chip.partial { border-color: #cabdf6; background: linear-gradient(180deg, #f7f4ff 0%, #ffffff 100%); }
+        .day-chip.active { border-color: #9ebdf3; background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(20, 99, 217, .07); }
+        .day-chip.behind { border-color: #f0d6a5; background: linear-gradient(180deg, #fff8e8 0%, #ffffff 100%); }
+        .day-chip.upcoming { background: #fbfdff; }
+        .day-topline { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .day-label { display: block; color: var(--ink-2); font-size: 14px; font-weight: 900; }
+        .day-date { display: block; margin-top: 2px; color: #7f96ae; font-size: 13px; font-weight: 780; }
+        .day-status { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; padding: 4px 8px; border-radius: 999px; background: #eef3f8; color: var(--muted); font-size: 12px; line-height: 1.2; font-weight: 900; }
+        .day-chip.complete .day-status { background: var(--green-soft); color: var(--green); }
+        .day-chip.early .day-status { background: var(--teal-soft); color: var(--teal); }
+        .day-chip.partial .day-status { background: var(--purple-soft); color: var(--purple); }
+        .day-chip.active .day-status { background: #fff; color: var(--blue); }
+        .day-chip.behind .day-status { background: var(--amber-soft); color: var(--amber); }
+        .day-hours { display: block; margin-top: 18px; color: var(--ink); font-size: 28px; font-weight: 950; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
+        .day-focus { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; font-weight: 760; }
+        .day-completion { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 13px; color: var(--muted); font-size: 13px; font-weight: 760; font-variant-numeric: tabular-nums; }
+        .day-completion strong { color: var(--ink-2); font-size: 14px; font-weight: 950; }
+        .day-progress { height: 8px; margin-top: 10px; border-radius: 999px; background: #e6edf4; overflow: hidden; }
+        .day-progress-fill { height: 100%; width: min(100%, var(--day-progress)); border-radius: inherit; background: #a8b7c8; }
+        .day-chip.complete .day-progress-fill { background: var(--green); }
+        .day-chip.early .day-progress-fill { background: var(--teal); }
+        .day-chip.partial .day-progress-fill { background: var(--purple); }
+        .day-chip.active .day-progress-fill { background: var(--blue); }
+        .day-chip.behind .day-progress-fill { background: var(--amber); }
+        .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 390px); gap: 18px; margin-top: 18px; align-items: start; }
+        .panel { border-radius: 28px; overflow: hidden; }
+        .panel-head { padding: 20px 22px 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .panel-title { margin: 0; font-size: 19px; letter-spacing: -.025em; }
+        .caption { color: var(--muted); font-size: 12px; line-height: 1.5; }
+        .subject-list { padding: 14px 18px 18px; display: grid; gap: 10px; }
+        .subject-row { display: grid; grid-template-columns: 116px minmax(0, 1fr) 76px; gap: 12px; align-items: center; padding: 13px; border: 1px solid var(--line); border-radius: 16px; background: #fbfdff; }
+        .subject-name { font-size: 13px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .track { height: 9px; border-radius: 999px; background: #e7edf4; overflow: hidden; }
+        .fill { height: 100%; width: min(100%, var(--value)); border-radius: inherit; background: linear-gradient(90deg, var(--blue), var(--teal)); }
+        .subject-meta { color: var(--muted); font-size: 11px; font-weight: 760; margin-top: 5px; }
+        .subject-percent { font-size: 15px; font-weight: 950; text-align: right; }
+        .side-stack { display: grid; gap: 18px; }
+        .focus-card { padding: 20px; }
+        .status { display: inline-flex; align-items: center; justify-content: center; min-width: 64px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; font-weight: 850; white-space: nowrap; }
+        .status.early { color: var(--teal); background: var(--teal-soft); border-color: #9bdcdd; }
+        .status.partial { color: var(--purple); background: var(--purple-soft); border-color: #cabdf6; }
+        .status.active { color: var(--blue); background: var(--blue-soft); border-color: #a8c7f4; }
+        .status.behind { color: var(--amber); background: var(--amber-soft); border-color: #f0d6a5; }
+        .status.complete { color: var(--green); background: var(--green-soft); border-color: #b9e0c6; }
+        .status.upcoming { color: var(--muted); background: #f4f7fa; }
+        .focus-main { margin-top: 16px; padding: 18px; border-radius: 22px; color: #fff; background: linear-gradient(135deg, #102a43, #1463d9); }
+        .focus-hours { margin-top: 10px; font-size: 42px; font-weight: 950; letter-spacing: -.07em; }
+        .week-chart-wrap { padding: 14px 18px 18px; }
+        .week-chart { width: 100%; height: auto; display: block; border-radius: 20px; background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%); border: 1px solid var(--line); }
+        .chart-legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 12px 2px 0; color: var(--muted); font-size: 12px; font-weight: 760; }
+        .chart-key { display: inline-flex; align-items: center; gap: 6px; }
+        .key-line { width: 22px; height: 4px; border-radius: 999px; background: var(--blue); }
+        .key-line.target { background: #a4b3c2; }
+        .footer-note { margin-top: 18px; color: var(--muted); text-align: center; font-size: 12px; }
+        @media (max-width: 980px) {
+            .hero, .layout { grid-template-columns: 1fr; }
+            .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .daily-plan-head { align-items: flex-start; flex-direction: column; }
+            .daily-legend { justify-content: flex-start; }
+        }
+        @media (max-width: 560px) {
+            .shell { padding: 18px 12px 28px; }
+            .topbar { align-items: flex-start; }
+            .share-pill { white-space: normal; justify-content: center; text-align: center; }
+            .hero-main, .hero-side, .panel { border-radius: 22px; }
+            .hero-main { padding: 22px; min-height: auto; }
+            .progress-orb { width: 190px; }
+            .stat-grid { grid-template-columns: 1fr; }
+            .week-progress-panel { padding: 18px 14px; border-radius: 22px; }
+            .week-progress-top { align-items: flex-start; flex-direction: column; }
+            .daily-plan { grid-template-columns: 1fr; }
+            .day-chip { padding: 14px; }
+            .subject-row { grid-template-columns: 1fr; gap: 8px; }
+            .subject-percent { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <nav class="topbar" aria-label="公開頁面導覽">
+            <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">E3</span><span>帥D的學習紀錄</span></a>
+        </nav>
+
+        <section class="hero" aria-label="公開學習進度總覽">
+            <div class="hero-main">
+                <h1>研究所備考進度</h1>
+                <div class="hero-meta">
+                    <span class="meta-pill">{{ plan_start }} → {{ plan_end }}</span>
+                    <span class="meta-pill">目前第 {{ current_week.number }} 週・{{ current_week.subject }}</span>
+                    <span class="meta-pill">最後更新：{{ last_updated_label }}</span>
+                </div>
+            </div>
+            <aside class="hero-side">
+                <div class="progress-orb">
+                    <div class="progress-core">
+                        <div class="progress-value">{{ summary.completion|round(1) }}%</div>
+                        <div class="progress-label">總完成率</div>
+                    </div>
+                </div>
+            </aside>
+        </section>
+
+        <section class="stat-grid" aria-label="核心統計">
+            <article class="stat-card"><div class="stat-label">影片總時長</div><div class="stat-value">{{ total_hours }}<small>小時</small></div></article>
+            <article class="stat-card"><div class="stat-label">已觀看時長</div><div class="stat-value">{{ (summary.total_watched / 60)|round(1) }}<small>小時</small></div></article>
+            <article class="stat-card"><div class="stat-label">已完成影片</div><div class="stat-value">{{ summary.completed_videos }}<small>/ {{ summary.total_videos }} 支</small></div></article>
+            <article class="stat-card"><div class="stat-label">剩餘片長</div><div class="stat-value">{{ remaining_hours }}<small>小時</small></div></article>
+        </section>
+
+        <section class="panel week-progress-panel" aria-label="本週每日進度">
+            <div class="week-progress-top">
+                <h2 class="week-progress-title">本週進度</h2>
+                <div class="week-progress-value">{{ current_week.completion|round(1) }}%</div>
+            </div>
+            <div class="week-progress-track" aria-hidden="true">
+                <div class="week-progress-fill" style="--week-progress: {{ current_week.completion }}%"></div>
+            </div>
+            <div class="daily-plan-head">
+                <h3 class="daily-plan-title">本週每日看影片建議與完成度</h3>
+                <div class="daily-legend" aria-label="每日狀態圖例">
+                    <span class="legend-item"><span class="legend-dot complete"></span>完成</span>
+                    <span class="legend-item"><span class="legend-dot early"></span>提早完成</span>
+                    <span class="legend-item"><span class="legend-dot partial"></span>部分</span>
+                    <span class="legend-item"><span class="legend-dot active"></span>今天</span>
+                    <span class="legend-item"><span class="legend-dot behind"></span>待補</span>
+                    <span class="legend-item"><span class="legend-dot"></span>未開始</span>
+                </div>
+            </div>
+            <div class="daily-plan">
+                {% for day in current_week.daily_recommendations %}
+                <article class="day-chip {{ day.state }}" style="--day-progress: {{ day.completion }}%">
+                    <div class="day-topline">
+                        <span>
+                            <span class="day-label">{{ day.label }}</span>
+                            <span class="day-date">{{ day.short_date }}</span>
+                        </span>
+                        <span class="day-status">{{ day.state_label }}</span>
+                    </div>
+                    <span class="day-hours">{{ day.hours }}h</span>
+                    <span class="day-focus">{{ day.focus }}</span>
+                    <div class="day-completion"><span>完成度</span><strong>{{ day.completion|round(1) }}%</strong></div>
+                    <div class="day-progress" aria-hidden="true"><div class="day-progress-fill"></div></div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="layout">
+            <article class="panel">
+                <div class="panel-head">
+                    <div>
+                        <h2 class="panel-title">各科進度</h2>
+                    </div>
+                </div>
+                <div class="subject-list">
+                    {% for subject in subject_rows %}
+                    <div class="subject-row">
+                        <div class="subject-name">{{ subject.name }}</div>
+                        <div>
+                            <div class="track"><div class="fill" style="--value: {{ subject.completion }}%"></div></div>
+                            <div class="subject-meta">{{ subject.watched_hours }}h / {{ subject.target_hours }}h・{{ subject.completed_videos }} / {{ subject.total_videos }} 支</div>
+                        </div>
+                        <div class="subject-percent">{{ subject.completion }}%</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+
+            <div class="side-stack">
+                <article class="panel focus-card">
+                    <div class="panel-head" style="padding:0;">
+                        <div>
+                            <h2 class="panel-title">本週焦點</h2>
+                            <div class="caption">{{ current_week.start }} 至 {{ current_week.end }}</div>
+                        </div>
+                        <span class="status {{ current_week.state }}">{{ current_week.state_label }}</span>
+                    </div>
+                    <div class="focus-main">
+                        <div class="caption" style="color:rgba(255,255,255,.72)">本週科目</div>
+                        <div class="focus-hours">{{ current_week.subject }}</div>
+                        <div class="caption" style="color:rgba(255,255,255,.72)">本週已看 {{ current_week.watched_minutes }} 分鐘・完成 {{ current_week.completion|round(1) }}%</div>
+                    </div>
+                </article>
+
+                <article class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <h2 class="panel-title">本週軌跡</h2>
+                            <div class="caption">藍線為實際累積觀看時數，灰線為累積影片目標。</div>
+                        </div>
+                    </div>
+                    <div class="week-chart-wrap">
+                        <svg class="week-chart" viewBox="0 0 360 170" role="img" aria-label="本週影片觀看進度曲線">
+                            {% for tick in week_chart['y_ticks'] %}
+                            <line x1="48" y1="{{ tick.y }}" x2="336" y2="{{ tick.y }}" stroke="{% if loop.first %}#d4e0ec{% else %}#e2eaf3{% endif %}" stroke-width="{% if loop.first %}1.4{% else %}1{% endif %}"/>
+                            <text x="10" y="{{ tick.label_y }}" font-size="10" font-weight="800" fill="#65758a">{{ tick.label }}</text>
+                            {% endfor %}
+                            <line x1="48" y1="28" x2="48" y2="132" stroke="#b9c8d7" stroke-width="1.4"/>
+                            <line x1="48" y1="132" x2="336" y2="132" stroke="#b9c8d7" stroke-width="1.4"/>
+                            {% for row in week_chart['rows'] %}
+                            <line x1="{{ row.x }}" y1="28" x2="{{ row.x }}" y2="132" stroke="#edf3f8" stroke-width="1"/>
+                            <text x="{{ row.x }}" y="154" text-anchor="middle" font-size="10" font-weight="800" fill="#65758a">{{ row.label }}</text>
+                            {% endfor %}
+                            <polyline points="{{ week_chart.target_points }}" fill="none" stroke="#9fafbf" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            {% if week_chart.actual_points %}
+                            <polyline points="{{ week_chart.actual_points }}" fill="none" stroke="#1463d9" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            {% endif %}
+                            {% for row in week_chart['rows'] %}
+                            <circle cx="{{ row.x }}" cy="{{ row.target_y }}" r="3.2" fill="#9fafbf" stroke="#fff" stroke-width="1.6"/>
+                            {% if row.actual_hours is not none %}
+                            <circle cx="{{ row.x }}" cy="{{ row.actual_y }}" r="4.5" fill="#1463d9" stroke="#fff" stroke-width="2"/>
+                            <text x="{{ row.x }}" y="{{ row.actual_label_y }}" text-anchor="middle" font-size="9" font-weight="800" fill="#102a43">{{ row.actual_hours|round(1) }}h</text>
+                            {% endif %}
+                            {% endfor %}
+                        </svg>
+                        <div class="chart-legend">
+                            <span class="chart-key"><span class="key-line"></span>本週實際 {{ week_chart.actual_total }}h</span>
+                            <span class="chart-key"><span class="key-line target"></span>目標 {{ week_chart.target_total }}h</span>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

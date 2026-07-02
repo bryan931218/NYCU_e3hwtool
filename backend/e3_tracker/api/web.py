@@ -62,6 +62,8 @@ STUDY_PLAN_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_plan.html"
 STUDY_PLAN_TEMPLATE = STUDY_PLAN_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_HOME_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_home.html"
 STUDY_HOME_TEMPLATE = STUDY_HOME_TEMPLATE_PATH.read_text(encoding="utf-8")
+PUBLIC_STUDY_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "public_study_progress.html"
+PUBLIC_STUDY_TEMPLATE = PUBLIC_STUDY_TEMPLATE_PATH.read_text(encoding="utf-8")
 
 STUDY_PLAN_BLOCKS = (
     {"subject": "線性代數", "weeks": 4, "total_minutes": 4107.8, "lesson_targets": (11, 22, 32, 42)},
@@ -2681,6 +2683,22 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             mimetype="text/calendar",
             headers={"Content-Disposition": "attachment; filename=pending_assignments.ics"},
         )
+
+    @app.get("/study-progress")
+    def public_study_progress():
+        videos = storage.list_study_plan_videos_with_records()
+        week_rows, current_week, summary = _study_plan_week_rows(videos)
+        context = _build_study_home_context(videos, week_rows, current_week, summary)
+        record_ui_event("public_study_progress_view", meta={"completion": round(float(summary.get("completion") or 0), 1)})
+        return render_template_string(
+            PUBLIC_STUDY_TEMPLATE,
+            **context,
+            share_url=request.url,
+        )
+
+    @app.get("/public/study-progress")
+    def public_study_progress_alias():
+        return redirect(url_for("public_study_progress"), code=301)
 
     @app.get("/admin/study-home")
     @admin_required
