@@ -3235,6 +3235,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @app.post("/admin/study-recall/<int:session_id>/rate-cards")
     @admin_required
     def admin_study_recall_rate_cards(session_id: int):
+        is_async_rating = request.headers.get("X-E3-Recall-Rating") == "1"
         return_to = (request.form.get("return_to") or "").strip()
         if return_to not in {"admin_study_home", "admin_study_plan", "public_study_progress"}:
             return_to = ""
@@ -3242,10 +3243,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         def recall_redirect():
             return redirect(url_for(return_to) if return_to else url_for("admin_study_recall", session_id=session_id))
 
+        def rating_error(message: str, status_code: int = 400):
+            if is_async_rating:
+                return {"ok": False, "error": message}, status_code
+            flash(message, "error")
+            return recall_redirect()
+
         recall_session = storage.get_study_recall_session(session_id)
         if not recall_session:
-            flash("找不到這份回想紀錄。", "error")
-            return recall_redirect()
+            return rating_error("找不到這份回想紀錄。", 404)
         ratings: Dict[int, int] = {}
         for index, _concept in enumerate(recall_session.get("key_concepts") or []):
             raw_rating = (request.form.get(f"rating_{index}") or "").strip()
@@ -3256,12 +3262,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             except (TypeError, ValueError):
                 rating = 0
             if rating not in {1, 2, 3, 4, 5}:
-                flash("印象分必須是 1 至 5 分。", "error")
-                return recall_redirect()
+                return rating_error("印象分必須是 1 至 5 分。")
             ratings[index] = rating
         if not ratings:
-            flash("請至少為一張重點卡填寫印象分。", "error")
-            return recall_redirect()
+            return rating_error("請至少為一張重點卡填寫印象分。")
         if storage.record_study_recall_card_ratings(
             session_id=session_id,
             ratings=ratings,
@@ -3273,7 +3277,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "study_recall_cards_rated",
                 meta={"session_id": session_id, "card_count": len(ratings), "next_review_at": next_review_at},
             )
+            if is_async_rating:
+                return {"ok": True, "remaining_due_count": _build_recall_widget_context()["due_count"]}
             flash(f"已記錄每張重點卡的印象分；最早的下一次複習是 {next_review_at}。", "success")
+        elif is_async_rating:
+            return {"ok": False, "error": "印象分暫時無法儲存，請再試一次。"}, 500
+        else:
+            flash("印象分暫時無法儲存，請再試一次。", "error")
         return recall_redirect()
 
     @app.route("/admin/study-plan", methods=["GET", "POST"])

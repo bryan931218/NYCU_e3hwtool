@@ -76,7 +76,7 @@
         .admin-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
         .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); }
         .brand { display:flex; align-items:center; gap:10px; color:var(--ink); font-size:14px; font-weight:900; white-space:nowrap; }.mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }.nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }.nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }.nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }.admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
-        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { font-size:13px; font-weight:850; }.recall-card-note { margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-empty { padding:18px; color:var(--muted); text-align:center; font-size:13px; }
+        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { font-size:13px; font-weight:850; }.recall-card-note { margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-rate:disabled { opacity:.6; cursor:wait; }.recall-rate-status { min-height:16px; margin:0; color:var(--red); font-size:11px; }.recall-card.is-completing { opacity:0; transform:scale(.98); transition:opacity .18s ease,transform .18s ease; }.recall-empty { padding:18px; color:var(--muted); text-align:center; font-size:13px; }
 
         .content {
             width: min(1520px, 100%);
@@ -714,7 +714,7 @@
                 </div>
             </section>
 
-            {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items">{% if recall_widget["cards"] %}{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card"><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note">{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}"><input type="hidden" name="return_to" value="admin_study_home"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}{% else %}<div class="recall-empty">今天沒有需要複習的重點卡。</div>{% endif %}</div></details>{% endif %}
+            {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note">{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_home"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div></details>{% endif %}
             <section class="dashboard-grid">
                 <article class="panel journey-card">
                     <div class="panel-head">
@@ -905,5 +905,61 @@
             </section>
         </main>
     </div>
+    <script>
+        (() => {
+            const updateDueCounts = (count) => {
+                document.querySelectorAll('[data-recall-due-count]').forEach((node) => {
+                    node.textContent = `${count} ${node.dataset.countLabel || '張待複習'}`;
+                });
+            };
+            const removeRatedCard = (card) => {
+                card.classList.add('is-completing');
+                window.setTimeout(() => {
+                    const list = card.closest('[data-recall-card-list]');
+                    card.remove();
+                    if (list && !list.querySelector('[data-recall-card]')) {
+                        list.hidden = true;
+                        const empty = list.parentElement.querySelector('[data-recall-empty]');
+                        if (empty) empty.hidden = false;
+                    }
+                }, 180);
+            };
+            document.querySelectorAll('form[data-recall-rating-form]').forEach((form) => {
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    if (form.dataset.submitting === 'true') return;
+                    const status = form.querySelector('[data-recall-rating-status]');
+                    const button = form.querySelector('button[type="submit"]');
+                    if (!form.querySelector('input[type="radio"]:checked')) {
+                        if (status) status.textContent = '請先選擇印象分。';
+                        return;
+                    }
+                    form.dataset.submitting = 'true';
+                    if (status) status.textContent = '';
+                    const originalLabel = button.textContent;
+                    button.disabled = true;
+                    button.textContent = '儲存中…';
+                    try {
+                        const response = await fetch(form.action, {
+                            method: 'POST',
+                            body: new FormData(form),
+                            credentials: 'same-origin',
+                            headers: { 'X-E3-Recall-Rating': '1', Accept: 'application/json' },
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result.ok) throw new Error(result.error || '印象分暫時無法儲存，請再試一次。');
+                        updateDueCounts(result.remaining_due_count);
+                        const card = form.closest('[data-recall-card]');
+                        if (card) removeRatedCard(card);
+                    } catch (error) {
+                        if (status) status.textContent = error.message || '印象分暫時無法儲存，請再試一次。';
+                        button.disabled = false;
+                        button.textContent = originalLabel;
+                        form.dataset.submitting = '';
+                    }
+                });
+            });
+        })();
+    </script>
 </body>
 </html>
