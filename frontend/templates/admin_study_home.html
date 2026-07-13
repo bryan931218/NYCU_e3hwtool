@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>學習首頁｜E3 作業追蹤系統</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
     <style>
         :root {
             --ink: #102a43;
@@ -714,7 +717,7 @@
                 </div>
             </section>
 
-            {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note">{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_home"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div></details>{% endif %}
+            {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_home"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div></details>{% endif %}
             <section class="dashboard-grid">
                 <article class="panel journey-card">
                     <div class="panel-head">
@@ -906,6 +909,20 @@
         </main>
     </div>
     <script>
+        window.renderStudyMath = () => {
+            if (!window.renderMathInElement) return;
+            document.querySelectorAll('[data-math-content]').forEach((element) => {
+                if (element.dataset.mathRendered === 'true') return;
+                window.renderMathInElement(element, {
+                    delimiters: [
+                        { left: '\\[', right: '\\]', display: true },
+                        { left: '\\(', right: '\\)', display: false },
+                    ],
+                    throwOnError: false,
+                });
+                element.dataset.mathRendered = 'true';
+            });
+        };
         (() => {
             const updateDueCounts = (count) => {
                 document.querySelectorAll('[data-recall-due-count]').forEach((node) => {
