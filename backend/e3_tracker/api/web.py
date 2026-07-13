@@ -1,5 +1,6 @@
 import base64
 import json
+import math
 import os
 import secrets
 import threading
@@ -1818,19 +1819,34 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         elapsed_days = min(max((today - plan_start).days + 1, 0), total_plan_days)
         elapsed_percent = min(100.0, max(0.0, elapsed_days / total_plan_days * 100))
         completion = float(summary.get("completion") or 0)
-        pace_delta = completion - elapsed_percent
+        total_target_minutes = float(summary.get("total_target") or 0)
+        watched_minutes_total = float(summary.get("total_watched") or 0)
+        target_minutes_by_today = 0.0
+        today_iso = today.isoformat()
+        for row in week_rows:
+            row_start = str(row.get("start") or "")
+            row_end = str(row.get("end") or "")
+            if row_end and row_end < today_iso:
+                target_minutes_by_today += float(row.get("target_minutes") or 0)
+            elif row_start and row_start <= today_iso <= row_end:
+                for day in row.get("daily_recommendations", []):
+                    if str(day.get("date") or "") <= today_iso:
+                        target_minutes_by_today += float(day.get("hours") or 0) * 60
+        target_minutes_by_today = min(max(target_minutes_by_today, 0.0), total_target_minutes)
+        scheduled_percent = min(100.0, (target_minutes_by_today / total_target_minutes * 100) if total_target_minutes else 0.0)
+        pace_delta = completion - scheduled_percent
         if pace_delta >= 3:
             pace_state = "early"
             pace_label = "提早完成"
-            pace_message = f"目前比時間軸快 {abs(pace_delta):.1f} 個百分點。"
+            pace_message = f"目前比計畫進度快 {abs(pace_delta):.1f} 個百分點。"
         elif pace_delta <= -3:
             pace_state = "behind"
             pace_label = "待補"
-            pace_message = f"目前比時間軸慢 {abs(pace_delta):.1f} 個百分點。"
+            pace_message = f"目前比計畫進度慢 {abs(pace_delta):.1f} 個百分點。"
         else:
             pace_state = "active"
             pace_label = "穩定推進"
-            pace_message = "目前大致貼近計畫時間軸。"
+            pace_message = "目前大致貼近計畫進度。"
 
         subject_rows: List[Dict[str, Any]] = []
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
@@ -1944,17 +1960,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         total_hours = max(0.0, float(summary.get("total_target") or 0) / 60)
         watched_hours = max(0.0, float(summary.get("total_watched") or 0) / 60)
         visual_angle = round(completion / 100 * 360, 1)
-        target_minutes_by_today = float(summary.get("total_target") or 0) * elapsed_percent / 100
-        watched_minutes_total = float(summary.get("total_watched") or 0)
         pace_minutes = watched_minutes_total - target_minutes_by_today
         pace_hours = pace_minutes / 60
-        remaining_plan_days = max(1, (plan_end - today).days + 1)
         daily_target_minutes = (float(summary.get("total_target") or 0) / total_plan_days) if total_plan_days else 0.0
-        catchup_minutes_per_day = max(0, int(round(abs(pace_minutes) / remaining_plan_days))) if pace_minutes < 0 else 0
+        catchup_minutes_per_day = math.ceil(abs(pace_minutes) / 7) if pace_minutes < 0 else 0
+        catchup_hours, catchup_remainder_minutes = divmod(catchup_minutes_per_day, 60)
+        if catchup_hours and catchup_remainder_minutes:
+            catchup_time_label = f"{catchup_hours} 小時 {catchup_remainder_minutes} 分鐘"
+        elif catchup_hours:
+            catchup_time_label = f"{catchup_hours} 小時"
+        else:
+            catchup_time_label = f"{catchup_remainder_minutes} 分鐘"
         buffer_days = max(0.0, pace_minutes / daily_target_minutes) if pace_minutes > 0 and daily_target_minutes else 0.0
         pace_meter_position = min(96.0, max(4.0, 50.0 + pace_delta * 2.2))
         if pace_state == "behind":
-            pace_action = f"每天多看 {catchup_minutes_per_day} 分鐘可逐步追平。"
+            pace_action = f"若要 1 週內追完，每天需多看 {catchup_time_label}。"
             pace_primary_value = f"{abs(pace_hours):.1f}"
             pace_primary_unit = "小時待補"
         elif pace_state == "early":
@@ -1962,7 +1982,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             pace_primary_value = f"{abs(pace_hours):.1f}"
             pace_primary_unit = "小時領先"
         else:
-            pace_action = "維持目前節奏即可貼近計畫線。"
+            pace_action = "維持目前節奏即可貼近計畫進度。"
             pace_primary_value = f"{abs(pace_hours):.1f}"
             pace_primary_unit = "小時差距"
 
