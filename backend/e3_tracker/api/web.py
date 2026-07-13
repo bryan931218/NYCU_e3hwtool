@@ -3,6 +3,7 @@ import json
 import math
 import os
 import secrets
+import shutil
 import threading
 import time
 import hashlib
@@ -12,7 +13,6 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlsplit, urlunsplit
-import tempfile
 
 import requests
 from flask import Flask, Response, flash, redirect, render_template_string, request, send_file, session, url_for, has_request_context
@@ -918,7 +918,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     if configured_cache_dir:
         data_root = Path(configured_cache_dir).expanduser()
     else:
-        data_root = Path(tempfile.gettempdir()) / "e3_tracker_cache"
+        data_root = ROOT_DIR / ".localdata"
     _ensure_private_dir(data_root)
     database_url = env_defaults.get("database_url") or ""
     if database_url:
@@ -2390,10 +2390,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if concept and explanation and _is_recall_concept_eligible(
                 {"concept": concept, "explanation": explanation, "memory_hint": memory_hint}
             ):
-                concepts.append({"concept": concept, "explanation": explanation, "memory_hint": memory_hint})
+                concepts.append(
+                    {"concept": concept[:80], "explanation": explanation[:360], "memory_hint": memory_hint[:90]}
+                )
         if not concepts:
             return None
-        return {"summary": summary[:2400], "key_concepts": concepts}
+        return {"summary": summary[:420], "key_concepts": concepts}
 
     def _analyze_study_note_images(images: List[Tuple[str, bytes, str]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         if not openai_api_key:
@@ -2402,16 +2404,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             {
                 "type": "input_text",
                 "text": (
-                    "你是研究所考試的嚴謹助教。請閱讀上傳的繁體中文筆記，整理成清楚、可直接複習的正確重點。"
-                    "只為筆記中清楚可辨識、可確認且原始內容正確的考試概念建立卡片；每張卡片都必須能獨立直接複習。"
-                    "任何內容只要數字、符號或公式模糊，尚待確認，原始內容有誤，或需要你更正，全部直接略過："
-                    "不得建立『待確認／已修正／錯誤說明』卡片，也不得把這些說明放進 summary 或 memory_hint。"
-                    "不要用正確版本替換原筆記的錯誤來建立卡片；寧可略過，也不要猜測或補充修正建議。"
+                    "你是研究所考試的嚴謹助教。請閱讀上傳的繁體中文筆記，整理成精確、短小、好理解且好記憶的繁體中文重點卡。"
+                    "每張卡片只保留一個可直接複習的考試概念；concept 是不超過 16 字的短標題，explanation 以 1 至 3 句寫完，"
+                    "先給結論或規則，再補必要條件，避免背景敘述、重複語句與空泛提醒。memory_hint 是不超過 24 字的口訣或辨識線索。"
+                    "影像中出現的每個可辨識且和保留概念有關的公式、定義式或符號關係，必須完整列在 explanation，不能只用文字描述；"
+                    "公式請保留變數、上下標、轉置、向量與條件，使用可讀的純文字數學格式。"
+                    "請用可靠的學科知識檢查筆記：若定義、符號、公式、推論或例子可明確判定為錯誤，先靜默修正為正確版本，再建立一般重點卡。"
+                    "不得建立『待確認／已修正／錯誤說明』卡片，也不得在 summary、explanation 或 memory_hint 解釋你做了修正。"
+                    "只有數字、符號或公式模糊到無法可靠判定時才略過；不可猜測。"
                     "逐一涵蓋其餘每個獨立且有考試價值的概念，不要把不同概念硬合併；每次最多建立 15 張重點卡，"
                     "若超過 15 個概念，優先保留最核心、最常考且能涵蓋其他細節的概念。"
-                    "每個 key_concepts 的 concept 要是可掃讀的短標題，explanation 要完整寫出正確定義、條件、公式或推論，不要只改寫原句；"
-                    "memory_hint 要提供一條精準的辨識線索。輸出繁體中文 JSON：summary 是 4 到 6 句的重點摘要；"
-                    "summary 只能摘要實際保留的卡片內容。key_concepts 至少 1 項、最多 15 項。不要輸出考題、選項、答案或任何題庫資料。"
+                    "輸出繁體中文 JSON：summary 是 1 至 3 句、最多 180 字的考前總覽，只摘要實際保留的卡片內容。"
+                    "key_concepts 至少 1 項、最多 15 項。不要輸出考題、選項、答案或任何題庫資料。"
                 ),
             }
         ]
@@ -2429,7 +2433,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "additionalProperties": False,
             "required": ["summary", "key_concepts"],
             "properties": {
-                "summary": {"type": "string"},
+                "summary": {"type": "string", "maxLength": 420},
                 "key_concepts": {
                     "type": "array",
                     "minItems": 1,
@@ -2439,9 +2443,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "additionalProperties": False,
                         "required": ["concept", "explanation", "memory_hint"],
                         "properties": {
-                            "concept": {"type": "string"},
-                            "explanation": {"type": "string"},
-                            "memory_hint": {"type": "string"},
+                            "concept": {"type": "string", "maxLength": 80},
+                            "explanation": {"type": "string", "maxLength": 360},
+                            "memory_hint": {"type": "string", "maxLength": 90},
                         },
                     },
                 },
@@ -3179,6 +3183,27 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not image_path.is_file():
             return Response("Not Found", status=404, mimetype="text/plain")
         return send_file(image_path, conditional=True, max_age=0)
+
+    @app.post("/admin/study-recall/<int:session_id>/delete")
+    @admin_required
+    def admin_study_recall_delete(session_id: int):
+        recall_session = storage.get_study_recall_session(session_id)
+        if not recall_session:
+            flash("找不到這份筆記紀錄。", "error")
+            return redirect(url_for("admin_study_recall"))
+        if not storage.delete_study_recall_session(session_id):
+            flash("筆記刪除失敗，請再試一次。", "error")
+            return redirect(url_for("admin_study_recall", session_id=session_id))
+        upload_root = study_upload_root.resolve()
+        image_directory = (upload_root / str(session_id)).resolve()
+        if image_directory.parent == upload_root and image_directory.is_dir():
+            try:
+                shutil.rmtree(image_directory)
+            except OSError:
+                pass
+        record_ui_event("study_recall_note_deleted", meta={"session_id": session_id, "subject": recall_session.get("subject")})
+        flash("已刪除筆記、所屬重點卡、複習紀錄與原始圖片。", "success")
+        return redirect(url_for("admin_study_recall"))
 
     @app.post("/admin/study-recall/upload")
     @admin_required

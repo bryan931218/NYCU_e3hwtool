@@ -966,6 +966,18 @@ class PersistentStorage:
             result = conn.execute(insert(study_recall_sessions_table).values(**values))
             return int(result.inserted_primary_key[0])
 
+    def delete_study_recall_session(self, session_id: int) -> bool:
+        with self._lock, self._engine.begin() as conn:
+            exists = conn.execute(
+                select(study_recall_sessions_table.c.id).where(study_recall_sessions_table.c.id == session_id)
+            ).fetchone()
+            if not exists:
+                return False
+            conn.execute(delete(study_recall_card_reviews_table).where(study_recall_card_reviews_table.c.session_id == session_id))
+            conn.execute(delete(study_recall_attempts_table).where(study_recall_attempts_table.c.session_id == session_id))
+            conn.execute(delete(study_recall_sessions_table).where(study_recall_sessions_table.c.id == session_id))
+        return True
+
     def get_study_recall_session(self, session_id: int) -> Optional[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
             row = conn.execute(
