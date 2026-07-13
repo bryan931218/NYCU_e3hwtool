@@ -190,6 +190,24 @@
         .pace-stat { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); }
         .pace-stat-label { color: var(--muted); font-size: 11px; font-weight: 850; }
         .pace-stat-value { margin-top: 5px; color: var(--ink-2); font-size: 18px; font-weight: 950; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+        .today-log-panel {
+            margin-bottom: 18px;
+            padding: 20px;
+            border: 1px solid rgba(219, 230, 242, .94);
+            border-radius: 26px;
+            background: rgba(255, 255, 255, .94);
+            box-shadow: var(--shadow-soft);
+        }
+        .today-log-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+        .today-log-stat { padding: 13px; border: 1px solid var(--line); border-radius: 16px; background: #fbfdff; }
+        .today-log-label { color: var(--muted); font-size: 11px; font-weight: 850; }
+        .today-log-value { margin-top: 6px; color: var(--ink); font-size: 22px; font-weight: 950; letter-spacing: -.04em; }
+        .makeup-list, .today-video-list { display: grid; gap: 8px; margin-top: 12px; }
+        .makeup-item, .today-video-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+        .makeup-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .makeup-title, .today-video-title { color: var(--ink-2); font-size: 13px; font-weight: 900; }
+        .makeup-meta, .today-video-meta { margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 760; line-height: 1.45; }
+        .makeup-minutes { color: var(--blue); font-size: 13px; font-weight: 950; white-space: nowrap; }
 
         .dashboard-grid {
             display: grid;
@@ -534,6 +552,8 @@
             .metric-strip { grid-template-columns: 1fr 1fr; gap: 10px; }
             .pace-message { max-width: 30ch; }
             .pace-stats { grid-template-columns: 1fr; }
+            .today-log-grid { grid-template-columns: 1fr; }
+            .makeup-item { align-items: flex-start; flex-direction: column; }
             .metric-card { min-height: 120px; padding: 15px; border-radius: 20px; }
             .metric-value { font-size: 28px; }
             .panel { border-radius: 22px; }
@@ -636,6 +656,59 @@
                             <div class="pace-stat"><div class="pace-stat-label">緩衝天數</div><div class="pace-stat-value">{{ pace_insight.buffer_days }} 天</div></div>
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <section class="today-log-panel" aria-label="今日學習紀錄">
+                <div class="panel-head" style="padding:0;">
+                    <div>
+                        <h2 class="panel-title">今日學習紀錄</h2>
+                        <div class="caption">以早上 8:00 作為每日切割點，自動紀錄影片進度增加量。</div>
+                    </div>
+                </div>
+                <div class="today-log-grid">
+                    <div class="today-log-stat"><div class="today-log-label">今天已讀</div><div class="today-log-value">{{ today_study.hours }}h</div></div>
+                    <div class="today-log-stat"><div class="today-log-label">今日推進</div><div class="today-log-value">{{ today_study.progress_delta }}%</div></div>
+                    <div class="today-log-stat"><div class="today-log-label">自動紀錄影片</div><div class="today-log-value">{{ today_study.videos|length }} 支</div></div>
+                </div>
+
+                <div class="panel-head" style="padding:18px 0 0;">
+                    <div>
+                        <h2 class="panel-title">今天補到的計畫日</h2>
+                    </div>
+                </div>
+                <div class="makeup-list">
+                    {% if today_study.makeup_days %}
+                        {% for item in today_study.makeup_days %}
+                        <div class="makeup-item">
+                            <div>
+                                <div class="makeup-title">第 {{ item.week_number }} 週・{{ item.subject }}・{{ item.label }}</div>
+                                <div class="makeup-meta">{{ item.date }}</div>
+                            </div>
+                            <div class="makeup-minutes">+{{ item.minutes }} 分</div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty">今天尚未補到任何計畫日。</div>
+                    {% endif %}
+                </div>
+
+                <div class="panel-head" style="padding:18px 0 0;">
+                    <div>
+                        <h2 class="panel-title">今天看的影片</h2>
+                    </div>
+                </div>
+                <div class="today-video-list">
+                    {% if today_study.videos %}
+                        {% for video in today_study.videos %}
+                        <div class="today-video-item">
+                            <div class="today-video-title">{{ '%03d'|format(video.sequence) }}・{{ video.title }}</div>
+                            <div class="today-video-meta">{{ video.subject }}・今天增加 {{ video.minutes }} 分・目前 {{ video.completion }}%</div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty">今天尚未有自動影片活動紀錄；之後影片進度增加時會自動列在這裡。</div>
+                    {% endif %}
                 </div>
             </section>
 

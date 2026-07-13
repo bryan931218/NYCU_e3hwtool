@@ -248,6 +248,20 @@ study_plan_daily_snapshots_table = Table(
 )
 Index("ix_study_plan_daily_snapshots_day", study_plan_daily_snapshots_table.c.day)
 
+study_plan_activity_events_table = Table(
+    "study_plan_activity_events",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("day", String(10), nullable=False),
+    Column("video_id", Integer, nullable=False),
+    Column("previous_watched_seconds", Float, nullable=False, default=0),
+    Column("watched_seconds", Float, nullable=False, default=0),
+    Column("delta_seconds", Float, nullable=False, default=0),
+    Column("updated_at", String(64), nullable=False),
+)
+Index("ix_study_plan_activity_events_day", study_plan_activity_events_table.c.day)
+Index("ix_study_plan_activity_events_video_id", study_plan_activity_events_table.c.video_id)
+
 class PersistentStorage:
     """Database-backed persistence with normalized storage."""
 
@@ -286,6 +300,8 @@ class PersistentStorage:
             metadata.tables["assignment_views"].create(self._engine, checkfirst=True)
         if not inspector.has_table("study_plan_daily_snapshots"):
             metadata.tables["study_plan_daily_snapshots"].create(self._engine, checkfirst=True)
+        if not inspector.has_table("study_plan_activity_events"):
+            metadata.tables["study_plan_activity_events"].create(self._engine, checkfirst=True)
         if inspector.has_table("study_plan_videos"):
             study_video_columns = {col["name"] for col in inspector.get_columns("study_plan_videos")}
             missing_study_video_columns = []
@@ -359,7 +375,7 @@ class PersistentStorage:
         return datetime.utcnow().isoformat()
 
     def _taipei_today_iso(self) -> str:
-        return (datetime.utcnow() + timedelta(hours=8)).date().isoformat()
+        return datetime.utcnow().date().isoformat()
 
     def _record_study_plan_daily_snapshot_locked(self, conn, *, now: str) -> None:
         day = self._taipei_today_iso()
@@ -393,6 +409,31 @@ class PersistentStorage:
             )
         else:
             conn.execute(insert(study_plan_daily_snapshots_table).values(day=day, **values))
+
+    def _record_study_plan_activity_locked(
+        self,
+        conn,
+        *,
+        video_id: int,
+        previous_watched_seconds: float,
+        watched_seconds: float,
+        now: str,
+    ) -> None:
+        previous = max(0.0, float(previous_watched_seconds or 0))
+        current = max(0.0, float(watched_seconds or 0))
+        delta = max(0.0, current - previous)
+        if delta <= 0:
+            return
+        conn.execute(
+            insert(study_plan_activity_events_table).values(
+                day=self._taipei_today_iso(),
+                video_id=video_id,
+                previous_watched_seconds=previous,
+                watched_seconds=current,
+                delta_seconds=delta,
+                updated_at=now,
+            )
+        )
 
     def _ensure_user(self, conn, username: str, *, is_guest: Optional[bool] = None, is_admin: Optional[bool] = None) -> int:
         row = conn.execute(
@@ -642,10 +683,14 @@ class PersistentStorage:
                 return False
             normalized_seconds = max(0.0, min(float(watched_seconds or 0), float(video.duration_seconds or 0)))
             existing = conn.execute(
-                select(study_plan_video_records_table.c.video_id).where(
+                select(
+                    study_plan_video_records_table.c.video_id,
+                    study_plan_video_records_table.c.watched_seconds,
+                ).where(
                     study_plan_video_records_table.c.video_id == video_id
                 )
             ).fetchone()
+            previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
             values = {
                 "watched_seconds": normalized_seconds,
                 "notes": notes,
@@ -661,6 +706,13 @@ class PersistentStorage:
                 conn.execute(
                     insert(study_plan_video_records_table).values(video_id=video_id, **values)
                 )
+            self._record_study_plan_activity_locked(
+                conn,
+                video_id=video_id,
+                previous_watched_seconds=previous_watched_seconds,
+                watched_seconds=normalized_seconds,
+                now=now,
+            )
             self._record_study_plan_daily_snapshot_locked(conn, now=now)
         return True
 
@@ -686,6 +738,7 @@ class PersistentStorage:
             current_seconds = max(0.0, min(float(watched_seconds or 0), duration_seconds))
             normalized_seconds = current_seconds
             notes = existing.notes if existing else ""
+            previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
             values = {
                 "watched_seconds": normalized_seconds,
                 "notes": notes or "",
@@ -699,6 +752,13 @@ class PersistentStorage:
                 )
             else:
                 conn.execute(insert(study_plan_video_records_table).values(video_id=video_id, **values))
+            self._record_study_plan_activity_locked(
+                conn,
+                video_id=int(video.id),
+                previous_watched_seconds=previous_watched_seconds,
+                watched_seconds=normalized_seconds,
+                now=now,
+            )
             self._record_study_plan_daily_snapshot_locked(conn, now=now)
             return {
                 "video_id": int(video.id),
@@ -743,6 +803,57 @@ class PersistentStorage:
             }
             for row in rows
         ]
+
+    def list_study_plan_activity_events(self, *, day: str) -> List[Dict[str, Any]]:
+        if not day:
+            return []
+        stmt = (
+            select(
+                study_plan_activity_events_table.c.video_id,
+                study_plan_activity_events_table.c.previous_watched_seconds,
+                study_plan_activity_events_table.c.watched_seconds,
+                study_plan_activity_events_table.c.delta_seconds,
+                study_plan_activity_events_table.c.updated_at,
+                study_plan_videos_table.c.subject,
+                study_plan_videos_table.c.sequence,
+                study_plan_videos_table.c.title,
+                study_plan_videos_table.c.duration_seconds,
+            )
+            .select_from(
+                study_plan_activity_events_table.join(
+                    study_plan_videos_table,
+                    study_plan_activity_events_table.c.video_id == study_plan_videos_table.c.id,
+                )
+            )
+            .where(study_plan_activity_events_table.c.day == day)
+            .order_by(study_plan_activity_events_table.c.updated_at)
+        )
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+
+        by_video: Dict[int, Dict[str, Any]] = {}
+        for row in rows:
+            video_id = int(row.video_id)
+            existing = by_video.get(video_id)
+            delta_seconds = max(0.0, float(row.delta_seconds or 0))
+            if existing is None:
+                by_video[video_id] = {
+                    "video_id": video_id,
+                    "subject": row.subject,
+                    "sequence": int(row.sequence or 0),
+                    "title": row.title,
+                    "duration_seconds": max(0.0, float(row.duration_seconds or 0)),
+                    "previous_watched_seconds": max(0.0, float(row.previous_watched_seconds or 0)),
+                    "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
+                    "delta_seconds": delta_seconds,
+                    "updated_at": row.updated_at or "",
+                }
+            else:
+                existing["delta_seconds"] = float(existing["delta_seconds"]) + delta_seconds
+                existing["watched_seconds"] = max(float(existing["watched_seconds"]), max(0.0, float(row.watched_seconds or 0)))
+                existing["updated_at"] = row.updated_at or existing["updated_at"]
+
+        return sorted(by_video.values(), key=lambda item: (str(item["updated_at"]), int(item["sequence"])))
 
     # -- assignments ------------------------------------------------------
     def save_user_cache(self, username: str, payload: Dict[str, Any]) -> None:

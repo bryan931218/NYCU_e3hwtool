@@ -89,6 +89,27 @@ STUDY_PLAN_DAILY_LABELS = (
 )
 STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS = 5.0
 STUDY_PLAN_COMPLETE_RATIO = 0.995
+STUDY_PLAN_DAY_CUTOFF_HOUR = 8
+
+
+def _study_plan_business_date(now: Optional[datetime] = None) -> date:
+    current = now or datetime.now(TAIPEI_TZ)
+    return (current - timedelta(hours=STUDY_PLAN_DAY_CUTOFF_HOUR)).date()
+
+
+def _study_plan_business_day_from_timestamp(value: Any) -> Optional[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(TAIPEI_TZ).replace(tzinfo=None)
+        return (parsed - timedelta(hours=STUDY_PLAN_DAY_CUTOFF_HOUR)).date().isoformat()
+    except ValueError:
+        if len(raw) >= 10:
+            return raw[:10]
+        return None
 
 
 def _study_plan_video_completion(duration_seconds: Any, watched_seconds: Any) -> float:
@@ -1686,7 +1707,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     def _study_plan_week_rows(videos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
         start_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
         end_day = datetime.strptime(STUDY_PLAN_END, "%Y-%m-%d").date()
-        today = datetime.now(TAIPEI_TZ).date()
+        today = _study_plan_business_date()
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {}
         for video in videos:
             subject = str(video.get("subject") or "")
@@ -1812,7 +1833,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         current_week: Dict[str, Any],
         summary: Dict[str, Any],
     ) -> Dict[str, Any]:
-        today = datetime.now(TAIPEI_TZ).date()
+        today = _study_plan_business_date()
         plan_start = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
         plan_end = datetime.strptime(STUDY_PLAN_END, "%Y-%m-%d").date()
         total_plan_days = max(1, (plan_end - plan_start).days + 1)
@@ -1823,19 +1844,33 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         watched_minutes_total = float(summary.get("total_watched") or 0)
         target_minutes_by_today = 0.0
         today_iso = today.isoformat()
+        previous_day_iso = (today - timedelta(days=1)).isoformat()
+        previous_day_row: Optional[Dict[str, Any]] = None
         for row in week_rows:
             row_start = str(row.get("start") or "")
             row_end = str(row.get("end") or "")
+            if row_start and row_start <= previous_day_iso <= row_end:
+                previous_day_row = next(
+                    (day for day in row.get("daily_recommendations", []) if str(day.get("date") or "") == previous_day_iso),
+                    previous_day_row,
+                )
             if row_end and row_end < today_iso:
                 target_minutes_by_today += float(row.get("target_minutes") or 0)
             elif row_start and row_start <= today_iso <= row_end:
                 for day in row.get("daily_recommendations", []):
-                    if str(day.get("date") or "") <= today_iso:
+                    day_key = str(day.get("date") or "")
+                    if day_key <= today_iso:
                         target_minutes_by_today += float(day.get("hours") or 0) * 60
         target_minutes_by_today = min(max(target_minutes_by_today, 0.0), total_target_minutes)
         scheduled_percent = min(100.0, (target_minutes_by_today / total_target_minutes * 100) if total_target_minutes else 0.0)
         pace_delta = completion - scheduled_percent
-        if pace_delta >= 3:
+        pace_minutes = watched_minutes_total - target_minutes_by_today
+        previous_day_incomplete = bool(previous_day_row and float(previous_day_row.get("completion") or 0) < 100)
+        if previous_day_incomplete:
+            pace_state = "behind"
+            pace_label = "待補"
+            pace_message = f"目前比計畫進度慢 {abs(pace_delta):.1f} 個百分點。"
+        elif pace_delta >= 3:
             pace_state = "early"
             pace_label = "提早完成"
             pace_message = f"目前比計畫進度快 {abs(pace_delta):.1f} 個百分點。"
@@ -1931,8 +1966,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             updated = str(video.get("updated_at") or "").strip()
             if not updated:
                 continue
-            day_part = updated[:10]
-            if len(day_part) == 10:
+            day_part = _study_plan_business_day_from_timestamp(updated)
+            if day_part:
                 recorded_days.add(day_part)
             try:
                 parsed = datetime.fromisoformat(updated.replace("Z", "+00:00"))
@@ -1960,7 +1995,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         total_hours = max(0.0, float(summary.get("total_target") or 0) / 60)
         watched_hours = max(0.0, float(summary.get("total_watched") or 0) / 60)
         visual_angle = round(completion / 100 * 360, 1)
-        pace_minutes = watched_minutes_total - target_minutes_by_today
         pace_hours = pace_minutes / 60
         daily_target_minutes = (float(summary.get("total_target") or 0) / total_plan_days) if total_plan_days else 0.0
         catchup_minutes_per_day = math.ceil(abs(pace_minutes) / 7) if pace_minutes < 0 else 0
@@ -2062,7 +2096,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 updated = str(video.get("updated_at") or "").strip()
                 if len(updated) < 10:
                     continue
-                updated_day = updated[:10]
+                updated_day = _study_plan_business_day_from_timestamp(updated)
+                if not updated_day:
+                    continue
                 if week_start_date and updated_day < week_start_date:
                     continue
                 if week_end_date and updated_day > week_end_date:
@@ -2100,6 +2136,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             chart_rows.append(
                 {
                     "label": str(day.get("label") or ""),
+                    "date": day_key,
                     "short_date": str(day.get("short_date") or ""),
                     "state": str(day.get("state") or ""),
                     "state_label": str(day.get("state_label") or ""),
@@ -2158,6 +2195,63 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "actual_total": round(actual_total, 1),
             "max_hours": round(chart_max_hours, 1),
         }
+        today_chart_row = next((row for row in chart_rows if str(row.get("date") or "") == today.isoformat()), None)
+        chart_today_hours = float(today_chart_row.get("actual_daily_hours") or 0.0) if today_chart_row else 0.0
+        today_activity_events = storage.list_study_plan_activity_events(day=today.isoformat())
+        activity_seconds = sum(float(item.get("delta_seconds") or 0) for item in today_activity_events)
+        activity_hours = activity_seconds / 3600
+        today_study_hours = max(chart_today_hours, activity_hours)
+        today_delta_seconds = activity_seconds if activity_seconds > 0 else today_study_hours * 3600
+        today_study_minutes = int(round(today_study_hours * 60))
+        total_target_seconds = max(0.0, float(summary.get("total_target") or 0) * 60)
+        today_progress_delta = (today_delta_seconds / total_target_seconds * 100) if total_target_seconds else 0.0
+
+        before_today_minutes = max(0.0, watched_minutes_total - today_delta_seconds / 60)
+        after_today_minutes = watched_minutes_total
+        makeup_days: List[Dict[str, Any]] = []
+        cumulative_minutes = 0.0
+        for week in week_rows:
+            for day in week.get("daily_recommendations", []):
+                target_minutes = float(day.get("hours") or 0) * 60
+                if target_minutes <= 0:
+                    continue
+                start_minutes = cumulative_minutes
+                end_minutes = cumulative_minutes + target_minutes
+                overlap_minutes = max(0.0, min(after_today_minutes, end_minutes) - max(before_today_minutes, start_minutes))
+                if overlap_minutes > 0:
+                    makeup_days.append(
+                        {
+                            "week_number": int(week.get("number") or 0),
+                            "subject": str(week.get("subject") or ""),
+                            "label": str(day.get("label") or ""),
+                            "date": str(day.get("date") or ""),
+                            "minutes": int(round(overlap_minutes)),
+                        }
+                    )
+                cumulative_minutes = end_minutes
+
+        today_videos = []
+        for item in today_activity_events:
+            duration_seconds = max(0.0, float(item.get("duration_seconds") or 0))
+            watched_seconds = max(0.0, float(item.get("watched_seconds") or 0))
+            today_videos.append(
+                {
+                    "subject": str(item.get("subject") or ""),
+                    "sequence": int(item.get("sequence") or 0),
+                    "title": str(item.get("title") or ""),
+                    "minutes": round(float(item.get("delta_seconds") or 0) / 60, 1),
+                    "completion": round(min(100.0, watched_seconds / duration_seconds * 100) if duration_seconds else 0.0, 1),
+                }
+            )
+
+        today_study = {
+            "day": today.isoformat(),
+            "hours": round(today_study_hours, 2),
+            "minutes": today_study_minutes,
+            "progress_delta": round(today_progress_delta, 2),
+            "makeup_days": makeup_days,
+            "videos": today_videos,
+        }
         return {
             "plan_start": STUDY_PLAN_START,
             "plan_end": STUDY_PLAN_END,
@@ -2177,6 +2271,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "weak_subjects": weak_subjects,
             "current_week": current_week,
             "today_row": today_row,
+            "today_study": today_study,
             "next_videos": next_videos,
             "momentum_days": momentum_days,
             "momentum_score": momentum_score,
