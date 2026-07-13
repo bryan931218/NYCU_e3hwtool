@@ -161,6 +161,36 @@
         }
         .metric-value small { color: var(--muted); font-size: 13px; font-weight: 760; letter-spacing: 0; }
 
+        .pace-panel {
+            margin-bottom: 18px;
+            padding: 20px;
+            border: 1px solid rgba(219, 230, 242, .94);
+            border-radius: 26px;
+            background: rgba(255, 255, 255, .94);
+            box-shadow: var(--shadow-soft);
+        }
+        .pace-panel.behind { border-color: #f0d6a5; background: linear-gradient(135deg, #fffaf0 0%, #ffffff 62%); }
+        .pace-panel.early { border-color: #9bdcdd; background: linear-gradient(135deg, #effefe 0%, #ffffff 62%); }
+        .pace-panel.active { border-color: #a8c7f4; background: linear-gradient(135deg, #eef5ff 0%, #ffffff 62%); }
+        .pace-layout { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: stretch; }
+        .pace-layout > * { min-width: 0; }
+        .pace-kicker { color: var(--muted); font-size: 12px; font-weight: 900; letter-spacing: .08em; }
+        .pace-headline { margin-top: 8px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+        .pace-number { color: var(--ink); font-size: clamp(42px, 5vw, 60px); line-height: .9; font-weight: 950; letter-spacing: -.075em; font-variant-numeric: tabular-nums; }
+        .pace-unit { color: var(--ink-2); font-size: 16px; font-weight: 900; }
+        .pace-message { margin-top: 11px; color: var(--muted); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+        .pace-meter { position: relative; height: 44px; margin-top: 17px; }
+        .pace-track { position: absolute; left: 0; right: 0; top: 17px; height: 12px; border-radius: 999px; background: linear-gradient(90deg, var(--amber) 0%, #e7edf4 48%, #e7edf4 52%, var(--teal) 100%); }
+        .pace-zero { position: absolute; top: 8px; bottom: 6px; left: 50%; width: 2px; border-radius: 999px; background: rgba(16, 42, 67, .34); }
+        .pace-pin { position: absolute; top: 3px; left: var(--pace-position); width: 34px; height: 34px; border-radius: 50%; transform: translateX(-50%); background: #fff; border: 6px solid var(--blue); box-shadow: 0 12px 24px rgba(16, 42, 67, .18); }
+        .pace-panel.behind .pace-pin { border-color: var(--amber); }
+        .pace-panel.early .pace-pin { border-color: var(--teal); }
+        .pace-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-weight: 850; margin-top: 3px; }
+        .pace-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+        .pace-stat { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); }
+        .pace-stat-label { color: var(--muted); font-size: 11px; font-weight: 850; }
+        .pace-stat-value { margin-top: 5px; color: var(--ink-2); font-size: 18px; font-weight: 950; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+
         .dashboard-grid {
             display: grid;
             grid-template-columns: minmax(620px, 1fr) minmax(330px, 390px);
@@ -491,6 +521,7 @@
         @media (max-width: 1180px) {
             .metric-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .dashboard-grid, .lower-grid { grid-template-columns: 1fr; }
+            .pace-layout { grid-template-columns: 1fr; }
             .journey-card { min-height: auto; }
         }
         @media (max-width: 760px) {
@@ -501,6 +532,8 @@
             .page-head { display: block; }
             .head-tools { justify-content: flex-start; margin-top: 14px; }
             .metric-strip { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .pace-message { max-width: 30ch; }
+            .pace-stats { grid-template-columns: 1fr; }
             .metric-card { min-height: 120px; padding: 15px; border-radius: 20px; }
             .metric-value { font-size: 28px; }
             .panel { border-radius: 22px; }
@@ -580,6 +613,30 @@
                     <div class="metric-value">{{ card.value }}{% if card.unit %}<small>{{ card.unit }}</small>{% endif %}</div>
                 </article>
                 {% endfor %}
+            </section>
+
+            <section class="pace-panel {{ pace_insight.state }}" style="--pace-position: {{ pace_insight.meter_position }}%" aria-label="學習節奏差">
+                <div class="pace-layout">
+                    <div>
+                        <div class="pace-kicker">PACE DELTA</div>
+                        <div class="pace-headline">
+                            <span class="pace-number">{{ pace_insight.primary_value }}</span>
+                            <span class="pace-unit">{{ pace_insight.primary_unit }}</span>
+                        </div>
+                        <div class="pace-message">{{ pace_insight.message }} {{ pace_insight.action }}</div>
+                        <div class="pace-meter" aria-hidden="true">
+                            <div class="pace-track"></div>
+                            <div class="pace-zero"></div>
+                            <div class="pace-pin"></div>
+                        </div>
+                        <div class="pace-scale"><span>追趕區</span><span>計畫線</span><span>領先區</span></div>
+                        <div class="pace-stats">
+                            <div class="pace-stat"><div class="pace-stat-label">今日應達</div><div class="pace-stat-value">{{ pace_insight.target_today_hours }}h</div></div>
+                            <div class="pace-stat"><div class="pace-stat-label">目前已看</div><div class="pace-stat-value">{{ pace_insight.watched_hours }}h</div></div>
+                            <div class="pace-stat"><div class="pace-stat-label">緩衝天數</div><div class="pace-stat-value">{{ pace_insight.buffer_days }} 天</div></div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <section class="dashboard-grid">

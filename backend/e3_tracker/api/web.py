@@ -114,12 +114,38 @@ def _study_plan_video_is_complete(duration_seconds: Any, watched_seconds: Any) -
     return watched >= duration - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / duration >= STUDY_PLAN_COMPLETE_RATIO
 
 
+def _study_plan_total_is_complete(target_seconds: Any, watched_seconds: Any) -> bool:
+    try:
+        target = max(0.0, float(target_seconds or 0))
+        watched = max(0.0, float(watched_seconds or 0))
+    except (TypeError, ValueError):
+        return False
+    if target <= 0:
+        return False
+    return watched >= target - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / target >= STUDY_PLAN_COMPLETE_RATIO
+
+
+def _study_plan_completion_percent(target_seconds: Any, watched_seconds: Any, *, complete_override: bool = False) -> float:
+    try:
+        target = max(0.0, float(target_seconds or 0))
+        watched = max(0.0, float(watched_seconds or 0))
+    except (TypeError, ValueError):
+        return 0.0
+    if target <= 0:
+        return 0.0
+    if complete_override or _study_plan_total_is_complete(target, watched):
+        return 100.0
+    return min(100.0, watched / target * 100)
+
+
 def _study_plan_daily_recommendations(
     subject: str,
     target_seconds: float,
     watched_seconds: float,
     week_start: date,
     today: date,
+    *,
+    week_is_complete: bool = False,
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
     video_hours = target_seconds / 3600 if target_seconds else 0.0
     watched_hours = watched_seconds / 3600 if watched_seconds else 0.0
@@ -130,7 +156,6 @@ def _study_plan_daily_recommendations(
     daily_targets = [weekday_hours] * 5 + [weekend_hours] * 2
     daily_rows: List[Dict[str, Any]] = []
     remaining_hours = watched_hours
-    week_is_complete = weekly_hours > 0 and watched_hours >= weekly_hours - 1e-6
     for index, label in enumerate(STUDY_PLAN_DAILY_LABELS):
         target_hours = daily_targets[index]
         if week_is_complete:
@@ -1688,15 +1713,24 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     for item in weekly_videos
                     if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
                 )
+                week_is_complete = bool(weekly_videos) and (
+                    completed_videos == len(weekly_videos)
+                    or _study_plan_total_is_complete(target_seconds, watched_seconds)
+                )
                 video_hours, suggested_weekly_hours, daily_recommendations = _study_plan_daily_recommendations(
                     str(block["subject"]),
                     target_seconds,
                     watched_seconds,
                     week_start,
                     today,
+                    week_is_complete=week_is_complete,
                 )
-                completion = min(100.0, (watched_seconds / target_seconds * 100) if target_seconds else 0.0)
-                if completion >= 100:
+                completion = _study_plan_completion_percent(
+                    target_seconds,
+                    watched_seconds,
+                    complete_override=week_is_complete,
+                )
+                if week_is_complete:
                     if today < week_end:
                         state = "early"
                         state_label = "提早完成"
@@ -1739,16 +1773,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         active_week = next((row for row in week_rows if row["start"] <= today.isoformat() <= row["end"]), None)
         if active_week is None:
             active_week = week_rows[0] if today < start_day else week_rows[-1]
-        total_target = sum(float(item.get("duration_seconds") or 0) for item in videos) / 60
-        total_watched = sum(
+        total_target_seconds = sum(float(item.get("duration_seconds") or 0) for item in videos)
+        total_watched_seconds = sum(
             min(float(item.get("watched_seconds") or 0), float(item.get("duration_seconds") or 0))
             for item in videos
-        ) / 60
+        )
+        total_target = total_target_seconds / 60
+        total_watched = total_watched_seconds / 60
         completed_videos = sum(
             1
             for item in videos
             if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
         )
+        all_videos_complete = bool(videos) and completed_videos == len(videos)
         recorded_videos = sum(
             1
             for item in videos
@@ -1757,7 +1794,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         summary = {
             "total_target": total_target,
             "total_watched": total_watched,
-            "completion": min(100.0, (total_watched / total_target * 100) if total_target else 0.0),
+            "completion": _study_plan_completion_percent(
+                total_target_seconds,
+                total_watched_seconds,
+                complete_override=all_videos_complete,
+            ),
             "completed_videos": completed_videos,
             "recorded_videos": recorded_videos,
             "total_videos": len(videos),
@@ -1807,12 +1848,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 for item in subject_videos
                 if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
             )
+            subject_is_complete = bool(subject_videos) and (
+                completed_count == len(subject_videos)
+                or _study_plan_total_is_complete(target_seconds, watched_seconds)
+            )
             subject_weeks = [row for row in week_rows if row["subject"] == subject]
             active_subject_week = next(
                 (row for row in subject_weeks if row["start"] <= today.isoformat() <= row["end"]),
                 subject_weeks[0] if subject_weeks else None,
             )
-            subject_completion = min(100.0, (watched_seconds / target_seconds * 100) if target_seconds else 0.0)
+            subject_completion = _study_plan_completion_percent(
+                target_seconds,
+                watched_seconds,
+                complete_override=subject_is_complete,
+            )
             subject_rows.append(
                 {
                     "name": subject,
@@ -1821,8 +1870,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "watched_hours": round(watched_seconds / 3600, 1),
                     "completed_videos": completed_count,
                     "total_videos": len(subject_videos),
-                    "state": active_subject_week["state"] if active_subject_week else "upcoming",
-                    "state_label": active_subject_week["state_label"] if active_subject_week else "未開始",
+                    "state": "complete" if subject_is_complete else active_subject_week["state"] if active_subject_week else "upcoming",
+                    "state_label": "已達標" if subject_is_complete else active_subject_week["state_label"] if active_subject_week else "未開始",
                 }
             )
         weak_subjects = sorted(
@@ -1895,6 +1944,42 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         total_hours = max(0.0, float(summary.get("total_target") or 0) / 60)
         watched_hours = max(0.0, float(summary.get("total_watched") or 0) / 60)
         visual_angle = round(completion / 100 * 360, 1)
+        target_minutes_by_today = float(summary.get("total_target") or 0) * elapsed_percent / 100
+        watched_minutes_total = float(summary.get("total_watched") or 0)
+        pace_minutes = watched_minutes_total - target_minutes_by_today
+        pace_hours = pace_minutes / 60
+        remaining_plan_days = max(1, (plan_end - today).days + 1)
+        daily_target_minutes = (float(summary.get("total_target") or 0) / total_plan_days) if total_plan_days else 0.0
+        catchup_minutes_per_day = max(0, int(round(abs(pace_minutes) / remaining_plan_days))) if pace_minutes < 0 else 0
+        buffer_days = max(0.0, pace_minutes / daily_target_minutes) if pace_minutes > 0 and daily_target_minutes else 0.0
+        pace_meter_position = min(96.0, max(4.0, 50.0 + pace_delta * 2.2))
+        if pace_state == "behind":
+            pace_action = f"每天多看 {catchup_minutes_per_day} 分鐘可逐步追平。"
+            pace_primary_value = f"{abs(pace_hours):.1f}"
+            pace_primary_unit = "小時待補"
+        elif pace_state == "early":
+            pace_action = f"已累積約 {buffer_days:.1f} 天緩衝，可休息或提前下一週。"
+            pace_primary_value = f"{abs(pace_hours):.1f}"
+            pace_primary_unit = "小時領先"
+        else:
+            pace_action = "維持目前節奏即可貼近計畫線。"
+            pace_primary_value = f"{abs(pace_hours):.1f}"
+            pace_primary_unit = "小時差距"
+
+        pace_insight = {
+            "state": pace_state,
+            "label": pace_label,
+            "message": pace_message,
+            "action": pace_action,
+            "primary_value": pace_primary_value,
+            "primary_unit": pace_primary_unit,
+            "delta_hours": round(pace_hours, 1),
+            "catchup_minutes_per_day": catchup_minutes_per_day,
+            "buffer_days": round(buffer_days, 1),
+            "meter_position": round(pace_meter_position, 1),
+            "target_today_hours": round(target_minutes_by_today / 60, 1),
+            "watched_hours": round(watched_minutes_total / 60, 1),
+        }
 
         metric_cards = [
             {
@@ -2065,6 +2150,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "pace_state": pace_state,
             "pace_label": pace_label,
             "pace_message": pace_message,
+            "pace_insight": pace_insight,
             "visual_angle": visual_angle,
             "metric_cards": metric_cards,
             "subject_rows": subject_rows,
