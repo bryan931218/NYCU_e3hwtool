@@ -24,4 +24,7 @@ def load_env_defaults() -> Dict[str, str]:
         "app_home_url": os.getenv("E3_APP_HOME_URL", "https://e3hwtool.space/"),
         "legal_entity_name": os.getenv("E3_LEGAL_ENTITY_NAME", "E3 Homework Tracker Project"),
         "legal_effective_date": os.getenv("E3_LEGAL_EFFECTIVE_DATE", "2024-11-19"),
+        "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
+        "openai_model": os.getenv("E3_OPENAI_MODEL", "gpt-5-mini"),
+        "study_upload_dir": os.getenv("E3_STUDY_UPLOAD_DIR", ""),
     }

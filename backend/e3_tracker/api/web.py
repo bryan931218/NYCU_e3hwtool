@@ -17,7 +17,9 @@ import tempfile
 import requests
 from flask import Flask, Response, flash, redirect, render_template_string, request, send_file, session, url_for, has_request_context
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.http import http_date
+from werkzeug.utils import secure_filename
 
 from ..services.collector import CollectOptions, collect_assignments
 from ..services.google_calendar import (
@@ -65,6 +67,8 @@ STUDY_HOME_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_home.html"
 STUDY_HOME_TEMPLATE = STUDY_HOME_TEMPLATE_PATH.read_text(encoding="utf-8")
 PUBLIC_STUDY_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "public_study_progress.html"
 PUBLIC_STUDY_TEMPLATE = PUBLIC_STUDY_TEMPLATE_PATH.read_text(encoding="utf-8")
+STUDY_RECALL_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "study_recall.html"
+STUDY_RECALL_TEMPLATE = STUDY_RECALL_TEMPLATE_PATH.read_text(encoding="utf-8")
 
 STUDY_PLAN_BLOCKS = (
     {"subject": "線性代數", "weeks": 4, "total_minutes": 4107.8, "lesson_targets": (11, 22, 32, 42)},
@@ -90,6 +94,9 @@ STUDY_PLAN_DAILY_LABELS = (
 STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS = 5.0
 STUDY_PLAN_COMPLETE_RATIO = 0.995
 STUDY_PLAN_DAY_CUTOFF_HOUR = 8
+STUDY_NOTE_MAX_IMAGE_BYTES = 3 * 1024 * 1024
+STUDY_NOTE_MAX_TOTAL_BYTES = 24 * 1024 * 1024
+STUDY_NOTE_MAX_REQUEST_BYTES = 28 * 1024 * 1024
 
 
 def _study_plan_business_date(now: Optional[datetime] = None) -> date:
@@ -931,6 +938,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         SESSION_COOKIE_SAMESITE=session_cookie_samesite,
         SESSION_COOKIE_HTTPONLY=True,
         PREFERRED_URL_SCHEME="https",
+        MAX_CONTENT_LENGTH=STUDY_NOTE_MAX_REQUEST_BYTES,
     )
     base_url = default_base_url or env_defaults["base_url"]
     default_scope = default_scope or env_defaults["scope"]
@@ -956,6 +964,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     if not app_home_url.endswith("/"):
         app_home_url = f"{app_home_url}/"
     legal_entity_name = env_defaults.get("legal_entity_name") or "E3 Homework Tracker Project"
+    openai_api_key = (env_defaults.get("openai_api_key") or "").strip()
+    openai_model = (env_defaults.get("openai_model") or "gpt-5-mini").strip()
+    configured_upload_dir = (env_defaults.get("study_upload_dir") or "").strip()
+    study_upload_root = Path(configured_upload_dir).expanduser() if configured_upload_dir else data_root / "study_note_images"
+    _ensure_private_dir(study_upload_root)
     legal_effective_date = env_defaults.get("legal_effective_date") or "2024-11-19"
     traffic_event_limit = 500
     traffic_tracker = TrafficTracker(
@@ -970,6 +983,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         event_writer=lambda event: storage.append_traffic_event(event, traffic_event_limit),
         event_clearer=storage.clear_traffic_events,
     )
+
+    def _is_study_upload_request() -> bool:
+        return request.headers.get("X-E3-Study-Upload") == "1"
+
+    def _study_upload_error(message: str, status_code: int = 400):
+        if _is_study_upload_request():
+            return {"ok": False, "error": message}, status_code
+        flash(message, "error")
+        return redirect(url_for("admin_study_recall"))
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_request_entity_too_large(_error: RequestEntityTooLarge):
+        if request.path == "/admin/study-recall/upload":
+            return _study_upload_error("筆記照片壓縮後仍超過 24MB，請減少張數後再試。", 413)
+        return Response("Request Entity Too Large", status=413, mimetype="text/plain")
 
     DEFAULT_PREFERENCES = {
         "view_mode": "due",
@@ -2282,12 +2310,165 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "week_chart": week_chart,
         }
 
+    _RECALL_EXCLUDED_CARD_MARKERS = ("待確認", "已修正", "需修正", "校正", "原筆記", "筆記中")
+
+    def _is_recall_concept_eligible(concept: Any) -> bool:
+        if not isinstance(concept, dict):
+            return False
+        card_text = "\n".join(
+            str(concept.get(field) or "").strip()
+            for field in ("concept", "explanation", "memory_hint")
+        )
+        return bool(card_text) and not any(marker in card_text for marker in _RECALL_EXCLUDED_CARD_MARKERS)
+
+    def _build_recall_widget_context() -> Dict[str, Any]:
+        today = _study_plan_business_date().isoformat()
+        sessions = storage.list_study_recall_sessions(limit=6)
+        due = [item for item in sessions if item.get("next_review_at") and item["next_review_at"] <= today]
+        items = (due + [item for item in sessions if item not in due])[:3]
+        due_cards = storage.list_due_study_recall_cards(today=today, limit=18)
+        cards: List[Dict[str, Any]] = []
+        session_cache: Dict[int, Dict[str, Any]] = {}
+        for due_card in due_cards:
+            session_id = int(due_card["session_id"])
+            recall_session = session_cache.get(session_id)
+            if recall_session is None:
+                recall_session = storage.get_study_recall_session(session_id) or {}
+                session_cache[session_id] = recall_session
+            concept_index = int(due_card["concept_index"])
+            concepts = recall_session.get("key_concepts") or []
+            if concept_index >= len(concepts) or not _is_recall_concept_eligible(concepts[concept_index]):
+                continue
+            cards.append({**due_card, "concept_data": concepts[concept_index]})
+        return {
+            "due_count": len(cards),
+            "items": items,
+            "cards": cards,
+        }
+
     def _study_plan_minutes(value: Any) -> float:
         try:
             parsed = float(str(value or "0").strip())
         except (TypeError, ValueError):
             return 0.0
         return max(0.0, min(parsed, 1_440.0))
+
+    _NOTE_IMAGE_MIME_TYPES = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+
+    def _extract_openai_text(payload: Dict[str, Any]) -> str:
+        direct = payload.get("output_text")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        for item in payload.get("output") or []:
+            if not isinstance(item, dict):
+                continue
+            for content in item.get("content") or []:
+                if isinstance(content, dict) and isinstance(content.get("text"), str):
+                    return content["text"].strip()
+        return ""
+
+    def _validate_recall_output(payload: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return None
+        summary = str(payload.get("summary") or "").strip()
+        raw_concepts = payload.get("key_concepts")
+        if not summary or not isinstance(raw_concepts, list):
+            return None
+        concepts: List[Dict[str, str]] = []
+        for item in raw_concepts[:15]:
+            if not isinstance(item, dict):
+                continue
+            concept = str(item.get("concept") or "").strip()
+            explanation = str(item.get("explanation") or "").strip()
+            memory_hint = str(item.get("memory_hint") or "").strip()
+            if concept and explanation and _is_recall_concept_eligible(
+                {"concept": concept, "explanation": explanation, "memory_hint": memory_hint}
+            ):
+                concepts.append({"concept": concept, "explanation": explanation, "memory_hint": memory_hint})
+        if not concepts:
+            return None
+        return {"summary": summary[:2400], "key_concepts": concepts}
+
+    def _analyze_study_note_images(images: List[Tuple[str, bytes, str]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        if not openai_api_key:
+            return None, "尚未設定 OPENAI_API_KEY，無法分析筆記。"
+        content: List[Dict[str, Any]] = [
+            {
+                "type": "input_text",
+                "text": (
+                    "你是研究所考試的嚴謹助教。請閱讀上傳的繁體中文筆記，整理成清楚、可直接複習的正確重點。"
+                    "只為筆記中清楚可辨識、可確認且原始內容正確的考試概念建立卡片；每張卡片都必須能獨立直接複習。"
+                    "任何內容只要數字、符號或公式模糊，尚待確認，原始內容有誤，或需要你更正，全部直接略過："
+                    "不得建立『待確認／已修正／錯誤說明』卡片，也不得把這些說明放進 summary 或 memory_hint。"
+                    "不要用正確版本替換原筆記的錯誤來建立卡片；寧可略過，也不要猜測或補充修正建議。"
+                    "逐一涵蓋其餘每個獨立且有考試價值的概念，不要把不同概念硬合併；每次最多建立 15 張重點卡，"
+                    "若超過 15 個概念，優先保留最核心、最常考且能涵蓋其他細節的概念。"
+                    "每個 key_concepts 的 concept 要是可掃讀的短標題，explanation 要完整寫出正確定義、條件、公式或推論，不要只改寫原句；"
+                    "memory_hint 要提供一條精準的辨識線索。輸出繁體中文 JSON：summary 是 4 到 6 句的重點摘要；"
+                    "summary 只能摘要實際保留的卡片內容。key_concepts 至少 1 項、最多 15 項。不要輸出考題、選項、答案或任何題庫資料。"
+                ),
+            }
+        ]
+        for _filename, image_bytes, mime_type in images:
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            content.append(
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{mime_type};base64,{encoded}",
+                    "detail": "high",
+                }
+            )
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["summary", "key_concepts"],
+            "properties": {
+                "summary": {"type": "string"},
+                "key_concepts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 15,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["concept", "explanation", "memory_hint"],
+                        "properties": {
+                            "concept": {"type": "string"},
+                            "explanation": {"type": "string"},
+                            "memory_hint": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        }
+        request_body = {
+            "model": openai_model,
+            "store": False,
+            "input": [{"role": "user", "content": content}],
+            "text": {"format": {"type": "json_schema", "name": "study_recall_note", "strict": True, "schema": schema}},
+        }
+        try:
+            response = requests.post(
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
+                json=request_body,
+                timeout=90,
+            )
+            response.raise_for_status()
+            output_text = _extract_openai_text(response.json())
+            parsed = json.loads(output_text)
+        except (requests.RequestException, ValueError, TypeError):
+            return None, "筆記分析暫時失敗，請確認 API 金鑰、模型設定與網路後重試。"
+        validated = _validate_recall_output(parsed)
+        if not validated:
+            return None, "筆記內容不足以產生可靠的重點卡，請上傳更清晰或更多頁筆記。"
+        return validated, None
 
     def fetch_assignments_for(user: Dict[str, str]) -> Tuple[Dict[str, Any], Optional[str]]:
         opts = CollectOptions(
@@ -2887,6 +3068,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     @app.get("/study-progress")
     def public_study_progress():
+        user = current_user()
         videos = storage.list_study_plan_videos_with_records()
         week_rows, current_week, summary = _study_plan_week_rows(videos)
         context = _build_study_home_context(videos, week_rows, current_week, summary)
@@ -2895,6 +3077,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             PUBLIC_STUDY_TEMPLATE,
             **context,
             share_url=request.url,
+            is_admin=bool(user and user.get("is_admin")),
+            admin_user=user,
+            recall_widget=_build_recall_widget_context() if user and user.get("is_admin") else None,
         )
 
     @app.get("/public/study-progress")
@@ -2911,8 +3096,185 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         return render_template_string(
             STUDY_HOME_TEMPLATE,
             admin_user=user,
+            recall_widget=_build_recall_widget_context(),
             **home_context,
         )
+
+    @app.get("/admin/study-recall")
+    @admin_required
+    def admin_study_recall():
+        def decorate_review_curve(concept: Dict[str, Any]) -> None:
+            review = concept.get("review") or {}
+            history = review.get("history") or []
+            total_points = max(1, len(history))
+            curve_points = []
+            for index, entry in enumerate(history):
+                x = 50 if total_points == 1 else 6 + index * 88 / (total_points - 1)
+                y = 36 - max(0, min(int(entry.get("rating") or 1) - 1, 4)) * 7
+                curve_points.append(f"{x:.1f},{y:.1f}")
+            review["curve_points"] = " ".join(curve_points)
+            review["history_label"] = " → ".join(str(entry.get("rating")) for entry in history) or "尚未自評"
+            review["latest_curve_y"] = 36 - max(0, min(int(history[-1].get("rating") or 1) - 1, 4)) * 7 if history else 36
+            concept["review"] = review
+
+        user = current_user()
+        try:
+            selected_id = int(request.args.get("session_id") or 0)
+        except (TypeError, ValueError):
+            selected_id = 0
+        sessions = storage.list_study_recall_sessions(limit=36)
+        selected_session = storage.get_study_recall_session(selected_id) if selected_id else None
+        if selected_session is None and sessions:
+            selected_session = storage.get_study_recall_session(int(sessions[0]["id"]))
+        if selected_session:
+            selected_session["image_urls"] = [
+                url_for("admin_study_recall_image", session_id=selected_session["id"], filename=filename)
+                for filename in selected_session.get("image_filenames") or []
+            ]
+            selected_session["key_concepts"] = [
+                concept for concept in selected_session.get("key_concepts") or [] if _is_recall_concept_eligible(concept)
+            ]
+            for concept in selected_session["key_concepts"]:
+                decorate_review_curve(concept)
+        today = _study_plan_business_date().isoformat()
+        due_cards = storage.list_due_study_recall_cards(today=today)
+        review_cards: List[Dict[str, Any]] = []
+        review_sessions: Dict[int, Dict[str, Any]] = {}
+        for due_card in due_cards:
+            session_id = int(due_card["session_id"])
+            review_session = review_sessions.get(session_id)
+            if review_session is None:
+                review_session = storage.get_study_recall_session(session_id) or {}
+                review_sessions[session_id] = review_session
+            concepts = review_session.get("key_concepts") or []
+            concept_index = int(due_card["concept_index"])
+            if concept_index >= len(concepts) or not _is_recall_concept_eligible(concepts[concept_index]):
+                continue
+            concept = concepts[concept_index]
+            decorate_review_curve(concept)
+            review_cards.append({**due_card, "concept_data": concept})
+        review_schedule = storage.list_study_recall_schedule(start_date=today)
+        return render_template_string(
+            STUDY_RECALL_TEMPLATE,
+            admin_user=user,
+            subjects=STUDY_PLAN_SUBJECTS,
+            today=today,
+            sessions=sessions,
+            due_cards=due_cards,
+            review_cards=review_cards,
+            review_schedule=review_schedule,
+            selected_session=selected_session,
+            openai_ready=bool(openai_api_key),
+            nav_active="recall",
+        )
+
+    @app.get("/admin/study-recall/<int:session_id>/image/<filename>")
+    @admin_required
+    def admin_study_recall_image(session_id: int, filename: str):
+        recall_session = storage.get_study_recall_session(session_id)
+        allowed_names = set((recall_session or {}).get("image_filenames") or [])
+        if filename not in allowed_names or Path(filename).name != filename:
+            return Response("Not Found", status=404, mimetype="text/plain")
+        image_path = study_upload_root / str(session_id) / filename
+        if not image_path.is_file():
+            return Response("Not Found", status=404, mimetype="text/plain")
+        return send_file(image_path, conditional=True, max_age=0)
+
+    @app.post("/admin/study-recall/upload")
+    @admin_required
+    def admin_study_recall_upload():
+        study_date = (request.form.get("study_date") or _study_plan_business_date().isoformat()).strip()
+        try:
+            date.fromisoformat(study_date)
+        except ValueError:
+            return _study_upload_error("請輸入有效的筆記日期。")
+        subject = (request.form.get("subject") or "").strip()
+        if subject not in STUDY_PLAN_SUBJECTS:
+            return _study_upload_error("請選擇科目。")
+        title = (request.form.get("title") or "").strip()[:120] or f"{subject} {study_date} 筆記"
+        incoming_files = [item for item in request.files.getlist("note_images") if item and item.filename]
+        if not incoming_files or len(incoming_files) > 8:
+            return _study_upload_error("請上傳 1 至 8 張筆記照片。")
+        images: List[Tuple[str, bytes, str]] = []
+        total_image_bytes = 0
+        for item in incoming_files:
+            filename = secure_filename(item.filename) or "note-image"
+            extension = Path(filename).suffix.lower()
+            mime_type = _NOTE_IMAGE_MIME_TYPES.get(extension)
+            if not mime_type:
+                return _study_upload_error("筆記僅支援 JPG、PNG、WEBP 或 GIF 圖片。")
+            image_bytes = item.read()
+            if not image_bytes or len(image_bytes) > STUDY_NOTE_MAX_IMAGE_BYTES:
+                return _study_upload_error("每張筆記照片壓縮後必須小於 3MB。")
+            total_image_bytes += len(image_bytes)
+            if total_image_bytes > STUDY_NOTE_MAX_TOTAL_BYTES:
+                return _study_upload_error("筆記照片壓縮後合計必須小於 24MB。")
+            images.append((filename, image_bytes, mime_type))
+        analysis, error = _analyze_study_note_images(images)
+        if error or not analysis:
+            return _study_upload_error(error or "筆記分析失敗。", 502)
+        stored_names = [f"{index + 1:02d}-{secrets.token_hex(5)}{Path(name).suffix.lower()}" for index, (name, _bytes, _mime) in enumerate(images)]
+        recall_id = storage.create_study_recall_session(
+            study_date=study_date,
+            subject=subject,
+            title=title,
+            image_filenames=stored_names,
+            summary=analysis["summary"],
+            key_concepts=analysis["key_concepts"],
+        )
+        destination = _ensure_private_dir(study_upload_root / str(recall_id))
+        for stored_name, (_original_name, image_bytes, _mime_type) in zip(stored_names, images):
+            (destination / stored_name).write_bytes(image_bytes)
+        record_ui_event("study_recall_note_analyzed", meta={"session_id": recall_id, "subject": subject, "image_count": len(images)})
+        redirect_url = url_for("admin_study_recall", session_id=recall_id)
+        if _is_study_upload_request():
+            return {"ok": True, "redirect_url": redirect_url}
+        flash("筆記已整理完成。請逐張重點卡填寫印象分，系統會分別安排下次複習。", "success")
+        return redirect(redirect_url)
+
+    @app.post("/admin/study-recall/<int:session_id>/rate-cards")
+    @admin_required
+    def admin_study_recall_rate_cards(session_id: int):
+        return_to = (request.form.get("return_to") or "").strip()
+        if return_to not in {"admin_study_home", "admin_study_plan", "public_study_progress"}:
+            return_to = ""
+
+        def recall_redirect():
+            return redirect(url_for(return_to) if return_to else url_for("admin_study_recall", session_id=session_id))
+
+        recall_session = storage.get_study_recall_session(session_id)
+        if not recall_session:
+            flash("找不到這份回想紀錄。", "error")
+            return recall_redirect()
+        ratings: Dict[int, int] = {}
+        for index, _concept in enumerate(recall_session.get("key_concepts") or []):
+            raw_rating = (request.form.get(f"rating_{index}") or "").strip()
+            if not raw_rating:
+                continue
+            try:
+                rating = int(raw_rating)
+            except (TypeError, ValueError):
+                rating = 0
+            if rating not in {1, 2, 3, 4, 5}:
+                flash("印象分必須是 1 至 5 分。", "error")
+                return recall_redirect()
+            ratings[index] = rating
+        if not ratings:
+            flash("請至少為一張重點卡填寫印象分。", "error")
+            return recall_redirect()
+        if storage.record_study_recall_card_ratings(
+            session_id=session_id,
+            ratings=ratings,
+            review_date=_study_plan_business_date().isoformat(),
+        ):
+            next_session = storage.get_study_recall_session(session_id) or {}
+            next_review_at = next_session.get("next_review_at") or "待安排"
+            record_ui_event(
+                "study_recall_cards_rated",
+                meta={"session_id": session_id, "card_count": len(ratings), "next_review_at": next_review_at},
+            )
+            flash(f"已記錄每張重點卡的印象分；最早的下一次複習是 {next_review_at}。", "success")
+        return recall_redirect()
 
     @app.route("/admin/study-plan", methods=["GET", "POST"])
     @admin_required
@@ -2972,6 +3334,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             plan_total_weeks=len(week_rows),
             plan_start=STUDY_PLAN_START,
             plan_end=STUDY_PLAN_END,
+            recall_widget=_build_recall_widget_context(),
         )
 
     @app.post("/admin/study-plan/video-progress")

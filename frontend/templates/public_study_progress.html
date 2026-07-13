@@ -40,9 +40,6 @@
         }
         a { color: inherit; text-decoration: none; }
         .shell { width: min(1180px, 100%); margin: 0 auto; padding: 28px 28px 40px; }
-        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 22px; }
-        .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 13px; font-weight: 850; }
-        .brand-mark { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--blue), var(--teal)); box-shadow: 0 10px 24px rgba(20, 99, 217, .18); }
         .share-pill { display: inline-flex; align-items: center; min-height: 36px; padding: 0 13px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.9); color: var(--ink-2); font-size: 13px; font-weight: 800; white-space: nowrap; }
         .hero {
             display: grid;
@@ -189,6 +186,7 @@
         .key-line { width: 22px; height: 4px; border-radius: 999px; background: var(--blue); }
         .key-line.target { background: #a4b3c2; }
         .footer-note { margin-top: 18px; color: var(--muted); text-align: center; font-size: 12px; }
+        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { border-top:1px solid var(--line); }.recall-item { display:block; width:100%; padding:11px 16px; border:0; border-bottom:1px solid var(--line); color:inherit; background:#fff; text-align:left; cursor:pointer; }.recall-item:last-child { border-bottom:0; }.recall-item:hover { background:#f8fbff; }.recall-item-title { font-size:13px; font-weight:850; }.recall-item-meta { margin-top:3px; color:var(--muted); font-size:12px; }.recall-dialog { width:min(760px,calc(100% - 32px)); max-height:min(720px,calc(100vh - 32px)); padding:0; border:1px solid var(--line); border-radius:7px; color:var(--ink); background:var(--paper); box-shadow:0 24px 70px rgba(16,42,67,.24); }.recall-dialog::backdrop { background:rgba(16,42,67,.38); }.recall-dialog-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:18px 20px; border-bottom:1px solid var(--line); }.recall-dialog-head h2 { margin:0; font-size:18px; }.recall-close { display:grid; place-items:center; width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:22px; line-height:1; cursor:pointer; }.recall-close:hover { color:var(--ink); border-color:var(--blue); }.recall-concepts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:20px; overflow:auto; }.recall-concept-card { padding:14px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-concept-card h3 { margin:0; font-size:14px; }.recall-concept-card p { margin:7px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }.recall-concept-card .hint { margin-top:9px; color:var(--teal); font-size:12px; font-weight:800; }.recall-empty { padding:24px; color:var(--muted); text-align:center; }
         @media (max-width: 980px) {
             .hero, .layout { grid-template-columns: 1fr; }
             .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -196,9 +194,9 @@
             .daily-plan-head { align-items: flex-start; flex-direction: column; }
             .daily-legend { justify-content: flex-start; }
         }
+        @media (max-width: 620px) { .recall-concepts { grid-template-columns:1fr; padding:14px; } }
         @media (max-width: 560px) {
             .shell { padding: 18px 12px 28px; }
-            .topbar { align-items: flex-start; }
             .share-pill { white-space: normal; justify-content: center; text-align: center; }
             .hero-main, .hero-side, .panel { border-radius: 22px; }
             .hero-main { padding: 22px; min-height: auto; }
@@ -221,10 +219,6 @@
 </head>
 <body>
     <main class="shell">
-        <nav class="topbar" aria-label="公開頁面導覽">
-            <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">E3</span><span>帥D的學習紀錄</span></a>
-        </nav>
-
         <section class="hero" aria-label="公開學習進度總覽">
             <div class="hero-main">
                 <h1>研究所備考進度</h1>
@@ -324,6 +318,7 @@
             </div>
         </section>
 
+        {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count">{{ recall_widget.due_count }} 項到期</span></summary><div class="recall-items">{% if recall_widget["items"] %}{% for item in recall_widget["items"] %}<button class="recall-item" type="button" data-recall-dialog="recall-dialog-{{ item.id }}"><div class="recall-item-title">{{ item.title }}</div><div class="recall-item-meta">{{ item.subject }}・{{ item.study_date }}{% if item.next_review_at %}・下次 {{ item.next_review_at }}{% endif %}</div></button>{% endfor %}{% else %}<div class="recall-item-meta" style="padding:12px 16px;">尚無筆記可複習。</div>{% endif %}</div></details>{% for item in recall_widget["items"] %}<dialog id="recall-dialog-{{ item.id }}" class="recall-dialog"><div class="recall-dialog-head"><h2>{{ item.title }}</h2><button class="recall-close" type="button" aria-label="關閉重點卡" title="關閉">&times;</button></div><div class="recall-concepts">{% for concept in item["key_concepts"] %}<article class="recall-concept-card"><h3>{{ concept.concept }}</h3><p>{{ concept.explanation }}</p>{% if concept.memory_hint %}<div class="hint">{{ concept.memory_hint }}</div>{% endif %}</article>{% else %}<div class="recall-empty">此筆記尚無可顯示的重點。</div>{% endfor %}</div></dialog>{% endfor %}<script>document.querySelectorAll('[data-recall-dialog]').forEach(function (button) { button.addEventListener('click', function () { document.getElementById(button.dataset.recallDialog).showModal(); }); }); document.querySelectorAll('.recall-dialog').forEach(function (dialog) { dialog.addEventListener('click', function (event) { if (event.target === dialog) dialog.close(); }); dialog.querySelector('.recall-close').addEventListener('click', function () { dialog.close(); }); });</script>{% endif %}
         <section class="panel week-progress-panel" aria-label="本週每日進度">
             <div class="week-progress-top">
                 <h2 class="week-progress-title">本週進度</h2>

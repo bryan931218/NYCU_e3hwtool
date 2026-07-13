@@ -74,6 +74,9 @@
             white-space: nowrap;
         }
         .admin-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+        .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); }
+        .brand { display:flex; align-items:center; gap:10px; color:var(--ink); font-size:14px; font-weight:900; white-space:nowrap; }.mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }.nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }.nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }.nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }.admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
+        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { font-size:13px; font-weight:850; }.recall-card-note { margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-empty { padding:18px; color:var(--muted); text-align:center; font-size:13px; }
 
         .content {
             width: min(1520px, 100%);
@@ -542,10 +545,8 @@
             .pace-layout { grid-template-columns: 1fr; }
             .journey-card { min-height: auto; }
         }
+        @media (max-width: 900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; } }
         @media (max-width: 760px) {
-            .topbar { height: auto; min-height: 62px; padding: 13px 16px; align-items: flex-start; }
-            .crumb { display: none; }
-            .nav-actions { width: 100%; justify-content: space-between; }
             .content { padding: 20px 14px 28px; }
             .page-head { display: block; }
             .head-tools { justify-content: flex-start; margin-top: 14px; }
@@ -574,6 +575,8 @@
             .subject-table td:nth-child(5) { display: none; }
             .subject-table th, .subject-table td { padding-left: 8px; padding-right: 8px; font-size: 12px; }
         }
+        @media (max-width: 620px) { .study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; }.recall-items { grid-template-columns:1fr; } }
+        @media (max-width: 620px) { .recall-concepts { grid-template-columns:1fr; padding:14px; } }
         @media (max-width: 470px) {
             .metric-strip { grid-template-columns: 1fr; }
             .date-pill { white-space: normal; }
@@ -590,13 +593,12 @@
 </head>
 <body>
     <div class="shell">
-        <header class="topbar">
-            <div class="crumb"><a href="{{ url_for('index') }}">← 回 E3 作業系統</a><span>/</span><span>學習首頁</span></div>
-            <div class="nav-actions">
-                <a class="nav-link" href="{{ url_for('public_study_progress') }}">公開頁面</a>
-                <a class="nav-link" href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
-                <div class="admin-pill"><span class="admin-dot"></span>{{ admin_user.username }}・管理員</div>
-            </div>
+        <header class="study-nav" aria-label="學習中心導覽">
+            <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
+            <nav class="nav-links">
+                <a href="{{ url_for('public_study_progress') }}">公開頁面</a><a class="active" href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">回想迴圈</a><a href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
+                <span class="admin">{{ admin_user.username }}・管理員</span>
+            </nav>
         </header>
 
         <main class="content">
@@ -712,6 +714,7 @@
                 </div>
             </section>
 
+            {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items">{% if recall_widget["cards"] %}{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card"><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note">{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}"><input type="hidden" name="return_to" value="admin_study_home"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}{% else %}<div class="recall-empty">今天沒有需要複習的重點卡。</div>{% endif %}</div></details>{% endif %}
             <section class="dashboard-grid">
                 <article class="panel journey-card">
                     <div class="panel-head">

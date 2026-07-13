@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>回想迴圈｜E3 學習中心</title>
+    <style>
+        :root { --ink:#172033; --muted:#68758a; --paper:#fff; --canvas:#f5f7fb; --line:#dce4ef; --blue:#1769d8; --blue-soft:#eaf3ff; --teal:#087f80; --teal-soft:#e8f8f7; --green:#218653; --green-soft:#eaf7ee; --amber:#a96200; --amber-soft:#fff4de; --red:#b83b45; --shadow:0 12px 30px rgba(23,32,51,.07); font-family:Inter,"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; }
+        * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:var(--canvas); } a { color:inherit; text-decoration:none; } button,input,select { font:inherit; }
+        .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); }
+        .brand { display:flex; align-items:center; gap:10px; font-size:14px; font-weight:900; white-space:nowrap; }.mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }.nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }.nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }.nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }.admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
+        .shell { width:min(1320px,100%); margin:0 auto; padding:28px 28px 48px; }.page-head { display:flex; align-items:end; justify-content:space-between; gap:18px; margin-bottom:22px; }.eyebrow { margin:0 0 7px; color:var(--teal); font-size:11px; font-weight:900; letter-spacing:.08em; }.page-head h1 { margin:0; font-size:30px; letter-spacing:0; }.intro { max-width:660px; margin:9px 0 0; color:var(--muted); line-height:1.65; font-size:14px; }.today { padding:8px 11px; color:var(--muted); border:1px solid var(--line); background:#fff; border-radius:4px; font-size:12px; font-weight:800; white-space:nowrap; }
+        .flash { margin-bottom:16px; padding:12px 14px; border:1px solid var(--line); border-left:4px solid var(--blue); background:#fff; border-radius:5px; font-size:14px; }.flash.error { border-left-color:var(--red); }.flash.success { border-left-color:var(--green); }
+        .layout { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:20px; align-items:start; }.main-stack,.side-stack { display:grid; gap:20px; }.panel { background:var(--paper); border:1px solid var(--line); border-radius:7px; box-shadow:var(--shadow); }.panel-head { display:flex; align-items:start; justify-content:space-between; gap:14px; padding:20px 20px 0; }.panel h2 { margin:0; font-size:18px; }.caption { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.55; }
+        .upload-body { padding:20px; }.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }.field { display:grid; gap:7px; }.field.wide { grid-column:1 / -1; }.field label { font-size:12px; font-weight:850; }.field input,.field select { width:100%; min-height:42px; padding:9px 10px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#fff; }.file-drop { padding:16px; border:1px dashed #9db5d0; border-radius:5px; background:#fafcff; }.file-drop input { width:100%; }.file-help,.upload-status { margin:8px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }.upload-status { min-height:18px; font-weight:750; }.upload-status.error { color:var(--red); }.upload-status.ready { color:var(--teal); }.submit { min-height:42px; padding:0 15px; color:#fff; border:0; border-radius:4px; background:var(--blue); font-weight:850; cursor:pointer; }.submit:disabled { opacity:.55; cursor:not-allowed; }.api-note { padding:12px 14px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; line-height:1.55; }.api-note.ready { color:var(--green); background:var(--green-soft); }
+        .session-head { padding:20px; border-bottom:1px solid var(--line); }.session-meta { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }.chip { padding:4px 7px; border:1px solid var(--line); color:var(--muted); background:#fafcff; border-radius:4px; font-size:11px; font-weight:800; }.summary { margin:15px 0 0; line-height:1.75; font-size:14px; }.concepts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px; }.concept { padding:14px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.concept strong { display:block; font-size:14px; }.concept p { margin:7px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }.hint { margin-top:8px; color:var(--teal); font-size:12px; font-weight:750; }.note-fold { margin:16px 0 0; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.note-fold summary { padding:11px 12px; cursor:pointer; color:var(--ink); font-size:13px; font-weight:850; }.note-fold > div { padding:0 12px 12px; }.note-images { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }.note-images a { display:block; border:1px solid var(--line); background:#fff; }.note-images img { display:block; width:100%; aspect-ratio:3/4; object-fit:cover; }.card-review { display:grid; gap:10px; margin-top:13px; padding-top:12px; border-top:1px solid var(--line); }.review-meta { display:flex; flex-wrap:wrap; gap:6px; color:var(--muted); font-size:11px; }.review-meta strong { color:var(--teal); font-size:11px; }.curve { display:grid; grid-template-columns:92px 1fr; align-items:center; gap:8px; }.curve-label { color:var(--muted); font-size:11px; }.curve svg { width:100%; height:42px; }.curve line { stroke:#dce4ef; stroke-width:1; }.curve polyline { fill:none; stroke:var(--blue); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }.curve circle { fill:var(--blue); }.card-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }.card-rating label { cursor:pointer; }.card-rating input { position:absolute; opacity:0; }.card-rating span { display:grid; min-height:34px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:12px; font-weight:850; }.card-rating input:checked + span { color:#fff; background:var(--blue); border-color:var(--blue); }.card-rating label:hover span { border-color:var(--blue); }.rating-key { display:flex; justify-content:space-between; gap:10px; color:var(--muted); font-size:11px; }.card-actions { display:flex; justify-content:flex-end; padding:14px 0 0; }.review-zone .panel-head { padding-bottom:2px; }.review-card-title { display:flex; justify-content:space-between; gap:10px; align-items:start; }.review-card-title .chip { flex:0 0 auto; }.review-card form { margin-top:12px; }.review-card .submit { width:100%; margin-top:10px; }
+        .queue { padding:10px; }.queue-item { display:block; padding:12px; border-bottom:1px solid var(--line); }.queue-item:last-child { border-bottom:0; }.queue-item:hover { background:#fafcff; }.queue-title { font-size:13px; font-weight:850; line-height:1.45; }.queue-meta { margin-top:4px; color:var(--muted); font-size:12px; }.due { color:var(--amber); font-weight:850; }.empty { padding:20px; color:var(--muted); text-align:center; font-size:13px; line-height:1.6; }.how { padding:17px; color:var(--muted); font-size:13px; line-height:1.7; }.how strong { color:var(--ink); }.history { max-height:460px; overflow:auto; }
+        @media (max-width:900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; }.shell { padding:22px 16px 36px; }.layout { grid-template-columns:1fr; }.side-stack { grid-template-columns:repeat(2,minmax(0,1fr)); }.history { max-height:none; } }
+        @media (max-width:620px) { .page-head { align-items:flex-start; flex-direction:column; }.form-grid,.concepts,.side-stack { grid-template-columns:1fr; }.study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; }.card-actions { justify-content:stretch; }.card-actions .submit { width:100%; } }
+    </style>
+</head>
+<body>
+    <header class="study-nav" aria-label="學習中心導覽">
+        <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
+        <nav class="nav-links">
+            <a href="{{ url_for('public_study_progress') }}">公開頁面</a>
+            <a href="{{ url_for('admin_study_home') }}">學習首頁</a>
+            <a class="active" href="{{ url_for('admin_study_recall') }}">回想迴圈</a>
+            <a href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
+            <span class="admin">{{ admin_user.username }}・管理員</span>
+        </nav>
+    </header>
+    <main class="shell">
+        {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
+        <section class="page-head">
+            <div><p class="eyebrow">RECALL LOOP</p><h1>把每個重點排進剛好的複習節奏</h1><p class="intro">上傳筆記後，系統會建立重點卡。每張卡各自填寫印象分，複習日期會依熟悉度與每日負載分開安排。</p></div>
+            <div class="today">今天 {{ today }}</div>
+        </section>
+        <section class="layout">
+            <div class="main-stack">
+                <article class="panel">
+                    <div class="panel-head"><div><h2>新增今日筆記</h2><p class="caption">選照片後會顯示準備狀態；送出後會顯示 AI 整理中，完成後自動開啟重點卡。</p></div></div>
+                    <form id="recall-upload-form" class="upload-body" method="post" action="{{ url_for('admin_study_recall_upload') }}" enctype="multipart/form-data">
+                        <div class="form-grid">
+                            <div class="field"><label for="study-date">筆記日期</label><input id="study-date" name="study_date" type="date" value="{{ today }}" required></div>
+                            <div class="field"><label for="subject">科目</label><select id="subject" name="subject" required>{% for subject in subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}</select></div>
+                            <div class="field wide"><label for="title">主題名稱</label><input id="title" name="title" maxlength="120" placeholder="例如：矩陣特徵值與特徵向量"></div>
+                            <div class="field wide"><label for="note-images">筆記照片</label><div class="file-drop"><input id="note-images" name="note_images" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple required><p class="file-help">選擇 1 至 8 張同一主題的照片。支援 JPG、PNG、WEBP、GIF；每張最多 3MB、合計最多 24MB。</p><p id="upload-status" class="upload-status" aria-live="polite">尚未選擇照片。</p></div></div>
+                        </div>
+                        <div class="card-actions"><button class="submit" type="submit" {% if not openai_ready %}disabled title="需先設定 OPENAI_API_KEY"{% endif %}>建立重點卡</button></div>
+                    </form>
+                    <div class="api-note {% if openai_ready %}ready{% endif %}">{% if openai_ready %}AI 分析已啟用。圖片會保留在私人筆記中，完成後會顯示重點卡與各卡的複習安排。{% else %}尚未設定 `OPENAI_API_KEY`，請在後端環境變數加入金鑰後再使用。{% endif %}</div>
+                </article>
+                <article id="review-zone" class="panel review-zone">
+                    <div class="panel-head"><div><h2>現在需要複習的重點</h2><p class="caption">只顯示今天到期的卡片；填寫印象分後，這張卡會獨立安排下一次複習。</p></div><span class="chip">{{ review_cards|length }} 張</span></div>
+                    {% if review_cards %}<div class="concepts">{% for item in review_cards %}{% set concept = item.concept_data %}<article class="concept review-card"><div class="review-card-title"><strong>{{ concept.concept }}</strong><span class="chip">{{ item.subject }}</span></div><p>{{ concept.explanation }}</p>{% if concept.memory_hint %}<div class="hint">記憶線索：{{ concept.memory_hint }}</div>{% endif %}<div class="card-review"><div class="review-meta"><span>{{ item.session_title }}</span>{% if concept.review.last_rating is not none %}<strong>上次印象 {{ concept.review.last_rating }}/5</strong>{% endif %}</div><div class="curve"><span class="curve-label">印象曲線<br>{{ concept.review.history_label }}</span>{% if concept.review.history %}<svg viewBox="0 0 100 42" role="img" aria-label="{{ concept.concept }} 的印象曲線"><line x1="0" y1="36" x2="100" y2="36"></line>{% if concept.review.history|length > 1 %}<polyline points="{{ concept.review.curve_points }}"></polyline>{% endif %}<circle cx="{% if concept.review.history|length > 1 %}94{% else %}50{% endif %}" cy="{{ concept.review.latest_curve_y }}" r="3"></circle></svg>{% else %}<span class="curve-label">首次複習</span>{% endif %}</div></div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}"><div class="rating-key"><span>1 想不起</span><span>5 可教人</span></div><div class="card-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><button class="submit" type="submit">儲存印象分並安排下一次</button></form></article>{% endfor %}</div>{% else %}<div class="empty">現在沒有到期的重點卡。</div>{% endif %}
+                </article>
+                {% if selected_session %}
+                <article class="panel">
+                    <div id="note-review" class="session-head"><p class="eyebrow">NOTE {{ selected_session.study_date }}</p><h2>{{ selected_session.title }}</h2><div class="session-meta"><span class="chip">{{ selected_session.subject }}</span><span class="chip">{{ selected_session.image_filenames|length }} 張照片</span><span class="chip">已複習 {{ selected_session.review_count }} 次</span>{% if selected_session.next_review_at %}<span class="chip">最早下次 {{ selected_session.next_review_at }}</span>{% endif %}</div><p class="summary">{{ selected_session.summary }}</p></div>
+                    <div class="concepts">{% for concept in selected_session.key_concepts %}<article id="concept-{{ loop.index0 }}" class="concept"><strong>{{ concept.concept }}</strong><p>{{ concept.explanation }}</p>{% if concept.memory_hint %}<div class="hint">記憶線索：{{ concept.memory_hint }}</div>{% endif %}<div class="card-review">{% if concept.review.history %}<div class="review-meta"><span>上次複習 {{ concept.review.history[-1].created_at[:10] }}</span><strong>下次複習 {{ concept.review.next_review_at }}</strong></div>{% else %}<div class="review-meta"><span>尚未複習</span><span>完成首次自評後會安排日期</span></div>{% endif %}<div class="curve"><span class="curve-label">印象曲線<br>{{ concept.review.history_label }}</span>{% if concept.review.history %}<svg viewBox="0 0 100 42" role="img" aria-label="{{ concept.concept }} 的印象曲線"><line x1="0" y1="36" x2="100" y2="36"></line>{% if concept.review.history|length > 1 %}<polyline points="{{ concept.review.curve_points }}"></polyline>{% endif %}<circle cx="{% if concept.review.history|length > 1 %}94{% else %}50{% endif %}" cy="{{ concept.review.latest_curve_y }}" r="3"></circle></svg>{% else %}<span class="curve-label">尚未建立記憶曲線</span>{% endif %}</div></div></article>{% endfor %}</div>
+                    <div class="session-head"><details class="note-fold"><summary>原始筆記圖片（{{ selected_session.image_urls|length }} 張）</summary><div class="note-images">{% for image_url in selected_session.image_urls %}<a href="{{ image_url }}" target="_blank" rel="noopener"><img src="{{ image_url }}" alt="{{ selected_session.title }} 原始筆記 {{ loop.index }}" loading="lazy"></a>{% endfor %}</div></details></div>
+                </article>
+                {% else %}<article class="panel empty">上傳第一份筆記後，重點卡與各卡的複習安排會顯示在這裡。</article>{% endif %}
+            </div>
+            <aside class="side-stack">
+                <article class="panel"><div class="panel-head"><div><h2>現在要複習</h2><p class="caption">到期卡會集中在複習區。</p></div><span class="chip">{{ review_cards|length }} 張</span></div><div class="queue"><a class="queue-item" href="#review-zone"><div class="queue-title">開啟今天的重點複習</div><div class="queue-meta">只顯示目前需要複習的卡片。</div></a></div></article>
+                <article class="panel"><div class="panel-head"><div><h2>未來 7 天負載</h2><p class="caption">各日期需要複習的重點數量。</p></div></div><div class="queue">{% for day in review_schedule %}<div class="queue-item"><div class="queue-title">{{ day.date }}{% if day.is_today %}・今天{% endif %}</div><div class="queue-meta">{{ day.count }} 張待複習</div></div>{% endfor %}</div></article>
+                <article class="panel"><div class="panel-head"><div><h2>複習節奏</h2></div></div><div class="how"><strong>1-2 分</strong>：1 至 2 天後，重設較長間隔<br><strong>3 分</strong>：3 天後，再以 1.5 倍成長<br><strong>4 分</strong>：至少 5 天後，再以 2.2 倍成長<br><strong>5 分</strong>：至少 7 天後，再以 2.8 倍成長<br>同日滿載時，系統會優先保留低分卡，熟悉卡順延。</div></article>
+                <article class="panel history"><div class="panel-head"><div><h2>筆記紀錄</h2><p class="caption">最近 36 份</p></div></div><div class="queue">{% if sessions %}{% for item in sessions %}<a class="queue-item" href="{{ url_for('admin_study_recall', session_id=item.id) }}"><div class="queue-title">{{ item.title }}</div><div class="queue-meta">{{ item.study_date }}・{{ item.subject }}{% if item.next_review_at %}・下次 {{ item.next_review_at }}{% endif %}</div></a>{% endfor %}{% else %}<div class="empty">尚無筆記紀錄。</div>{% endif %}</div></article>
+            </aside>
+        </section>
+    </main>
+    <script>
+        (() => {
+            const form = document.getElementById('recall-upload-form');
+            if (!form) return;
+            const input = document.getElementById('note-images');
+            const status = document.getElementById('upload-status');
+            const submit = form.querySelector('button[type="submit"]');
+            const maxImageBytes = 3 * 1024 * 1024;
+            const maxTotalBytes = 24 * 1024 * 1024;
+
+            const formatBytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)}MB`;
+            const setStatus = (message, tone = '') => {
+                status.textContent = message;
+                status.className = `upload-status ${tone}`.trim();
+            };
+            const loadImage = (file) => new Promise((resolve, reject) => {
+                const source = URL.createObjectURL(file);
+                const image = new Image();
+                image.onload = () => { URL.revokeObjectURL(source); resolve(image); };
+                image.onerror = () => { URL.revokeObjectURL(source); reject(new Error('image-load-failed')); };
+                image.src = source;
+            });
+            const canvasBlob = (canvas, quality) => new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+            const compress = async (file) => {
+                const image = await loadImage(file);
+                let longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+                if (file.size <= maxImageBytes && longestSide <= 2048) return file;
+                let scale = Math.min(1, 2048 / longestSide);
+                let width = Math.max(1, Math.round(image.naturalWidth * scale));
+                let height = Math.max(1, Math.round(image.naturalHeight * scale));
+                let blob = null;
+                while (!blob || blob.size > maxImageBytes) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    canvas.getContext('2d', { alpha: false }).drawImage(image, 0, 0, width, height);
+                    blob = await canvasBlob(canvas, blob ? 0.72 : 0.84);
+                    if (!blob || blob.size <= maxImageBytes || Math.max(width, height) <= 720) break;
+                    width = Math.round(width * 0.8);
+                    height = Math.round(height * 0.8);
+                }
+                if (!blob || blob.size > maxImageBytes) throw new Error('image-too-large');
+                const basename = file.name.replace(/\.[^.]+$/, '') || 'note-image';
+                return new File([blob], `${basename}.jpg`, { type: 'image/jpeg' });
+            };
+
+            input.addEventListener('change', () => {
+                const count = input.files.length;
+                if (count) setStatus(`已選擇 ${count} 張照片；符合限制的圖片會保留原檔。`, 'ready');
+            });
+            form.addEventListener('submit', async (event) => {
+                if (submit.disabled) return;
+                event.preventDefault();
+                const files = Array.from(input.files || []);
+                if (!files.length || files.length > 8) {
+                    setStatus('請選擇 1 至 8 張筆記照片。', 'error');
+                    return;
+                }
+                submit.disabled = true;
+                setStatus('正在縮小照片…');
+                try {
+                    const prepared = [];
+                    for (let index = 0; index < files.length; index += 1) {
+                        setStatus(`正在準備第 ${index + 1}/${files.length} 張照片…`);
+                        prepared.push(await compress(files[index]));
+                    }
+                    const totalBytes = prepared.reduce((total, file) => total + file.size, 0);
+                    if (totalBytes > maxTotalBytes) throw new Error('total-too-large');
+                    setStatus(`照片準備完成（${formatBytes(totalBytes)}），AI 正在建立重點卡，請勿關閉此頁…`, 'ready');
+                    const payload = new FormData(form);
+                    payload.delete('note_images');
+                    prepared.forEach((file) => payload.append('note_images', file, file.name));
+                    const response = await fetch(form.action, {
+                        method: 'POST',
+                        body: payload,
+                        credentials: 'same-origin',
+                        headers: { 'X-E3-Study-Upload': '1', Accept: 'application/json' },
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok || !result.ok) throw new Error(result.error || (response.status === 413 ? 'request-too-large' : 'upload-failed'));
+                    setStatus('重點卡已建立，正在開啟複習安排…', 'ready');
+                    window.location.assign(result.redirect_url);
+                } catch (error) {
+                    const message = error.message === 'total-too-large' || error.message === 'request-too-large'
+                        ? '照片縮小後仍超過 24MB，請減少張數後再試。'
+                        : error.message === 'image-too-large'
+                            ? '其中一張照片無法縮小到 3MB，請改用較小或較清晰的照片。'
+                            : error.message === 'upload-failed'
+                                ? '照片處理或上傳失敗，請確認圖片格式後再試。'
+                                : error.message || '照片處理或上傳失敗，請確認圖片格式後再試。';
+                    setStatus(message, 'error');
+                    submit.disabled = false;
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

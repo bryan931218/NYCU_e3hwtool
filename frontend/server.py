@@ -117,16 +117,25 @@ def dev_reload_token():
 def proxy(path: str):
     url = _build_target(path or "")
     headers = _non_hop_headers()
-    data = request.get_data()
+    data = None
     files = None
     form_data = None
-    if request.files:
-        files = {
-            key: (file.filename, file.stream, file.mimetype)
-            for key, file in request.files.items()
-        }
-        form_data = request.form.to_dict(flat=False)
+    is_multipart = request.mimetype == "multipart/form-data"
+    if is_multipart:
+        # requests creates a new multipart body; it must also create the matching
+        # Content-Type boundary instead of forwarding the browser's old boundary.
+        headers.pop("Content-Type", None)
+        # Preserve every value for a repeated file field such as note_images.
+        files = [
+            (key, (file.filename, file.stream, file.mimetype))
+            for key, uploaded_files in request.files.lists()
+            for file in uploaded_files
+        ]
+        form_data = list(request.form.items(multi=True))
+    else:
+        data = request.get_data()
     stream = request.method == "GET"
+    timeout = 120 if files else 30
     try:
         resp = requests.request(
             request.method,
@@ -137,7 +146,7 @@ def proxy(path: str):
             headers=headers,
             cookies=request.cookies,
             allow_redirects=False,
-            timeout=30,
+            timeout=timeout,
             stream=stream,
         )
     except requests.RequestException as exc:

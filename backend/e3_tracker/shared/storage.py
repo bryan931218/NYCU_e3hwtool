@@ -262,6 +262,54 @@ study_plan_activity_events_table = Table(
 Index("ix_study_plan_activity_events_day", study_plan_activity_events_table.c.day)
 Index("ix_study_plan_activity_events_video_id", study_plan_activity_events_table.c.video_id)
 
+study_recall_sessions_table = Table(
+    "study_recall_sessions",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("study_date", String(10), nullable=False),
+    Column("subject", String(64), nullable=False),
+    Column("title", String(191), nullable=False),
+    Column("image_filenames", Text, nullable=False),
+    Column("summary", Text, nullable=False),
+    Column("key_concepts", Text, nullable=False),
+    Column("quiz_data", Text, nullable=False),
+    Column("last_score_percent", Float),
+    Column("last_self_rating", Integer),
+    Column("next_review_at", String(10)),
+    Column("review_count", Integer, nullable=False, default=0),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+)
+Index("ix_study_recall_sessions_next_review", study_recall_sessions_table.c.next_review_at)
+
+study_recall_attempts_table = Table(
+    "study_recall_attempts",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("session_id", Integer, nullable=False),
+    Column("score_percent", Float, nullable=False),
+    Column("self_rating", Integer, nullable=False),
+    Column("answers", Text, nullable=False),
+    Column("next_review_at", String(10), nullable=False),
+    Column("created_at", String(64), nullable=False),
+)
+Index("ix_study_recall_attempts_session", study_recall_attempts_table.c.session_id)
+
+study_recall_card_reviews_table = Table(
+    "study_recall_card_reviews",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("session_id", Integer, nullable=False),
+    Column("concept_index", Integer, nullable=False),
+    Column("rating", Integer, nullable=False),
+    Column("interval_days", Integer, nullable=False),
+    Column("ideal_review_at", String(10), nullable=False),
+    Column("next_review_at", String(10), nullable=False),
+    Column("created_at", String(64), nullable=False),
+)
+Index("ix_study_recall_card_reviews_session", study_recall_card_reviews_table.c.session_id)
+Index("ix_study_recall_card_reviews_next_review", study_recall_card_reviews_table.c.next_review_at)
+
 class PersistentStorage:
     """Database-backed persistence with normalized storage."""
 
@@ -302,6 +350,11 @@ class PersistentStorage:
             metadata.tables["study_plan_daily_snapshots"].create(self._engine, checkfirst=True)
         if not inspector.has_table("study_plan_activity_events"):
             metadata.tables["study_plan_activity_events"].create(self._engine, checkfirst=True)
+        if inspector.has_table("study_recall_card_reviews"):
+            card_review_columns = {col["name"] for col in inspector.get_columns("study_recall_card_reviews")}
+            if "ideal_review_at" not in card_review_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE study_recall_card_reviews ADD COLUMN ideal_review_at VARCHAR(10)"))
         if inspector.has_table("study_plan_videos"):
             study_video_columns = {col["name"] for col in inspector.get_columns("study_plan_videos")}
             missing_study_video_columns = []
@@ -854,6 +907,318 @@ class PersistentStorage:
                 existing["updated_at"] = row.updated_at or existing["updated_at"]
 
         return sorted(by_video.values(), key=lambda item: (str(item["updated_at"]), int(item["sequence"])))
+
+    # -- study recall loop -----------------------------------------------
+    @staticmethod
+    def _decode_json_list(value: Any) -> List[Any]:
+        try:
+            parsed = json.loads(value) if value else []
+        except (TypeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    @staticmethod
+    def _decode_json_dict(value: Any) -> Dict[str, Any]:
+        try:
+            parsed = json.loads(value) if value else {}
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _recall_interval_days(rating: int, previous_rating: Optional[int], previous_interval: int) -> int:
+        """A confidence-based spaced-repetition interval with a short reset for weak recall."""
+        rating = max(1, min(int(rating), 5))
+        if rating == 1:
+            return 1
+        if rating == 2:
+            return 2
+        if previous_rating is None or previous_rating <= 2:
+            return {3: 3, 4: 5, 5: 7}[rating]
+        multiplier = {3: 1.5, 4: 2.2, 5: 2.8}[rating]
+        minimum = {3: 3, 4: 5, 5: 7}[rating]
+        return min(120, max(minimum, int(round(max(1, previous_interval) * multiplier))))
+
+    def create_study_recall_session(
+        self,
+        *,
+        study_date: str,
+        subject: str,
+        title: str,
+        image_filenames: List[str],
+        summary: str,
+        key_concepts: List[Dict[str, Any]],
+    ) -> int:
+        now = self._now_iso()
+        values = {
+            "study_date": study_date,
+            "subject": subject,
+            "title": title,
+            "image_filenames": json.dumps(image_filenames, ensure_ascii=False),
+            "summary": summary,
+            "key_concepts": json.dumps(key_concepts, ensure_ascii=False),
+            "quiz_data": "[]",
+            "review_count": 0,
+            "created_at": now,
+            "updated_at": now,
+        }
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(insert(study_recall_sessions_table).values(**values))
+            return int(result.inserted_primary_key[0])
+
+    def get_study_recall_session(self, session_id: int) -> Optional[Dict[str, Any]]:
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(study_recall_sessions_table).where(study_recall_sessions_table.c.id == session_id)
+            ).fetchone()
+            if not row:
+                return None
+            attempts = conn.execute(
+                select(study_recall_attempts_table)
+                .where(study_recall_attempts_table.c.session_id == session_id)
+                .order_by(study_recall_attempts_table.c.id.desc())
+            ).fetchall()
+            card_review_rows = conn.execute(
+                select(study_recall_card_reviews_table)
+                .where(study_recall_card_reviews_table.c.session_id == session_id)
+                .order_by(study_recall_card_reviews_table.c.id.asc())
+            ).fetchall()
+        item = dict(row._mapping)
+        item["image_filenames"] = self._decode_json_list(item.get("image_filenames"))
+        item["key_concepts"] = self._decode_json_list(item.get("key_concepts"))
+        item["questions"] = self._decode_json_list(item.get("quiz_data"))
+        card_history: Dict[int, List[Dict[str, Any]]] = {}
+        for review in card_review_rows:
+            card_history.setdefault(int(review.concept_index), []).append(
+                {
+                    "rating": int(review.rating),
+                    "interval_days": int(review.interval_days),
+                    "ideal_review_at": review.ideal_review_at or review.next_review_at,
+                    "next_review_at": review.next_review_at,
+                    "created_at": review.created_at,
+                }
+            )
+        for index, concept in enumerate(item["key_concepts"]):
+            if not isinstance(concept, dict):
+                continue
+            history = card_history.get(index, [])
+            latest = history[-1] if history else None
+            concept["review"] = {
+                "history": history[-12:],
+                "last_rating": latest["rating"] if latest else None,
+                "interval_days": latest["interval_days"] if latest else None,
+                "ideal_review_at": latest["ideal_review_at"] if latest else None,
+                "next_review_at": latest["next_review_at"] if latest else None,
+            }
+        item["attempts"] = [
+            {
+                "score_percent": round(float(attempt.score_percent or 0), 1),
+                "self_rating": int(attempt.self_rating or 0),
+                "next_review_at": attempt.next_review_at,
+                "created_at": attempt.created_at,
+                "answers": self._decode_json_dict(attempt.answers),
+            }
+            for attempt in attempts
+        ]
+        return item
+
+    def list_due_study_recall_cards(self, *, today: str, limit: int = 18) -> List[Dict[str, Any]]:
+        due_cards: List[Dict[str, Any]] = []
+        for session in self.list_study_recall_sessions(limit=36):
+            full_session = self.get_study_recall_session(int(session["id"]))
+            if not full_session or str(full_session.get("study_date") or "") > today:
+                continue
+            for index, concept in enumerate(full_session.get("key_concepts") or []):
+                if not isinstance(concept, dict):
+                    continue
+                review = concept.get("review") or {}
+                next_review_at = review.get("next_review_at")
+                if next_review_at and next_review_at > today:
+                    continue
+                due_cards.append(
+                    {
+                        "session_id": int(full_session["id"]),
+                        "concept_index": index,
+                        "session_title": str(full_session.get("title") or ""),
+                        "subject": str(full_session.get("subject") or ""),
+                        "concept": str(concept.get("concept") or ""),
+                        "last_rating": review.get("last_rating"),
+                        "next_review_at": next_review_at,
+                    }
+                )
+        due_cards.sort(key=lambda item: (item["next_review_at"] or "0000-00-00", item["session_title"], item["concept_index"]))
+        return due_cards[: max(1, min(int(limit), 60))]
+
+    def list_study_recall_schedule(self, *, start_date: str, days: int = 7, daily_capacity: int = 18) -> List[Dict[str, Any]]:
+        start = datetime.fromisoformat(start_date).date()
+        schedule_days = [start + timedelta(days=offset) for offset in range(max(1, min(int(days), 31)))]
+        loads = {day.isoformat(): 0 for day in schedule_days}
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(
+                select(study_recall_card_reviews_table).order_by(study_recall_card_reviews_table.c.id.desc())
+            ).fetchall()
+        latest_by_card: Dict[tuple[int, int], Any] = {}
+        for row in rows:
+            latest_by_card.setdefault((int(row.session_id), int(row.concept_index)), row)
+        for row in latest_by_card.values():
+            if row.next_review_at in loads:
+                loads[row.next_review_at] += 1
+        return [
+            {
+                "date": day.isoformat(),
+                "count": loads[day.isoformat()],
+                "capacity": daily_capacity,
+                "is_today": day == start,
+            }
+            for day in schedule_days
+        ]
+
+    def record_study_recall_card_ratings(self, *, session_id: int, ratings: Dict[int, int], review_date: str) -> bool:
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            session_row = conn.execute(
+                select(
+                    study_recall_sessions_table.c.id,
+                    study_recall_sessions_table.c.key_concepts,
+                    study_recall_sessions_table.c.review_count,
+                ).where(study_recall_sessions_table.c.id == session_id)
+            ).fetchone()
+            if not session_row:
+                return False
+            concepts = self._decode_json_list(session_row.key_concepts)
+            expected_indexes = set(range(len(concepts)))
+            if not ratings or not set(ratings).issubset(expected_indexes):
+                return False
+            previous_rows = conn.execute(
+                select(study_recall_card_reviews_table).order_by(study_recall_card_reviews_table.c.id.desc())
+            ).fetchall()
+            latest_by_index: Dict[int, Any] = {}
+            scheduled_loads: Dict[str, int] = {}
+            for row in previous_rows:
+                card_key = (int(row.session_id), int(row.concept_index))
+                if card_key in latest_by_index:
+                    continue
+                latest_by_index[card_key] = row
+                if int(row.session_id) != session_id or int(row.concept_index) not in ratings:
+                    scheduled_loads[row.next_review_at] = scheduled_loads.get(row.next_review_at, 0) + 1
+            next_dates: List[str] = []
+            normalized_ratings: List[int] = []
+            review_day = datetime.fromisoformat(review_date).date()
+            ordered_indexes = sorted(ratings, key=lambda index: (int(ratings[index]), index))
+            assignments: Dict[int, tuple[int, str, str]] = {}
+            for index in ordered_indexes:
+                rating = max(1, min(int(ratings[index]), 5))
+                previous = latest_by_index.get((session_id, index))
+                interval_days = self._recall_interval_days(
+                    rating,
+                    int(previous.rating) if previous else None,
+                    int(previous.interval_days) if previous else 0,
+                )
+                ideal_review_at = (review_day + timedelta(days=interval_days)).isoformat()
+                candidate_day = datetime.fromisoformat(ideal_review_at).date()
+                for _offset in range(61):
+                    candidate = candidate_day.isoformat()
+                    if scheduled_loads.get(candidate, 0) < 18:
+                        break
+                    candidate_day += timedelta(days=1)
+                next_review_at = candidate_day.isoformat()
+                scheduled_loads[next_review_at] = scheduled_loads.get(next_review_at, 0) + 1
+                assignments[index] = (interval_days, ideal_review_at, next_review_at)
+            for index in ordered_indexes:
+                rating = max(1, min(int(ratings[index]), 5))
+                interval_days, ideal_review_at, next_review_at = assignments[index]
+                conn.execute(
+                    insert(study_recall_card_reviews_table).values(
+                        session_id=session_id,
+                        concept_index=index,
+                        rating=rating,
+                        interval_days=interval_days,
+                        ideal_review_at=ideal_review_at,
+                        next_review_at=next_review_at,
+                        created_at=now,
+                    )
+                )
+                next_dates.append(next_review_at)
+                normalized_ratings.append(rating)
+            for (row_session_id, _concept_index), row in latest_by_index.items():
+                if row_session_id == session_id and int(row.concept_index) not in ratings:
+                    next_dates.append(row.next_review_at)
+            conn.execute(
+                update(study_recall_sessions_table)
+                .where(study_recall_sessions_table.c.id == session_id)
+                .values(
+                    last_score_percent=None,
+                    last_self_rating=int(round(sum(normalized_ratings) / len(normalized_ratings))),
+                    next_review_at=min(next_dates),
+                    review_count=int(session_row.review_count or 0) + 1,
+                    updated_at=now,
+                )
+            )
+        return True
+
+    def list_study_recall_sessions(self, *, limit: int = 24) -> List[Dict[str, Any]]:
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(
+                select(study_recall_sessions_table)
+                .order_by(study_recall_sessions_table.c.created_at.desc())
+                .limit(max(1, min(int(limit), 100)))
+            ).fetchall()
+        return [
+            {
+                "id": int(row.id),
+                "study_date": row.study_date,
+                "subject": row.subject,
+                "title": row.title,
+                "summary": row.summary,
+                "key_concepts": self._decode_json_list(row.key_concepts),
+                "last_score_percent": round(float(row.last_score_percent or 0), 1) if row.last_score_percent is not None else None,
+                "last_self_rating": int(row.last_self_rating or 0) if row.last_self_rating is not None else None,
+                "next_review_at": row.next_review_at,
+                "review_count": int(row.review_count or 0),
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+
+    def record_study_recall_attempt(
+        self,
+        *,
+        session_id: int,
+        score_percent: float,
+        self_rating: int,
+        answers: Dict[str, Any],
+        next_review_at: str,
+    ) -> bool:
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            session_row = conn.execute(
+                select(study_recall_sessions_table.c.id, study_recall_sessions_table.c.review_count)
+                .where(study_recall_sessions_table.c.id == session_id)
+            ).fetchone()
+            if not session_row:
+                return False
+            conn.execute(
+                insert(study_recall_attempts_table).values(
+                    session_id=session_id,
+                    score_percent=max(0.0, min(float(score_percent), 100.0)),
+                    self_rating=max(1, min(int(self_rating), 5)),
+                    answers=json.dumps(answers, ensure_ascii=False),
+                    next_review_at=next_review_at,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                update(study_recall_sessions_table)
+                .where(study_recall_sessions_table.c.id == session_id)
+                .values(
+                    last_score_percent=max(0.0, min(float(score_percent), 100.0)),
+                    last_self_rating=max(1, min(int(self_rating), 5)),
+                    next_review_at=next_review_at,
+                    review_count=int(session_row.review_count or 0) + 1,
+                    updated_at=now,
+                )
+            )
+        return True
 
     # -- assignments ------------------------------------------------------
     def save_user_cache(self, username: str, payload: Dict[str, Any]) -> None:
