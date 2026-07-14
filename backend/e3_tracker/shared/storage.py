@@ -974,16 +974,64 @@ class PersistentStorage:
             return int(result.inserted_primary_key[0])
 
     def delete_study_recall_session(self, session_id: int) -> bool:
+        now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
             exists = conn.execute(
                 select(study_recall_sessions_table.c.id).where(study_recall_sessions_table.c.id == session_id)
             ).fetchone()
             if not exists:
                 return False
+            remaining_sessions = conn.execute(
+                select(
+                    study_recall_sessions_table.c.id,
+                    study_recall_sessions_table.c.key_concepts,
+                ).where(study_recall_sessions_table.c.id != session_id)
+            ).fetchall()
+            for remaining in remaining_sessions:
+                concepts = self._decode_json_list(remaining.key_concepts)
+                changed = False
+                for concept in concepts:
+                    if not isinstance(concept, dict) or not isinstance(concept.get("relations"), list):
+                        continue
+                    filtered = []
+                    for relation in concept["relations"]:
+                        try:
+                            related_session_id = int(relation.get("session_id") or 0) if isinstance(relation, dict) else 0
+                        except (TypeError, ValueError):
+                            related_session_id = 0
+                        if related_session_id != session_id:
+                            filtered.append(relation)
+                    if len(filtered) != len(concept["relations"]):
+                        concept["relations"] = filtered
+                        changed = True
+                if changed:
+                    conn.execute(
+                        update(study_recall_sessions_table)
+                        .where(study_recall_sessions_table.c.id == int(remaining.id))
+                        .values(key_concepts=json.dumps(concepts, ensure_ascii=False), updated_at=now)
+                    )
             conn.execute(delete(study_recall_card_reviews_table).where(study_recall_card_reviews_table.c.session_id == session_id))
             conn.execute(delete(study_recall_attempts_table).where(study_recall_attempts_table.c.session_id == session_id))
             conn.execute(delete(study_recall_sessions_table).where(study_recall_sessions_table.c.id == session_id))
         return True
+
+    def replace_study_recall_concepts_bulk(self, concepts_by_session: Dict[int, List[Dict[str, Any]]]) -> int:
+        if not concepts_by_session:
+            return 0
+        now = self._now_iso()
+        updated = 0
+        with self._lock, self._engine.begin() as conn:
+            for session_id, key_concepts in concepts_by_session.items():
+                result = conn.execute(
+                    update(study_recall_sessions_table)
+                    .where(study_recall_sessions_table.c.id == int(session_id))
+                    .values(
+                        key_concepts=json.dumps(key_concepts, ensure_ascii=False),
+                        updated_at=now,
+                    )
+                )
+                updated += int(result.rowcount or 0)
+        return updated
 
     def get_study_recall_session(self, session_id: int) -> Optional[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
@@ -1175,13 +1223,12 @@ class PersistentStorage:
             )
         return True
 
-    def list_study_recall_sessions(self, *, limit: int = 24) -> List[Dict[str, Any]]:
+    def list_study_recall_sessions(self, *, limit: Optional[int] = 24) -> List[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
-            rows = conn.execute(
-                select(study_recall_sessions_table)
-                .order_by(study_recall_sessions_table.c.created_at.desc())
-                .limit(max(1, min(int(limit), 100)))
-            ).fetchall()
+            query = select(study_recall_sessions_table).order_by(study_recall_sessions_table.c.created_at.desc())
+            if limit is not None:
+                query = query.limit(max(1, min(int(limit), 100)))
+            rows = conn.execute(query).fetchall()
         return [
             {
                 "id": int(row.id),

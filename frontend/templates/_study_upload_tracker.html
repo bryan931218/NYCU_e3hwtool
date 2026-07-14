@@ -1,0 +1,59 @@
+<style>
+    .study-upload-tracker { position:fixed; right:18px; bottom:18px; z-index:1000; width:min(360px,calc(100vw - 32px)); padding:13px 14px; color:#172033; border:1px solid #c9d7e8; border-left:4px solid #1769d8; border-radius:6px; background:#fff; box-shadow:0 14px 34px rgba(23,32,51,.16); }
+    .study-upload-tracker[hidden] { display:none; }.study-upload-tracker-head { display:flex; align-items:start; justify-content:space-between; gap:12px; }.study-upload-tracker strong { display:block; font-size:13px; line-height:1.4; }.study-upload-tracker p { margin:4px 0 9px; color:#68758a; font-size:12px; line-height:1.5; }.study-upload-tracker progress { display:block; width:100%; height:8px; accent-color:#1769d8; }.study-upload-tracker-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:9px; }.study-upload-tracker-percent { color:#087f80; font-size:11px; font-weight:850; }.study-upload-tracker-open { color:#1769d8; font-size:12px; font-weight:850; }.study-upload-tracker-close { width:28px; height:28px; display:grid; flex:0 0 auto; place-items:center; padding:0; color:#68758a; border:0; background:transparent; cursor:pointer; font-size:20px; line-height:1; }.study-upload-tracker.is-error { border-left-color:#b83b45; }.study-upload-tracker.is-error progress { accent-color:#b83b45; }
+</style>
+<aside class="study-upload-tracker" data-study-upload-tracker hidden aria-live="polite">
+    <div class="study-upload-tracker-head"><div><strong data-study-upload-title>筆記整理中</strong><p data-study-upload-message>正在準備背景處理。</p></div><button class="study-upload-tracker-close" type="button" data-study-upload-close title="關閉進度提示" aria-label="關閉進度提示">×</button></div>
+    <progress max="100" value="0" data-study-upload-bar></progress>
+    <div class="study-upload-tracker-actions"><span class="study-upload-tracker-percent" data-study-upload-percent>0%</span><a class="study-upload-tracker-open" data-study-upload-open hidden>開啟完成的筆記</a></div>
+</aside>
+<script>
+(() => {
+    const root = document.querySelector('[data-study-upload-tracker]');
+    if (!root) return;
+    const storageKey = 'e3StudyUploadJobId';
+    const title = root.querySelector('[data-study-upload-title]');
+    const message = root.querySelector('[data-study-upload-message]');
+    const bar = root.querySelector('[data-study-upload-bar]');
+    const percent = root.querySelector('[data-study-upload-percent]');
+    const open = root.querySelector('[data-study-upload-open]');
+    const close = root.querySelector('[data-study-upload-close]');
+    let pollTimer = null;
+
+    const clearTimer = () => { if (pollTimer) window.clearTimeout(pollTimer); pollTimer = null; };
+    const render = (job) => {
+        const value = Math.max(0, Math.min(Number(job.progress) || 0, 100));
+        root.hidden = false;
+        root.classList.toggle('is-error', job.status === 'error');
+        title.textContent = job.status === 'success' ? '筆記整理完成' : job.status === 'error' ? '筆記整理失敗' : '筆記背景處理中';
+        message.textContent = job.message || '正在處理筆記。';
+        bar.value = value;
+        percent.textContent = `${value}%`;
+        open.hidden = job.status !== 'success' || !job.redirect_url;
+        if (!open.hidden) open.href = job.redirect_url;
+        window.dispatchEvent(new CustomEvent('e3-study-upload-progress', { detail: job }));
+    };
+    const poll = async (jobId) => {
+        clearTimer();
+        try {
+            const response = await fetch(`/admin/study-recall/upload-jobs/${encodeURIComponent(jobId)}`, { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+            const job = await response.json().catch(() => ({}));
+            if (!response.ok || !job.ok) throw new Error(job.error || '無法讀取筆記處理進度。');
+            render(job);
+            if (job.status === 'running') pollTimer = window.setTimeout(() => poll(jobId), 1200);
+        } catch (error) {
+            render({ status:'error', progress:Number(bar.value) || 0, message:error.message || '無法讀取筆記處理進度。' });
+        }
+    };
+    const track = (jobId) => {
+        if (!jobId) return;
+        localStorage.setItem(storageKey, jobId);
+        render({ status:'running', progress:10, message:'照片已上傳，背景工作即將開始。' });
+        poll(jobId);
+    };
+    close.addEventListener('click', () => { clearTimer(); localStorage.removeItem(storageKey); root.hidden = true; });
+    window.E3StudyUploadTracker = { track };
+    const activeJob = localStorage.getItem(storageKey);
+    if (activeJob) poll(activeJob);
+})();
+</script>

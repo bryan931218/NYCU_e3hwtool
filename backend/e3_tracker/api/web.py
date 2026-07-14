@@ -69,6 +69,8 @@ PUBLIC_STUDY_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "public_study_progress.html
 PUBLIC_STUDY_TEMPLATE = PUBLIC_STUDY_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_RECALL_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "study_recall.html"
 STUDY_RECALL_TEMPLATE = STUDY_RECALL_TEMPLATE_PATH.read_text(encoding="utf-8")
+STUDY_UPLOAD_TRACKER_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "_study_upload_tracker.html"
+STUDY_UPLOAD_TRACKER_TEMPLATE = STUDY_UPLOAD_TRACKER_TEMPLATE_PATH.read_text(encoding="utf-8")
 
 STUDY_PLAN_BLOCKS = (
     {"subject": "線性代數", "weeks": 4, "total_minutes": 4107.8, "lesson_targets": (11, 22, 32, 42)},
@@ -930,6 +932,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     app = Flask(__name__)
     app.secret_key = env_defaults["web_secret"]
+    app.jinja_env.globals["study_upload_tracker"] = STUDY_UPLOAD_TRACKER_TEMPLATE
     session_cookie_secure = _env_flag_truthy(env_defaults.get("session_cookie_secure"))
     session_cookie_samesite = env_defaults.get("session_cookie_samesite") or "Lax"
     app.config.update(
@@ -1011,6 +1014,28 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     NEW_ASSIGNMENT_WINDOW_SECONDS = 5 * 60
     refresh_jobs_lock = threading.Lock()
     refresh_jobs: Dict[str, Dict[str, Any]] = {}
+    study_upload_jobs_lock = threading.Lock()
+    study_upload_jobs: Dict[str, Dict[str, Any]] = {}
+    study_relation_rebuild_lock = threading.Lock()
+
+    def _set_study_upload_job(job_id: str, **changes: Any) -> None:
+        with study_upload_jobs_lock:
+            job = study_upload_jobs.get(job_id)
+            if job is None:
+                return
+            job.update(changes)
+            job["updated_at"] = time.time()
+
+    def _active_study_upload_job(username: str) -> Optional[str]:
+        cutoff = time.time() - 24 * 60 * 60
+        with study_upload_jobs_lock:
+            expired = [job_id for job_id, job in study_upload_jobs.items() if float(job.get("updated_at") or 0) < cutoff]
+            for job_id in expired:
+                study_upload_jobs.pop(job_id, None)
+            for job_id, job in study_upload_jobs.items():
+                if job.get("username") == username and job.get("status") == "running":
+                    return job_id
+        return None
 
     def _refresh_job_state(username: str) -> Optional[Dict[str, Any]]:
         if not username:
@@ -2438,6 +2463,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "type": "input_text",
                 "text": (
                     "你是研究所考試的嚴謹助教。請閱讀上傳的繁體中文筆記，整理成精確、好理解且好記憶的繁體中文重點卡。"
+                    "卡片內容必須以影像中實際寫到的資訊為主，只可補上理解原句所必需的最少說明，不得自行擴寫成課本章節。"
+                    "不要因為筆記提到某個專有名詞，就額外建立該名詞的定義卡；只有筆記本身正在記錄、定義或解釋該名詞時，才建立對應重點卡。"
                     "每張卡片只保留一個可直接複習的考試概念；concept 是不超過 16 字的短標題。explanation 請用 2 至 5 句說清楚："
                     "先下定義或結論，再說明成立條件、用途、推論原因或容易混淆處；資訊要完整但避免背景敘述、重複語句與空泛提醒。"
                     "memory_hint 是不超過 32 字的口訣或辨識線索。"
@@ -2521,6 +2548,149 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not validated:
             return None, "筆記內容不足以產生可靠的重點卡，請上傳更清晰或更多頁筆記。"
         return validated, None
+
+    def _rebuild_all_study_recall_relations() -> Optional[str]:
+        sessions = storage.list_study_recall_sessions(limit=None)
+        concepts_by_session: Dict[int, List[Dict[str, Any]]] = {}
+        card_catalog: List[Dict[str, Any]] = []
+        cards_by_id: Dict[str, Dict[str, Any]] = {}
+        for recall_session in sessions:
+            session_id = int(recall_session["id"])
+            concepts = recall_session.get("key_concepts") or []
+            concepts_by_session[session_id] = concepts
+            for concept_index, concept in enumerate(concepts):
+                if not isinstance(concept, dict) or not _is_recall_concept_eligible(concept):
+                    continue
+                card_id = f"s{session_id}:c{concept_index}"
+                catalog_item = {
+                    "id": card_id,
+                    "note": str(concept.get("note_topic") or recall_session.get("title") or "")[:80],
+                    "topic": str(concept.get("topic") or "")[:48],
+                    "concept": str(concept.get("concept") or "")[:80],
+                    "explanation": str(concept.get("explanation") or "")[:220],
+                }
+                card_catalog.append(catalog_item)
+                cards_by_id[card_id] = {
+                    "session_id": session_id,
+                    "concept_index": concept_index,
+                    "title": catalog_item["concept"],
+                }
+
+        if len(card_catalog) < 2:
+            for concepts in concepts_by_session.values():
+                for concept in concepts:
+                    if isinstance(concept, dict):
+                        concept["relations"] = []
+            storage.replace_study_recall_concepts_bulk(concepts_by_session)
+            return None
+
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["relations"],
+            "properties": {
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["source_id", "target_id", "association"],
+                        "properties": {
+                            "source_id": {"type": "string"},
+                            "target_id": {"type": "string"},
+                            "association": {"type": "string", "maxLength": 180},
+                        },
+                    },
+                }
+            },
+        }
+        prompt = (
+            "你是研究所考試的知識架構助教。以下是使用者目前所有重點卡。每次都必須忽略舊關聯，重新審視全部卡片。"
+            "找出具有明確學理關係的卡片配對，包括前置知識、定義與推論、公式推導、互逆、比較、特例或實際應用。"
+            "同份與不同份筆記都可連結，但不得只因同科目或關鍵字相似而連結。每張卡最多保留 4 個最有助於複習的關聯；"
+            "沒有強關聯的卡片可不輸出。每組配對只輸出一次。association 請用精確、好記的繁體中文說明兩件事："
+            "它們的觀念關聯在哪，以及複習時可以如何從一張聯想到另一張。說明必須從任一張卡閱讀都成立，形成雙向記憶橋接；"
+            "請直接說明具體知識，不可使用『兩者相關』等空泛句子，也不要使用『前者／後者』等依賴輸出順序的代稱。"
+            "只使用清單提供的 id，不得改寫 id。\n\n重點卡清單：\n"
+            + json.dumps(card_catalog, ensure_ascii=False, separators=(",", ":"))
+        )
+        request_body = {
+            "model": openai_model,
+            "store": False,
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "study_recall_relations",
+                    "strict": True,
+                    "schema": schema,
+                }
+            },
+        }
+        try:
+            response = requests.post(
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
+                json=request_body,
+                timeout=120,
+            )
+            response.raise_for_status()
+            parsed = json.loads(_extract_openai_text(response.json()))
+        except (requests.RequestException, ValueError, TypeError):
+            return "AI 關聯分析暫時失敗，原有關聯已保留。"
+
+        raw_relations = parsed.get("relations") if isinstance(parsed, dict) else None
+        if not isinstance(raw_relations, list):
+            return "AI 未回傳有效的關聯資料，原有關聯已保留。"
+
+        for concepts in concepts_by_session.values():
+            for concept in concepts:
+                if isinstance(concept, dict):
+                    concept["relations"] = []
+        relation_counts = {card_id: 0 for card_id in cards_by_id}
+        seen_pairs = set()
+        for relation in raw_relations:
+            if not isinstance(relation, dict):
+                continue
+            source_id = str(relation.get("source_id") or "").strip()
+            target_id = str(relation.get("target_id") or "").strip()
+            association = " ".join(str(relation.get("association") or "").split())[:180]
+            pair = tuple(sorted((source_id, target_id)))
+            if (
+                source_id not in cards_by_id
+                or target_id not in cards_by_id
+                or source_id == target_id
+                or pair in seen_pairs
+                or not association
+                or relation_counts[source_id] >= 4
+                or relation_counts[target_id] >= 4
+            ):
+                continue
+            seen_pairs.add(pair)
+            relation_counts[source_id] += 1
+            relation_counts[target_id] += 1
+            source = cards_by_id[source_id]
+            target = cards_by_id[target_id]
+            source_concept = concepts_by_session[source["session_id"]][source["concept_index"]]
+            target_concept = concepts_by_session[target["session_id"]][target["concept_index"]]
+            source_concept["relations"].append(
+                {
+                    "session_id": target["session_id"],
+                    "concept_index": target["concept_index"],
+                    "title": target["title"],
+                    "association": association,
+                }
+            )
+            target_concept["relations"].append(
+                {
+                    "session_id": source["session_id"],
+                    "concept_index": source["concept_index"],
+                    "title": source["title"],
+                    "association": association,
+                }
+            )
+        storage.replace_study_recall_concepts_bulk(concepts_by_session)
+        return None
 
     def fetch_assignments_for(user: Dict[str, str]) -> Tuple[Dict[str, Any], Optional[str]]:
         opts = CollectOptions(
@@ -3200,17 +3370,42 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 concept["display_index"] = index
                 concept["topic"] = str(concept.get("topic") or note_topic).strip() or note_topic
                 related_cards = []
-                for related_title in concept.get("related_concepts") or []:
-                    related_index = title_indexes.get(str(related_title or "").strip().casefold())
-                    if related_index is None or related_index == index:
-                        continue
-                    related_concept = indexed_concepts.get(related_index) or {}
-                    related_cards.append(
-                        {
-                            "title": str(related_concept.get("concept") or related_title),
-                            "index": related_index,
-                        }
-                    )
+                stored_relations = concept.get("relations")
+                if isinstance(stored_relations, list):
+                    for relation in stored_relations:
+                        if not isinstance(relation, dict):
+                            continue
+                        try:
+                            related_session_id = int(relation.get("session_id") or 0)
+                            related_index = int(relation.get("concept_index"))
+                        except (TypeError, ValueError):
+                            continue
+                        related_title = str(relation.get("title") or "").strip()
+                        association = str(relation.get("association") or "").strip()
+                        if related_session_id <= 0 or related_index < 0 or not related_title or not association:
+                            continue
+                        related_cards.append(
+                            {
+                                "session_id": related_session_id,
+                                "title": related_title,
+                                "index": related_index,
+                                "association": association,
+                            }
+                        )
+                else:
+                    for related_title in concept.get("related_concepts") or []:
+                        related_index = title_indexes.get(str(related_title or "").strip().casefold())
+                        if related_index is None or related_index == index:
+                            continue
+                        related_concept = indexed_concepts.get(related_index) or {}
+                        related_cards.append(
+                            {
+                                "session_id": int(session["id"]),
+                                "title": str(related_concept.get("concept") or related_title),
+                                "index": related_index,
+                                "association": "這兩張卡屬於同一份筆記中的直接相關觀念；可一起對照複習。",
+                            }
+                        )
                 concept["related_cards"] = related_cards[:4]
                 topic_groups.setdefault(concept["topic"], []).append(concept)
             session["note_topic"] = note_topic
@@ -3332,6 +3527,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @app.post("/admin/study-recall/upload")
     @admin_required
     def admin_study_recall_upload():
+        user = current_user() or {}
+        username = str(user.get("username") or "")
+        active_job_id = _active_study_upload_job(username)
+        if active_job_id:
+            if _is_study_upload_request():
+                return {
+                    "ok": True,
+                    "background": True,
+                    "job_id": active_job_id,
+                    "message": "已有一份筆記正在背景整理。",
+                }, 202
+            flash("已有一份筆記正在背景整理，可先使用其他頁面。", "info")
+            return redirect(url_for("admin_study_recall"))
         study_date = (request.form.get("study_date") or _study_plan_business_date().isoformat()).strip()
         try:
             date.fromisoformat(study_date)
@@ -3359,28 +3567,103 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if total_image_bytes > STUDY_NOTE_MAX_TOTAL_BYTES:
                 return _study_upload_error("筆記照片壓縮後合計必須小於 24MB。")
             images.append((filename, image_bytes, mime_type))
-        analysis, error = _analyze_study_note_images(images)
-        if error or not analysis:
-            return _study_upload_error(error or "筆記分析失敗。", 502)
-        stored_names = [f"{index + 1:02d}-{secrets.token_hex(5)}{Path(name).suffix.lower()}" for index, (name, _bytes, _mime) in enumerate(images)]
-        title = requested_title or str(analysis.get("detected_topic") or "").strip()[:120] or f"{subject}筆記"
-        recall_id = storage.create_study_recall_session(
-            study_date=study_date,
-            subject=subject,
-            title=title,
-            image_filenames=stored_names,
-            summary=analysis["summary"],
-            key_concepts=analysis["key_concepts"],
-        )
-        destination = _ensure_private_dir(study_upload_root / str(recall_id))
-        for stored_name, (_original_name, image_bytes, _mime_type) in zip(stored_names, images):
-            (destination / stored_name).write_bytes(image_bytes)
-        record_ui_event("study_recall_note_analyzed", meta={"session_id": recall_id, "subject": subject, "image_count": len(images)})
-        redirect_url = url_for("admin_study_recall", session_id=recall_id)
+        job_id = secrets.token_urlsafe(18)
+        now = time.time()
+        with study_upload_jobs_lock:
+            study_upload_jobs[job_id] = {
+                "username": username,
+                "status": "running",
+                "progress": 10,
+                "message": "照片已接收，等待 AI 開始整理。",
+                "created_at": now,
+                "updated_at": now,
+            }
+
+        def _run_study_upload() -> None:
+            recall_id: Optional[int] = None
+            destination: Optional[Path] = None
+            try:
+                _set_study_upload_job(job_id, progress=25, message="AI 正在閱讀原始筆記並建立重點卡。")
+                analysis, error = _analyze_study_note_images(images)
+                if error or not analysis:
+                    raise RuntimeError(error or "筆記分析失敗。")
+                _set_study_upload_job(job_id, progress=62, message="重點卡已產生，正在儲存原始圖片與卡片。")
+                stored_names = [
+                    f"{index + 1:02d}-{secrets.token_hex(5)}{Path(name).suffix.lower()}"
+                    for index, (name, _bytes, _mime) in enumerate(images)
+                ]
+                title = requested_title or str(analysis.get("detected_topic") or "").strip()[:120] or f"{subject}筆記"
+                recall_id = storage.create_study_recall_session(
+                    study_date=study_date,
+                    subject=subject,
+                    title=title,
+                    image_filenames=stored_names,
+                    summary=analysis["summary"],
+                    key_concepts=analysis["key_concepts"],
+                )
+                destination = _ensure_private_dir(study_upload_root / str(recall_id))
+                for stored_name, (_original_name, image_bytes, _mime_type) in zip(stored_names, images):
+                    (destination / stored_name).write_bytes(image_bytes)
+                _set_study_upload_job(job_id, progress=78, message="正在重新分析所有新舊重點卡的關聯與聯想。")
+                with study_relation_rebuild_lock:
+                    relation_error = _rebuild_all_study_recall_relations()
+                final_message = (
+                    f"重點卡已完成；{relation_error}"
+                    if relation_error
+                    else "重點卡已完成，所有新舊卡片的關聯與聯想也已更新。"
+                )
+                _set_study_upload_job(
+                    job_id,
+                    status="success",
+                    progress=100,
+                    message=final_message,
+                    session_id=recall_id,
+                )
+                record_ui_event(
+                    "study_recall_note_analyzed",
+                    meta={"username": username, "session_id": recall_id, "subject": subject, "image_count": len(images)},
+                )
+            except Exception as exc:  # pragma: no cover - guarded by route-level integration tests
+                if recall_id is not None:
+                    storage.delete_study_recall_session(recall_id)
+                if destination is not None and destination.is_dir():
+                    try:
+                        shutil.rmtree(destination)
+                    except OSError:
+                        pass
+                message = str(exc).strip() or "筆記背景處理失敗，請稍後重試。"
+                _set_study_upload_job(job_id, status="error", message=message[:240])
+                record_ui_event("study_recall_note_analyzed", "error", {"username": username, "reason": message[:160]})
+
+        threading.Thread(target=_run_study_upload, daemon=True).start()
         if _is_study_upload_request():
-            return {"ok": True, "redirect_url": redirect_url}
-        flash("筆記已整理完成。請逐張重點卡填寫印象分，系統會分別安排下次複習。", "success")
-        return redirect(redirect_url)
+            return {
+                "ok": True,
+                "background": True,
+                "job_id": job_id,
+                "message": "已開始背景整理，可自由前往其他頁面。",
+            }, 202
+        flash("已開始背景整理筆記，可自由前往其他頁面並從右下角查看進度。", "success")
+        return redirect(url_for("admin_study_recall"))
+
+    @app.get("/admin/study-recall/upload-jobs/<job_id>")
+    @admin_required
+    def admin_study_recall_upload_job(job_id: str):
+        user = current_user() or {}
+        with study_upload_jobs_lock:
+            stored_job = study_upload_jobs.get(job_id)
+            job = dict(stored_job) if stored_job else None
+        if not job or job.get("username") != user.get("username"):
+            return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
+        payload = {
+            "ok": True,
+            "status": job.get("status") or "running",
+            "progress": int(job.get("progress") or 0),
+            "message": str(job.get("message") or "正在處理筆記。"),
+        }
+        if job.get("status") == "success" and job.get("session_id"):
+            payload["redirect_url"] = url_for("admin_study_recall", session_id=int(job["session_id"]))
+        return payload
 
     @app.post("/admin/study-recall/<int:session_id>/rate-cards")
     @admin_required
