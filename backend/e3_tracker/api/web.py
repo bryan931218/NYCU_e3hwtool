@@ -2349,9 +2349,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     def _build_recall_widget_context() -> Dict[str, Any]:
         today = _study_plan_business_date().isoformat()
-        sessions = storage.list_study_recall_sessions(limit=6)
-        due = [item for item in sessions if item.get("next_review_at") and item["next_review_at"] <= today]
-        items = (due + [item for item in sessions if item not in due])[:3]
         due_cards = storage.list_due_study_recall_cards(today=today, limit=18)
         cards: List[Dict[str, Any]] = []
         session_cache: Dict[int, Dict[str, Any]] = {}
@@ -2368,7 +2365,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             cards.append({**due_card, "concept_data": concepts[concept_index]})
         return {
             "due_count": len(cards),
-            "items": items,
             "cards": cards,
         }
 
@@ -2475,6 +2471,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "若兩張卡具有前置知識、推導、比較、互逆或應用關係，請在 related_concepts 填入對方完全相同的 concept 標題，"
                     "最多 4 張且關聯需雙向；沒有明確關係時輸出空陣列，不可為了湊數建立關聯。"
                     "所有數學表達式請使用 LaTeX：行內公式一律寫成 \\( ... \\)，獨立公式一律寫成 \\[ ... \\]；"
+                    "若公式推導較長，必須在獨立公式中使用 \\begin{aligned} ... \\\\ ... \\end{aligned}，依等號或推導步驟合理換行，避免輸出單一超長公式。"
                     "保留變數、上下標、分數、轉置、向量與條件，不要輸出 Markdown 程式碼區塊或純文字替代公式。"
                     "請用可靠的學科知識檢查筆記：若定義、符號、公式、推論或例子可明確判定為錯誤，先靜默修正為正確版本，再建立一般重點卡。"
                     "不得建立『待確認／已修正／錯誤說明』卡片，也不得在 summary、explanation 或 memory_hint 解釋你做了修正。"
@@ -3301,7 +3298,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             share_url=request.url,
             is_admin=bool(user and user.get("is_admin")),
             admin_user=user,
-            recall_widget=_build_recall_widget_context() if user and user.get("is_admin") else None,
         )
 
     @app.get("/public/study-progress")

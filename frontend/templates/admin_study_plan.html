@@ -4,6 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>管理員讀書計畫｜E3 作業追蹤系統</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
     <style>
         :root {
@@ -40,7 +43,8 @@
         .identity-dot { width: 9px; height: 9px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 4px var(--green-soft); }
         .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); }
         .brand { display:flex; align-items:center; gap:10px; color:var(--ink); font-size:14px; font-weight:900; white-space:nowrap; }.mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }.nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }.nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }.nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }.admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
-        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { border-top:1px solid var(--line); }.recall-item { display:block; width:100%; padding:11px 16px; border:0; border-bottom:1px solid var(--line); color:inherit; background:#fff; text-align:left; cursor:pointer; }.recall-item:last-child { border-bottom:0; }.recall-item:hover { background:#f8fbff; }.recall-item-title { font-size:13px; font-weight:850; }.recall-item-meta { margin-top:3px; color:var(--muted); font-size:12px; }.recall-dialog { width:min(760px,calc(100% - 32px)); max-height:min(720px,calc(100vh - 32px)); padding:0; border:1px solid var(--line); border-radius:7px; color:var(--ink); background:var(--paper); box-shadow:0 24px 70px rgba(16,42,67,.24); }.recall-dialog::backdrop { background:rgba(16,42,67,.38); }.recall-dialog-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:18px 20px; border-bottom:1px solid var(--line); }.recall-dialog-head h2 { margin:0; font-size:18px; }.recall-close { display:grid; place-items:center; width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:22px; line-height:1; cursor:pointer; }.recall-close:hover { color:var(--ink); border-color:var(--blue); }.recall-concepts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:20px; overflow:auto; }.recall-concept-card { padding:14px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-concept-card h3 { margin:0; font-size:14px; }.recall-concept-card p { margin:7px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }.recall-concept-card .hint { margin-top:9px; color:var(--teal); font-size:12px; font-weight:800; }.recall-empty { padding:24px; color:var(--muted); text-align:center; }
+        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { min-width:0; padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { overflow-wrap:anywhere; font-size:13px; font-weight:850; }.recall-card-note { min-width:0; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; width:1px; height:1px; margin:0; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-rate:disabled { opacity:.6; cursor:wait; }.recall-rate-status { min-height:16px; margin:0; color:var(--red); font-size:11px; }.recall-card.is-completing { opacity:0; transform:scale(.98); transition:opacity .18s ease,transform .18s ease; }.recall-empty { padding:18px; color:var(--muted); text-align:center; font-size:13px; }
+        [data-math-content] { min-width:0; max-width:100%; overflow-wrap:anywhere; } [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; } [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:thin; } [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0 auto; overflow:visible; text-align:left; }
         .content { width: 100%; max-width: none; padding: 34px; }
         .title-row { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 24px; }
         h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); line-height: 1.12; letter-spacing: -.035em; }
@@ -180,8 +184,6 @@
         .youtube-link:hover { background: #ffe1e1; }
         .watch-button { min-height: 26px; padding: 3px 8px; border: 1px solid #aac4ea; border-radius: 4px; color: var(--blue); background: #fff; font-size: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; }
         .watch-button:hover { border-color: var(--blue); background: var(--blue-soft); }
-        .completion-badge { display: inline-flex; align-items: center; padding: 2px 6px; border: 1px solid #a9d6b6; border-radius: 4px; color: var(--green); background: var(--green-soft); font-size: 10px; font-weight: 850; white-space: nowrap; }
-        .completion-badge[hidden] { display: none; }
         .video-row-complete { background: #f5fbf7; }
         .video-row-complete td:first-child { box-shadow: inset 3px 0 0 var(--green); color: var(--green); font-weight: 850; }
         .log-numbers { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -200,7 +202,7 @@
         @media (max-width: 900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; } }
         @media (max-width: 760px) { .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .youtube-player { padding: 16px; } .player-frame, .player-frame iframe, #youtube-player { min-height: 210px; } .player-title { font-size: 19px; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } .week-row { padding: 13px 14px; } }
         @media (max-width: 620px) { .study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; } }
-        @media (max-width: 620px) { .recall-concepts { grid-template-columns:1fr; padding:14px; } }
+        @media (max-width: 620px) { .recall-items { grid-template-columns:1fr; } }
     </style>
 </head>
 <body>
@@ -223,7 +225,7 @@
                     <div class="metric"><div class="metric-label">已完成影片</div><div class="metric-value"><span id="summary-completed-videos">{{ summary.completed_videos }}</span><small>/ <span id="summary-total-videos">{{ summary.total_videos }}</span> 支</small></div></div>
                 </section>
 
-                {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count">{{ recall_widget.due_count }} 項到期</span></summary><div class="recall-items">{% if recall_widget["items"] %}{% for item in recall_widget["items"] %}<button class="recall-item" type="button" data-recall-dialog="recall-dialog-{{ item.id }}"><div class="recall-item-title">{{ item.title }}</div><div class="recall-item-meta">{{ item.subject }}・{{ item.study_date }}{% if item.next_review_at %}・下次 {{ item.next_review_at }}{% endif %}</div></button>{% endfor %}{% else %}<div class="recall-item-meta" style="padding:12px 16px;">尚無筆記可複習。</div>{% endif %}</div></details>{% for item in recall_widget["items"] %}<dialog id="recall-dialog-{{ item.id }}" class="recall-dialog"><div class="recall-dialog-head"><h2>{{ item.title }}</h2><button class="recall-close" type="button" aria-label="關閉重點卡" title="關閉">&times;</button></div><div class="recall-concepts">{% for concept in item["key_concepts"] %}<article class="recall-concept-card"><h3>{{ concept.concept }}</h3><p>{{ concept.explanation }}</p>{% if concept.memory_hint %}<div class="hint">{{ concept.memory_hint }}</div>{% endif %}</article>{% else %}<div class="recall-empty">此筆記尚無可顯示的重點。</div>{% endfor %}</div></dialog>{% endfor %}<script>document.querySelectorAll('[data-recall-dialog]').forEach(function (button) { button.addEventListener('click', function () { document.getElementById(button.dataset.recallDialog).showModal(); }); }); document.querySelectorAll('.recall-dialog').forEach(function (dialog) { dialog.addEventListener('click', function (event) { if (event.target === dialog) dialog.close(); }); dialog.querySelector('.recall-close').addEventListener('click', function () { dialog.close(); }); });</script>{% endif %}
+                {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_plan"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div></details>{% endif %}
                 <div class="workspace">
                     <div class="column">
                         <section class="panel">
@@ -352,7 +354,7 @@
                                             {% for video in videos %}
                                             <tr class="{% if video.completion >= 100 %}video-row-complete{% endif %}" data-video-row="{{ video.id }}">
                                                 <td class="log-numbers" data-label="#">{{ '%03d'|format(video.sequence) }}</td>
-                                                <td class="log-note" data-label="影片"><div class="video-title-line"><span>{{ video.title }}</span><span class="completion-badge" data-video-complete-badge="{{ video.id }}" {% if video.completion < 100 %}hidden{% endif %}>✓ 已完成</span>{% if video.youtube_url %}<a class="youtube-link" href="{{ video.youtube_url }}" target="_blank" rel="noopener noreferrer">YouTube</a><button class="watch-button" type="button" data-select-video="{{ video.id }}">選擇並觀看</button>{% endif %}</div></td>
+                                                <td class="log-note" data-label="影片"><div class="video-title-line"><span>{{ video.title }}</span>{% if video.youtube_url %}<a class="youtube-link" href="{{ video.youtube_url }}" target="_blank" rel="noopener noreferrer">YouTube</a><button class="watch-button" type="button" data-select-video="{{ video.id }}">選擇並觀看</button>{% endif %}</div></td>
                                                 <td class="log-numbers" data-label="原始片長">{{ video.duration_minutes }} 分</td>
                                                 <td class="log-numbers" data-label="已觀看"><span data-video-watched="{{ video.id }}">{{ video.watched_minutes }}</span> 分</td>
                                                 <td class="log-numbers" data-label="觀看進度"><span data-video-completion="{{ video.id }}">{{ video.completion|round(0) }}</span>%<div class="track mini-track"><div class="fill" data-video-fill="{{ video.id }}" style="--progress:{{ video.completion }}%"></div></div></td>
@@ -372,6 +374,74 @@
         </main>
     </div>
     <script>
+        window.renderStudyMath = () => {
+            if (!window.renderMathInElement) return;
+            document.querySelectorAll('[data-math-content]').forEach((element) => {
+                if (element.dataset.mathRendered === 'true') return;
+                window.renderMathInElement(element, {
+                    delimiters: [
+                        { left: '\\[', right: '\\]', display: true },
+                        { left: '\\(', right: '\\)', display: false },
+                    ],
+                    throwOnError: false,
+                });
+                element.dataset.mathRendered = 'true';
+            });
+        };
+        (() => {
+            const updateDueCounts = (count) => {
+                document.querySelectorAll('[data-recall-due-count]').forEach((node) => {
+                    node.textContent = `${count} ${node.dataset.countLabel || '張待複習'}`;
+                });
+            };
+            const removeRatedCard = (card) => {
+                card.classList.add('is-completing');
+                window.setTimeout(() => {
+                    const list = card.closest('[data-recall-card-list]');
+                    card.remove();
+                    if (list && !list.querySelector('[data-recall-card]')) {
+                        list.hidden = true;
+                        const empty = list.parentElement.querySelector('[data-recall-empty]');
+                        if (empty) empty.hidden = false;
+                    }
+                }, 180);
+            };
+            document.querySelectorAll('form[data-recall-rating-form]').forEach((form) => {
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    if (form.dataset.submitting === 'true') return;
+                    const status = form.querySelector('[data-recall-rating-status]');
+                    const button = form.querySelector('button[type="submit"]');
+                    if (!form.querySelector('input[type="radio"]:checked')) {
+                        if (status) status.textContent = '請先選擇印象分。';
+                        return;
+                    }
+                    form.dataset.submitting = 'true';
+                    if (status) status.textContent = '';
+                    const originalLabel = button.textContent;
+                    button.disabled = true;
+                    button.textContent = '儲存中…';
+                    try {
+                        const response = await fetch(form.action, {
+                            method: 'POST',
+                            body: new FormData(form),
+                            credentials: 'same-origin',
+                            headers: { 'X-E3-Recall-Rating': '1', Accept: 'application/json' },
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result.ok) throw new Error(result.error || '印象分暫時無法儲存，請再試一次。');
+                        updateDueCounts(result.remaining_due_count);
+                        const card = form.closest('[data-recall-card]');
+                        if (card) removeRatedCard(card);
+                    } catch (error) {
+                        if (status) status.textContent = error.message || '印象分暫時無法儲存，請再試一次。';
+                        button.disabled = false;
+                        button.textContent = originalLabel;
+                        form.dataset.submitting = '';
+                    }
+                });
+            });
+        })();
         (function () {
             const videoSelect = document.getElementById('video_id');
             const durationHint = document.getElementById('duration-hint');
@@ -532,13 +602,11 @@
                 const completionCell = document.querySelector('[data-video-completion="' + result.video_id + '"]');
                 const fill = document.querySelector('[data-video-fill="' + result.video_id + '"]');
                 const row = document.querySelector('[data-video-row="' + result.video_id + '"]');
-                const completedBadge = document.querySelector('[data-video-complete-badge="' + result.video_id + '"]');
                 const isComplete = Number(result.completion || 0) >= 100;
                 if (watchedCell) watchedCell.textContent = formatMinutes(watchedSeconds);
                 if (completionCell) completionCell.textContent = Math.round(Number(result.completion || 0));
                 if (fill) fill.style.setProperty('--progress', Math.min(100, Number(result.completion || 0)) + '%');
                 if (row) row.classList.toggle('video-row-complete', isComplete);
-                if (completedBadge) completedBadge.hidden = !isComplete;
                 option.dataset.complete = isComplete ? 'true' : 'false';
                 if (option.dataset.optionLabel) {
                     option.textContent = (isComplete ? '✓ 已完成・' : '') + option.dataset.optionLabel;
