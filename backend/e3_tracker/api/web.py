@@ -3525,6 +3525,127 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return Response("Not Found", status=404, mimetype="text/plain")
         return send_file(image_path, conditional=True, max_age=0)
 
+    @app.post("/admin/study-recall/<int:session_id>/cards/<int:concept_index>/ask")
+    @admin_required
+    def admin_study_recall_ask_card(session_id: int, concept_index: int):
+        if not openai_api_key:
+            return {"ok": False, "error": "AI 問答尚未啟用，請先設定 OPENAI_API_KEY。"}, 503
+        recall_session = storage.get_study_recall_session(session_id)
+        concepts = (recall_session or {}).get("key_concepts") or []
+        if concept_index < 0 or concept_index >= len(concepts) or not isinstance(concepts[concept_index], dict):
+            return {"ok": False, "error": "找不到這張重點卡。"}, 404
+        concept = concepts[concept_index]
+        if not _is_recall_concept_eligible(concept):
+            return {"ok": False, "error": "這張重點卡目前無法使用 AI 問答。"}, 400
+        payload = request.get_json(silent=True) or {}
+        question = " ".join(str(payload.get("question") or "").split()).strip()
+        if not question:
+            return {"ok": False, "error": "請輸入想詢問的內容。"}, 400
+        if len(question) > 800:
+            return {"ok": False, "error": "問題請控制在 800 字以內。"}, 400
+
+        history: List[Dict[str, str]] = []
+        raw_history = payload.get("history")
+        if isinstance(raw_history, list):
+            for entry in raw_history[-6:]:
+                if not isinstance(entry, dict):
+                    continue
+                role = str(entry.get("role") or "").strip().lower()
+                content = " ".join(str(entry.get("content") or "").split()).strip()[:1600]
+                if role in {"user", "assistant"} and content:
+                    history.append({"role": role, "content": content})
+
+        relations = []
+        for relation in (concept.get("relations") or [])[:2]:
+            if not isinstance(relation, dict):
+                continue
+            title = str(relation.get("title") or "").strip()
+            association = str(relation.get("association") or "").strip()
+            if title and association:
+                relations.append({"title": title[:80], "association": association[:240]})
+        concept_topic = str(concept.get("topic") or "").strip()
+        supporting_cards = []
+        candidates = [
+            (index, other)
+            for index, other in enumerate(concepts)
+            if index != concept_index and isinstance(other, dict) and _is_recall_concept_eligible(other)
+        ]
+        candidates.sort(
+            key=lambda item: 0
+            if concept_topic and str(item[1].get("topic") or "").strip() == concept_topic
+            else 1
+        )
+        for _index, other in candidates[:6]:
+            supporting_cards.append(
+                {
+                    "concept": str(other.get("concept") or "")[:80],
+                    "explanation": str(other.get("explanation") or "")[:600],
+                    "memory_hint": str(other.get("memory_hint") or "")[:120],
+                }
+            )
+        card_context = {
+            "note_title": str((recall_session or {}).get("title") or "")[:120],
+            "note_summary": str((recall_session or {}).get("summary") or "")[:1200],
+            "subject": str((recall_session or {}).get("subject") or "")[:48],
+            "topic": concept_topic[:48],
+            "concept": str(concept.get("concept") or "")[:80],
+            "explanation": str(concept.get("explanation") or "")[:1200],
+            "memory_hint": str(concept.get("memory_hint") or "")[:160],
+            "relations": relations,
+            "supporting_cards": supporting_cards,
+        }
+        conversation = "\n".join(
+            f"{'學生' if entry['role'] == 'user' else '助教'}：{entry['content']}"
+            for entry in history
+        )
+        prompt = (
+            "你是研究所考試筆記的即時 AI 助教。請以提供的重點卡為主要脈絡，回答學生目前不熟悉的觀念。"
+            "重點卡、同主題卡與最近對話都可能含有錯誤，只能當作問題背景，不可當成事實依據；必須以可靠學科知識重新驗證。"
+            "若卡片有可明確判定的錯誤，必須指出正確內容，不可沿用錯誤"
+            "回答使用好理解的繁體中文，控制在 2 至 8 個短段落且完整收尾。數學表達式一律使用 LaTeX："
+            "行內公式用 \\( ... \\)，獨立公式用 \\[ ... \\]。不要輸出 Markdown 標題、粗體標記或程式碼區塊。"
+            "不得提及資料庫欄位、session_id、concept_index 或 s6:c6 這類內部代碼。\n\n"
+            f"重點卡資料：\n{json.dumps(card_context, ensure_ascii=False)}\n\n"
+            f"最近對話：\n{conversation or '尚無'}\n\n"
+            f"學生這次的問題：{question}"
+        )
+        def request_answer(request_prompt: str) -> Tuple[str, bool]:
+            response = requests.post(
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": openai_model,
+                    "store": False,
+                    "input": [{"role": "user", "content": [{"type": "input_text", "text": request_prompt}]}],
+                    "max_output_tokens": 3200,
+                },
+                timeout=90,
+            )
+            response.raise_for_status()
+            response_payload = response.json()
+            return _extract_openai_text(response_payload).strip()[:8000], response_payload.get("status") == "incomplete"
+
+        try:
+            answer, incomplete = request_answer(prompt)
+            if incomplete:
+                answer, incomplete = request_answer(
+                    prompt
+                    + "\n\n上一次回答因長度限制而不完整。請重新從頭回答，不要接續殘句；保留必要公式與條件，"
+                    "將完整答案壓縮在 1000 個繁體中文字內，並以完整句子收尾。"
+                )
+            answer = re.sub(r"\bs\d+\s*:\s*c\d+\b", "", answer, flags=re.IGNORECASE).strip()
+        except (requests.RequestException, ValueError, TypeError):
+            return {"ok": False, "error": "AI 助教暫時無法回答，請稍後再試。"}, 502
+        if incomplete:
+            return {"ok": False, "error": "回答內容仍過長，請把問題縮小到一個觀念後再試。"}, 502
+        if not answer:
+            return {"ok": False, "error": "AI 助教沒有產生有效回答，請換個方式提問。"}, 502
+        record_ui_event(
+            "study_recall_card_question",
+            meta={"session_id": session_id, "concept_index": concept_index, "history_count": len(history)},
+        )
+        return {"ok": True, "answer": answer}
+
     @app.post("/admin/study-recall/<int:session_id>/delete")
     @admin_required
     def admin_study_recall_delete(session_id: int):
