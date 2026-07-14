@@ -178,6 +178,12 @@
         .video-title-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
         .youtube-link { display: inline-flex; align-items: center; justify-content: center; padding: 2px 6px; border-radius: 999px; background: #fff1f1; color: #c4302b; font-size: 10px; font-weight: 800; white-space: nowrap; }
         .youtube-link:hover { background: #ffe1e1; }
+        .watch-button { min-height: 26px; padding: 3px 8px; border: 1px solid #aac4ea; border-radius: 4px; color: var(--blue); background: #fff; font-size: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+        .watch-button:hover { border-color: var(--blue); background: var(--blue-soft); }
+        .completion-badge { display: inline-flex; align-items: center; padding: 2px 6px; border: 1px solid #a9d6b6; border-radius: 4px; color: var(--green); background: var(--green-soft); font-size: 10px; font-weight: 850; white-space: nowrap; }
+        .completion-badge[hidden] { display: none; }
+        .video-row-complete { background: #f5fbf7; }
+        .video-row-complete td:first-child { box-shadow: inset 3px 0 0 var(--green); color: var(--green); font-weight: 850; }
         .log-numbers { white-space: nowrap; font-variant-numeric: tabular-nums; }
         .mini-track { width: 84px; height: 5px; margin-top: 5px; }
         .delete-form { display: inline; }
@@ -318,7 +324,7 @@
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
-                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required><option value="" selected disabled data-sequence="" data-title="" data-duration="0" data-duration-seconds="0" data-watched-seconds="0" data-youtube-video-id="" data-youtube-url="">請選擇影片</option>{% for video in videos %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}">第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">請先選擇影片</span></div>
+                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required><option value="" selected disabled data-sequence="" data-title="" data-duration="0" data-duration-seconds="0" data-watched-seconds="0" data-youtube-video-id="" data-youtube-url="">請選擇影片</option>{% for video in videos %}{% set option_label %}第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}{% endset %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}" data-complete="{{ 'true' if video.completion >= 100 else 'false' }}" data-option-label="{{ option_label|trim }}">{% if video.completion >= 100 %}✓ 已完成・{% endif %}{{ option_label|trim }}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">請先選擇影片</span></div>
                             <div class="field"><label for="watched_minutes">實際觀看分鐘</label><input id="watched_minutes" name="watched_minutes" type="number" min="0" max="1440" step="0.1" value="0" required></div>
                             <div class="field notes"><label for="notes">筆記／卡關點</label><textarea id="notes" name="notes" rows="1" maxlength="2000" placeholder="例：複習矩陣分解的推導。"></textarea></div>
                             <button class="save-button" type="submit">儲存影片紀錄</button>
@@ -344,9 +350,9 @@
                                         </tr></thead>
                                         <tbody>
                                             {% for video in videos %}
-                                            <tr data-video-row="{{ video.id }}">
+                                            <tr class="{% if video.completion >= 100 %}video-row-complete{% endif %}" data-video-row="{{ video.id }}">
                                                 <td class="log-numbers" data-label="#">{{ '%03d'|format(video.sequence) }}</td>
-                                                <td class="log-note" data-label="影片"><div class="video-title-line"><span>{{ video.title }}</span>{% if video.youtube_url %}<a class="youtube-link" href="{{ video.youtube_url }}" target="_blank" rel="noopener noreferrer">YouTube</a>{% endif %}</div></td>
+                                                <td class="log-note" data-label="影片"><div class="video-title-line"><span>{{ video.title }}</span><span class="completion-badge" data-video-complete-badge="{{ video.id }}" {% if video.completion < 100 %}hidden{% endif %}>✓ 已完成</span>{% if video.youtube_url %}<a class="youtube-link" href="{{ video.youtube_url }}" target="_blank" rel="noopener noreferrer">YouTube</a><button class="watch-button" type="button" data-select-video="{{ video.id }}">選擇並觀看</button>{% endif %}</div></td>
                                                 <td class="log-numbers" data-label="原始片長">{{ video.duration_minutes }} 分</td>
                                                 <td class="log-numbers" data-label="已觀看"><span data-video-watched="{{ video.id }}">{{ video.watched_minutes }}</span> 分</td>
                                                 <td class="log-numbers" data-label="觀看進度"><span data-video-completion="{{ video.id }}">{{ video.completion|round(0) }}</span>%<div class="track mini-track"><div class="fill" data-video-fill="{{ video.id }}" style="--progress:{{ video.completion }}%"></div></div></td>
@@ -525,9 +531,18 @@
                 const watchedCell = document.querySelector('[data-video-watched="' + result.video_id + '"]');
                 const completionCell = document.querySelector('[data-video-completion="' + result.video_id + '"]');
                 const fill = document.querySelector('[data-video-fill="' + result.video_id + '"]');
+                const row = document.querySelector('[data-video-row="' + result.video_id + '"]');
+                const completedBadge = document.querySelector('[data-video-complete-badge="' + result.video_id + '"]');
+                const isComplete = Number(result.completion || 0) >= 100;
                 if (watchedCell) watchedCell.textContent = formatMinutes(watchedSeconds);
                 if (completionCell) completionCell.textContent = Math.round(Number(result.completion || 0));
                 if (fill) fill.style.setProperty('--progress', Math.min(100, Number(result.completion || 0)) + '%');
+                if (row) row.classList.toggle('video-row-complete', isComplete);
+                if (completedBadge) completedBadge.hidden = !isComplete;
+                option.dataset.complete = isComplete ? 'true' : 'false';
+                if (option.dataset.optionLabel) {
+                    option.textContent = (isComplete ? '✓ 已完成・' : '') + option.dataset.optionLabel;
+                }
                 if (result.summary) {
                     const summaryWatched = document.getElementById('summary-watched-hours');
                     const summaryCompletion = document.getElementById('summary-completion');
@@ -662,6 +677,20 @@
                 stopSaveTimer();
                 const option = selectedOption();
                 if (option && option.dataset.youtubeVideoId && youtubeApiReady) loadSelectedVideo();
+            });
+            document.querySelectorAll('[data-select-video]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const option = optionByValue(button.dataset.selectVideo);
+                    if (!option) return;
+                    videoSelect.value = option.value;
+                    videoSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    window.setTimeout(function () {
+                        if (youtubePlayerPanel) {
+                            youtubePlayerPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            youtubePlayerPanel.focus({ preventScroll: true });
+                        }
+                    }, 80);
+                });
             });
             window.addEventListener('beforeunload', function () { saveProgress('leave', true); });
             if (requestedVideoId) {

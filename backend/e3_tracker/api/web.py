@@ -2378,25 +2378,57 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not isinstance(payload, dict):
             return None
         summary = str(payload.get("summary") or "").strip()
+        detected_topic = str(payload.get("detected_topic") or "").strip()
         raw_concepts = payload.get("key_concepts")
-        if not summary or not isinstance(raw_concepts, list):
+        if not summary or not detected_topic or not isinstance(raw_concepts, list):
             return None
-        concepts: List[Dict[str, str]] = []
+        prepared_concepts: List[Dict[str, Any]] = []
         for item in raw_concepts[:15]:
             if not isinstance(item, dict):
                 continue
             concept = str(item.get("concept") or "").strip()
             explanation = str(item.get("explanation") or "").strip()
             memory_hint = str(item.get("memory_hint") or "").strip()
+            topic = str(item.get("topic") or detected_topic).strip()
+            related_concepts = item.get("related_concepts")
             if concept and explanation and _is_recall_concept_eligible(
                 {"concept": concept, "explanation": explanation, "memory_hint": memory_hint}
             ):
-                concepts.append(
-                    {"concept": concept[:80], "explanation": explanation[:720], "memory_hint": memory_hint[:120]}
+                prepared_concepts.append(
+                    {
+                        "concept": concept[:80],
+                        "explanation": explanation[:720],
+                        "memory_hint": memory_hint[:120],
+                        "topic": topic[:48] or detected_topic[:48],
+                        "note_topic": detected_topic[:80],
+                        "related_concepts": [
+                            str(value).strip()[:80]
+                            for value in related_concepts[:4]
+                            if str(value).strip()
+                        ] if isinstance(related_concepts, list) else [],
+                    }
                 )
-        if not concepts:
+        if not prepared_concepts:
             return None
-        return {"summary": summary[:800], "key_concepts": concepts}
+        title_lookup = {item["concept"].casefold(): item["concept"] for item in prepared_concepts}
+        concepts_by_title = {item["concept"]: item for item in prepared_concepts}
+        for item in prepared_concepts:
+            normalized_related: List[str] = []
+            for related in item["related_concepts"]:
+                matched = title_lookup.get(related.casefold())
+                if matched and matched != item["concept"] and matched not in normalized_related:
+                    normalized_related.append(matched)
+            item["related_concepts"] = normalized_related[:4]
+        for item in prepared_concepts:
+            for related in list(item["related_concepts"]):
+                target = concepts_by_title.get(related)
+                if target is not None and item["concept"] not in target["related_concepts"]:
+                    target["related_concepts"] = (target["related_concepts"] + [item["concept"]])[:4]
+        return {
+            "detected_topic": detected_topic[:80],
+            "summary": summary[:800],
+            "key_concepts": prepared_concepts,
+        }
 
     def _analyze_study_note_images(images: List[Tuple[str, bytes, str]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         if not openai_api_key:
@@ -2411,6 +2443,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "memory_hint 是不超過 32 字的口訣或辨識線索。"
                     "影像中每個可辨識、具考試價值的公式、定義式或符號關係，都必須建立至少一張獨立的 key_concepts 公式卡，"
                     "不可只附在其他概念卡的 explanation 中。公式卡須完整列出公式並解釋符號、成立條件或如何使用。"
+                    "請先用 detected_topic 為整份筆記命名一個精確的學科主題，不要使用日期或『今日筆記』等泛稱。"
+                    "每張卡的 topic 是較細的觀念群組名稱；同一觀念群的卡片必須使用完全相同的 topic，讓頁面能自動分組。"
+                    "若兩張卡具有前置知識、推導、比較、互逆或應用關係，請在 related_concepts 填入對方完全相同的 concept 標題，"
+                    "最多 4 張且關聯需雙向；沒有明確關係時輸出空陣列，不可為了湊數建立關聯。"
                     "所有數學表達式請使用 LaTeX：行內公式一律寫成 \\( ... \\)，獨立公式一律寫成 \\[ ... \\]；"
                     "保留變數、上下標、分數、轉置、向量與條件，不要輸出 Markdown 程式碼區塊或純文字替代公式。"
                     "請用可靠的學科知識檢查筆記：若定義、符號、公式、推論或例子可明確判定為錯誤，先靜默修正為正確版本，再建立一般重點卡。"
@@ -2436,8 +2472,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         schema = {
             "type": "object",
             "additionalProperties": False,
-            "required": ["summary", "key_concepts"],
+            "required": ["detected_topic", "summary", "key_concepts"],
             "properties": {
+                "detected_topic": {"type": "string", "maxLength": 80},
                 "summary": {"type": "string", "maxLength": 800},
                 "key_concepts": {
                     "type": "array",
@@ -2446,11 +2483,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["concept", "explanation", "memory_hint"],
+                        "required": ["concept", "explanation", "memory_hint", "topic", "related_concepts"],
                         "properties": {
                             "concept": {"type": "string", "maxLength": 80},
                             "explanation": {"type": "string", "maxLength": 720},
                             "memory_hint": {"type": "string", "maxLength": 120},
+                            "topic": {"type": "string", "maxLength": 48},
+                            "related_concepts": {
+                                "type": "array",
+                                "maxItems": 4,
+                                "items": {"type": "string", "maxLength": 80},
+                            },
                         },
                     },
                 },
@@ -3126,12 +3169,89 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             review["latest_curve_y"] = 36 - max(0, min(int(history[-1].get("rating") or 1) - 1, 4)) * 7 if history else 36
             concept["review"] = review
 
+        def organize_session_concepts(session: Dict[str, Any], *, replace_concepts: bool) -> Dict[int, Dict[str, Any]]:
+            raw_concepts = session.get("key_concepts") or []
+            indexed_concepts = {
+                index: concept
+                for index, concept in enumerate(raw_concepts)
+                if _is_recall_concept_eligible(concept)
+            }
+            title_indexes = {
+                str(concept.get("concept") or "").strip().casefold(): index
+                for index, concept in indexed_concepts.items()
+            }
+            note_topic = next(
+                (
+                    str(concept.get("note_topic") or "").strip()
+                    for concept in indexed_concepts.values()
+                    if str(concept.get("note_topic") or "").strip()
+                ),
+                next(
+                    (
+                        str(concept.get("topic") or "").strip()
+                        for concept in indexed_concepts.values()
+                        if str(concept.get("topic") or "").strip()
+                    ),
+                    str(session.get("title") or "未分類筆記"),
+                ),
+            )
+            topic_groups: Dict[str, List[Dict[str, Any]]] = {}
+            for index, concept in indexed_concepts.items():
+                concept["display_index"] = index
+                concept["topic"] = str(concept.get("topic") or note_topic).strip() or note_topic
+                related_cards = []
+                for related_title in concept.get("related_concepts") or []:
+                    related_index = title_indexes.get(str(related_title or "").strip().casefold())
+                    if related_index is None or related_index == index:
+                        continue
+                    related_concept = indexed_concepts.get(related_index) or {}
+                    related_cards.append(
+                        {
+                            "title": str(related_concept.get("concept") or related_title),
+                            "index": related_index,
+                        }
+                    )
+                concept["related_cards"] = related_cards[:4]
+                topic_groups.setdefault(concept["topic"], []).append(concept)
+            session["note_topic"] = note_topic
+            session["concept_groups"] = [
+                {"topic": topic, "concepts": concepts}
+                for topic, concepts in topic_groups.items()
+            ]
+            if replace_concepts:
+                session["key_concepts"] = list(indexed_concepts.values())
+            return indexed_concepts
+
         user = current_user()
         try:
             selected_id = int(request.args.get("session_id") or 0)
         except (TypeError, ValueError):
             selected_id = 0
         sessions = storage.list_study_recall_sessions(limit=36)
+        session_groups_by_topic: Dict[str, List[Dict[str, Any]]] = {}
+        for recall_session in sessions:
+            concepts = recall_session.get("key_concepts") or []
+            topic_label = next(
+                (
+                    str(concept.get("note_topic") or "").strip()
+                    for concept in concepts
+                    if isinstance(concept, dict) and str(concept.get("note_topic") or "").strip()
+                ),
+                next(
+                    (
+                        str(concept.get("topic") or "").strip()
+                        for concept in concepts
+                        if isinstance(concept, dict) and str(concept.get("topic") or "").strip()
+                    ),
+                    str(recall_session.get("subject") or recall_session.get("title") or "未分類筆記"),
+                ),
+            )
+            recall_session["topic_label"] = topic_label
+            session_groups_by_topic.setdefault(topic_label, []).append(recall_session)
+        session_groups = [
+            {"topic": topic, "sessions": grouped_sessions}
+            for topic, grouped_sessions in sorted(session_groups_by_topic.items(), key=lambda item: item[0].casefold())
+        ]
         selected_session = storage.get_study_recall_session(selected_id) if selected_id else None
         if selected_session is None and sessions:
             selected_session = storage.get_study_recall_session(int(sessions[0]["id"]))
@@ -3140,9 +3260,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 url_for("admin_study_recall_image", session_id=selected_session["id"], filename=filename)
                 for filename in selected_session.get("image_filenames") or []
             ]
-            selected_session["key_concepts"] = [
-                concept for concept in selected_session.get("key_concepts") or [] if _is_recall_concept_eligible(concept)
-            ]
+            organize_session_concepts(selected_session, replace_concepts=True)
             for concept in selected_session["key_concepts"]:
                 decorate_review_curve(concept)
         today = _study_plan_business_date().isoformat()
@@ -3155,11 +3273,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if review_session is None:
                 review_session = storage.get_study_recall_session(session_id) or {}
                 review_sessions[session_id] = review_session
-            concepts = review_session.get("key_concepts") or []
             concept_index = int(due_card["concept_index"])
-            if concept_index >= len(concepts) or not _is_recall_concept_eligible(concepts[concept_index]):
+            concepts_by_index = organize_session_concepts(review_session, replace_concepts=False)
+            concept = concepts_by_index.get(concept_index)
+            if concept is None:
                 continue
-            concept = concepts[concept_index]
             decorate_review_curve(concept)
             review_cards.append({**due_card, "concept_data": concept})
         review_schedule = storage.list_study_recall_schedule(start_date=today)
@@ -3169,6 +3287,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             subjects=STUDY_PLAN_SUBJECTS,
             today=today,
             sessions=sessions,
+            session_groups=session_groups,
             due_cards=due_cards,
             review_cards=review_cards,
             review_schedule=review_schedule,
@@ -3221,7 +3340,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         subject = (request.form.get("subject") or "").strip()
         if subject not in STUDY_PLAN_SUBJECTS:
             return _study_upload_error("請選擇科目。")
-        title = (request.form.get("title") or "").strip()[:120] or f"{subject} {study_date} 筆記"
+        requested_title = (request.form.get("title") or "").strip()[:120]
         incoming_files = [item for item in request.files.getlist("note_images") if item and item.filename]
         if not incoming_files or len(incoming_files) > 8:
             return _study_upload_error("請上傳 1 至 8 張筆記照片。")
@@ -3244,6 +3363,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if error or not analysis:
             return _study_upload_error(error or "筆記分析失敗。", 502)
         stored_names = [f"{index + 1:02d}-{secrets.token_hex(5)}{Path(name).suffix.lower()}" for index, (name, _bytes, _mime) in enumerate(images)]
+        title = requested_title or str(analysis.get("detected_topic") or "").strip()[:120] or f"{subject}筆記"
         recall_id = storage.create_study_recall_session(
             study_date=study_date,
             subject=subject,
