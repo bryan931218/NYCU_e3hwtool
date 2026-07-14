@@ -2,6 +2,7 @@ import base64
 import json
 import math
 import os
+import re
 import secrets
 import shutil
 import threading
@@ -2424,7 +2425,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "note_topic": detected_topic[:80],
                         "related_concepts": [
                             str(value).strip()[:80]
-                            for value in related_concepts[:4]
+                            for value in related_concepts[:2]
                             if str(value).strip()
                         ] if isinstance(related_concepts, list) else [],
                     }
@@ -2439,12 +2440,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 matched = title_lookup.get(related.casefold())
                 if matched and matched != item["concept"] and matched not in normalized_related:
                     normalized_related.append(matched)
-            item["related_concepts"] = normalized_related[:4]
+            item["related_concepts"] = normalized_related[:2]
         for item in prepared_concepts:
             for related in list(item["related_concepts"]):
                 target = concepts_by_title.get(related)
                 if target is not None and item["concept"] not in target["related_concepts"]:
-                    target["related_concepts"] = (target["related_concepts"] + [item["concept"]])[:4]
+                    target["related_concepts"] = (target["related_concepts"] + [item["concept"]])[:2]
         return {
             "detected_topic": detected_topic[:80],
             "summary": summary[:800],
@@ -2469,7 +2470,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "請先用 detected_topic 為整份筆記命名一個精確的學科主題，不要使用日期或『今日筆記』等泛稱。"
                     "每張卡的 topic 是較細的觀念群組名稱；同一觀念群的卡片必須使用完全相同的 topic，讓頁面能自動分組。"
                     "若兩張卡具有前置知識、推導、比較、互逆或應用關係，請在 related_concepts 填入對方完全相同的 concept 標題，"
-                    "最多 4 張且關聯需雙向；沒有明確關係時輸出空陣列，不可為了湊數建立關聯。"
+                    "最多 2 張且只保留最能幫助理解或記憶的強關聯；關聯需雙向，沒有明確關係時輸出空陣列，不可為了湊數建立關聯。"
                     "所有數學表達式請使用 LaTeX：行內公式一律寫成 \\( ... \\)，獨立公式一律寫成 \\[ ... \\]；"
                     "若公式推導較長，必須在獨立公式中使用 \\begin{aligned} ... \\\\ ... \\end{aligned}，依等號或推導步驟合理換行，避免輸出單一超長公式。"
                     "保留變數、上下標、分數、轉置、向量與條件，不要輸出 Markdown 程式碼區塊或純文字替代公式。"
@@ -2515,7 +2516,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                             "topic": {"type": "string", "maxLength": 48},
                             "related_concepts": {
                                 "type": "array",
-                                "maxItems": 4,
+                                "maxItems": 2,
                                 "items": {"type": "string", "maxLength": 80},
                             },
                         },
@@ -2604,11 +2605,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         prompt = (
             "你是研究所考試的知識架構助教。以下是使用者目前所有重點卡。每次都必須忽略舊關聯，重新審視全部卡片。"
             "找出具有明確學理關係的卡片配對，包括前置知識、定義與推論、公式推導、互逆、比較、特例或實際應用。"
-            "同份與不同份筆記都可連結，但不得只因同科目或關鍵字相似而連結。每張卡最多保留 4 個最有助於複習的關聯；"
-            "沒有強關聯的卡片可不輸出。每組配對只輸出一次。association 請用精確、好記的繁體中文說明兩件事："
+            "同份與不同份筆記都可連結，但不得只因同科目或關鍵字相似而連結。每張卡最多保留 2 個最有助於理解與記憶的強關聯；"
+            "relations 必須依關聯的重要性由高到低輸出；沒有強關聯的卡片可不輸出。每組配對只輸出一次。association 請用精確、好記的繁體中文說明兩件事："
             "它們的觀念關聯在哪，以及複習時可以如何從一張聯想到另一張。說明必須從任一張卡閱讀都成立，形成雙向記憶橋接；"
             "請直接說明具體知識，不可使用『兩者相關』等空泛句子，也不要使用『前者／後者』等依賴輸出順序的代稱。"
-            "只使用清單提供的 id，不得改寫 id。\n\n重點卡清單：\n"
+            "source_id 與 target_id 只使用清單提供的 id，不得改寫；association 只能使用卡片標題或觀念名稱，絕對不可出現 s6:c6 這類內部 id。\n\n重點卡清單：\n"
             + json.dumps(card_catalog, ensure_ascii=False, separators=(",", ":"))
         )
         request_body = {
@@ -2645,13 +2646,24 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if isinstance(concept, dict):
                     concept["relations"] = []
         relation_counts = {card_id: 0 for card_id in cards_by_id}
+        card_titles_by_id = {
+            card_id.casefold(): str(card.get("title") or "").strip()
+            for card_id, card in cards_by_id.items()
+        }
         seen_pairs = set()
         for relation in raw_relations:
             if not isinstance(relation, dict):
                 continue
             source_id = str(relation.get("source_id") or "").strip()
             target_id = str(relation.get("target_id") or "").strip()
-            association = " ".join(str(relation.get("association") or "").split())[:180]
+            association = " ".join(str(relation.get("association") or "").split())
+            association = re.sub(
+                r"\bs\d+\s*:\s*c\d+\b",
+                lambda match: card_titles_by_id.get(re.sub(r"\s+", "", match.group(0)).casefold(), ""),
+                association,
+                flags=re.IGNORECASE,
+            )
+            association = re.sub(r"\s+([，。；：、！？])", r"\1", association).strip(" \t:：,，;；-")[:180]
             pair = tuple(sorted((source_id, target_id)))
             if (
                 source_id not in cards_by_id
@@ -2659,8 +2671,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 or source_id == target_id
                 or pair in seen_pairs
                 or not association
-                or relation_counts[source_id] >= 4
-                or relation_counts[target_id] >= 4
+                or relation_counts[source_id] >= 2
+                or relation_counts[target_id] >= 2
             ):
                 continue
             seen_pairs.add(pair)
@@ -3377,7 +3389,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         except (TypeError, ValueError):
                             continue
                         related_title = str(relation.get("title") or "").strip()
-                        association = str(relation.get("association") or "").strip()
+                        association = " ".join(str(relation.get("association") or "").split())
+                        visible_card_titles = {
+                            f"s{int(session['id'])}:c{index}".casefold(): str(concept.get("concept") or "").strip(),
+                            f"s{related_session_id}:c{related_index}".casefold(): related_title,
+                        }
+                        association = re.sub(
+                            r"\bs\d+\s*:\s*c\d+\b",
+                            lambda match: visible_card_titles.get(
+                                re.sub(r"\s+", "", match.group(0)).casefold(),
+                                "",
+                            ),
+                            association,
+                            flags=re.IGNORECASE,
+                        )
+                        association = re.sub(r"\s+([，。；：、！？])", r"\1", association).strip(" \t:：,，;；-")
                         if related_session_id <= 0 or related_index < 0 or not related_title or not association:
                             continue
                         related_cards.append(
@@ -3402,7 +3428,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                                 "association": "這兩張卡屬於同一份筆記中的直接相關觀念；可一起對照複習。",
                             }
                         )
-                concept["related_cards"] = related_cards[:4]
+                concept["related_cards"] = related_cards[:2]
                 topic_groups.setdefault(concept["topic"], []).append(concept)
             session["note_topic"] = note_topic
             session["concept_groups"] = [
