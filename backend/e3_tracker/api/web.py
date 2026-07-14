@@ -2228,8 +2228,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         today_activity_events = storage.list_study_plan_activity_events(day=today.isoformat())
         activity_seconds = sum(float(item.get("delta_seconds") or 0) for item in today_activity_events)
         activity_hours = activity_seconds / 3600
-        today_study_hours = max(chart_today_hours, activity_hours)
-        today_delta_seconds = activity_seconds if activity_seconds > 0 else today_study_hours * 3600
+        has_today_snapshot = today.isoformat() in snapshot_by_day
+        today_study_hours = chart_today_hours if has_today_snapshot else activity_hours
+        today_delta_seconds = today_study_hours * 3600
         today_study_minutes = int(round(today_study_hours * 60))
         total_target_seconds = max(0.0, float(summary.get("total_target") or 0) * 60)
         today_progress_delta = (today_delta_seconds / total_target_seconds * 100) if total_target_seconds else 0.0
@@ -2391,11 +2392,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 {"concept": concept, "explanation": explanation, "memory_hint": memory_hint}
             ):
                 concepts.append(
-                    {"concept": concept[:80], "explanation": explanation[:360], "memory_hint": memory_hint[:90]}
+                    {"concept": concept[:80], "explanation": explanation[:720], "memory_hint": memory_hint[:120]}
                 )
         if not concepts:
             return None
-        return {"summary": summary[:420], "key_concepts": concepts}
+        return {"summary": summary[:800], "key_concepts": concepts}
 
     def _analyze_study_note_images(images: List[Tuple[str, bytes, str]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         if not openai_api_key:
@@ -2404,18 +2405,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             {
                 "type": "input_text",
                 "text": (
-                    "你是研究所考試的嚴謹助教。請閱讀上傳的繁體中文筆記，整理成精確、短小、好理解且好記憶的繁體中文重點卡。"
-                    "每張卡片只保留一個可直接複習的考試概念；concept 是不超過 16 字的短標題，explanation 以 1 至 3 句寫完，"
-                    "先給結論或規則，再補必要條件，避免背景敘述、重複語句與空泛提醒。memory_hint 是不超過 24 字的口訣或辨識線索。"
-                    "影像中出現的每個可辨識且和保留概念有關的公式、定義式或符號關係，必須完整列在 explanation，不能只用文字描述。"
+                    "你是研究所考試的嚴謹助教。請閱讀上傳的繁體中文筆記，整理成精確、好理解且好記憶的繁體中文重點卡。"
+                    "每張卡片只保留一個可直接複習的考試概念；concept 是不超過 16 字的短標題。explanation 請用 2 至 5 句說清楚："
+                    "先下定義或結論，再說明成立條件、用途、推論原因或容易混淆處；資訊要完整但避免背景敘述、重複語句與空泛提醒。"
+                    "memory_hint 是不超過 32 字的口訣或辨識線索。"
+                    "影像中每個可辨識、具考試價值的公式、定義式或符號關係，都必須建立至少一張獨立的 key_concepts 公式卡，"
+                    "不可只附在其他概念卡的 explanation 中。公式卡須完整列出公式並解釋符號、成立條件或如何使用。"
                     "所有數學表達式請使用 LaTeX：行內公式一律寫成 \\( ... \\)，獨立公式一律寫成 \\[ ... \\]；"
                     "保留變數、上下標、分數、轉置、向量與條件，不要輸出 Markdown 程式碼區塊或純文字替代公式。"
                     "請用可靠的學科知識檢查筆記：若定義、符號、公式、推論或例子可明確判定為錯誤，先靜默修正為正確版本，再建立一般重點卡。"
                     "不得建立『待確認／已修正／錯誤說明』卡片，也不得在 summary、explanation 或 memory_hint 解釋你做了修正。"
                     "只有數字、符號或公式模糊到無法可靠判定時才略過；不可猜測。"
-                    "逐一涵蓋其餘每個獨立且有考試價值的概念，不要把不同概念硬合併；每次最多建立 15 張重點卡，"
-                    "若超過 15 個概念，優先保留最核心、最常考且能涵蓋其他細節的概念。"
-                    "輸出繁體中文 JSON：summary 是 1 至 3 句、最多 180 字的考前總覽，只摘要實際保留的卡片內容。"
+                    "逐一涵蓋其餘每個獨立且有考試價值的概念，不要把不同概念硬合併；每次最多建立 15 張重點卡。"
+                    "若超過 15 項，先保留所有公式卡，再保留最核心、最常考且能涵蓋其他細節的概念。"
+                    "輸出繁體中文 JSON：summary 是卡片後方的『重點總結』，以 3 至 5 行整理考前必記結論、公式關係與判斷順序，"
+                    "最多 400 字，只摘要實際保留的卡片內容。"
                     "key_concepts 至少 1 項、最多 15 項。不要輸出考題、選項、答案或任何題庫資料。"
                 ),
             }
@@ -2434,7 +2438,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "additionalProperties": False,
             "required": ["summary", "key_concepts"],
             "properties": {
-                "summary": {"type": "string", "maxLength": 420},
+                "summary": {"type": "string", "maxLength": 800},
                 "key_concepts": {
                     "type": "array",
                     "minItems": 1,
@@ -2445,8 +2449,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "required": ["concept", "explanation", "memory_hint"],
                         "properties": {
                             "concept": {"type": "string", "maxLength": 80},
-                            "explanation": {"type": "string", "maxLength": 360},
-                            "memory_hint": {"type": "string", "maxLength": 90},
+                            "explanation": {"type": "string", "maxLength": 720},
+                            "memory_hint": {"type": "string", "maxLength": 120},
                         },
                     },
                 },

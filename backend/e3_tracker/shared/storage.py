@@ -428,7 +428,7 @@ class PersistentStorage:
         return datetime.utcnow().isoformat()
 
     def _taipei_today_iso(self) -> str:
-        return datetime.utcnow().date().isoformat()
+        return (datetime.utcnow() + timedelta(hours=8)).date().isoformat()
 
     def _record_study_plan_daily_snapshot_locked(self, conn, *, now: str) -> None:
         day = self._taipei_today_iso()
@@ -789,9 +789,11 @@ class PersistentStorage:
             ).fetchone()
             duration_seconds = max(0.0, float(video.duration_seconds or 0))
             current_seconds = max(0.0, min(float(watched_seconds or 0), duration_seconds))
-            normalized_seconds = current_seconds
             notes = existing.notes if existing else ""
             previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
+            # Player seeks and replays must not reduce the completed progress or create a new
+            # cumulative baseline that counts the same segment again on the next save.
+            normalized_seconds = max(previous_watched_seconds, current_seconds)
             values = {
                 "watched_seconds": normalized_seconds,
                 "notes": notes or "",
@@ -862,6 +864,7 @@ class PersistentStorage:
             return []
         stmt = (
             select(
+                study_plan_activity_events_table.c.id,
                 study_plan_activity_events_table.c.video_id,
                 study_plan_activity_events_table.c.previous_watched_seconds,
                 study_plan_activity_events_table.c.watched_seconds,
@@ -879,7 +882,7 @@ class PersistentStorage:
                 )
             )
             .where(study_plan_activity_events_table.c.day == day)
-            .order_by(study_plan_activity_events_table.c.updated_at)
+            .order_by(study_plan_activity_events_table.c.updated_at, study_plan_activity_events_table.c.id)
         )
         with self._lock, self._engine.connect() as conn:
             rows = conn.execute(stmt).fetchall()
@@ -888,7 +891,6 @@ class PersistentStorage:
         for row in rows:
             video_id = int(row.video_id)
             existing = by_video.get(video_id)
-            delta_seconds = max(0.0, float(row.delta_seconds or 0))
             if existing is None:
                 by_video[video_id] = {
                     "video_id": video_id,
@@ -898,12 +900,17 @@ class PersistentStorage:
                     "duration_seconds": max(0.0, float(row.duration_seconds or 0)),
                     "previous_watched_seconds": max(0.0, float(row.previous_watched_seconds or 0)),
                     "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
-                    "delta_seconds": delta_seconds,
+                    "delta_seconds": max(0.0, float(row.delta_seconds or 0)),
                     "updated_at": row.updated_at or "",
                 }
             else:
-                existing["delta_seconds"] = float(existing["delta_seconds"]) + delta_seconds
                 existing["watched_seconds"] = max(float(existing["watched_seconds"]), max(0.0, float(row.watched_seconds or 0)))
+                # A player can send 0 -> 60 -> 0 -> 60 while replaying one minute.
+                # Daily study time is unique forward progress, not the sum of every save.
+                existing["delta_seconds"] = max(
+                    0.0,
+                    float(existing["watched_seconds"]) - float(existing["previous_watched_seconds"]),
+                )
                 existing["updated_at"] = row.updated_at or existing["updated_at"]
 
         return sorted(by_video.values(), key=lambda item: (str(item["updated_at"]), int(item["sequence"])))
