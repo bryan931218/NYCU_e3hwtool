@@ -1,7 +1,7 @@
 import json
 import os
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -261,6 +261,7 @@ study_plan_activity_events_table = Table(
 )
 Index("ix_study_plan_activity_events_day", study_plan_activity_events_table.c.day)
 Index("ix_study_plan_activity_events_video_id", study_plan_activity_events_table.c.video_id)
+Index("ix_study_plan_activity_events_updated_at", study_plan_activity_events_table.c.updated_at)
 
 study_recall_sessions_table = Table(
     "study_recall_sessions",
@@ -427,11 +428,24 @@ class PersistentStorage:
     def _now_iso(self) -> str:
         return datetime.utcnow().isoformat()
 
-    def _taipei_today_iso(self) -> str:
-        return (datetime.utcnow() + timedelta(hours=8)).date().isoformat()
+    @staticmethod
+    def _study_plan_business_day_from_timestamp(value: str) -> str:
+        """Return the study day for a UTC timestamp (the day changes at 08:00 Taipei)."""
+        try:
+            parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.utcnow().date().isoformat()
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        # Taipei is UTC+8, so subtracting the 08:00 learning-day cutoff is
+        # equivalent to taking the UTC calendar date for stored UTC timestamps.
+        return parsed.date().isoformat()
+
+    def _study_plan_business_today_iso(self) -> str:
+        return self._study_plan_business_day_from_timestamp(self._now_iso())
 
     def _record_study_plan_daily_snapshot_locked(self, conn, *, now: str) -> None:
-        day = self._taipei_today_iso()
+        day = self._study_plan_business_today_iso()
         rows = conn.execute(
             select(
                 study_plan_video_records_table.c.watched_seconds,
@@ -479,7 +493,7 @@ class PersistentStorage:
             return
         conn.execute(
             insert(study_plan_activity_events_table).values(
-                day=self._taipei_today_iso(),
+                day=self._study_plan_business_today_iso(),
                 video_id=video_id,
                 previous_watched_seconds=previous,
                 watched_seconds=current,
@@ -859,8 +873,17 @@ class PersistentStorage:
             for row in rows
         ]
 
-    def list_study_plan_activity_events(self, *, day: str) -> List[Dict[str, Any]]:
-        if not day:
+    def list_study_plan_activity_events(
+        self,
+        *,
+        day: Optional[str] = None,
+        start_day: Optional[str] = None,
+        end_day: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        if day:
+            start_day = day
+            end_day = day
+        if not start_day and not end_day:
             return []
         stmt = (
             select(
@@ -881,18 +904,32 @@ class PersistentStorage:
                     study_plan_activity_events_table.c.video_id == study_plan_videos_table.c.id,
                 )
             )
-            .where(study_plan_activity_events_table.c.day == day)
-            .order_by(study_plan_activity_events_table.c.updated_at, study_plan_activity_events_table.c.id)
         )
+        if start_day:
+            stmt = stmt.where(study_plan_activity_events_table.c.updated_at >= f"{start_day}T00:00:00")
+        if end_day:
+            try:
+                end_exclusive = (datetime.strptime(end_day, "%Y-%m-%d") + timedelta(days=1)).date().isoformat()
+            except ValueError:
+                end_exclusive = end_day
+            stmt = stmt.where(study_plan_activity_events_table.c.updated_at < f"{end_exclusive}T00:00:00")
+        stmt = stmt.order_by(study_plan_activity_events_table.c.updated_at, study_plan_activity_events_table.c.id)
         with self._lock, self._engine.connect() as conn:
             rows = conn.execute(stmt).fetchall()
 
-        by_video: Dict[int, Dict[str, Any]] = {}
+        by_video: Dict[tuple[str, int], Dict[str, Any]] = {}
         for row in rows:
             video_id = int(row.video_id)
-            existing = by_video.get(video_id)
+            activity_day = self._study_plan_business_day_from_timestamp(str(row.updated_at or ""))
+            if start_day and activity_day < start_day:
+                continue
+            if end_day and activity_day > end_day:
+                continue
+            activity_key = (activity_day, video_id)
+            existing = by_video.get(activity_key)
             if existing is None:
-                by_video[video_id] = {
+                by_video[activity_key] = {
+                    "day": activity_day,
                     "video_id": video_id,
                     "subject": row.subject,
                     "sequence": int(row.sequence or 0),
@@ -913,7 +950,10 @@ class PersistentStorage:
                 )
                 existing["updated_at"] = row.updated_at or existing["updated_at"]
 
-        return sorted(by_video.values(), key=lambda item: (str(item["updated_at"]), int(item["sequence"])))
+        return sorted(
+            by_video.values(),
+            key=lambda item: (str(item["day"]), str(item["updated_at"]), int(item["sequence"])),
+        )
 
     # -- study recall loop -----------------------------------------------
     @staticmethod
