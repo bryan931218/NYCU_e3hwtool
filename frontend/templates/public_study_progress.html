@@ -271,7 +271,7 @@
             <div class="panel-head" style="padding:0;">
                 <div>
                     <h2 class="panel-title">今日學習紀錄</h2>
-                    <div class="caption">以早上 8:00 作為每日切割點，自動紀錄影片進度增加量。</div>
+                    <div class="caption">以早上 8:00 作為每日切割點，計算每支影片相較前一日增加的觀看進度。</div>
                 </div>
             </div>
             <div class="today-log-grid">
@@ -311,7 +311,7 @@
                     </div>
                     {% endfor %}
                 {% else %}
-                    <div class="empty">今天尚未有自動影片活動紀錄；之後影片進度增加時會自動列在這裡。</div>
+                    <div class="empty">今天尚未有影片進度增加紀錄。</div>
                 {% endif %}
             </div>
         </section>

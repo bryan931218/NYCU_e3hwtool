@@ -2126,9 +2126,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         week_start_date = str(current_week.get("start") or "")
         week_end_date = str(current_week.get("end") or "")
         recent_days = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
-        activity_window_start = min([day for day in [week_start_date, recent_days[0]] if day])
+        tracked_start_day = min([day for day in [week_start_date, recent_days[0]] if day])
         activity_events = storage.list_study_plan_activity_events(
-            start_day=activity_window_start,
+            start_day=tracked_start_day,
             end_day=today.isoformat(),
         )
         activity_events_by_day: Dict[str, List[Dict[str, Any]]] = {}
@@ -2136,75 +2136,30 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             event_day = str(event.get("day") or "")
             if event_day:
                 activity_events_by_day.setdefault(event_day, []).append(event)
+        # Each grouped event stores the first position of its learning day and the
+        # final position saved that day. Only a positive difference is new study time.
         activity_seconds_by_day = {
-            day: sum(float(item.get("delta_seconds") or 0) for item in events)
+            day: sum(max(0.0, float(item.get("delta_seconds") or 0)) for item in events)
             for day, events in activity_events_by_day.items()
         }
-        recorded_days = {
-            day for day, seconds in activity_seconds_by_day.items()
-            if seconds > 0
-        }
+        recorded_days = {day for day, seconds in activity_seconds_by_day.items() if seconds > 0}
         momentum_days = [{"date": day, "active": day in recorded_days, "label": day[5:]} for day in recent_days]
         active_recent_days = sum(1 for item in momentum_days if item["active"])
         momentum_score = min(100, int(round(active_recent_days / 7 * 100)))
-        daily_snapshots = storage.list_study_plan_daily_snapshots(end_day=week_end_date or None)
-        snapshot_by_day = {
-            str(item["day"]): float(item.get("total_watched_seconds") or 0)
-            for item in daily_snapshots
-        }
-        prior_snapshot_seconds = 0.0
-        if week_start_date:
-            for item in daily_snapshots:
-                day_key = str(item.get("day") or "")
-                if day_key and day_key < week_start_date:
-                    prior_snapshot_seconds = float(item.get("total_watched_seconds") or 0)
-                elif day_key >= week_start_date:
-                    break
-
-        legacy_recorded_hours_by_day: Dict[str, float] = {}
-        for video in videos:
-            updated = str(video.get("updated_at") or "").strip()
-            if len(updated) < 10:
-                continue
-            updated_day = _study_plan_business_day_from_timestamp(updated)
-            if not updated_day:
-                continue
-            if week_start_date and updated_day < week_start_date:
-                continue
-            if week_end_date and updated_day > week_end_date:
-                continue
-            duration_seconds = float(video.get("duration_seconds") or 0)
-            watched_seconds = min(float(video.get("watched_seconds") or 0), duration_seconds)
-            if watched_seconds <= 0:
-                continue
-            legacy_recorded_hours_by_day[updated_day] = legacy_recorded_hours_by_day.get(updated_day, 0.0) + watched_seconds / 3600
 
         chart_rows: List[Dict[str, Any]] = []
         target_total = 0.0
         actual_total = 0.0
         target_cumulative = 0.0
         actual_cumulative = 0.0
-        previous_total_seconds = prior_snapshot_seconds
         for day in chart_days:
             day_key = str(day.get("date") or "")
             is_future_day = bool(day_key and day_key > today.isoformat())
             target_hours = float(day.get("hours") or 0)
-            snapshot_hours: Optional[float] = None
-            if day_key in snapshot_by_day:
-                day_total_seconds = float(snapshot_by_day.get(day_key) or 0)
-                actual_seconds = max(0.0, day_total_seconds - previous_total_seconds)
-                previous_total_seconds = day_total_seconds
-                snapshot_hours = actual_seconds / 3600
             if is_future_day:
                 actual_hours: Optional[float] = None
-            elif day_key in activity_seconds_by_day:
-                # Activity events are forward-only, so they measure study time even
-                # when daily cumulative snapshots are sparse or arrive out of order.
-                actual_hours = activity_seconds_by_day[day_key] / 3600
-            elif snapshot_hours is not None:
-                actual_hours = snapshot_hours
             else:
-                actual_hours = float(legacy_recorded_hours_by_day.get(day_key, 0.0))
+                actual_hours = activity_seconds_by_day.get(day_key, 0.0) / 3600
             target_total += target_hours
             target_cumulative += target_hours
             if actual_hours is not None:
@@ -2274,8 +2229,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         }
         today_chart_row = next((row for row in chart_rows if str(row.get("date") or "") == today.isoformat()), None)
         chart_today_hours = float(today_chart_row.get("actual_daily_hours") or 0.0) if today_chart_row else 0.0
-        today_activity_events = activity_events_by_day.get(today.isoformat(), [])
-        activity_seconds = sum(float(item.get("delta_seconds") or 0) for item in today_activity_events)
         today_study_hours = chart_today_hours
         today_delta_seconds = today_study_hours * 3600
         today_study_minutes = int(round(today_study_hours * 60))
@@ -2307,7 +2260,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 cumulative_minutes = end_minutes
 
         today_videos = []
-        for item in today_activity_events:
+        for item in activity_events_by_day.get(today.isoformat(), []):
+            delta_seconds = max(0.0, float(item.get("delta_seconds") or 0))
+            if delta_seconds <= 0:
+                continue
             duration_seconds = max(0.0, float(item.get("duration_seconds") or 0))
             watched_seconds = max(0.0, float(item.get("watched_seconds") or 0))
             today_videos.append(
@@ -2315,7 +2271,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "subject": str(item.get("subject") or ""),
                     "sequence": int(item.get("sequence") or 0),
                     "title": str(item.get("title") or ""),
-                    "minutes": round(float(item.get("delta_seconds") or 0) / 60, 1),
+                    "minutes": round(delta_seconds / 60, 1),
                     "completion": round(min(100.0, watched_seconds / duration_seconds * 100) if duration_seconds else 0.0, 1),
                 }
             )

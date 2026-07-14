@@ -235,6 +235,7 @@ study_plan_video_records_table = Table(
     metadata,
     Column("video_id", Integer, primary_key=True),
     Column("watched_seconds", Float, nullable=False, default=0),
+    Column("playback_seconds", Float, nullable=False, default=0),
     Column("notes", Text),
     Column("updated_at", String(64), nullable=False),
 )
@@ -351,6 +352,20 @@ class PersistentStorage:
             metadata.tables["study_plan_daily_snapshots"].create(self._engine, checkfirst=True)
         if not inspector.has_table("study_plan_activity_events"):
             metadata.tables["study_plan_activity_events"].create(self._engine, checkfirst=True)
+        if inspector.has_table("study_plan_video_records"):
+            video_record_columns = {col["name"] for col in inspector.get_columns("study_plan_video_records")}
+            if "playback_seconds" not in video_record_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE study_plan_video_records ADD COLUMN playback_seconds FLOAT"))
+                    # Existing records only stored accumulated progress. Use it as the
+                    # initial resume point once, then persist real player positions.
+                    conn.execute(
+                        text(
+                            "UPDATE study_plan_video_records "
+                            "SET playback_seconds = watched_seconds "
+                            "WHERE playback_seconds IS NULL"
+                        )
+                    )
         if inspector.has_table("study_recall_card_reviews"):
             card_review_columns = {col["name"] for col in inspector.get_columns("study_recall_card_reviews")}
             if "ideal_review_at" not in card_review_columns:
@@ -488,8 +503,8 @@ class PersistentStorage:
     ) -> None:
         previous = max(0.0, float(previous_watched_seconds or 0))
         current = max(0.0, float(watched_seconds or 0))
-        delta = max(0.0, current - previous)
-        if delta <= 0:
+        delta = current - previous
+        if abs(delta) < 0.01:
             return
         conn.execute(
             insert(study_plan_activity_events_table).values(
@@ -695,6 +710,7 @@ class PersistentStorage:
                     study_plan_videos_table.c.youtube_playlist_id,
                     study_plan_videos_table.c.youtube_url,
                     study_plan_video_records_table.c.watched_seconds,
+                    study_plan_video_records_table.c.playback_seconds,
                     study_plan_video_records_table.c.notes,
                     study_plan_video_records_table.c.updated_at,
                 )
@@ -726,8 +742,13 @@ class PersistentStorage:
                 "youtube_playlist_id": row.youtube_playlist_id or "",
                 "youtube_url": row.youtube_url or "",
                 "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
+                "playback_seconds": min(
+                    max(0.0, float(row.playback_seconds or 0)),
+                    max(0.0, float(row.duration_seconds or 0)),
+                ),
                 "notes": row.notes or "",
                 "updated_at": _to_taipei(row.updated_at),
+                "updated_at_iso": row.updated_at or "",
             }
             for row in rows
         ]
@@ -760,6 +781,7 @@ class PersistentStorage:
             previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
             values = {
                 "watched_seconds": normalized_seconds,
+                "playback_seconds": normalized_seconds,
                 "notes": notes,
                 "updated_at": now,
             }
@@ -805,11 +827,21 @@ class PersistentStorage:
             current_seconds = max(0.0, min(float(watched_seconds or 0), duration_seconds))
             notes = existing.notes if existing else ""
             previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
-            # Player seeks and replays must not reduce the completed progress or create a new
-            # cumulative baseline that counts the same segment again on the next save.
-            normalized_seconds = max(previous_watched_seconds, current_seconds)
+            # Progress follows the last saved player position. Seeking backward is a
+            # correction, not a replay event that should preserve a historical maximum.
+            normalized_seconds = current_seconds
+            if existing and abs(normalized_seconds - previous_watched_seconds) < 0.01:
+                return {
+                    "video_id": int(video.id),
+                    "duration_seconds": duration_seconds,
+                    "watched_seconds": previous_watched_seconds,
+                    "playback_seconds": current_seconds,
+                    "completion": min(100.0, (previous_watched_seconds / duration_seconds * 100) if duration_seconds else 0.0),
+                    "youtube_video_id": video.youtube_video_id or "",
+                }
             values = {
                 "watched_seconds": normalized_seconds,
+                "playback_seconds": current_seconds,
                 "notes": notes or "",
                 "updated_at": now,
             }
@@ -833,6 +865,7 @@ class PersistentStorage:
                 "video_id": int(video.id),
                 "duration_seconds": duration_seconds,
                 "watched_seconds": normalized_seconds,
+                "playback_seconds": current_seconds,
                 "completion": min(100.0, (normalized_seconds / duration_seconds * 100) if duration_seconds else 0.0),
                 "youtube_video_id": video.youtube_video_id or "",
             }
@@ -937,17 +970,13 @@ class PersistentStorage:
                     "duration_seconds": max(0.0, float(row.duration_seconds or 0)),
                     "previous_watched_seconds": max(0.0, float(row.previous_watched_seconds or 0)),
                     "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
-                    "delta_seconds": max(0.0, float(row.delta_seconds or 0)),
+                    "delta_seconds": float(row.delta_seconds or 0),
                     "updated_at": row.updated_at or "",
                 }
             else:
-                existing["watched_seconds"] = max(float(existing["watched_seconds"]), max(0.0, float(row.watched_seconds or 0)))
-                # A player can send 0 -> 60 -> 0 -> 60 while replaying one minute.
-                # Daily study time is unique forward progress, not the sum of every save.
-                existing["delta_seconds"] = max(
-                    0.0,
-                    float(existing["watched_seconds"]) - float(existing["previous_watched_seconds"]),
-                )
+                existing["watched_seconds"] = max(0.0, float(row.watched_seconds or 0))
+                # Keep each video's final position for the day, including a backward seek.
+                existing["delta_seconds"] = float(existing["watched_seconds"]) - float(existing["previous_watched_seconds"])
                 existing["updated_at"] = row.updated_at or existing["updated_at"]
 
         return sorted(

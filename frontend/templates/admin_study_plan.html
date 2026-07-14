@@ -326,7 +326,7 @@
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
-                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required><option value="" selected disabled data-sequence="" data-title="" data-duration="0" data-duration-seconds="0" data-watched-seconds="0" data-youtube-video-id="" data-youtube-url="">請選擇影片</option>{% for video in videos %}{% set option_label %}第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}{% endset %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}" data-complete="{{ 'true' if video.completion >= 100 else 'false' }}" data-option-label="{{ option_label|trim }}">{% if video.completion >= 100 %}✓ 已完成・{% endif %}{{ option_label|trim }}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">請先選擇影片</span></div>
+                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required><option value="" selected disabled data-sequence="" data-title="" data-duration="0" data-duration-seconds="0" data-watched-seconds="0" data-playback-seconds="0" data-youtube-video-id="" data-youtube-url="">請選擇影片</option>{% for video in videos %}{% set option_label %}第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}{% endset %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-playback-seconds="{{ video.playback_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}" data-complete="{{ 'true' if video.completion >= 100 else 'false' }}" data-option-label="{{ option_label|trim }}">{% if video.completion >= 100 %}✓ 已完成・{% endif %}{{ option_label|trim }}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">請先選擇影片</span></div>
                             <div class="field"><label for="watched_minutes">實際觀看分鐘</label><input id="watched_minutes" name="watched_minutes" type="number" min="0" max="1440" step="0.1" value="0" required></div>
                             <div class="field notes"><label for="notes">筆記／卡關點</label><textarea id="notes" name="notes" rows="1" maxlength="2000" placeholder="例：複習矩陣分解的推導。"></textarea></div>
                             <button class="save-button" type="submit">儲存影片紀錄</button>
@@ -535,7 +535,7 @@
                 const option = selectedOption();
                 if (!option) return 0;
                 const durationSeconds = Number(option.dataset.durationSeconds || 0);
-                const savedSeconds = Number(option.dataset.watchedSeconds || 0);
+                const savedSeconds = Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0);
                 let currentSeconds = savedSeconds;
                 if (player && typeof player.getCurrentTime === 'function') {
                     currentSeconds = Math.max(0, Number(player.getCurrentTime() || 0));
@@ -576,11 +576,12 @@
                 const sequence = option ? String(option.dataset.sequence || '').padStart(3, '0') : '';
                 const durationSeconds = option ? Number(option.dataset.durationSeconds || 0) : 0;
                 const watchedSeconds = option ? Number(option.dataset.watchedSeconds || 0) : 0;
+                const playbackSeconds = option ? Number(option.dataset.playbackSeconds || watchedSeconds) : 0;
                 if (youtubePlayerPanel) youtubePlayerPanel.classList.toggle('is-hidden', !youtubeId);
                 playerTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '尚未載入影片';
                 playerDuration.textContent = '片長 ' + formatMinutes(durationSeconds) + ' 分';
                 playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
-                setPlayerPosition(watchedSeconds, durationSeconds);
+                setPlayerPosition(playbackSeconds, durationSeconds);
                 playerSyncState.textContent = youtubeId ? '可播放並自動儲存' : '這支影片尚未對應 YouTube';
                 playerEmpty.style.display = youtubeId ? 'none' : 'grid';
                 if (!youtubeId) {
@@ -589,15 +590,22 @@
                 }
             };
             const applyProgressResult = function (result) {
-                const option = selectedOption();
-                if (!result || !result.ok || !option) return;
+                const option = result ? optionByValue(result.video_id) : null;
+                if (!result || !result.ok || !option) return false;
                 const watchedSeconds = Number(result.watched_seconds || 0);
+                const playbackSeconds = Number(result.playback_seconds || 0);
                 const durationSeconds = Number(result.duration_seconds || option.dataset.durationSeconds || 0);
                 option.dataset.watchedSeconds = String(watchedSeconds);
+                option.dataset.playbackSeconds = String(playbackSeconds);
                 option.dataset.durationSeconds = String(durationSeconds);
-                if (watchedInput) watchedInput.value = formatMinutes(watchedSeconds);
-                playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
-                setPlayerPosition(watchedSeconds, durationSeconds);
+                const isSelectedVideo = String(videoSelect.value) === String(result.video_id);
+                if (isSelectedVideo) {
+                    if (watchedInput) watchedInput.value = formatMinutes(watchedSeconds);
+                    playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
+                    // Keep the indicator attached to the player's actual seek position;
+                    // cumulative study progress must never seek the player forward again.
+                    syncPlaybackPosition();
+                }
                 const watchedCell = document.querySelector('[data-video-watched="' + result.video_id + '"]');
                 const completionCell = document.querySelector('[data-video-completion="' + result.video_id + '"]');
                 const fill = document.querySelector('[data-video-fill="' + result.video_id + '"]');
@@ -644,6 +652,7 @@
                         if (completion) completion.textContent = Math.round(Number(day.completion || 0)) + '%';
                     });
                 }
+                return isSelectedVideo;
             };
             const saveProgress = function (reason, useKeepalive) {
                 const option = selectedOption();
@@ -664,7 +673,7 @@
                     if (!response.ok) throw new Error('save_failed');
                     return response.json();
                 }).then(function (data) {
-                    applyProgressResult(data);
+                    if (!applyProgressResult(data)) return;
                     playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
                     playerSyncState.textContent = reason === 'ended' ? '已完成並儲存' : '已自動儲存';
                 }).catch(function () {
@@ -695,7 +704,7 @@
                 const option = selectedOption();
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 if (!youtubeId || !youtubeApiReady) return;
-                const startSeconds = Math.floor(Number(option.dataset.watchedSeconds || 0));
+                const startSeconds = Math.floor(Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0));
                 activeVideoId = youtubeId;
                 playerEmpty.style.display = 'none';
                 if (!player) {
