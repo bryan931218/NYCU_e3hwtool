@@ -184,23 +184,23 @@ def _study_plan_daily_recommendations(
     week_is_complete: bool = False,
 ) -> Tuple[float, float, List[Dict[str, Any]]]:
     video_hours = target_seconds / 3600 if target_seconds else 0.0
-    watched_hours = watched_seconds / 3600 if watched_seconds else 0.0
     weekly_hours = video_hours
     average_hours = weekly_hours / 7 if weekly_hours else 0.0
     weekend_hours = min(average_hours, STUDY_PLAN_WEEKEND_VIDEO_HOUR_CAP)
     weekday_hours = max(0.0, (weekly_hours - weekend_hours * 2) / 5) if weekly_hours else 0.0
     daily_targets = [weekday_hours] * 5 + [weekend_hours] * 2
     daily_rows: List[Dict[str, Any]] = []
-    remaining_hours = watched_hours
+    remaining_seconds = max(0.0, watched_seconds)
     for index, label in enumerate(STUDY_PLAN_DAILY_LABELS):
         target_hours = daily_targets[index]
+        daily_target_seconds = target_hours * 3600
         if week_is_complete:
-            credited_hours = target_hours
-            completion = 100.0 if target_hours else 0.0
+            credited_seconds = daily_target_seconds
+            completion = 100.0 if daily_target_seconds else 0.0
         else:
-            credited_hours = min(max(remaining_hours, 0.0), target_hours)
-            completion = min(100.0, (credited_hours / target_hours * 100) if target_hours else 0.0)
-        remaining_hours -= target_hours
+            credited_seconds = min(max(remaining_seconds, 0.0), daily_target_seconds)
+            completion = min(100.0, (credited_seconds / daily_target_seconds * 100) if daily_target_seconds else 0.0)
+        remaining_seconds -= daily_target_seconds
         current_day = week_start + timedelta(days=index)
         if completion >= 100:
             if today < current_day:
@@ -231,8 +231,11 @@ def _study_plan_daily_recommendations(
                 "date": current_day.isoformat(),
                 "short_date": current_day.strftime("%m/%d"),
                 "focus": "看影片",
-                "hours": round(target_hours, 1),
-                "credited_hours": round(credited_hours, 1),
+                # Seconds remain the source of truth. Hours exist only for display.
+                "target_seconds": daily_target_seconds,
+                "credited_seconds": credited_seconds,
+                "hours": round(target_hours, 2),
+                "credited_hours": round(credited_seconds / 3600, 2),
                 "completion": round(completion, 1),
                 "state": state,
                 "state_label": state_label,
@@ -1840,7 +1843,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "lesson_target": int(lesson_target),
                         "video_count": len(weekly_videos),
                         "completed_videos": completed_videos,
+                        "watched_seconds": watched_seconds,
                         "watched_minutes": round(watched_seconds / 60, 1),
+                        "watched_hours": round(watched_seconds / 3600, 2),
                         "completion": completion,
                         "state": state,
                         "state_label": state_label,
@@ -1918,7 +1923,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 for day in row.get("daily_recommendations", []):
                     day_key = str(day.get("date") or "")
                     if day_key <= today_iso:
-                        target_minutes_by_today += float(day.get("hours") or 0) * 60
+                        target_minutes_by_today += float(day.get("target_seconds") or 0) / 60
         target_minutes_by_today = min(max(target_minutes_by_today, 0.0), total_target_minutes)
         scheduled_percent = min(100.0, (target_minutes_by_today / total_target_minutes * 100) if total_target_minutes else 0.0)
         pace_delta = completion - scheduled_percent
@@ -2124,7 +2129,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
         chart_days = list(current_week.get("daily_recommendations") or [])
         week_start_date = str(current_week.get("start") or "")
-        week_end_date = str(current_week.get("end") or "")
         recent_days = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
         tracked_start_day = min([day for day in [week_start_date, recent_days[0]] if day])
         activity_events = storage.list_study_plan_activity_events(
@@ -2137,9 +2141,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if event_day:
                 activity_events_by_day.setdefault(event_day, []).append(event)
         # Each grouped event stores the first position of its learning day and the
-        # final position saved that day. Only a positive difference is new study time.
+        # final position saved that day. Keep corrections negative so a rewind never
+        # leaves an earlier high-water mark in the weekly cumulative calculation.
         activity_seconds_by_day = {
-            day: sum(max(0.0, float(item.get("delta_seconds") or 0)) for item in events)
+            day: sum(float(item.get("delta_seconds") or 0) for item in events)
             for day, events in activity_events_by_day.items()
         }
         recorded_days = {day for day, seconds in activity_seconds_by_day.items() if seconds > 0}
@@ -2155,7 +2160,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         for day in chart_days:
             day_key = str(day.get("date") or "")
             is_future_day = bool(day_key and day_key > today.isoformat())
-            target_hours = float(day.get("hours") or 0)
+            target_hours = float(day.get("target_seconds") or 0) / 3600
             if is_future_day:
                 actual_hours: Optional[float] = None
             else:
@@ -2163,8 +2168,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             target_total += target_hours
             target_cumulative += target_hours
             if actual_hours is not None:
-                actual_total += actual_hours
-                actual_cumulative += actual_hours
+                actual_total = max(0.0, actual_total + actual_hours)
+                actual_cumulative = max(0.0, actual_cumulative + actual_hours)
             chart_rows.append(
                 {
                     "label": str(day.get("label") or ""),
@@ -2235,34 +2240,71 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         total_target_seconds = max(0.0, float(summary.get("total_target") or 0) * 60)
         today_progress_delta = (today_delta_seconds / total_target_seconds * 100) if total_target_seconds else 0.0
 
-        before_today_minutes = max(0.0, watched_minutes_total - today_delta_seconds / 60)
-        after_today_minutes = watched_minutes_total
-        makeup_days: List[Dict[str, Any]] = []
-        cumulative_minutes = 0.0
+        today_activity_events = activity_events_by_day.get(today.isoformat(), [])
+        week_delta_seconds: Dict[int, float] = {}
+        subject_week_targets: Dict[str, List[Tuple[int, int, Dict[str, Any]]]] = {}
         for week in week_rows:
+            subject = str(week.get("subject") or "")
+            prior_target = subject_week_targets.get(subject, [])[-1][1] if subject_week_targets.get(subject) else 0
+            subject_week_targets.setdefault(subject, []).append(
+                (prior_target, int(week.get("lesson_target") or 0), week)
+            )
+        for event in today_activity_events:
+            delta_seconds = float(event.get("delta_seconds") or 0)
+            if abs(delta_seconds) < 0.01:
+                continue
+            subject = str(event.get("subject") or "")
+            sequence = int(event.get("sequence") or 0)
+            for lower_sequence, upper_sequence, week in subject_week_targets.get(subject, []):
+                if lower_sequence < sequence <= upper_sequence:
+                    week_number = int(week.get("number") or 0)
+                    week_delta_seconds[week_number] = week_delta_seconds.get(week_number, 0.0) + delta_seconds
+                    break
+
+        makeup_days: List[Dict[str, Any]] = []
+        for week in week_rows:
+            week_number = int(week.get("number") or 0)
+            net_delta_seconds = week_delta_seconds.get(week_number, 0.0)
+            if net_delta_seconds <= 0:
+                continue
+            after_seconds = max(0.0, float(week.get("watched_seconds") or 0))
+            before_seconds = max(0.0, after_seconds - net_delta_seconds)
+            week_target_seconds = max(0.0, float(week.get("target_seconds") or 0))
+            week_before_completion = min(100.0, before_seconds / week_target_seconds * 100) if week_target_seconds else 0.0
+            week_after_completion = min(100.0, after_seconds / week_target_seconds * 100) if week_target_seconds else 0.0
+            cumulative_seconds = 0.0
             for day in week.get("daily_recommendations", []):
-                target_minutes = float(day.get("hours") or 0) * 60
-                if target_minutes <= 0:
+                target_seconds = float(day.get("target_seconds") or 0)
+                if target_seconds <= 0:
                     continue
-                start_minutes = cumulative_minutes
-                end_minutes = cumulative_minutes + target_minutes
-                overlap_minutes = max(0.0, min(after_today_minutes, end_minutes) - max(before_today_minutes, start_minutes))
-                if overlap_minutes > 0:
+                start_seconds = cumulative_seconds
+                end_seconds = cumulative_seconds + target_seconds
+                before_credited = max(0.0, min(before_seconds, end_seconds) - start_seconds)
+                after_credited = max(0.0, min(after_seconds, end_seconds) - start_seconds)
+                gained_seconds = max(0.0, after_credited - before_credited)
+                if gained_seconds > 0:
+                    before_completion = min(100.0, before_credited / target_seconds * 100)
+                    after_completion = min(100.0, after_credited / target_seconds * 100)
                     makeup_days.append(
                         {
-                            "week_number": int(week.get("number") or 0),
+                            "week_number": week_number,
                             "subject": str(week.get("subject") or ""),
                             "label": str(day.get("label") or ""),
                             "date": str(day.get("date") or ""),
-                            "minutes": int(round(overlap_minutes)),
+                            "minutes": round(gained_seconds / 60, 1),
+                            "day_target_minutes": round(target_seconds / 60, 1),
+                            "before_completion": round(before_completion, 1),
+                            "after_completion": round(after_completion, 1),
+                            "week_before_completion": round(week_before_completion, 1),
+                            "week_after_completion": round(week_after_completion, 1),
                         }
                     )
-                cumulative_minutes = end_minutes
+                cumulative_seconds = end_seconds
 
         today_videos = []
         for item in activity_events_by_day.get(today.isoformat(), []):
-            delta_seconds = max(0.0, float(item.get("delta_seconds") or 0))
-            if delta_seconds <= 0:
+            delta_seconds = float(item.get("delta_seconds") or 0)
+            if abs(delta_seconds) < 0.01:
                 continue
             duration_seconds = max(0.0, float(item.get("duration_seconds") or 0))
             watched_seconds = max(0.0, float(item.get("watched_seconds") or 0))
@@ -2271,7 +2313,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "subject": str(item.get("subject") or ""),
                     "sequence": int(item.get("sequence") or 0),
                     "title": str(item.get("title") or ""),
-                    "minutes": round(delta_seconds / 60, 1),
+                    "minutes": round(abs(delta_seconds) / 60, 1),
+                    "is_correction": delta_seconds < 0,
                     "completion": round(min(100.0, watched_seconds / duration_seconds * 100) if duration_seconds else 0.0, 1),
                 }
             )
@@ -2327,7 +2370,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     def _build_recall_widget_context() -> Dict[str, Any]:
         today = _study_plan_business_date().isoformat()
-        due_cards = storage.list_due_study_recall_cards(today=today, limit=18)
+        due_cards = storage.list_due_study_recall_cards(
+            today=today,
+            limit=18,
+            concept_filter=_is_recall_concept_eligible,
+        )
         cards: List[Dict[str, Any]] = []
         session_cache: Dict[int, Dict[str, Any]] = {}
         for due_card in due_cards:
@@ -2350,6 +2397,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         try:
             parsed = float(str(value or "0").strip())
         except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(parsed):
             return 0.0
         return max(0.0, min(parsed, 1_440.0))
 
@@ -3458,7 +3507,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             for concept in selected_session["key_concepts"]:
                 decorate_review_curve(concept)
         today = _study_plan_business_date().isoformat()
-        due_cards = storage.list_due_study_recall_cards(today=today)
+        due_cards = storage.list_due_study_recall_cards(
+            today=today,
+            concept_filter=_is_recall_concept_eligible,
+        )
         review_cards: List[Dict[str, Any]] = []
         review_sessions: Dict[int, Dict[str, Any]] = {}
         for due_card in due_cards:
@@ -3474,7 +3526,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 continue
             decorate_review_curve(concept)
             review_cards.append({**due_card, "concept_data": concept})
-        review_schedule = storage.list_study_recall_schedule(start_date=today)
+        review_schedule = storage.list_study_recall_schedule(
+            start_date=today,
+            concept_filter=_is_recall_concept_eligible,
+        )
         return render_template_string(
             STUDY_RECALL_TEMPLATE,
             admin_user=user,
@@ -3911,6 +3966,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "invalid_payload"}, 400
         if video_id <= 0:
             return {"ok": False, "error": "missing_video"}, 400
+        if not math.isfinite(watched_seconds):
+            return {"ok": False, "error": "invalid_progress"}, 400
         result = storage.update_study_plan_video_progress(video_id=video_id, watched_seconds=watched_seconds)
         if not result:
             return {"ok": False, "error": "video_not_found"}, 404

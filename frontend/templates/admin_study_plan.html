@@ -280,7 +280,7 @@
                                         <span>影片 {{ week.video_hours }}h</span>
                                         <strong>影片 {{ week.suggested_weekly_hours }}h / 週</strong>
                                         <span>日均 {{ (week.suggested_weekly_hours / 7)|round(1) }}h</span>
-                                        <span>已看 {{ (week.watched_minutes / 60)|round(1) }}h</span>
+                                        <span>已看 {{ week.watched_hours }}h</span>
                                     </div>
                                     <div class="week-daily" aria-label="第 {{ week.number }} 週每日建議讀書時數">
                                         {% for day in week.daily_recommendations %}
@@ -460,7 +460,7 @@
             const videoSummaryBody = document.getElementById('video-summary-body');
             let player = null;
             let youtubeApiReady = false;
-            let activeVideoId = '';
+            let activeRecordId = '';
             let saveTimer = null;
             let playbackTimer = null;
             let pendingSave = false;
@@ -532,7 +532,7 @@
                 }, 120);
             };
             const syncPlaybackPosition = function () {
-                const option = selectedOption();
+                const option = optionByValue(activeRecordId) || selectedOption();
                 if (!option) return 0;
                 const durationSeconds = Number(option.dataset.durationSeconds || 0);
                 const savedSeconds = Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0);
@@ -654,12 +654,15 @@
                 }
                 return isSelectedVideo;
             };
-            const saveProgress = function (reason, useKeepalive) {
-                const option = selectedOption();
+            const saveProgress = function (reason, useKeepalive, explicitOption) {
+                const option = explicitOption || optionByValue(activeRecordId) || selectedOption();
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 if (!option || !youtubeId || !player || typeof player.getCurrentTime !== 'function') return Promise.resolve();
                 if (pendingSave && reason === 'interval') return Promise.resolve();
-                const playerSeconds = syncPlaybackPosition();
+                const playerSeconds = Math.max(0, Number(player.getCurrentTime() || 0));
+                if (String(videoSelect.value) === String(option.value)) {
+                    setPlayerPosition(playerSeconds, Number(option.dataset.durationSeconds || 0));
+                }
                 const durationSeconds = Number(option.dataset.durationSeconds || 0);
                 const currentSeconds = reason === 'ended' && durationSeconds > 0 ? durationSeconds : playerSeconds;
                 pendingSave = true;
@@ -705,7 +708,7 @@
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 if (!youtubeId || !youtubeApiReady) return;
                 const startSeconds = Math.floor(Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0));
-                activeVideoId = youtubeId;
+                activeRecordId = option.value;
                 playerEmpty.style.display = 'none';
                 if (!player) {
                     player = new YT.Player('youtube-player', {
@@ -748,12 +751,23 @@
             tag.src = 'https://www.youtube.com/iframe_api';
             document.head.appendChild(tag);
 
-            videoSelect.addEventListener('change', updateDuration);
             videoSelect.addEventListener('change', function () {
+                const previousOption = optionByValue(activeRecordId);
                 stopPlaybackTimer();
                 stopSaveTimer();
-                const option = selectedOption();
-                if (option && option.dataset.youtubeVideoId && youtubeApiReady) loadSelectedVideo();
+                const loadNextVideo = function () {
+                    updateDuration();
+                    const option = selectedOption();
+                    if (option && option.dataset.youtubeVideoId && youtubeApiReady) {
+                        loadSelectedVideo();
+                    } else {
+                        activeRecordId = '';
+                    }
+                };
+                if (previousOption && String(previousOption.value) !== String(videoSelect.value)) {
+                    saveProgress('switch', false, previousOption);
+                }
+                loadNextVideo();
             });
             document.querySelectorAll('[data-select-video]').forEach(function (button) {
                 button.addEventListener('click', function () {

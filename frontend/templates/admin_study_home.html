@@ -211,10 +211,13 @@
         .today-log-value { margin-top: 6px; color: var(--ink); font-size: 22px; font-weight: 950; letter-spacing: -.04em; }
         .makeup-list, .today-video-list { display: grid; gap: 8px; margin-top: 12px; }
         .makeup-item, .today-video-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
-        .makeup-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .makeup-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
         .makeup-title, .today-video-title { color: var(--ink-2); font-size: 13px; font-weight: 900; }
         .makeup-meta, .today-video-meta { margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 760; line-height: 1.45; }
         .makeup-minutes { color: var(--blue); font-size: 13px; font-weight: 950; white-space: nowrap; }
+        .makeup-track { grid-column: 1 / -1; height: 9px; border-radius: 999px; background: linear-gradient(90deg, #e7eef5 0 var(--before), #2b72dd var(--before) var(--after), #e7eef5 var(--after) 100%); overflow: hidden; }
+        .makeup-foot { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; font-weight: 760; }
+        .makeup-foot strong { color: var(--blue); }
 
         .dashboard-grid {
             display: grid;
@@ -558,7 +561,10 @@
             .pace-message { max-width: 30ch; }
             .pace-stats { grid-template-columns: 1fr; }
             .today-log-grid { grid-template-columns: 1fr; }
-            .makeup-item { align-items: flex-start; flex-direction: column; }
+            .makeup-item { grid-template-columns: 1fr; }
+            .makeup-minutes { grid-row: 2; }
+            .makeup-track, .makeup-foot { grid-column: 1; }
+            .makeup-foot { align-items: flex-start; flex-direction: column; gap: 2px; }
             .metric-card { min-height: 120px; padding: 15px; border-radius: 20px; }
             .metric-value { font-size: 28px; }
             .panel { border-radius: 22px; }
@@ -673,7 +679,7 @@
                     </div>
                 </div>
                 <div class="today-log-grid">
-                    <div class="today-log-stat"><div class="today-log-label">今天已讀</div><div class="today-log-value">{{ today_study.hours }}h</div></div>
+                    <div class="today-log-stat"><div class="today-log-label">今日進度變動</div><div class="today-log-value">{{ today_study.hours }}h</div></div>
                     <div class="today-log-stat"><div class="today-log-label">今日推進</div><div class="today-log-value">{{ today_study.progress_delta }}%</div></div>
                     <div class="today-log-stat"><div class="today-log-label">自動紀錄影片</div><div class="today-log-value">{{ today_study.videos|length }} 支</div></div>
                 </div>
@@ -689,9 +695,11 @@
                         <div class="makeup-item">
                             <div>
                                 <div class="makeup-title">第 {{ item.week_number }} 週・{{ item.subject }}・{{ item.label }}</div>
-                                <div class="makeup-meta">{{ item.date }}</div>
+                                <div class="makeup-meta">{{ item.date }}・每日目標 {{ item.day_target_minutes }} 分</div>
                             </div>
                             <div class="makeup-minutes">+{{ item.minutes }} 分</div>
+                            <div class="makeup-track" style="--before:{{ item.before_completion }}%; --after:{{ item.after_completion }}%;" aria-label="{{ item.label }} 完成度由 {{ item.before_completion }}% 提升至 {{ item.after_completion }}%"></div>
+                            <div class="makeup-foot"><span>當日完成度 {{ item.before_completion }}% → <strong>{{ item.after_completion }}%</strong></span><span>本週 {{ item.week_before_completion }}% → {{ item.week_after_completion }}%</span></div>
                         </div>
                         {% endfor %}
                     {% else %}
@@ -709,11 +717,11 @@
                         {% for video in today_study.videos %}
                         <div class="today-video-item">
                             <div class="today-video-title">{{ '%03d'|format(video.sequence) }}・{{ video.title }}</div>
-                            <div class="today-video-meta">{{ video.subject }}・今天增加 {{ video.minutes }} 分・目前 {{ video.completion }}%</div>
+                            <div class="today-video-meta">{{ video.subject }}・{% if video.is_correction %}回退校正 {{ video.minutes }} 分{% else %}今天增加 {{ video.minutes }} 分{% endif %}・目前 {{ video.completion }}%</div>
                         </div>
                         {% endfor %}
                     {% else %}
-                        <div class="empty">今天尚未有影片進度增加紀錄。</div>
+                        <div class="empty">今天尚未有影片進度變動紀錄。</div>
                     {% endif %}
                 </div>
             </section>
@@ -871,7 +879,7 @@
                     <div class="panel-head">
                         <div>
                             <h2 class="panel-title">本週軌跡</h2>
-                            <div class="caption">藍線為本週累積實際觀看時數，灰線為累積影片目標。</div>
+                            <div class="caption">藍線為本週所有影片的淨觀看進度（含補看與回退），灰線為本週計畫目標。</div>
                         </div>
                     </div>
                     <div class="week-chart-wrap">

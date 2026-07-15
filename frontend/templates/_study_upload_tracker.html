@@ -52,6 +52,7 @@
         poll(jobId);
     };
     close.addEventListener('click', () => { clearTimer(); localStorage.removeItem(storageKey); root.hidden = true; });
+    open.addEventListener('click', () => { clearTimer(); localStorage.removeItem(storageKey); });
     window.E3StudyUploadTracker = { track };
     const activeJob = localStorage.getItem(storageKey);
     if (activeJob) poll(activeJob);

@@ -1,9 +1,10 @@
 import json
+import math
 import os
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from sqlalchemy import (
     Column,
@@ -769,7 +770,10 @@ class PersistentStorage:
             ).fetchone()
             if not video:
                 return False
-            normalized_seconds = max(0.0, min(float(watched_seconds or 0), float(video.duration_seconds or 0)))
+            raw_seconds = float(watched_seconds or 0)
+            if not math.isfinite(raw_seconds):
+                return False
+            normalized_seconds = max(0.0, min(raw_seconds, float(video.duration_seconds or 0)))
             existing = conn.execute(
                 select(
                     study_plan_video_records_table.c.video_id,
@@ -824,7 +828,10 @@ class PersistentStorage:
                 ).where(study_plan_video_records_table.c.video_id == video_id)
             ).fetchone()
             duration_seconds = max(0.0, float(video.duration_seconds or 0))
-            current_seconds = max(0.0, min(float(watched_seconds or 0), duration_seconds))
+            raw_seconds = float(watched_seconds or 0)
+            if not math.isfinite(raw_seconds):
+                return None
+            current_seconds = max(0.0, min(raw_seconds, duration_seconds))
             notes = existing.notes if existing else ""
             previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
             # Progress follows the last saved player position. Seeking backward is a
@@ -873,10 +880,23 @@ class PersistentStorage:
     def delete_study_plan_video_record(self, video_id: int) -> bool:
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
+            existing = conn.execute(
+                select(study_plan_video_records_table.c.watched_seconds).where(
+                    study_plan_video_records_table.c.video_id == video_id
+                )
+            ).fetchone()
+            previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
             result = conn.execute(
                 delete(study_plan_video_records_table).where(study_plan_video_records_table.c.video_id == video_id)
             )
             if result.rowcount:
+                self._record_study_plan_activity_locked(
+                    conn,
+                    video_id=video_id,
+                    previous_watched_seconds=previous_watched_seconds,
+                    watched_seconds=0.0,
+                    now=now,
+                )
                 self._record_study_plan_daily_snapshot_locked(conn, now=now)
         return bool(result.rowcount)
 
@@ -1158,14 +1178,22 @@ class PersistentStorage:
         ]
         return item
 
-    def list_due_study_recall_cards(self, *, today: str, limit: int = 18) -> List[Dict[str, Any]]:
+    def list_due_study_recall_cards(
+        self,
+        *,
+        today: str,
+        limit: int = 18,
+        concept_filter: Optional[Callable[[Any], bool]] = None,
+    ) -> List[Dict[str, Any]]:
         due_cards: List[Dict[str, Any]] = []
-        for session in self.list_study_recall_sessions(limit=36):
+        for session in self.list_study_recall_sessions(limit=None):
             full_session = self.get_study_recall_session(int(session["id"]))
             if not full_session or str(full_session.get("study_date") or "") > today:
                 continue
             for index, concept in enumerate(full_session.get("key_concepts") or []):
                 if not isinstance(concept, dict):
+                    continue
+                if concept_filter is not None and not concept_filter(concept):
                     continue
                 review = concept.get("review") or {}
                 next_review_at = review.get("next_review_at")
@@ -1185,7 +1213,14 @@ class PersistentStorage:
         due_cards.sort(key=lambda item: (item["next_review_at"] or "0000-00-00", item["session_title"], item["concept_index"]))
         return due_cards[: max(1, min(int(limit), 60))]
 
-    def list_study_recall_schedule(self, *, start_date: str, days: int = 7, daily_capacity: int = 18) -> List[Dict[str, Any]]:
+    def list_study_recall_schedule(
+        self,
+        *,
+        start_date: str,
+        days: int = 7,
+        daily_capacity: int = 18,
+        concept_filter: Optional[Callable[[Any], bool]] = None,
+    ) -> List[Dict[str, Any]]:
         start = datetime.fromisoformat(start_date).date()
         schedule_days = [start + timedelta(days=offset) for offset in range(max(1, min(int(days), 31)))]
         loads = {day.isoformat(): 0 for day in schedule_days}
@@ -1193,12 +1228,31 @@ class PersistentStorage:
             rows = conn.execute(
                 select(study_recall_card_reviews_table).order_by(study_recall_card_reviews_table.c.id.desc())
             ).fetchall()
+            session_rows = conn.execute(
+                select(
+                    study_recall_sessions_table.c.id,
+                    study_recall_sessions_table.c.study_date,
+                    study_recall_sessions_table.c.key_concepts,
+                )
+            ).fetchall()
         latest_by_card: Dict[tuple[int, int], Any] = {}
         for row in rows:
             latest_by_card.setdefault((int(row.session_id), int(row.concept_index)), row)
-        for row in latest_by_card.values():
-            if row.next_review_at in loads:
-                loads[row.next_review_at] += 1
+        first_schedule_day = schedule_days[0].isoformat()
+        last_schedule_day = schedule_days[-1].isoformat()
+        for session_row in session_rows:
+            study_date = str(session_row.study_date or first_schedule_day)
+            for concept_index, concept in enumerate(self._decode_json_list(session_row.key_concepts)):
+                if not isinstance(concept, dict):
+                    continue
+                if concept_filter is not None and not concept_filter(concept):
+                    continue
+                latest = latest_by_card.get((int(session_row.id), concept_index))
+                due_date = str(latest.next_review_at) if latest and latest.next_review_at else study_date
+                if due_date < first_schedule_day:
+                    due_date = first_schedule_day
+                if due_date <= last_schedule_day:
+                    loads[due_date] += 1
         return [
             {
                 "date": day.isoformat(),
@@ -1279,6 +1333,9 @@ class PersistentStorage:
             for (row_session_id, _concept_index), row in latest_by_index.items():
                 if row_session_id == session_id and int(row.concept_index) not in ratings:
                     next_dates.append(row.next_review_at)
+            for index in expected_indexes - set(ratings):
+                if (session_id, index) not in latest_by_index:
+                    next_dates.append(review_date)
             conn.execute(
                 update(study_recall_sessions_table)
                 .where(study_recall_sessions_table.c.id == session_id)
