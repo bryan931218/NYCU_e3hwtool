@@ -179,6 +179,116 @@
         }
         .metric-value small { color: var(--muted); font-size: 13px; font-weight: 760; letter-spacing: 0; }
 
+        .study-calendar-panel {
+            display: grid;
+            grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
+            gap: 0;
+            margin-bottom: 18px;
+            overflow: hidden;
+            border: 1px solid rgba(201, 216, 233, .96);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, .96);
+            box-shadow: var(--shadow-soft);
+        }
+        .calendar-insight {
+            position: relative;
+            display: flex;
+            min-width: 0;
+            padding: 22px;
+            flex-direction: column;
+            background: linear-gradient(155deg, #102a43 0%, #164f91 100%);
+            color: #fff;
+            isolation: isolate;
+        }
+        .calendar-insight::after {
+            content: "";
+            position: absolute;
+            z-index: -1;
+            width: 190px;
+            height: 190px;
+            right: -80px;
+            bottom: -92px;
+            border-radius: 50%;
+            background: rgba(106, 168, 255, .22);
+        }
+        .calendar-kicker { color: #9fc7f4; font-size: 10px; font-weight: 900; letter-spacing: .13em; }
+        .calendar-insight h2 { margin: 7px 0 0; font-size: 22px; letter-spacing: -.035em; }
+        .calendar-total { margin-top: 25px; }
+        .calendar-total-value { display: block; font-size: 36px; font-weight: 950; line-height: 1; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
+        .calendar-total-label { display: block; margin-top: 7px; color: #bdd7f4; font-size: 11px; font-weight: 760; }
+        .calendar-mini-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+        .calendar-mini-stat { min-width: 0; padding: 10px; border: 1px solid rgba(196, 221, 249, .22); border-radius: 9px; background: rgba(255, 255, 255, .08); }
+        .calendar-mini-stat span { display: block; color: #bdd7f4; font-size: 10px; font-weight: 750; }
+        .calendar-mini-stat strong { display: block; margin-top: 4px; overflow: hidden; font-size: 15px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+        .calendar-focus {
+            margin-top: auto;
+            padding-top: 18px;
+            color: #eaf4ff;
+            font-size: 12px;
+            line-height: 1.55;
+        }
+        .calendar-focus strong { display: block; margin-bottom: 3px; color: #fff; font-size: 13px; }
+        .calendar-main { min-width: 0; padding: 19px 22px 21px; }
+        .calendar-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+        .calendar-heading { margin: 0; color: var(--ink); font-size: 18px; font-weight: 930; letter-spacing: -.025em; }
+        .calendar-caption { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+        .calendar-nav { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+        .calendar-nav button {
+            min-width: 34px;
+            height: 34px;
+            padding: 0 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--ink-2);
+            background: #fff;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 900;
+            cursor: pointer;
+        }
+        .calendar-nav button:hover:not(:disabled) { color: var(--blue); border-color: #a9c8ef; background: var(--blue-soft); }
+        .calendar-nav button:focus-visible, .calendar-day:focus-visible { outline: 3px solid rgba(20, 99, 217, .22); outline-offset: 2px; }
+        .calendar-nav button:disabled { opacity: .38; cursor: default; }
+        .calendar-weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+        .calendar-weekdays { margin-top: 17px; color: var(--soft); font-size: 10px; font-weight: 900; text-align: center; }
+        .calendar-weekdays span { padding: 3px 0; }
+        .calendar-grid { margin-top: 6px; }
+        .calendar-day {
+            position: relative;
+            display: flex;
+            min-width: 0;
+            min-height: 58px;
+            padding: 7px;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 4px;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            color: var(--ink-2);
+            background: #f1f5f9;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+        }
+        .calendar-day:hover { z-index: 1; transform: translateY(-2px); border-color: rgba(20, 99, 217, .24); box-shadow: 0 7px 16px rgba(16, 42, 67, .10); }
+        .calendar-day.is-outside { opacity: .4; }
+        .calendar-day.is-today { border-color: var(--blue); }
+        .calendar-day.is-selected { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--blue); }
+        .calendar-day.level-1 { background: #dceafe; }
+        .calendar-day.level-2 { background: #a9cdfb; }
+        .calendar-day.level-3 { color: #092e5d; background: #62a2f2; }
+        .calendar-day.level-4 { color: #fff; background: #1763ca; }
+        .calendar-date { font-size: 11px; font-weight: 900; font-variant-numeric: tabular-nums; }
+        .calendar-duration { align-self: flex-end; overflow: hidden; font-size: 9px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+        .calendar-legend { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 12px; color: var(--muted); font-size: 10px; font-weight: 760; }
+        .calendar-legend-box { width: 15px; height: 15px; border: 1px solid rgba(16,42,67,.05); border-radius: 4px; }
+        .calendar-legend-box.level-0 { background: #f1f5f9; }
+        .calendar-legend-box.level-1 { background: #dceafe; }
+        .calendar-legend-box.level-2 { background: #a9cdfb; }
+        .calendar-legend-box.level-3 { background: #62a2f2; }
+        .calendar-legend-box.level-4 { background: #1763ca; }
+
         .pace-panel {
             margin-bottom: 18px;
             padding: 20px;
@@ -648,6 +758,7 @@
             .dashboard-grid, .lower-grid { grid-template-columns: 1fr; }
             .pace-layout { grid-template-columns: 1fr; }
             .journey-card { min-height: auto; }
+            .study-calendar-panel { grid-template-columns: 240px minmax(0, 1fr); }
         }
         @media (max-width: 900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; } }
         @media (max-width: 760px) {
@@ -666,6 +777,9 @@
             .makeup-foot { align-items: flex-start; flex-direction: column; gap: 2px; }
             .metric-card { min-height: 104px; padding: 15px; border-radius: 8px; }
             .metric-value { font-size: 28px; }
+            .study-calendar-panel { grid-template-columns: 1fr; }
+            .calendar-insight { min-height: 245px; }
+            .calendar-focus { margin-top: 16px; }
             .panel { border-radius: 22px; }
             .journey-stage { min-height: 540px; margin: 8px 12px 0; }
             .planet { width: 210px; }
@@ -693,6 +807,13 @@
             .today-task-value { font-size: 18px; }
             .today-history > summary, .analysis-pocket > summary { padding-left: 14px; padding-right: 14px; }
             .analysis-summary-value { font-size: 12px; }
+            .calendar-main { padding: 16px 10px 18px; }
+            .calendar-toolbar { align-items: stretch; flex-direction: column; }
+            .calendar-nav { justify-content: space-between; }
+            .calendar-nav button:nth-child(2) { flex: 1; }
+            .calendar-weekdays, .calendar-grid { gap: 3px; }
+            .calendar-day { min-height: 48px; padding: 5px; border-radius: 7px; }
+            .calendar-duration { max-width: 42px; font-size: 8px; }
             .journey-stage { min-height: 500px; }
             .planet { width: 180px; }
             .topic-0 { left: 50%; top: 13%; }
@@ -755,6 +876,45 @@
                     <div class="metric-value">{{ card.value }}{% if card.unit %}<small>{{ card.unit }}</small>{% endif %}</div>
                 </article>
                 {% endfor %}
+            </section>
+
+            <section class="study-calendar-panel" data-study-calendar aria-label="每月影片觀看熱度月曆">
+                <aside class="calendar-insight">
+                    <div class="calendar-kicker">WATCHING HEATMAP</div>
+                    <h2>學習月曆</h2>
+                    <div class="calendar-total">
+                        <strong class="calendar-total-value" data-calendar-total>0h</strong>
+                        <span class="calendar-total-label">這個月累積觀看進度</span>
+                    </div>
+                    <div class="calendar-mini-stats">
+                        <div class="calendar-mini-stat"><span>活躍天數</span><strong data-calendar-active-days>0 天</strong></div>
+                        <div class="calendar-mini-stat"><span>活躍日平均</span><strong data-calendar-average>0 分</strong></div>
+                        <div class="calendar-mini-stat" style="grid-column:1/-1"><span>最投入的一天</span><strong data-calendar-best>尚無紀錄</strong></div>
+                    </div>
+                    <div class="calendar-focus" aria-live="polite">
+                        <strong data-calendar-focus-date>選擇一天查看</strong>
+                        <span data-calendar-focus-duration>點選右側日期，即可查看當天觀看時間。</span>
+                    </div>
+                </aside>
+                <div class="calendar-main">
+                    <div class="calendar-toolbar">
+                        <div>
+                            <h3 class="calendar-heading" data-calendar-heading></h3>
+                            <div class="calendar-caption">以每日影片觀看進度換算；觀看越久，格子顏色越深。</div>
+                        </div>
+                        <div class="calendar-nav" aria-label="切換月份">
+                            <button type="button" data-calendar-previous aria-label="上個月">‹</button>
+                            <button type="button" data-calendar-today>本月</button>
+                            <button type="button" data-calendar-next aria-label="下個月">›</button>
+                        </div>
+                    </div>
+                    <div class="calendar-weekdays" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+                    <div class="calendar-grid" data-calendar-grid role="grid" aria-label="每日影片觀看時數"></div>
+                    <div class="calendar-legend" aria-label="觀看熱度圖例">
+                        <span>少</span><i class="calendar-legend-box level-0"></i><i class="calendar-legend-box level-1"></i><i class="calendar-legend-box level-2"></i><i class="calendar-legend-box level-3"></i><i class="calendar-legend-box level-4"></i><span>多</span>
+                    </div>
+                </div>
+                <script type="application/json" data-calendar-data>{{ study_calendar|tojson }}</script>
             </section>
 
             <section class="pace-panel {{ progress_race.state }}" style="--runner-position:{{ progress_race.runner_position }}%;--plan-position:{{ progress_race.plan_position }}%;--actual-progress:{{ progress_race.actual_percent }}%;--gap-start:{{ progress_race.gap_start }}%;--gap-width:{{ progress_race.gap_width }}%;" aria-label="目前已看時間與截至今天應看時間比較">
@@ -920,6 +1080,168 @@
         </main>
     </div>
     <script>
+        (() => {
+            const root = document.querySelector('[data-study-calendar]');
+            const dataNode = root?.querySelector('[data-calendar-data]');
+            if (!root || !dataNode) return;
+
+            let payload;
+            try {
+                payload = JSON.parse(dataNode.textContent || '{}');
+            } catch (_) {
+                return;
+            }
+
+            const secondsByDay = new Map((payload.days || []).map((item) => [item.date, Number(item.seconds) || 0]));
+            const todayKey = String(payload.today || '');
+            const parseMonth = (value) => {
+                const [year, month] = String(value || '').split('-').map(Number);
+                return new Date(year, Math.max(0, (month || 1) - 1), 1);
+            };
+            const monthNumber = (value) => value.getFullYear() * 12 + value.getMonth();
+            const pad = (value) => String(value).padStart(2, '0');
+            const dayKey = (value) => `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+            const firstMonth = parseMonth(payload.first_month || payload.initial_month);
+            const todayMonth = parseMonth(payload.initial_month);
+            let visibleMonth = parseMonth(payload.initial_month);
+            let selectedKey = todayKey;
+
+            const grid = root.querySelector('[data-calendar-grid]');
+            const heading = root.querySelector('[data-calendar-heading]');
+            const previous = root.querySelector('[data-calendar-previous]');
+            const next = root.querySelector('[data-calendar-next]');
+            const currentButton = root.querySelector('[data-calendar-today]');
+            const totalNode = root.querySelector('[data-calendar-total]');
+            const activeNode = root.querySelector('[data-calendar-active-days]');
+            const averageNode = root.querySelector('[data-calendar-average]');
+            const bestNode = root.querySelector('[data-calendar-best]');
+            const focusDateNode = root.querySelector('[data-calendar-focus-date]');
+            const focusDurationNode = root.querySelector('[data-calendar-focus-duration]');
+
+            const heatLevel = (seconds) => {
+                if (seconds >= 7200) return 4;
+                if (seconds >= 3600) return 3;
+                if (seconds >= 1800) return 2;
+                if (seconds > 0) return 1;
+                return 0;
+            };
+            const compactDuration = (seconds) => {
+                if (seconds <= 0) return '';
+                if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}m`;
+                const hours = seconds / 3600;
+                return `${hours >= 10 ? Math.round(hours) : hours.toFixed(1).replace('.0', '')}h`;
+            };
+            const fullDuration = (seconds) => {
+                if (seconds <= 0) return '尚無影片觀看紀錄';
+                const minutes = Math.max(1, Math.round(seconds / 60));
+                const hours = Math.floor(minutes / 60);
+                const remainder = minutes % 60;
+                if (!hours) return `觀看 ${minutes} 分鐘`;
+                return `觀看 ${hours} 小時${remainder ? ` ${remainder} 分鐘` : ''}`;
+            };
+            const summaryDuration = (seconds) => {
+                if (seconds <= 0) return '0h';
+                if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} 分`;
+                return `${(seconds / 3600).toFixed(1).replace('.0', '')}h`;
+            };
+            const spokenDate = (key) => {
+                const [year, month, day] = key.split('-').map(Number);
+                const date = new Date(year, month - 1, day);
+                const weekday = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][date.getDay()];
+                return `${month} 月 ${day} 日・${weekday}`;
+            };
+            const updateFocus = (key) => {
+                selectedKey = key;
+                focusDateNode.textContent = spokenDate(key);
+                focusDurationNode.textContent = fullDuration(secondsByDay.get(key) || 0);
+                grid.querySelectorAll('.calendar-day').forEach((cell) => {
+                    cell.classList.toggle('is-selected', cell.dataset.date === selectedKey);
+                    cell.setAttribute('aria-selected', cell.dataset.date === selectedKey ? 'true' : 'false');
+                });
+            };
+            const renderSummary = () => {
+                const prefix = `${visibleMonth.getFullYear()}-${pad(visibleMonth.getMonth() + 1)}-`;
+                const monthDays = [...secondsByDay.entries()]
+                    .filter(([key, seconds]) => key.startsWith(prefix) && seconds > 0)
+                    .sort(([left], [right]) => left.localeCompare(right));
+                const total = monthDays.reduce((sum, [, seconds]) => sum + seconds, 0);
+                const best = monthDays.reduce((winner, item) => (!winner || item[1] > winner[1] ? item : winner), null);
+                totalNode.textContent = summaryDuration(total);
+                activeNode.textContent = `${monthDays.length} 天`;
+                averageNode.textContent = monthDays.length ? summaryDuration(total / monthDays.length) : '0 分';
+                bestNode.textContent = best ? `${Number(best[0].slice(5, 7))}/${Number(best[0].slice(8, 10))}・${summaryDuration(best[1])}` : '尚無紀錄';
+            };
+            const render = () => {
+                const year = visibleMonth.getFullYear();
+                const month = visibleMonth.getMonth();
+                const firstVisible = new Date(year, month, 1 - new Date(year, month, 1).getDay());
+                heading.textContent = `${year} 年 ${month + 1} 月`;
+                grid.replaceChildren();
+                for (let offset = 0; offset < 42; offset += 1) {
+                    const date = new Date(firstVisible);
+                    date.setDate(firstVisible.getDate() + offset);
+                    const key = dayKey(date);
+                    const seconds = secondsByDay.get(key) || 0;
+                    const cell = document.createElement('button');
+                    cell.type = 'button';
+                    cell.className = `calendar-day level-${heatLevel(seconds)}`;
+                    cell.dataset.date = key;
+                    cell.setAttribute('role', 'gridcell');
+                    cell.setAttribute('aria-label', `${spokenDate(key)}，${fullDuration(seconds)}`);
+                    cell.setAttribute('aria-selected', key === selectedKey ? 'true' : 'false');
+                    if (date.getMonth() !== month) cell.classList.add('is-outside');
+                    if (key === todayKey) cell.classList.add('is-today');
+                    if (key === selectedKey) cell.classList.add('is-selected');
+                    const dateLabel = document.createElement('span');
+                    dateLabel.className = 'calendar-date';
+                    dateLabel.textContent = String(date.getDate());
+                    const duration = document.createElement('span');
+                    duration.className = 'calendar-duration';
+                    duration.textContent = compactDuration(seconds);
+                    cell.append(dateLabel, duration);
+                    cell.addEventListener('click', () => {
+                        if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
+                            visibleMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+                            selectedKey = key;
+                            render();
+                            return;
+                        }
+                        updateFocus(key);
+                    });
+                    grid.appendChild(cell);
+                }
+                previous.disabled = monthNumber(visibleMonth) <= monthNumber(firstMonth);
+                next.disabled = monthNumber(visibleMonth) >= monthNumber(todayMonth);
+                renderSummary();
+                const selectedInVisibleMonth = selectedKey.startsWith(`${year}-${pad(month + 1)}-`);
+                if (!selectedInVisibleMonth) {
+                    const visibleToday = todayKey.startsWith(`${year}-${pad(month + 1)}-`) ? todayKey : '';
+                    const bestDay = [...secondsByDay.entries()]
+                        .filter(([key]) => key.startsWith(`${year}-${pad(month + 1)}-`))
+                        .sort((left, right) => right[1] - left[1])[0]?.[0];
+                    selectedKey = visibleToday || bestDay || `${year}-${pad(month + 1)}-01`;
+                }
+                updateFocus(selectedKey);
+            };
+
+            previous.addEventListener('click', () => {
+                if (previous.disabled) return;
+                visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
+                render();
+            });
+            next.addEventListener('click', () => {
+                if (next.disabled) return;
+                visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1);
+                render();
+            });
+            currentButton.addEventListener('click', () => {
+                visibleMonth = new Date(todayMonth);
+                selectedKey = todayKey;
+                render();
+            });
+            render();
+        })();
+
         window.renderStudyMath = (root = document) => {
             if (!window.renderMathInElement) return;
             const queryAll = (selector) => [
