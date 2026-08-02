@@ -499,6 +499,9 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("data-calendar-modal", home_html)
             self.assertIn("DAILY ACTIVITY", home_html)
             self.assertIn(first_video["title"], home_html)
+            self.assertIn(f"繼續 {first_video['subject']}", home_html)
+            self.assertIn("calendar-legend-gradient", home_html)
+            self.assertIn("applyHeatColor", home_html)
             self.assertNotIn("學習旅程地圖", home_html)
 
             public_page = client.get("/study-progress")
@@ -510,6 +513,8 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("data-public-calendar-modal", public_html)
             self.assertIn("點選日期可查看當天學習內容", public_html)
             self.assertIn(first_video["title"], public_html)
+            self.assertIn("public-calendar-legend-gradient", public_html)
+            self.assertIn("applyHeatColor", public_html)
             self.assertNotIn("目前已看的時間", public_html)
             storage._engine.dispose()
 

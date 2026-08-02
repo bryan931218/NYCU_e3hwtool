@@ -2861,6 +2861,42 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             event_day = str(event.get("day") or "")
             if event_day:
                 activity_events_by_day.setdefault(event_day, []).append(event)
+        last_watched_event = next(
+            (
+                item
+                for item in reversed(activity_events)
+                if float(item.get("delta_seconds") or 0) > 0
+            ),
+            None,
+        )
+        continue_video: Optional[Dict[str, Any]] = None
+        if last_watched_event:
+            last_video_id = int(last_watched_event.get("video_id") or 0)
+            last_video = next(
+                (video for video in videos if int(video.get("id") or 0) == last_video_id),
+                None,
+            )
+            if last_video:
+                duration_seconds = max(0.0, float(last_video.get("duration_seconds") or 0))
+                watched_seconds = min(
+                    max(0.0, float(last_video.get("watched_seconds") or 0)),
+                    duration_seconds,
+                )
+                continue_video = {
+                    "id": last_video_id,
+                    "subject": str(last_video.get("subject") or ""),
+                    "sequence": int(last_video.get("sequence") or 0),
+                    "title": str(last_video.get("title") or ""),
+                    "remaining_minutes": round(max(0.0, duration_seconds - watched_seconds) / 60, 1),
+                    "completion": round(
+                        min(100.0, watched_seconds / duration_seconds * 100)
+                        if duration_seconds
+                        else 0.0,
+                        1,
+                    ),
+                }
+        if continue_video is None and next_videos:
+            continue_video = dict(next_videos[0])
         # Each grouped event stores the first position of its learning day and the
         # final position saved that day. Keep corrections negative so a rewind never
         # leaves an earlier high-water mark in the weekly cumulative calculation.
@@ -3091,6 +3127,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "today_row": today_row,
             "today_study": today_study,
             "next_videos": next_videos,
+            "continue_video": continue_video,
             "momentum_days": momentum_days,
             "momentum_score": momentum_score,
             "momentum_angle": round(momentum_score * 3.6, 1),
