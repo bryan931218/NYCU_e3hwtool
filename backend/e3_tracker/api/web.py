@@ -2851,7 +2851,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         chart_days = list(current_week.get("daily_recommendations") or [])
         week_start_date = str(current_week.get("start") or "")
         recent_days = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
-        tracked_start_day = min([day for day in [week_start_date, recent_days[0]] if day])
+        tracked_start_day = min([day for day in [STUDY_PLAN_START, week_start_date, recent_days[0]] if day])
         activity_events = storage.list_study_plan_activity_events(
             start_day=tracked_start_day,
             end_day=today.isoformat(),
@@ -2867,6 +2867,26 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         activity_seconds_by_day = {
             day: sum(float(item.get("delta_seconds") or 0) for item in events)
             for day, events in activity_events_by_day.items()
+        }
+        # Calendar intensity represents newly watched video progress. Corrections
+        # that move a video's saved position backwards must not create negative
+        # study time or cancel progress made on another video that day.
+        calendar_seconds_by_day = {
+            day: sum(max(0.0, float(item.get("delta_seconds") or 0)) for item in events)
+            for day, events in activity_events_by_day.items()
+        }
+        study_calendar = {
+            "today": today.isoformat(),
+            "initial_month": today.strftime("%Y-%m"),
+            "first_month": plan_start.strftime("%Y-%m"),
+            "days": [
+                {
+                    "date": day,
+                    "seconds": int(round(seconds)),
+                }
+                for day, seconds in sorted(calendar_seconds_by_day.items())
+                if seconds > 0
+            ],
         }
         recorded_days = {day for day, seconds in activity_seconds_by_day.items() if seconds > 0}
         momentum_days = [{"date": day, "active": day in recorded_days, "label": day[5:]} for day in recent_days]
@@ -3044,6 +3064,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "last_updated_label": last_updated_label,
             "timeline_nodes": timeline_nodes,
             "week_chart": week_chart,
+            "study_calendar": study_calendar,
         }
 
     def _invalidate_study_progress_context() -> None:
