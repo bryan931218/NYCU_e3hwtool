@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>管理員讀書計畫｜E3 作業追蹤系統</title>
+    <title>影片與讀書計畫｜E3 研究所備考中心</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
@@ -223,6 +223,148 @@
         @media (max-width: 480px) { .daily-plan, .week-daily { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 620px) { .study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; } }
         @media (max-width: 620px) { .recall-items { grid-template-columns:1fr; } }
+
+        /* Refined study-center design system */
+        body {
+            min-width: 0;
+            overflow-x: hidden;
+            background:
+                radial-gradient(circle at 8% 2%, rgba(179, 220, 255, .58) 0, transparent 27%),
+                radial-gradient(circle at 92% 5%, rgba(226, 218, 255, .55) 0, transparent 25%),
+                linear-gradient(180deg, #f8fbff 0%, #f2f7fc 100%);
+        }
+        .study-nav {
+            position: sticky;
+            z-index: 40;
+            top: 0;
+            min-height: 72px;
+            padding: 10px 30px;
+            border-bottom-color: rgba(205, 220, 235, .78);
+            background: rgba(255, 255, 255, .86);
+            box-shadow: 0 1px 0 rgba(255,255,255,.85), 0 8px 28px rgba(16,42,67,.045);
+            backdrop-filter: blur(18px) saturate(1.18);
+        }
+        .brand { gap: 12px; font-size: 15px; letter-spacing: -.015em; }
+        .mark {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            background: linear-gradient(145deg, #1f78ed, #0d4fae);
+            box-shadow: 0 8px 18px rgba(20,99,217,.24), inset 0 1px 0 rgba(255,255,255,.3);
+        }
+        .nav-links { gap: 5px; }
+        .nav-links a {
+            padding: 9px 13px;
+            border: 0;
+            border-radius: 999px;
+            transition: color .16s ease, background .16s ease, transform .16s ease;
+        }
+        .nav-links a:hover { color: var(--blue); background: #f2f7fd; transform: translateY(-1px); }
+        .nav-links a.active { color: #0d56bd; background: var(--blue-soft); box-shadow: inset 0 0 0 1px #c9def8; }
+        .admin { margin-left: 6px; padding: 8px 11px; border-radius: 999px; }
+        .content { width: min(1680px, 100%); margin: 0 auto; padding: 32px 32px 60px; }
+        .title-row {
+            position: relative;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 28px 30px;
+            overflow: hidden;
+            border: 1px solid rgba(203,220,238,.88);
+            border-radius: 24px;
+            background:
+                radial-gradient(circle at 82% 0%, rgba(182,218,255,.72), transparent 34%),
+                linear-gradient(135deg, rgba(255,255,255,.98), rgba(242,248,255,.96));
+            box-shadow: 0 18px 48px rgba(16,42,67,.075);
+        }
+        .title-row::after {
+            content: "";
+            position: absolute;
+            right: -38px;
+            bottom: -92px;
+            width: 220px;
+            height: 220px;
+            border: 1px solid rgba(20,99,217,.1);
+            border-radius: 50%;
+            box-shadow: 0 0 0 28px rgba(20,99,217,.025), 0 0 0 58px rgba(20,99,217,.018);
+            pointer-events: none;
+        }
+        .title-row > * { position: relative; z-index: 1; }
+        .page-kicker { margin: 0 0 8px; color: var(--teal); font-size: 11px; font-weight: 950; letter-spacing: .13em; }
+        h1 { font-size: clamp(34px, 4vw, 48px); line-height: 1; letter-spacing: -.055em; }
+        .title-description { max-width: 640px; margin: 11px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+        .settings-link { margin-top: 14px; padding: 7px 11px; border: 1px solid #bdd5f3; border-radius: 999px; background: rgba(255,255,255,.8); }
+        .settings-link:hover { background: var(--blue-soft); text-decoration: none; }
+        .date-range { padding: 9px 13px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.86); font-weight: 780; box-shadow: 0 7px 20px rgba(16,42,67,.05); }
+        .metric-row { gap: 12px; margin-bottom: 16px; border: 0; background: transparent; }
+        .metric {
+            position: relative;
+            min-height: 112px;
+            padding: 18px 20px;
+            overflow: hidden;
+            border: 1px solid rgba(211,225,239,.94);
+            border-radius: 18px;
+            background: rgba(255,255,255,.92);
+            box-shadow: 0 10px 30px rgba(16,42,67,.055);
+        }
+        .metric::after { content: ""; position: absolute; right: -24px; top: -30px; width: 88px; height: 88px; border-radius: 50%; background: rgba(20,99,217,.07); }
+        .metric:nth-child(2)::after { background: rgba(15,139,141,.08); }
+        .metric:nth-child(3)::after { background: rgba(109,75,215,.075); }
+        .metric:nth-child(4)::after { background: rgba(37,137,87,.075); }
+        .metric-label { position: relative; z-index: 1; font-size: 12px; font-weight: 850; }
+        .metric-value { position: relative; z-index: 1; margin-top: 13px; font-size: 30px; font-weight: 930; }
+        .recall-pocket { margin: 16px 0; overflow: hidden; border-color: #cfe0ef; border-radius: 18px; box-shadow: 0 10px 28px rgba(16,42,67,.05); }
+        .recall-pocket-head, .recall-pocket > summary { padding: 16px 18px; background: linear-gradient(90deg, #fff, #f3f9ff); }
+        .workspace { gap: 18px; grid-template-columns: minmax(390px, .9fr) minmax(590px, 1.4fr); }
+        .column { gap: 18px; }
+        .panel { border-color: rgba(210,224,238,.94); border-radius: 22px; box-shadow: 0 14px 40px rgba(16,42,67,.065); }
+        .panel-header { padding: 18px 20px; background: linear-gradient(180deg, #fff, #fbfdff); }
+        .panel-title { font-size: 17px; font-weight: 900; }
+        .focus-body { padding: 24px 22px 22px; }
+        .focus-subject { margin-top: 8px; font-size: clamp(27px, 2.4vw, 36px); }
+        .focus-grid { overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: #fbfdff; }
+        .focus-item { padding: 14px !important; }
+        .track, .day-progress, .day-subject-track, .mini-track { background: #e4edf6; }
+        .fill { background: linear-gradient(90deg, var(--blue), #438bf0); }
+        .day-chip { border-radius: 14px; }
+        .timeline { padding: 8px; }
+        .week-row { margin-bottom: 7px; border: 1px solid transparent; border-radius: 14px; background: #fbfdff; }
+        .week-row:last-child { margin-bottom: 0; }
+        .week-row.active { border-color: #bfd7f6; background: linear-gradient(135deg, #edf5ff, #f8fbff); }
+        .subject-filter { background: #fbfdff; }
+        .field input, .field select, .field textarea, .log-form input, .log-form select, .log-form textarea {
+            border-radius: 11px;
+            transition: border-color .16s ease, box-shadow .16s ease;
+        }
+        .field input:focus, .field select:focus, .field textarea:focus, .log-form input:focus, .log-form select:focus, .log-form textarea:focus {
+            border-color: #70a7ec;
+            outline: 0;
+            box-shadow: 0 0 0 4px rgba(20,99,217,.11);
+        }
+        .save-button, .recall-rate { border-radius: 11px; background: linear-gradient(135deg, #1b70e4, #0d57bd); box-shadow: 0 8px 18px rgba(20,99,217,.18); }
+        .table-wrap { background: #fbfdff; }
+        .video-summary-toggle { min-height: 58px; }
+        .state { border-radius: 999px; padding: 5px 9px; }
+        @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) {
+            .study-nav { padding: 12px 16px; align-items: center; flex-direction: row; flex-wrap: wrap; }
+            .nav-links { width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+            .nav-links::-webkit-scrollbar { display: none; }
+            .nav-links a { flex: 0 0 auto; }
+        }
+        @media (max-width: 760px) {
+            .content { padding: 18px 13px 40px; }
+            .title-row { display: block; padding: 22px 18px; border-radius: 20px; }
+            .date-range { display: inline-flex; margin-top: 16px; white-space: normal; }
+            .metric { min-height: 98px; padding: 15px; }
+            .metric-value { font-size: 25px; }
+            .panel { border-radius: 18px; }
+            .focus-grid { border-radius: 14px; }
+        }
+        @media (max-width: 620px) {
+            .brand { font-size: 14px; }
+            .mark { width: 35px; height: 35px; }
+            .nav-links a { padding: 8px 10px; }
+        }
     </style>
 </head>
 <body>
@@ -234,7 +376,7 @@
             </header>
             <div class="content">
                 <div class="title-row">
-                    <div><h1>影片與讀書計畫</h1><a class="settings-link" href="{{ url_for('admin_study_settings') }}">影片連結設定</a></div>
+                    <div><p class="page-kicker">STUDY PLAN &amp; VIDEO LOG</p><h1>影片與讀書計畫</h1><p class="title-description">把每週目標、每日觀看建議與影片進度放在同一個工作區，快速掌握今天最值得推進的內容。</p><a class="settings-link" href="{{ url_for('admin_study_settings') }}">管理影片連結</a></div>
                     <div class="date-range">{{ plan_start }} 至 {{ plan_end }}・{{ plan_total_weeks }} 週</div>
                 </div>
 

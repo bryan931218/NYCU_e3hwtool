@@ -101,6 +101,154 @@
         .relation-card-section strong { color:var(--ink); font-size:11px; }
         .relation-card-section p { margin:5px 0 0; color:var(--muted); font-size:13px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
         .relation-card-section ol { margin:6px 0 0; padding-left:20px; color:var(--muted); font-size:13px; line-height:1.65; }
+
+        /* Refined study-center design system */
+        :root {
+            --ink: #102a43;
+            --muted: #61758a;
+            --canvas: #f2f7fc;
+            --line: #d8e4f0;
+            --blue: #1463d9;
+            --teal: #0a8586;
+            --shadow: 0 16px 44px rgba(16,42,67,.07);
+        }
+        html, body { min-width: 0; overflow-x: hidden; }
+        body {
+            background:
+                radial-gradient(circle at 8% 2%, rgba(179,220,255,.58) 0, transparent 27%),
+                radial-gradient(circle at 92% 5%, rgba(226,218,255,.54) 0, transparent 25%),
+                linear-gradient(180deg, #f8fbff 0%, var(--canvas) 100%);
+        }
+        .study-nav {
+            position: sticky;
+            z-index: 50;
+            top: 0;
+            min-height: 72px;
+            padding: 10px 30px;
+            border-bottom-color: rgba(205,220,235,.78);
+            background: rgba(255,255,255,.86);
+            box-shadow: 0 1px 0 rgba(255,255,255,.85), 0 8px 28px rgba(16,42,67,.045);
+            backdrop-filter: blur(18px) saturate(1.18);
+        }
+        .brand { gap: 12px; color: var(--ink); font-size: 15px; letter-spacing: -.015em; }
+        .mark { width: 38px; height: 38px; border-radius: 12px; background: linear-gradient(145deg,#1f78ed,#0d4fae); box-shadow: 0 8px 18px rgba(20,99,217,.24), inset 0 1px 0 rgba(255,255,255,.3); }
+        .nav-links { gap: 5px; }
+        .nav-links a { padding: 9px 13px; border: 0; border-radius: 999px; transition: color .16s ease, background .16s ease, transform .16s ease; }
+        .nav-links a:hover { color: var(--blue); background: #f2f7fd; transform: translateY(-1px); }
+        .nav-links a.active { color: #0d56bd; background: var(--blue-soft); box-shadow: inset 0 0 0 1px #c9def8; }
+        .admin { margin-left: 6px; padding: 8px 11px; border-radius: 999px; }
+        .shell { width: min(1440px,100%); padding: 34px 30px 64px; }
+        .page-head {
+            position: relative;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 28px 30px;
+            overflow: hidden;
+            border: 1px solid rgba(203,220,238,.88);
+            border-radius: 24px;
+            background: radial-gradient(circle at 82% 0%, rgba(182,218,255,.7), transparent 34%), linear-gradient(135deg,rgba(255,255,255,.98),rgba(242,248,255,.96));
+            box-shadow: 0 18px 48px rgba(16,42,67,.075);
+        }
+        .page-head::after { content: ""; position: absolute; right: -38px; bottom: -92px; width: 220px; height: 220px; border: 1px solid rgba(20,99,217,.1); border-radius: 50%; box-shadow: 0 0 0 28px rgba(20,99,217,.025), 0 0 0 58px rgba(20,99,217,.018); pointer-events: none; }
+        .page-head > * { position: relative; z-index: 1; }
+        .eyebrow { margin-bottom: 9px; letter-spacing: .14em; }
+        .page-head h1 { font-size: clamp(36px,4vw,48px); line-height: 1; letter-spacing: -.055em; }
+        .intro { max-width: 720px; margin-top: 11px; }
+        .today { padding: 9px 13px; border-radius: 999px; background: rgba(255,255,255,.88); box-shadow: 0 7px 20px rgba(16,42,67,.05); }
+        .layout { grid-template-columns: minmax(0,1fr) 330px; gap: 24px; }
+        .main-stack, .side-stack { gap: 18px; }
+        .recall-shortcuts {
+            position: sticky;
+            z-index: 20;
+            top: 84px;
+            margin: 0;
+            padding: 8px;
+            border: 1px solid rgba(210,224,238,.94);
+            border-radius: 16px;
+            background: rgba(255,255,255,.88);
+            box-shadow: 0 10px 30px rgba(16,42,67,.06);
+            backdrop-filter: blur(16px);
+        }
+        .recall-shortcuts a { min-height: 38px; padding: 0 12px; border: 0; border-radius: 11px; background: transparent; }
+        .recall-shortcuts a:first-child { color: #0c5bc8; background: var(--blue-soft); box-shadow: inset 0 0 0 1px #c8dcf6; }
+        .panel { overflow: hidden; border-color: rgba(210,224,238,.94); border-radius: 20px; box-shadow: var(--shadow); }
+        .panel-head, .panel-static-head { padding: 22px 22px 0; }
+        .panel h2 { font-size: 19px; font-weight: 900; letter-spacing: -.025em; }
+        .caption { margin-top: 7px; line-height: 1.6; }
+        #note-library-search { border-color: #bfd7f3; background: linear-gradient(180deg,#fff,#fbfdff); }
+        .note-search-body { padding: 18px 22px 22px; }
+        .note-search-primary { gap: 10px; }
+        .note-search-primary input { min-height: 50px; padding: 11px 42px 11px 14px; border-radius: 13px; font-size: 14px; }
+        .note-search-primary .submit { min-width: 92px; min-height: 50px; }
+        .note-search-filters select, .field input, .field select, .ai-chat-form textarea, .rename-note-form input {
+            border-radius: 11px;
+            transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+        }
+        .note-search-filters select:focus, .field input:focus, .field select:focus, .ai-chat-form textarea:focus, .rename-note-form input:focus {
+            border-color: #70a7ec;
+            outline: 0;
+            box-shadow: 0 0 0 4px rgba(20,99,217,.11);
+        }
+        .submit { border-radius: 11px; background: linear-gradient(135deg,#1b70e4,#0d57bd); box-shadow: 0 8px 18px rgba(20,99,217,.18); transition: transform .16s ease, box-shadow .16s ease; }
+        .submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(20,99,217,.23); }
+        .panel-fold-summary { padding: 22px; }
+        .fold-arrow { width: 32px; height: 32px; border-radius: 10px; }
+        .upload-body { padding: 22px; }
+        .file-drop { padding: 20px; border-radius: 14px; background: linear-gradient(135deg,#f8fbff,#f1f7ff); }
+        .organize-settings { padding: 15px 16px; border-radius: 14px; background: #f8fbfe; }
+        .review-zone { border-color: #c8dbf2; background: linear-gradient(180deg,#fff,#fbfdff); }
+        .review-zone > .panel-fold-summary, .review-zone .review-zone-fold > .panel-fold-summary { background: linear-gradient(135deg,#f3f8ff,#fff); }
+        .review-progress { margin: 16px 22px 0; }
+        .concepts { gap: 12px; }
+        .concept, .concept-fold { border-radius: 15px; background: #fff; box-shadow: 0 7px 20px rgba(16,42,67,.04); }
+        .concept:hover, .concept-fold:hover { border-color: #bfd4ed; }
+        .recall-prompt, .core-summary, .concept-detail, .example-section, .common-confusion { border-radius: 11px; }
+        .recall-reveal, .delete-note, .fold-command, .note-search-action, .rename-note-save, .source-tag, .related-tag { border-radius: 9px; }
+        .chip, .mode-badge, .example-badge { border-radius: 999px; }
+        .session-head { padding: 24px 22px 20px; background: linear-gradient(180deg,#fff,#fbfdff); }
+        .session-title-row h2 { font-size: 24px; }
+        .topic-index { padding: 13px 22px; background: #f5f9fd; }
+        .topic-index a { min-height: 34px; border-radius: 999px; }
+        .topic-section-head { padding: 16px 22px; }
+        .topic-section-body { padding: 0 22px 20px; }
+        .summary-section { margin: 18px 22px 0; }
+        .note-fold { border-radius: 13px; }
+        .side-stack { position: sticky; top: 88px; }
+        .side-stack .panel { box-shadow: 0 12px 34px rgba(16,42,67,.06); }
+        .queue { padding: 12px 18px 18px; }
+        .queue-item { border-radius: 11px; }
+        .ai-floating-toggle { width: 58px; height: 58px; border-radius: 18px; background: linear-gradient(145deg,#169497,#087879); box-shadow: 0 16px 34px rgba(8,127,128,.28); }
+        .ai-card-dialog, .relation-dialog, .source-locator-dialog { border-radius: 20px; box-shadow: 0 28px 80px rgba(8,25,43,.24); }
+        .relation-association, .relation-card-preview { border-radius: 13px; }
+        @media (max-width: 900px) {
+            .study-nav { padding: 12px 16px; align-items: center; flex-direction: row; flex-wrap: wrap; }
+            .nav-links { width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+            .nav-links::-webkit-scrollbar { display: none; }
+            .nav-links a { flex: 0 0 auto; }
+            .shell { padding: 20px 14px 44px; }
+            .layout { grid-template-columns: 1fr; }
+            .side-stack { position: static; grid-template-columns: repeat(2,minmax(0,1fr)); }
+            .recall-shortcuts { top: 132px; }
+        }
+        @media (max-width: 620px) {
+            .page-head { padding: 22px 18px; border-radius: 20px; }
+            .today { margin-top: 2px; }
+            .side-stack { grid-template-columns: 1fr; }
+            .recall-shortcuts { position: static; overflow-x: auto; flex-wrap: nowrap; }
+            .recall-shortcuts a { flex: 0 0 auto; }
+            .panel { border-radius: 17px; }
+            .panel-static-head, .panel-head { padding: 19px 16px 0; }
+            .note-search-body, .upload-body { padding: 16px; }
+            .panel-fold-summary { padding: 18px 16px; }
+            .note-search-primary { grid-template-columns: 1fr; }
+            .note-search-primary .submit { width: 100%; }
+            .session-head { padding: 20px 16px 18px; }
+            .topic-index { padding-left: 16px; padding-right: 16px; }
+            .topic-section-body { padding-left: 16px; padding-right: 16px; }
+            .brand { font-size: 14px; }
+            .mark { width: 35px; height: 35px; }
+            .nav-links a { padding: 8px 10px; }
+        }
     </style>
 </head>
 <body>

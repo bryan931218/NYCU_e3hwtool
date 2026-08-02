@@ -308,6 +308,59 @@
             .subject-row { grid-template-columns: 1fr; gap: 8px; }
             .subject-percent { text-align: left; }
         }
+        /* Refined public-facing study center */
+        .shell { width: min(1240px,100%); padding-top: 20px; padding-bottom: 60px; }
+        .public-topbar {
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+            padding: 9px 12px 9px 10px;
+            border: 1px solid rgba(210,224,238,.9);
+            border-radius: 17px;
+            background: rgba(255,255,255,.82);
+            box-shadow: 0 10px 30px rgba(16,42,67,.055);
+            backdrop-filter: blur(16px);
+        }
+        .public-brand { display: inline-flex; align-items: center; gap: 11px; color: var(--ink); font-size: 14px; font-weight: 920; letter-spacing: -.015em; }
+        .public-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(145deg,#1f78ed,#0d4fae); box-shadow: 0 8px 18px rgba(20,99,217,.24), inset 0 1px 0 rgba(255,255,255,.3); }
+        .public-badge { padding: 7px 10px; border: 1px solid #c8dcf6; border-radius: 999px; color: #0d56bd; background: var(--blue-soft); font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+        .hero { gap: 16px; }
+        .hero-main { min-height: 250px; padding: 32px; border-radius: 26px; background: radial-gradient(circle at 90% 4%,rgba(180,216,255,.78),transparent 35%),linear-gradient(135deg,#fff,#eff7ff); }
+        .hero-main::after { display: block; content: ""; position: absolute; right: -44px; bottom: -112px; width: 260px; height: 260px; border: 1px solid rgba(20,99,217,.11); border-radius: 50%; box-shadow: 0 0 0 32px rgba(20,99,217,.025),0 0 0 68px rgba(20,99,217,.018); }
+        .hero-kicker { position: relative; z-index: 1; margin-bottom: 12px; color: var(--teal); font-size: 11px; font-weight: 950; letter-spacing: .14em; }
+        .hero-main h1 { max-width: 760px; }
+        .lead { display: block; max-width: 650px; }
+        .hero-side { border-radius: 26px; background: radial-gradient(circle at 50% 0%,rgba(191,221,255,.55),transparent 48%),rgba(255,255,255,.94); }
+        .progress-orb { width: 180px; background: conic-gradient(#2176e5 0deg var(--angle),#dce8f4 var(--angle) 360deg); box-shadow: 0 20px 42px rgba(20,99,217,.18); }
+        .progress-orb::before { inset: 15px; }
+        .stat-card { min-height: 108px; padding: 19px 20px; border-radius: 18px; box-shadow: 0 12px 34px rgba(16,42,67,.065); }
+        .public-calendar, .pace-panel, .today-log-panel, .week-progress-panel, .panel { border-color: rgba(210,224,238,.94); box-shadow: 0 16px 44px rgba(16,42,67,.07); }
+        .public-calendar { border-radius: 24px; }
+        .public-calendar-insight { border-radius: 24px 0 0 24px; }
+        .pace-panel, .today-log-panel, .week-progress-panel { border-radius: 22px; }
+        .subject-row { transition: border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
+        .subject-row:hover { transform: translateY(-1px); border-color: #bed3ed; box-shadow: 0 8px 20px rgba(16,42,67,.05); }
+        button:focus-visible, a:focus-visible { outline: 3px solid rgba(20,99,217,.22); outline-offset: 2px; }
+        @media (max-width: 980px) {
+            .public-calendar-insight { border-radius: 24px 24px 0 0; }
+        }
+        @media (max-width: 620px) {
+            .shell { padding: 12px 13px 42px; }
+            .public-topbar { min-height: 54px; border-radius: 15px; }
+            .public-brand { font-size: 13px; }
+            .public-mark { width: 35px; height: 35px; }
+            .public-badge { letter-spacing: .04em; }
+            .hero-main, .hero-side { border-radius: 20px; }
+            .hero-main { min-height: auto; padding: 24px 19px; }
+            .lead { font-size: 14px; }
+            .stat-card { border-radius: 16px; }
+            .public-calendar { border-radius: 20px; }
+            .public-calendar-insight { border-radius: 20px 20px 0 0; }
+            .pace-panel, .today-log-panel, .week-progress-panel { border-radius: 18px; }
+        }
         @media (prefers-reduced-motion: reduce) {
             .runner-person, .runner-shadow, .calendar-dialog { animation: none; }
         }
@@ -315,9 +368,15 @@
 </head>
 <body>
     <main class="shell">
+        <header class="public-topbar" aria-label="公開學習紀錄">
+            <a class="public-brand" href="{{ url_for('public_study_progress') }}"><span class="public-mark">E3</span><span>研究所備考中心</span></a>
+            <span class="public-badge">PUBLIC STUDY LOG</span>
+        </header>
         <section class="hero" aria-label="公開學習進度總覽">
             <div class="hero-main">
+                <div class="hero-kicker">GRADUATE EXAM JOURNEY</div>
                 <h1>研究所備考進度</h1>
+                <p class="lead">透明記錄每一天的投入，把長期目標拆成看得見的進步。</p>
                 <div class="hero-meta">
                     <span class="meta-pill">{{ plan_start }} → {{ plan_end }}</span>
                     <span class="meta-pill">目前第 {{ current_week.number }} 週・{{ current_week.subject }}</span>
