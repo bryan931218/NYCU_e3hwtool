@@ -2949,14 +2949,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "today": today.isoformat(),
             "initial_month": today.strftime("%Y-%m"),
             "first_month": plan_start.strftime("%Y-%m"),
-            "days": [
-                {
-                    "date": day,
-                    "seconds": int(round(seconds)),
-                }
-                for day, seconds in sorted(calendar_seconds_by_day.items())
-                if seconds > 0
-            ],
+            "days": calendar_days,
         }
         recorded_days = {day for day, seconds in activity_seconds_by_day.items() if seconds > 0}
         momentum_days = [{"date": day, "active": day in recorded_days, "label": day[5:]} for day in recent_days]

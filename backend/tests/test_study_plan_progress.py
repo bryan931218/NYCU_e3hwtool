@@ -1,5 +1,7 @@
+import json
 import math
 import os
+import re
 import tempfile
 import unittest
 from datetime import date
@@ -503,6 +505,17 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("calendar-legend-gradient", home_html)
             self.assertIn("applyHeatColor", home_html)
             self.assertNotIn("學習旅程地圖", home_html)
+            home_calendar_match = re.search(
+                r'<script type="application/json" data-calendar-data>(.*?)</script>',
+                home_html,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(home_calendar_match)
+            home_calendar = json.loads(home_calendar_match.group(1))
+            today_entry = next(
+                item for item in home_calendar["days"] if item["date"] == date.today().isoformat()
+            )
+            self.assertEqual(today_entry["activities"][0]["title"], first_video["title"])
 
             public_page = client.get("/study-progress")
             self.assertEqual(public_page.status_code, 200)
@@ -516,6 +529,17 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("public-calendar-legend-gradient", public_html)
             self.assertIn("applyHeatColor", public_html)
             self.assertNotIn("目前已看的時間", public_html)
+            public_calendar_match = re.search(
+                r'<script type="application/json" data-public-calendar-data>(.*?)</script>',
+                public_html,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(public_calendar_match)
+            public_calendar = json.loads(public_calendar_match.group(1))
+            public_today_entry = next(
+                item for item in public_calendar["days"] if item["date"] == date.today().isoformat()
+            )
+            self.assertEqual(public_today_entry["activities"][0]["title"], first_video["title"])
             storage._engine.dispose()
 
 
