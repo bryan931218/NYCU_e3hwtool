@@ -4,7 +4,7 @@ import os
 import re
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from e3_tracker.api.web import (
@@ -257,6 +257,30 @@ class StudyPlanProgressTests(unittest.TestCase):
         self.assertEqual(set(scheduled_by_subject), set(inventory_by_subject))
         for subject, target_seconds in inventory_by_subject.items():
             self.assertAlmostEqual(scheduled_by_subject[subject], target_seconds, places=3)
+
+    def test_smart_replan_replaces_future_schedule_and_preserves_phase_interleaving(self):
+        settings = {
+            "start_date": "2026-08-03",
+            "end_date": "2026-08-09",
+            "weekday_minutes": 180,
+            "weekend_minutes": 120,
+            "baseline_by_subject": {"離散數學": 1200, "資料結構": 600},
+            "subject_targets": {"離散數學": 7200, "資料結構": 7200},
+        }
+
+        weeks = _study_plan_schedule_definitions(STUDY_PLAN_VIDEO_INVENTORY, settings)
+        replanned = next(week for week in weeks if week["start"].isoformat() == "2026-08-03")
+        allocated = {}
+        for day in replanned["daily_targets"]:
+            for subject, seconds in day["allocations"].items():
+                allocated[subject] = allocated.get(subject, 0.0) + seconds
+
+        self.assertTrue(replanned["is_replanned"])
+        self.assertEqual(replanned["credit_baselines"], settings["baseline_by_subject"])
+        self.assertEqual(set(replanned["daily_targets"][0]["allocations"]), {"離散數學", "資料結構"})
+        self.assertAlmostEqual(allocated["離散數學"], 7200, places=3)
+        self.assertAlmostEqual(allocated["資料結構"], 7200, places=3)
+        self.assertEqual(weeks[-1]["end"].isoformat(), "2026-08-09")
 
     def test_progress_race_compares_watched_time_with_target_time(self):
         race = _study_plan_progress_race(65 * 60, 71.5 * 60, 520 * 60)
@@ -540,6 +564,85 @@ class StudyPlanProgressTests(unittest.TestCase):
                 item for item in public_calendar["days"] if item["date"] == date.today().isoformat()
             )
             self.assertEqual(public_today_entry["activities"][0]["title"], first_video["title"])
+            storage._engine.dispose()
+
+    def test_video_markers_and_smart_replan_endpoints(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+
+            storage = app.extensions["e3_storage"]
+            first_video = storage.list_study_plan_videos_with_records()[0]
+            token = "study-plan-feature-session"
+            storage.save_web_session(token, "test-admin")
+            client = app.test_client()
+            with client.session_transaction() as browser_session:
+                browser_session["username"] = "test-admin"
+                browser_session["session_token"] = token
+                browser_session["is_admin"] = True
+
+            marker_response = client.post(
+                "/admin/study-plan/video-markers",
+                json={
+                    "video_id": first_video["id"],
+                    "playback_seconds": 123.4,
+                    "note": "特徵值推導",
+                },
+            )
+            self.assertEqual(marker_response.status_code, 200)
+            marker = marker_response.get_json()["marker"]
+            self.assertEqual(marker["note"], "特徵值推導")
+            self.assertAlmostEqual(marker["playback_seconds"], 123.4)
+
+            marker_page = client.get(
+                f"/admin/study-plan?subject={first_video['subject']}&video_id={first_video['id']}"
+            )
+            marker_html = marker_page.get_data(as_text=True)
+            self.assertIn("影片關鍵點", marker_html)
+            self.assertIn("video-markers-data", marker_html)
+            marker_match = re.search(
+                r'<script type="application/json" id="video-markers-data">(.*?)</script>',
+                marker_html,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(marker_match)
+            rendered_markers = json.loads(marker_match.group(1))
+            self.assertEqual(rendered_markers[0]["note"], "特徵值推導")
+
+            delete_response = client.delete(f"/admin/study-plan/video-markers/{marker['id']}")
+            self.assertEqual(delete_response.status_code, 200)
+            self.assertEqual(storage.list_study_plan_video_markers(video_ids=[first_video["id"]]), [])
+
+            today = date.today()
+            next_monday = today - timedelta(days=today.weekday()) + timedelta(days=7)
+            target_day = next_monday + timedelta(days=27)
+            replan_response = client.post(
+                "/admin/study-plan/replan",
+                data={
+                    "subject": first_video["subject"],
+                    "end_date": target_day.isoformat(),
+                    "weekday_hours": "3",
+                    "weekend_hours": "2",
+                },
+                follow_redirects=True,
+            )
+            self.assertEqual(replan_response.status_code, 200)
+            replan_html = replan_response.get_data(as_text=True)
+            self.assertIn("智慧重排已套用", replan_html)
+            self.assertIn(target_day.isoformat(), replan_html)
+            self.assertIn("恢復原始計畫", replan_html)
+            saved_settings = storage.get_study_plan_replan_settings()
+            self.assertIsNotNone(saved_settings)
+            self.assertEqual(saved_settings["start_date"], next_monday.isoformat())
+            self.assertEqual(saved_settings["end_date"], target_day.isoformat())
+            self.assertTrue(saved_settings["subject_targets"])
             storage._engine.dispose()
 
 

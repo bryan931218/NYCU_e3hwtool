@@ -454,6 +454,37 @@ Index("ix_study_plan_activity_events_day", study_plan_activity_events_table.c.da
 Index("ix_study_plan_activity_events_video_id", study_plan_activity_events_table.c.video_id)
 Index("ix_study_plan_activity_events_updated_at", study_plan_activity_events_table.c.updated_at)
 
+study_plan_video_markers_table = Table(
+    "study_plan_video_markers",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("video_id", Integer, nullable=False),
+    Column("playback_seconds", Float, nullable=False),
+    Column("note", String(280), nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+)
+Index("ix_study_plan_video_markers_video", study_plan_video_markers_table.c.video_id)
+Index(
+    "ix_study_plan_video_markers_timeline",
+    study_plan_video_markers_table.c.video_id,
+    study_plan_video_markers_table.c.playback_seconds,
+)
+
+study_plan_replan_settings_table = Table(
+    "study_plan_replan_settings",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("start_date", String(10), nullable=False),
+    Column("end_date", String(10), nullable=False),
+    Column("weekday_minutes", Float, nullable=False),
+    Column("weekend_minutes", Float, nullable=False),
+    Column("baseline_by_subject", Text, nullable=False),
+    Column("subject_targets", Text, nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+)
+
 study_recall_sessions_table = Table(
     "study_recall_sessions",
     metadata,
@@ -2699,6 +2730,180 @@ class PersistentStorage:
                 .limit(limit)
             ).fetchall()
         return [dict(row._mapping) for row in rows]
+
+    def list_study_plan_video_markers(
+        self,
+        *,
+        video_ids: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        stmt = select(
+            study_plan_video_markers_table.c.id,
+            study_plan_video_markers_table.c.video_id,
+            study_plan_video_markers_table.c.playback_seconds,
+            study_plan_video_markers_table.c.note,
+            study_plan_video_markers_table.c.created_at,
+            study_plan_video_markers_table.c.updated_at,
+        )
+        normalized_ids = sorted({int(video_id) for video_id in (video_ids or []) if int(video_id) > 0})
+        if video_ids is not None:
+            if not normalized_ids:
+                return []
+            stmt = stmt.where(study_plan_video_markers_table.c.video_id.in_(normalized_ids))
+        stmt = stmt.order_by(
+            study_plan_video_markers_table.c.video_id,
+            study_plan_video_markers_table.c.playback_seconds,
+            study_plan_video_markers_table.c.id,
+        )
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+        return [
+            {
+                "id": int(row.id),
+                "video_id": int(row.video_id),
+                "playback_seconds": max(0.0, float(row.playback_seconds or 0)),
+                "note": str(row.note or ""),
+                "created_at": str(row.created_at or ""),
+                "updated_at": str(row.updated_at or ""),
+            }
+            for row in rows
+        ]
+
+    def create_study_plan_video_marker(
+        self,
+        *,
+        video_id: int,
+        playback_seconds: float,
+        note: str,
+    ) -> Optional[Dict[str, Any]]:
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            video = conn.execute(
+                select(study_plan_videos_table.c.duration_seconds).where(
+                    study_plan_videos_table.c.id == int(video_id)
+                )
+            ).fetchone()
+            if not video:
+                return None
+            raw_seconds = float(playback_seconds or 0)
+            if not math.isfinite(raw_seconds):
+                return None
+            normalized_seconds = max(0.0, min(raw_seconds, float(video.duration_seconds or 0)))
+            normalized_note = str(note or "").strip()[:280] or "關鍵片段"
+            result = conn.execute(
+                insert(study_plan_video_markers_table).values(
+                    video_id=int(video_id),
+                    playback_seconds=normalized_seconds,
+                    note=normalized_note,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            marker_id = int(result.inserted_primary_key[0])
+        return {
+            "id": marker_id,
+            "video_id": int(video_id),
+            "playback_seconds": normalized_seconds,
+            "note": normalized_note,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def delete_study_plan_video_marker(self, marker_id: int) -> bool:
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                delete(study_plan_video_markers_table).where(
+                    study_plan_video_markers_table.c.id == int(marker_id)
+                )
+            )
+        return bool(result.rowcount)
+
+    def get_study_plan_replan_settings(self) -> Optional[Dict[str, Any]]:
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(study_plan_replan_settings_table).where(
+                    study_plan_replan_settings_table.c.id == 1
+                )
+            ).fetchone()
+        if not row:
+            return None
+
+        def _mapping(value: Any) -> Dict[str, float]:
+            try:
+                payload = json.loads(str(value or "{}"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return {}
+            if not isinstance(payload, dict):
+                return {}
+            result: Dict[str, float] = {}
+            for key, amount in payload.items():
+                try:
+                    normalized = max(0.0, float(amount or 0))
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(normalized):
+                    result[str(key)] = normalized
+            return result
+
+        return {
+            "start_date": str(row.start_date),
+            "end_date": str(row.end_date),
+            "weekday_minutes": max(0.0, float(row.weekday_minutes or 0)),
+            "weekend_minutes": max(0.0, float(row.weekend_minutes or 0)),
+            "baseline_by_subject": _mapping(row.baseline_by_subject),
+            "subject_targets": _mapping(row.subject_targets),
+            "created_at": str(row.created_at or ""),
+            "updated_at": str(row.updated_at or ""),
+        }
+
+    def save_study_plan_replan_settings(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+        weekday_minutes: float,
+        weekend_minutes: float,
+        baseline_by_subject: Dict[str, float],
+        subject_targets: Dict[str, float],
+    ) -> None:
+        now = self._now_iso()
+        values = {
+            "start_date": str(start_date),
+            "end_date": str(end_date),
+            "weekday_minutes": max(0.0, float(weekday_minutes or 0)),
+            "weekend_minutes": max(0.0, float(weekend_minutes or 0)),
+            "baseline_by_subject": json.dumps(baseline_by_subject, ensure_ascii=False, sort_keys=True),
+            "subject_targets": json.dumps(subject_targets, ensure_ascii=False, sort_keys=True),
+            "updated_at": now,
+        }
+        with self._lock, self._engine.begin() as conn:
+            existing = conn.execute(
+                select(study_plan_replan_settings_table.c.id).where(
+                    study_plan_replan_settings_table.c.id == 1
+                )
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    update(study_plan_replan_settings_table)
+                    .where(study_plan_replan_settings_table.c.id == 1)
+                    .values(**values)
+                )
+            else:
+                conn.execute(
+                    insert(study_plan_replan_settings_table).values(
+                        id=1,
+                        created_at=now,
+                        **values,
+                    )
+                )
+
+    def delete_study_plan_replan_settings(self) -> bool:
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                delete(study_plan_replan_settings_table).where(
+                    study_plan_replan_settings_table.c.id == 1
+                )
+            )
+        return bool(result.rowcount)
 
     def delete_user_cache(self, username: str) -> None:
         if not username:

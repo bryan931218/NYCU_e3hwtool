@@ -552,7 +552,10 @@ def _study_plan_week_start(day: date) -> date:
     return day - timedelta(days=day.weekday())
 
 
-def _study_plan_schedule_definitions(videos: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _study_plan_schedule_definitions(
+    videos: Iterable[Dict[str, Any]],
+    replan_settings: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     """Build fixed daily targets without moving unused time between subjects."""
     video_rows = list(videos)
     videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
@@ -628,8 +631,96 @@ def _study_plan_schedule_definitions(videos: Iterable[Dict[str, Any]]) -> List[D
             add_day(day, daily_allocations)
             day += timedelta(days=1)
 
+    replan_start: Optional[date] = None
+    replan_end: Optional[date] = None
+    replan_baselines: Dict[str, float] = {}
+    if replan_settings:
+        try:
+            replan_start = datetime.strptime(str(replan_settings.get("start_date") or ""), "%Y-%m-%d").date()
+            replan_end = datetime.strptime(str(replan_settings.get("end_date") or ""), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            replan_start = None
+            replan_end = None
+        if replan_start and replan_end and replan_end >= replan_start:
+            replan_baselines = {
+                str(subject): _study_plan_nonnegative_number(seconds)
+                for subject, seconds in dict(replan_settings.get("baseline_by_subject") or {}).items()
+                if str(subject) in STUDY_PLAN_SUBJECTS
+            }
+            subject_targets = {
+                str(subject): _study_plan_nonnegative_number(seconds)
+                for subject, seconds in dict(replan_settings.get("subject_targets") or {}).items()
+                if str(subject) in STUDY_PLAN_SUBJECTS and _study_plan_nonnegative_number(seconds) > 0
+            }
+            weekday_seconds = max(
+                60.0,
+                _study_plan_nonnegative_number(replan_settings.get("weekday_minutes")) * 60,
+            )
+            weekend_seconds = max(
+                60.0,
+                _study_plan_nonnegative_number(replan_settings.get("weekend_minutes")) * 60,
+            )
+            for day_key in list(days):
+                if days[day_key]["date"] >= replan_start:
+                    del days[day_key]
+            replan_days: List[date] = []
+            cursor_day = replan_start
+            while cursor_day <= replan_end:
+                replan_days.append(cursor_day)
+                cursor_day += timedelta(days=1)
+            total_target = sum(subject_targets.values())
+            total_weight = sum(
+                weekend_seconds if item.weekday() >= 5 else weekday_seconds
+                for item in replan_days
+            )
+            load_ratio = (total_target / total_weight) if total_weight > 0 else 0.0
+            remaining_by_subject = dict(subject_targets)
+            study_phases = [
+                ("線性代數",),
+                tuple(STUDY_PLAN_PHASE_ONE_SUBJECTS),
+                tuple(STUDY_PLAN_PHASE_TWO_SUBJECTS),
+            ]
+            phase_index = 0
+            for index, scheduled_day in enumerate(replan_days):
+                base_capacity = weekend_seconds if scheduled_day.weekday() >= 5 else weekday_seconds
+                day_target = base_capacity * load_ratio
+                if index == len(replan_days) - 1:
+                    day_target = sum(remaining_by_subject.values())
+                allocations: Dict[str, float] = {}
+                remaining_day = max(0.0, day_target)
+                while remaining_day > 0.001 and phase_index < len(study_phases):
+                    phase_subjects = [
+                        subject
+                        for subject in study_phases[phase_index]
+                        if remaining_by_subject.get(subject, 0.0) > 0.001
+                    ]
+                    phase_total = sum(remaining_by_subject[subject] for subject in phase_subjects)
+                    if phase_total <= 0.001:
+                        phase_index += 1
+                        continue
+                    phase_amount = min(remaining_day, phase_total)
+                    distributed = 0.0
+                    for subject_index, subject in enumerate(phase_subjects):
+                        if subject_index == len(phase_subjects) - 1:
+                            amount = phase_amount - distributed
+                        else:
+                            amount = phase_amount * remaining_by_subject[subject] / phase_total
+                            distributed += amount
+                        amount = min(amount, remaining_by_subject[subject])
+                        if amount > 0.001:
+                            allocations[subject] = allocations.get(subject, 0.0) + amount
+                            remaining_by_subject[subject] = max(0.0, remaining_by_subject[subject] - amount)
+                    remaining_day -= phase_amount
+                    if sum(remaining_by_subject.get(subject, 0.0) for subject in study_phases[phase_index]) <= 0.001:
+                        phase_index += 1
+                add_day(scheduled_day, allocations)
+                days[scheduled_day.isoformat()]["replanned"] = True
+        else:
+            replan_start = None
+            replan_end = None
+
     first_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
-    last_scheduled_day = max(item["date"] for item in days.values())
+    last_scheduled_day = replan_end or max(item["date"] for item in days.values())
     last_week_end = _study_plan_week_start(last_scheduled_day) + timedelta(days=6)
     day = first_day
     while day <= last_week_end:
@@ -655,11 +746,83 @@ def _study_plan_schedule_definitions(videos: Iterable[Dict[str, Any]]) -> List[D
                 "subjects": subjects,
                 "subject_targets": subject_targets,
                 "daily_targets": daily_targets,
+                "credit_baselines": (
+                    dict(replan_baselines)
+                    if replan_start and week_cursor >= replan_start
+                    else {}
+                ),
+                "is_replanned": bool(replan_start and week_cursor >= replan_start),
             }
         )
         number += 1
         week_cursor += timedelta(days=7)
     return weeks
+
+
+def _study_plan_replan_preview(settings: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not settings:
+        return None
+    try:
+        start_day = datetime.strptime(str(settings.get("start_date") or ""), "%Y-%m-%d").date()
+        end_day = datetime.strptime(str(settings.get("end_date") or ""), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    if end_day < start_day:
+        return None
+    weekday_minutes = max(1.0, _study_plan_nonnegative_number(settings.get("weekday_minutes")))
+    weekend_minutes = max(1.0, _study_plan_nonnegative_number(settings.get("weekend_minutes")))
+    subject_targets = {
+        str(subject): _study_plan_nonnegative_number(seconds)
+        for subject, seconds in dict(settings.get("subject_targets") or {}).items()
+        if _study_plan_nonnegative_number(seconds) > 0
+    }
+    weekday_count = 0
+    weekend_count = 0
+    cursor_day = start_day
+    while cursor_day <= end_day:
+        if cursor_day.weekday() >= 5:
+            weekend_count += 1
+        else:
+            weekday_count += 1
+        cursor_day += timedelta(days=1)
+    total_target_seconds = sum(subject_targets.values())
+    total_capacity_seconds = (
+        weekday_count * weekday_minutes + weekend_count * weekend_minutes
+    ) * 60
+    load_ratio = total_target_seconds / total_capacity_seconds if total_capacity_seconds else 0.0
+    if load_ratio <= 0.8:
+        state = "comfortable"
+        state_label = "安排寬裕"
+    elif load_ratio <= 1.0:
+        state = "balanced"
+        state_label = "負荷剛好"
+    elif load_ratio <= 1.25:
+        state = "tight"
+        state_label = "需要加速"
+    else:
+        state = "overloaded"
+        state_label = "目標偏緊"
+    return {
+        "start_date": start_day.isoformat(),
+        "end_date": end_day.isoformat(),
+        "day_count": (end_day - start_day).days + 1,
+        "weekday_count": weekday_count,
+        "weekend_count": weekend_count,
+        "remaining_hours": round(total_target_seconds / 3600, 1),
+        "weekday_hours": round(weekday_minutes / 60 * load_ratio, 1),
+        "weekend_hours": round(weekend_minutes / 60 * load_ratio, 1),
+        "load_percent": round(load_ratio * 100),
+        "state": state,
+        "state_label": state_label,
+        "subjects": [
+            {
+                "name": subject,
+                "hours": round(subject_targets.get(subject, 0.0) / 3600, 1),
+            }
+            for subject in STUDY_PLAN_SUBJECTS
+            if subject_targets.get(subject, 0.0) > 0
+        ],
+    }
 
 
 def _study_plan_today_progress_days(
@@ -2401,6 +2564,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     def _study_plan_week_rows(videos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
         start_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
         today = _study_plan_business_date()
+        replan_settings = storage.get_study_plan_replan_settings()
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {}
         for video in videos:
             subject = str(video.get("subject") or "")
@@ -2438,15 +2602,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         }
         week_rows: List[Dict[str, Any]] = []
         planned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
-        for definition in _study_plan_schedule_definitions(videos):
+        replanned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
+        for definition in _study_plan_schedule_definitions(videos, replan_settings):
             week_start = definition["start"]
             week_end = definition["end"]
             subject_targets = dict(definition["subject_targets"])
             subjects = list(definition["subjects"])
+            credit_baselines = dict(definition.get("credit_baselines") or {})
             subject_credits: Dict[str, float] = {}
             weekly_videos: Dict[int, Dict[str, Any]] = {}
             for subject, target_seconds in subject_targets.items():
-                prior_seconds = planned_before.get(subject, 0.0)
+                if subject in credit_baselines:
+                    prior_seconds = credit_baselines.get(subject, 0.0) + replanned_before.get(subject, 0.0)
+                else:
+                    prior_seconds = planned_before.get(subject, 0.0)
                 credited_seconds = min(
                     max(watched_by_subject.get(subject, 0.0) - prior_seconds, 0.0),
                     target_seconds,
@@ -2607,10 +2776,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "completion": completion,
                     "state": state,
                     "state_label": state_label,
+                    "is_replanned": bool(definition.get("is_replanned")),
                 }
             )
             for subject, target_seconds in subject_targets.items():
-                planned_before[subject] = planned_before.get(subject, 0.0) + target_seconds
+                if subject in credit_baselines:
+                    replanned_before[subject] = replanned_before.get(subject, 0.0) + target_seconds
+                else:
+                    planned_before[subject] = planned_before.get(subject, 0.0) + target_seconds
 
         active_week = next((row for row in week_rows if row["start"] <= today.isoformat() <= row["end"]), None)
         if active_week is None:
@@ -2626,7 +2799,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     ) -> Dict[str, Any]:
         today = _study_plan_business_date()
         plan_start = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
-        plan_end = datetime.strptime(STUDY_PLAN_END, "%Y-%m-%d").date()
+        active_replan = storage.get_study_plan_replan_settings()
+        effective_plan_end = str((active_replan or {}).get("end_date") or STUDY_PLAN_END)
+        try:
+            plan_end = datetime.strptime(effective_plan_end, "%Y-%m-%d").date()
+        except ValueError:
+            effective_plan_end = STUDY_PLAN_END
+            plan_end = datetime.strptime(STUDY_PLAN_END, "%Y-%m-%d").date()
         total_plan_days = max(1, (plan_end - plan_start).days + 1)
         elapsed_days = min(max((today - plan_start).days + 1, 0), total_plan_days)
         elapsed_percent = min(100.0, max(0.0, elapsed_days / total_plan_days * 100))
@@ -3100,7 +3279,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         }
         return {
             "plan_start": STUDY_PLAN_START,
-            "plan_end": STUDY_PLAN_END,
+            "plan_end": effective_plan_end,
             "plan_total_weeks": len(week_rows),
             "summary": summary,
             "total_hours": round(total_hours, 1),
@@ -12381,6 +12560,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             video["completion"] = _study_plan_video_completion(video["duration_seconds"], video["watched_seconds"])
             videos_by_subject.setdefault(video["subject"], []).append(video)
         visible_videos = videos_by_subject.get(selected_subject, [])
+        visible_video_ids = [int(video["id"]) for video in visible_videos]
+        video_markers = storage.list_study_plan_video_markers(video_ids=visible_video_ids)
+        replan_settings = storage.get_study_plan_replan_settings()
+        replan_preview = _study_plan_replan_preview(replan_settings)
+        next_week_start = _study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)
+        effective_plan_end = str((replan_settings or {}).get("end_date") or STUDY_PLAN_END)
         return render_template_string(
             STUDY_PLAN_TEMPLATE,
             admin_user=user,
@@ -12393,9 +12578,123 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             video_count=len(visible_videos),
             plan_total_weeks=len(week_rows),
             plan_start=STUDY_PLAN_START,
-            plan_end=STUDY_PLAN_END,
+            plan_end=effective_plan_end,
             recall_widget=_build_recall_widget_context(),
+            video_markers=video_markers,
+            replan_settings=replan_settings,
+            replan_preview=replan_preview,
+            replan_defaults={
+                "start_date": next_week_start.isoformat(),
+                "end_date": effective_plan_end,
+                "weekday_hours": round(float((replan_settings or {}).get("weekday_minutes") or 180) / 60, 1),
+                "weekend_hours": round(float((replan_settings or {}).get("weekend_minutes") or 120) / 60, 1),
+            },
         )
+
+    @app.post("/admin/study-plan/replan")
+    @admin_required
+    def admin_study_plan_replan():
+        action = str(request.form.get("action") or "save").strip()
+        selected_subject = str(request.form.get("subject") or "").strip()
+        if selected_subject not in STUDY_PLAN_SUBJECTS:
+            selected_subject = STUDY_PLAN_SUBJECTS[0]
+        if action == "reset":
+            if storage.delete_study_plan_replan_settings():
+                _invalidate_study_progress_context()
+                record_ui_event("study_plan_replan_reset")
+                flash("已恢復原始讀書計畫。", "success")
+            return redirect(url_for("admin_study_plan", subject=selected_subject))
+
+        start_day = _study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)
+        try:
+            end_day = datetime.strptime(str(request.form.get("end_date") or ""), "%Y-%m-%d").date()
+            weekday_hours = float(request.form.get("weekday_hours") or 0)
+            weekend_hours = float(request.form.get("weekend_hours") or 0)
+        except (TypeError, ValueError):
+            flash("請輸入有效的日期與每日可讀時數。", "error")
+            return redirect(url_for("admin_study_plan", subject=selected_subject) + "#smart-replan")
+        if end_day < start_day + timedelta(days=6):
+            flash(f"目標日期至少需要晚於 {start_day.isoformat()} 一週。", "error")
+            return redirect(url_for("admin_study_plan", subject=selected_subject) + "#smart-replan")
+        if end_day > start_day + timedelta(days=366):
+            flash("智慧計畫最長可安排一年。", "error")
+            return redirect(url_for("admin_study_plan", subject=selected_subject) + "#smart-replan")
+        if not (0.25 <= weekday_hours <= 12 and 0.25 <= weekend_hours <= 12):
+            flash("平日與假日可讀時數需介於 0.25 至 12 小時。", "error")
+            return redirect(url_for("admin_study_plan", subject=selected_subject) + "#smart-replan")
+
+        videos = storage.list_study_plan_videos_with_records()
+        baseline_by_subject: Dict[str, float] = {}
+        subject_targets: Dict[str, float] = {}
+        for subject in STUDY_PLAN_SUBJECTS:
+            subject_videos = [video for video in videos if str(video.get("subject") or "") == subject]
+            total_seconds = sum(_study_plan_nonnegative_number(video.get("duration_seconds")) for video in subject_videos)
+            watched_seconds = sum(
+                min(
+                    _study_plan_nonnegative_number(video.get("watched_seconds")),
+                    _study_plan_nonnegative_number(video.get("duration_seconds")),
+                )
+                for video in subject_videos
+            )
+            baseline_by_subject[subject] = watched_seconds
+            remaining_seconds = max(0.0, total_seconds - watched_seconds)
+            if remaining_seconds > 0.001:
+                subject_targets[subject] = remaining_seconds
+        if not subject_targets:
+            flash("所有影片都已完成，目前不需要重新安排。", "success")
+            return redirect(url_for("admin_study_plan", subject=selected_subject))
+        storage.save_study_plan_replan_settings(
+            start_date=start_day.isoformat(),
+            end_date=end_day.isoformat(),
+            weekday_minutes=weekday_hours * 60,
+            weekend_minutes=weekend_hours * 60,
+            baseline_by_subject=baseline_by_subject,
+            subject_targets=subject_targets,
+        )
+        _invalidate_study_progress_context()
+        record_ui_event(
+            "study_plan_replanned",
+            meta={
+                "start_date": start_day.isoformat(),
+                "end_date": end_day.isoformat(),
+                "weekday_hours": weekday_hours,
+                "weekend_hours": weekend_hours,
+            },
+        )
+        flash("智慧重排已套用，既有觀看紀錄都已保留。", "success")
+        return redirect(url_for("admin_study_plan", subject=selected_subject) + "#smart-replan")
+
+    @app.post("/admin/study-plan/video-markers")
+    @admin_required
+    def admin_study_plan_video_markers():
+        payload = request.get_json(silent=True) or {}
+        try:
+            video_id = int(payload.get("video_id") or 0)
+            playback_seconds = float(payload.get("playback_seconds") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "invalid_payload"}, 400
+        if video_id <= 0 or not math.isfinite(playback_seconds):
+            return {"ok": False, "error": "invalid_payload"}, 400
+        marker = storage.create_study_plan_video_marker(
+            video_id=video_id,
+            playback_seconds=playback_seconds,
+            note=str(payload.get("note") or ""),
+        )
+        if not marker:
+            return {"ok": False, "error": "video_not_found"}, 404
+        record_ui_event(
+            "study_plan_video_marker_created",
+            meta={"video_id": video_id, "playback_seconds": round(marker["playback_seconds"], 1)},
+        )
+        return {"ok": True, "marker": marker}
+
+    @app.delete("/admin/study-plan/video-markers/<int:marker_id>")
+    @admin_required
+    def admin_study_plan_video_marker_delete(marker_id: int):
+        if not storage.delete_study_plan_video_marker(marker_id):
+            return {"ok": False, "error": "marker_not_found"}, 404
+        record_ui_event("study_plan_video_marker_deleted", meta={"marker_id": marker_id})
+        return {"ok": True}
 
     @app.post("/admin/study-plan/video-progress")
     @admin_required

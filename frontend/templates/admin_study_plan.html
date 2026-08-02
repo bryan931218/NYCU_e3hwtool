@@ -132,6 +132,7 @@
         .week-row.complete .week-index { color: #fff; background: var(--green); border-color: var(--green); }
         .week-row.active .week-index { color: var(--blue); border: 2px solid var(--blue); background: #fff; }
         .week-subject { font-size: 14px; font-weight: 720; }
+        .replan-week-badge { display: inline-flex; margin-left: 6px; padding: 2px 6px; border-radius: 999px; color: #5d3fc1; background: #f1edff; font-size: 9px; font-weight: 900; vertical-align: 2px; }
         .week-meta { color: var(--muted); font-size: 12px; line-height: 1.45; }
         .week-target { color: var(--ink-2); font-size: 12px; line-height: 1.45; }
         .week-target strong { display: block; color: var(--blue); font-size: 13px; font-weight: 820; }
@@ -344,6 +345,50 @@
         .table-wrap { background: #fbfdff; }
         .video-summary-toggle { min-height: 58px; }
         .state { border-radius: 999px; padding: 5px 9px; }
+        .flash-stack { margin: 0 0 16px; }
+        .flash { border: 1px solid #c7dcf6; border-left: 4px solid var(--blue); border-radius: 13px; background: #f3f8ff; box-shadow: 0 8px 22px rgba(16,42,67,.045); }
+        .flash.success { color: #176b43; border-color: #bde2cd; border-left-color: var(--green); background: #effaf3; }
+        .flash.error { color: #92343a; border-color: #edc6ca; border-left-color: var(--red); background: #fff6f6; }
+        .smart-replan { margin-bottom: 16px; overflow: hidden; border: 1px solid #cbdff5; border-radius: 20px; background: rgba(255,255,255,.94); box-shadow: 0 12px 34px rgba(16,42,67,.06); }
+        .smart-replan > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; list-style: none; cursor: pointer; background: radial-gradient(circle at 86% 0%,rgba(188,221,255,.55),transparent 35%),linear-gradient(135deg,#fff,#f2f8ff); }
+        .smart-replan > summary::-webkit-details-marker { display: none; }
+        .replan-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .replan-icon { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 13px; color: #fff; background: linear-gradient(145deg,#6d4bd7,#3d67dd); box-shadow: 0 9px 20px rgba(93,76,201,.22); font-size: 19px; }
+        .replan-title { display: block; font-size: 15px; font-weight: 920; }
+        .replan-caption { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+        .replan-summary-side { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+        .replan-badge { padding: 6px 9px; border: 1px solid #cbbff3; border-radius: 999px; color: #5d3fc1; background: #f5f1ff; font-size: 11px; font-weight: 900; }
+        .replan-chevron { color: var(--muted); font-size: 20px; transition: transform .18s ease; }
+        .smart-replan[open] .replan-chevron { transform: rotate(180deg); }
+        .replan-body { padding: 20px; border-top: 1px solid var(--line); }
+        .replan-insights { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; margin-bottom: 18px; }
+        .replan-stat { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: #f9fcff; }
+        .replan-stat span { display: block; color: var(--muted); font-size: 10px; font-weight: 820; }
+        .replan-stat strong { display: block; margin-top: 5px; color: var(--ink); font-size: 17px; font-weight: 920; }
+        .replan-stat.load.overloaded strong, .replan-stat.load.tight strong { color: var(--amber); }
+        .replan-form { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)) auto; gap: 12px; align-items: end; }
+        .replan-form .field input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); background: #fff; }
+        .replan-save, .replan-reset { min-height: 42px; padding: 0 15px; border-radius: 11px; font-weight: 880; cursor: pointer; }
+        .replan-save { color: #fff; border: 0; background: linear-gradient(135deg,#6d4bd7,#3d67dd); box-shadow: 0 9px 20px rgba(93,76,201,.2); }
+        .replan-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 13px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+        .replan-reset-form { flex: 0 0 auto; }
+        .replan-reset { color: var(--red); border: 1px solid #e8c6ca; background: #fff; }
+        .marker-studio { display: grid; gap: 10px; padding: 13px; border: 1px solid #cddff2; border-radius: 15px; background: linear-gradient(135deg,#f9fcff,#f0f7ff); }
+        .marker-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .marker-head strong { font-size: 13px; }
+        .marker-shortcut { color: var(--muted); font-size: 10px; font-weight: 780; }
+        .marker-compose { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+        .marker-compose input { min-width: 0; min-height: 40px; padding: 9px 11px; border: 1px solid #c9d9ea; border-radius: 10px; background: #fff; }
+        .marker-save { min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; color: #fff; background: var(--blue); font-size: 12px; font-weight: 900; cursor: pointer; box-shadow: 0 7px 16px rgba(20,99,217,.17); }
+        .marker-save:disabled { opacity: .55; cursor: wait; }
+        .marker-status { min-height: 16px; margin: -2px 0 0; color: var(--muted); font-size: 10px; }
+        .marker-list { display: grid; gap: 7px; max-height: 180px; overflow-y: auto; }
+        .marker-item { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid #d8e5f1; border-radius: 11px; background: rgba(255,255,255,.94); }
+        .marker-seek { padding: 5px 7px; border: 0; border-radius: 8px; color: #0d56bd; background: var(--blue-soft); font-size: 11px; font-weight: 920; cursor: pointer; font-variant-numeric: tabular-nums; }
+        .marker-note { min-width: 0; overflow: hidden; color: var(--ink-2); font-size: 11px; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
+        .marker-delete { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #92a3b5; background: transparent; cursor: pointer; }
+        .marker-delete:hover { color: var(--red); background: #fff1f2; }
+        .marker-empty { padding: 8px; color: var(--muted); border: 1px dashed #cad9e8; border-radius: 10px; font-size: 11px; line-height: 1.5; text-align: center; }
         @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } }
         @media (max-width: 900px) {
             .study-nav { padding: 12px 16px; align-items: center; flex-direction: row; flex-wrap: wrap; }
@@ -359,11 +404,19 @@
             .metric-value { font-size: 25px; }
             .panel { border-radius: 18px; }
             .focus-grid { border-radius: 14px; }
+            .replan-insights { grid-template-columns: 1fr 1fr; }
+            .replan-form { grid-template-columns: 1fr; }
+            .replan-foot { align-items: flex-start; flex-direction: column; }
+            .replan-reset-form, .replan-reset { width: 100%; }
         }
         @media (max-width: 620px) {
             .brand { font-size: 14px; }
             .mark { width: 35px; height: 35px; }
             .nav-links a { padding: 8px 10px; }
+            .smart-replan > summary { align-items: flex-start; padding: 16px; }
+            .replan-body { padding: 16px; }
+            .replan-badge { display: none; }
+            .marker-compose { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -380,12 +433,32 @@
                     <div class="date-range">{{ plan_start }} 至 {{ plan_end }}・{{ plan_total_weeks }} 週</div>
                 </div>
 
+                {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack" aria-live="polite">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}
+
                 <section class="metric-row" aria-label="讀書計畫摘要">
                     <div class="metric"><div class="metric-label">影片總片長</div><div class="metric-value">{{ (summary.total_target / 60)|round(1) }}<small>小時</small></div></div>
                     <div class="metric"><div class="metric-label">已觀看片長</div><div class="metric-value"><span id="summary-watched-hours">{{ (summary.total_watched / 60)|round(1) }}</span><small>小時</small></div></div>
                     <div class="metric" title="所有影片最後觀看位置合計 ÷ 所有影片總片長"><div class="metric-label">片長加權完成率</div><div class="metric-value"><span id="summary-completion">{{ summary.completion|round(1) }}</span><small>%</small></div></div>
                     <div class="metric"><div class="metric-label">已完成影片</div><div class="metric-value"><span id="summary-completed-videos">{{ summary.completed_videos }}</span><small>/ <span id="summary-total-videos">{{ summary.total_videos }}</span> 支</small></div></div>
                 </section>
+
+                <details class="smart-replan" id="smart-replan">
+                    <summary>
+                        <span class="replan-heading"><span class="replan-icon" aria-hidden="true">✦</span><span><span class="replan-title">智慧讀書計畫重排</span><span class="replan-caption">依剩餘影片、截止日期與可讀時間，重算下一個完整週期。</span></span></span>
+                        <span class="replan-summary-side">{% if replan_preview %}<span class="replan-badge">{{ replan_preview.state_label }}・{{ replan_preview.load_percent }}%</span>{% else %}<span class="replan-badge">尚未啟用</span>{% endif %}<span class="replan-chevron" aria-hidden="true">⌄</span></span>
+                    </summary>
+                    <div class="replan-body">
+                        {% if replan_preview %}<div class="replan-insights" aria-label="智慧重排摘要"><div class="replan-stat"><span>待完成影片</span><strong>{{ replan_preview.remaining_hours }}h</strong></div><div class="replan-stat"><span>重排期間</span><strong>{{ replan_preview.day_count }} 天</strong></div><div class="replan-stat"><span>平日建議</span><strong>{{ replan_preview.weekday_hours }}h</strong></div><div class="replan-stat load {{ replan_preview.state }}"><span>負荷評估</span><strong>{{ replan_preview.state_label }}</strong></div></div>{% endif %}
+                        <form class="replan-form" method="post" action="{{ url_for('admin_study_plan_replan') }}">
+                            <input type="hidden" name="subject" value="{{ selected_subject }}">
+                            <div class="field"><label for="replan-end-date">希望完成日期</label><input id="replan-end-date" name="end_date" type="date" min="{{ replan_defaults.start_date }}" value="{{ replan_defaults.end_date }}" required></div>
+                            <div class="field"><label for="replan-weekday-hours">平日可讀時間（小時）</label><input id="replan-weekday-hours" name="weekday_hours" type="number" min="0.25" max="12" step="0.25" value="{{ replan_defaults.weekday_hours }}" required></div>
+                            <div class="field"><label for="replan-weekend-hours">假日可讀時間（小時）</label><input id="replan-weekend-hours" name="weekend_hours" type="number" min="0.25" max="12" step="0.25" value="{{ replan_defaults.weekend_hours }}" required></div>
+                            <button class="replan-save" type="submit">重新安排</button>
+                        </form>
+                        <div class="replan-foot"><span>從 {{ replan_defaults.start_date }} 開始套用；已完成的週次、影片進度與每日觀看紀錄都會保留。</span>{% if replan_settings %}<form class="replan-reset-form" method="post" action="{{ url_for('admin_study_plan_replan') }}"><input type="hidden" name="action" value="reset"><input type="hidden" name="subject" value="{{ selected_subject }}"><button class="replan-reset" type="submit">恢復原始計畫</button></form>{% endif %}</div>
+                    </div>
+                </details>
 
                 {% if recall_widget %}{% if recall_widget.due_count > 4 %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary>{% else %}<section class="recall-pocket"><div class="recall-pocket-head"><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></div>{% endif %}<div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}{% if concept.card_type == 'example' %}<span class="recall-example-badge">例題</span>{% endif %}</div><div class="recall-cue" data-math-content>{{ concept.recall_cue }}</div><button class="recall-reveal" type="button" data-recall-reveal aria-expanded="false">揭示重點</button><div class="recall-answer" data-recall-answer hidden>{% if concept.card_type == 'example' and concept.example_problem %}<div class="recall-example"><strong>具體題目示例</strong><div data-math-content>{{ concept.example_problem }}</div></div>{% endif %}{% if concept.card_type == 'example' and concept.example_method %}<div class="recall-example method"><strong>解題方法</strong><div data-math-content>{{ concept.example_method }}</div></div>{% endif %}{% if concept.card_type != 'example' and concept.simple_example %}<div class="recall-example simple"><strong>簡單例子</strong><div data-math-content>{{ concept.simple_example }}</div></div>{% endif %}{% if concept.core_summary %}<div class="recall-core" data-math-content>{{ concept.core_summary }}</div>{% endif %}<div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_plan"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></div></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div>{% if recall_widget.due_count > 4 %}</details>{% else %}</section>{% endif %}{% endif %}
                 <div class="workspace">
@@ -425,7 +498,7 @@
                                 {% for week in week_rows %}
                                 <div class="week-row {{ week.state }}" data-timeline-week-start="{{ week.start }}">
                                     <div class="week-index">{{ week.number }}</div>
-                                    <div><div class="week-subject">{{ week.subject }}</div><div class="week-meta">{{ week.start }} — {{ week.end }}</div></div>
+                                    <div><div class="week-subject">{{ week.subject }}{% if week.is_replanned %}<span class="replan-week-badge">智慧重排</span>{% endif %}</div><div class="week-meta">{{ week.start }} — {{ week.end }}</div></div>
                                     <div><span class="state {{ week.state }}">{{ week.state_label }}</span></div>
                                     <div class="week-summary" aria-label="第 {{ week.number }} 週進度摘要">
                                         <div class="week-stat"><span>本週目標</span><strong>{{ week.video_hours }}h</strong></div>
@@ -472,8 +545,15 @@
                                     <div class="track"><div id="player-progress-fill" class="fill" style="--progress:0%"></div></div>
                                     <div class="player-status-line"><span>自動儲存</span><strong id="player-last-saved">尚未儲存</strong></div>
                                 </div>
+                                <section class="marker-studio" aria-label="影片關鍵點">
+                                    <div class="marker-head"><strong>影片關鍵點 <span id="marker-count">0</span></strong><span class="marker-shortcut">快捷鍵 M</span></div>
+                                    <div class="marker-compose"><input id="marker-note" type="text" maxlength="280" placeholder="可先輸入重點，留空也能快速標記"><button id="marker-save" class="marker-save" type="button">＋ 標記現在</button></div>
+                                    <p id="marker-status" class="marker-status" aria-live="polite">播放到重點時按一下，之後可直接跳回這一秒。</p>
+                                    <div id="marker-list" class="marker-list"></div>
+                                </section>
                             </div>
                         </div>
+                        <script type="application/json" id="video-markers-data">{{ video_markers|tojson }}</script>
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
@@ -645,6 +725,12 @@
             const playerCurrentTime = document.getElementById('player-current-time');
             const playerProgressFill = document.getElementById('player-progress-fill');
             const playerLastSaved = document.getElementById('player-last-saved');
+            const markerData = document.getElementById('video-markers-data');
+            const markerNote = document.getElementById('marker-note');
+            const markerSave = document.getElementById('marker-save');
+            const markerStatus = document.getElementById('marker-status');
+            const markerList = document.getElementById('marker-list');
+            const markerCount = document.getElementById('marker-count');
             const videoSummary = document.querySelector('[data-video-summary]');
             const videoSummaryToggle = document.getElementById('video-summary-toggle');
             const videoSummaryBody = document.getElementById('video-summary-body');
@@ -655,6 +741,13 @@
             let playbackTimer = null;
             let queuedSaveCount = 0;
             let saveQueue = Promise.resolve();
+            let videoMarkers = [];
+            try {
+                videoMarkers = JSON.parse(markerData ? markerData.textContent || '[]' : '[]');
+                if (!Array.isArray(videoMarkers)) videoMarkers = [];
+            } catch (error) {
+                videoMarkers = [];
+            }
             const initialParams = new URLSearchParams(window.location.search);
             const requestedVideoId = initialParams.get('video_id') || '';
             const shouldFocusRequestedVideo = Boolean(requestedVideoId || window.location.hash === '#youtube-player-section');
@@ -709,6 +802,100 @@
                     return option.value === String(value);
                 }) || null;
             };
+            const renderMarkers = function () {
+                if (!markerList || !markerCount) return;
+                const option = selectedOption();
+                const videoId = option ? Number(option.value) : 0;
+                const items = videoMarkers
+                    .filter(function (marker) { return Number(marker.video_id) === videoId; })
+                    .sort(function (left, right) {
+                        return Number(left.playback_seconds || 0) - Number(right.playback_seconds || 0)
+                            || Number(left.id || 0) - Number(right.id || 0);
+                    });
+                markerCount.textContent = String(items.length);
+                markerList.replaceChildren();
+                if (!items.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'marker-empty';
+                    empty.textContent = videoId ? '這支影片還沒有關鍵點。' : '選擇影片後即可開始標記。';
+                    markerList.appendChild(empty);
+                    return;
+                }
+                items.forEach(function (marker) {
+                    const row = document.createElement('div');
+                    row.className = 'marker-item';
+                    const seek = document.createElement('button');
+                    seek.type = 'button';
+                    seek.className = 'marker-seek';
+                    seek.textContent = formatClock(marker.playback_seconds);
+                    seek.title = '跳到 ' + formatClock(marker.playback_seconds);
+                    seek.addEventListener('click', function () {
+                        if (player && typeof player.seekTo === 'function') {
+                            player.seekTo(Number(marker.playback_seconds || 0), true);
+                            if (typeof player.playVideo === 'function') player.playVideo();
+                            setPlayerPosition(marker.playback_seconds, Number(option.dataset.durationSeconds || 0));
+                            markerStatus.textContent = '已跳到 ' + formatClock(marker.playback_seconds) + '・' + marker.note;
+                        }
+                    });
+                    const note = document.createElement('span');
+                    note.className = 'marker-note';
+                    note.textContent = marker.note || '關鍵片段';
+                    note.title = marker.note || '關鍵片段';
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'marker-delete';
+                    remove.textContent = '×';
+                    remove.setAttribute('aria-label', '刪除 ' + formatClock(marker.playback_seconds) + ' 關鍵點');
+                    remove.addEventListener('click', function () {
+                        remove.disabled = true;
+                        fetch('{{ url_for("admin_study_plan_video_marker_delete", marker_id=0) }}'.replace(/0$/, String(marker.id)), {
+                            method: 'DELETE'
+                        }).then(function (response) {
+                            if (!response.ok) throw new Error('delete_failed');
+                            videoMarkers = videoMarkers.filter(function (item) { return Number(item.id) !== Number(marker.id); });
+                            renderMarkers();
+                            markerStatus.textContent = '關鍵點已刪除。';
+                        }).catch(function () {
+                            markerStatus.textContent = '刪除失敗，請再試一次。';
+                            remove.disabled = false;
+                        });
+                    });
+                    row.append(seek, note, remove);
+                    markerList.appendChild(row);
+                });
+            };
+            const saveMarker = function () {
+                const option = selectedOption();
+                if (!option || !markerSave) return;
+                let seconds = Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0);
+                if (player && typeof player.getCurrentTime === 'function') {
+                    seconds = Math.max(0, Number(player.getCurrentTime() || 0));
+                }
+                markerSave.disabled = true;
+                markerStatus.textContent = '正在標記 ' + formatClock(seconds) + '…';
+                fetch('{{ url_for("admin_study_plan_video_markers") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_id: Number(option.value),
+                        playback_seconds: seconds,
+                        note: markerNote ? markerNote.value.trim() : ''
+                    })
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('save_failed');
+                    return response.json();
+                }).then(function (data) {
+                    if (!data.ok || !data.marker) throw new Error('save_failed');
+                    videoMarkers.push(data.marker);
+                    if (markerNote) markerNote.value = '';
+                    renderMarkers();
+                    markerStatus.textContent = '已標記 ' + formatClock(data.marker.playback_seconds) + '，點時間即可跳回。';
+                }).catch(function () {
+                    markerStatus.textContent = '標記失敗，請再試一次。';
+                }).finally(function () {
+                    markerSave.disabled = false;
+                });
+            };
             const sortVideoOptions = function () {
                 const selectedValue = videoSelect.value;
                 const options = Array.prototype.slice.call(videoSelect.options, 1);
@@ -752,6 +939,7 @@
                     durationHint.textContent = '請先選擇影片';
                     if (watchedInput) watchedInput.value = '0';
                     updatePlayerPanel(null);
+                    renderMarkers();
                     return;
                 }
                 const duration = option.dataset.duration;
@@ -759,6 +947,7 @@
                 durationHint.textContent = '原始片長：' + duration + ' 分鐘' + (youtube ? '・YouTube 已對應' : '');
                 if (watchedInput) watchedInput.value = formatMinutes(option.dataset.watchedSeconds);
                 updatePlayerPanel(option);
+                renderMarkers();
             };
             const updatePlayerPanel = function (option) {
                 if (!option) {
@@ -1042,6 +1231,23 @@
                 }
                 loadNextVideo();
             });
+            if (markerSave) markerSave.addEventListener('click', saveMarker);
+            if (markerNote) markerNote.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveMarker();
+                }
+            });
+            document.addEventListener('keydown', function (event) {
+                const target = event.target;
+                const isTyping = target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+                if (!isTyping && !event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'm') {
+                    const option = selectedOption();
+                    if (!option || !option.dataset.youtubeVideoId) return;
+                    event.preventDefault();
+                    saveMarker();
+                }
+            });
             document.querySelectorAll('[data-select-video]').forEach(function (button) {
                 button.addEventListener('click', function () {
                     const option = optionByValue(button.dataset.selectVideo);
@@ -1063,6 +1269,8 @@
             }
             sortVideoOptions();
             updateDuration();
+            const smartReplan = document.getElementById('smart-replan');
+            if (smartReplan && window.location.hash === '#smart-replan') smartReplan.open = true;
             focusVideoArea();
         }());
     </script>
