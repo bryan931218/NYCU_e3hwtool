@@ -79,16 +79,22 @@
         .stat-label { color: var(--muted); font-size: 12px; font-weight: 850; }
         .stat-value { margin-top: 8px; font-size: clamp(24px, 3vw, 34px); font-weight: 950; letter-spacing: -.055em; }
         .stat-value small { margin-left: 4px; color: var(--muted); font-size: 13px; font-weight: 780; letter-spacing: 0; }
-        .public-calendar { margin-top: 18px; padding: 22px; border-radius: 12px; }
-        .public-calendar-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-        .public-calendar-kicker { color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .13em; }
-        .public-calendar-title { margin: 5px 0 0; font-size: 22px; letter-spacing: -.035em; }
-        .public-calendar-caption { max-width: 570px; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.55; }
-        .public-calendar-stats { display: flex; align-items: stretch; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-        .public-calendar-stat { min-width: 102px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: #f8fbff; }
-        .public-calendar-stat span { display: block; color: var(--muted); font-size: 9px; font-weight: 800; }
-        .public-calendar-stat strong { display: block; margin-top: 3px; color: var(--ink-2); font-size: 14px; font-weight: 950; }
-        .public-calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 20px; padding-top: 17px; border-top: 1px solid var(--line); }
+        .public-calendar { display: grid; grid-template-columns: 250px minmax(0, 1fr); margin-top: 18px; padding: 0; overflow: hidden; border-radius: 16px; }
+        .public-calendar-insight { position: relative; min-height: 430px; padding: 24px; overflow: hidden; color: #fff; background: radial-gradient(circle at 92% 8%, rgba(88,168,255,.55), transparent 34%), linear-gradient(150deg, #102a43 0%, #0c4ba0 58%, #1763ca 100%); }
+        .public-calendar-insight::after { content: ''; position: absolute; right: -76px; bottom: -94px; width: 210px; height: 210px; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; box-shadow: 0 0 0 24px rgba(255,255,255,.035), 0 0 0 52px rgba(255,255,255,.025); }
+        .public-calendar-kicker { position: relative; z-index: 1; color: #a9d1ff; font-size: 10px; font-weight: 900; letter-spacing: .13em; }
+        .public-calendar-title { position: relative; z-index: 1; margin: 7px 0 0; color: #fff; font-size: 24px; letter-spacing: -.04em; }
+        .public-calendar-caption { position: relative; z-index: 1; margin-top: 8px; color: #c7ddf5; font-size: 11px; line-height: 1.65; }
+        .public-calendar-total { position: relative; z-index: 1; margin-top: 29px; }
+        .public-calendar-total strong { display: block; font-size: 38px; font-weight: 950; line-height: 1; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
+        .public-calendar-total span { display: block; margin-top: 8px; color: #c7ddf5; font-size: 11px; font-weight: 760; }
+        .public-calendar-stats { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
+        .public-calendar-stat { min-width: 0; padding: 10px; border: 1px solid rgba(196,221,249,.22); border-radius: 9px; background: rgba(255,255,255,.09); backdrop-filter: blur(6px); }
+        .public-calendar-stat:last-child { grid-column: 1 / -1; }
+        .public-calendar-stat span { display: block; color: #c7ddf5; font-size: 9px; font-weight: 800; }
+        .public-calendar-stat strong { display: block; margin-top: 4px; overflow: hidden; color: #fff; font-size: 14px; font-weight: 950; text-overflow: ellipsis; white-space: nowrap; }
+        .public-calendar-main { min-width: 0; padding: 22px 24px 21px; background: #fff; }
+        .public-calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
         .public-calendar-month { color: var(--ink-2); font-size: 17px; font-weight: 930; letter-spacing: -.025em; }
         .public-calendar-nav { display: flex; align-items: center; gap: 6px; }
         .public-calendar-nav button { min-width: 34px; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); background: #fff; font: inherit; font-size: 12px; font-weight: 900; cursor: pointer; }
@@ -99,9 +105,9 @@
         .public-calendar-weekdays { margin-top: 15px; color: #8094aa; font-size: 10px; font-weight: 900; text-align: center; }
         .public-calendar-weekdays span { padding: 3px 0; }
         .public-calendar-grid { margin-top: 6px; }
+        .public-calendar-placeholder { min-height: 64px; pointer-events: none; }
         .public-calendar-day { display: flex; min-width: 0; min-height: 64px; padding: 8px; align-items: flex-start; justify-content: space-between; gap: 4px; border: 1px solid transparent; border-radius: 9px; color: var(--ink-2); background: #f1f5f9; font: inherit; text-align: left; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
         .public-calendar-day:hover { transform: translateY(-2px); box-shadow: 0 7px 16px rgba(16,42,67,.10); }
-        .public-calendar-day.is-outside { opacity: .4; }
         .public-calendar-day.is-today { border-color: var(--blue); }
         .public-calendar-date { font-size: 11px; font-weight: 900; }
         .public-calendar-duration { align-self: flex-end; overflow: hidden; font-size: 9px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
@@ -262,8 +268,7 @@
         @media (max-width: 980px) {
             .hero, .layout { grid-template-columns: 1fr; }
             .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .public-calendar-head { flex-direction: column; }
-            .public-calendar-stats { width: 100%; justify-content: flex-start; }
+            .public-calendar { grid-template-columns: 230px minmax(0, 1fr); }
             .pace-layout { grid-template-columns: 1fr; }
             .daily-plan-head { align-items: flex-start; flex-direction: column; }
             .daily-legend { justify-content: flex-start; }
@@ -275,9 +280,9 @@
             .hero-main { padding: 22px; min-height: auto; }
             .progress-orb { width: 160px; }
             .stat-grid { grid-template-columns: 1fr; }
-            .public-calendar { padding: 18px 10px; }
-            .public-calendar-head { padding: 0 4px; }
-            .public-calendar-stat { flex: 1 1 90px; min-width: 0; }
+            .public-calendar { grid-template-columns: 1fr; }
+            .public-calendar-insight { min-height: 0; padding: 22px 18px; }
+            .public-calendar-main { padding: 18px 10px; }
             .public-calendar-toolbar { align-items: stretch; padding-left: 4px; padding-right: 4px; flex-direction: column; }
             .public-calendar-nav { justify-content: space-between; }
             .public-calendar-nav button:nth-child(2) { flex: 1; }
@@ -337,18 +342,18 @@
         </section>
 
         <section class="panel public-calendar" data-public-study-calendar aria-label="每月影片觀看熱度月曆">
-            <div class="public-calendar-head">
-                <div>
+            <aside class="public-calendar-insight">
                     <div class="public-calendar-kicker">WATCHING HEATMAP</div>
                     <h2 class="public-calendar-title">學習月曆</h2>
                     <div class="public-calendar-caption">每日格子的顏色代表影片觀看進度，顏色越深表示當天投入越多。點選日期可查看當天學習內容。</div>
-                </div>
+                    <div class="public-calendar-total"><strong data-public-calendar-total>0h</strong><span>這個月累積觀看進度</span></div>
                 <div class="public-calendar-stats">
-                    <div class="public-calendar-stat"><span>本月累積</span><strong data-public-calendar-total>0h</strong></div>
                     <div class="public-calendar-stat"><span>活躍天數</span><strong data-public-calendar-active>0 天</strong></div>
+                    <div class="public-calendar-stat"><span>活躍日平均</span><strong data-public-calendar-average>0 分</strong></div>
                     <div class="public-calendar-stat"><span>最投入</span><strong data-public-calendar-best>尚無紀錄</strong></div>
                 </div>
-            </div>
+            </aside>
+            <div class="public-calendar-main">
             <div class="public-calendar-toolbar">
                 <div class="public-calendar-month" data-public-calendar-heading></div>
                 <div class="public-calendar-nav" aria-label="切換月份">
@@ -360,6 +365,7 @@
             <div class="public-calendar-weekdays" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
             <div class="public-calendar-grid" data-public-calendar-grid role="grid" aria-label="每日影片觀看時數"></div>
             <div class="public-calendar-legend" aria-label="觀看熱度圖例"><span>少</span><i class="public-calendar-legend-gradient"></i><span>多</span></div>
+            </div>
             <script type="application/json" data-public-calendar-data>{{ study_calendar|tojson }}</script>
         </section>
         <div class="calendar-modal" data-public-calendar-modal hidden>
@@ -578,6 +584,7 @@
             const currentButton = root.querySelector('[data-public-calendar-today]');
             const totalNode = root.querySelector('[data-public-calendar-total]');
             const activeNode = root.querySelector('[data-public-calendar-active]');
+            const averageNode = root.querySelector('[data-public-calendar-average]');
             const bestNode = root.querySelector('[data-public-calendar-best]');
             const modal = document.querySelector('[data-public-calendar-modal]');
             const modalTitle = modal?.querySelector('[data-public-calendar-modal-title]');
@@ -677,6 +684,7 @@
                 const best = days.reduce((winner, item) => (!winner || item[1] > winner[1] ? item : winner), null);
                 totalNode.textContent = summaryDuration(total);
                 activeNode.textContent = `${days.length} 天`;
+                averageNode.textContent = days.length ? summaryDuration(total / days.length) : '0 分';
                 bestNode.textContent = best ? `${Number(best[0].slice(5,7))}/${Number(best[0].slice(8,10))}・${summaryDuration(best[1])}` : '尚無紀錄';
             };
             const render = () => {
@@ -689,12 +697,18 @@
                         .filter(([key]) => key.startsWith(monthPrefix))
                         .map(([, seconds]) => seconds),
                 );
-                const firstVisible = new Date(year, month, 1 - new Date(year, month, 1).getDay());
+                const firstWeekday = new Date(year, month, 1).getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
                 heading.textContent = `${year} 年 ${month + 1} 月`;
                 grid.replaceChildren();
-                for (let offset = 0; offset < 42; offset += 1) {
-                    const date = new Date(firstVisible);
-                    date.setDate(firstVisible.getDate() + offset);
+                for (let offset = 0; offset < firstWeekday; offset += 1) {
+                    const placeholder = document.createElement('span');
+                    placeholder.className = 'public-calendar-placeholder';
+                    placeholder.setAttribute('aria-hidden', 'true');
+                    grid.appendChild(placeholder);
+                }
+                for (let day = 1; day <= daysInMonth; day += 1) {
+                    const date = new Date(year, month, day);
                     const key = dateKey(date);
                     const seconds = secondsByDay.get(key) || 0;
                     const cell = document.createElement('button');
@@ -703,7 +717,6 @@
                     cell.dataset.date = key;
                     cell.setAttribute('role', 'gridcell');
                     cell.setAttribute('aria-label', `${spokenDate(key)}，${fullDuration(seconds)}`);
-                    if (date.getMonth() !== month) cell.classList.add('is-outside');
                     if (key === todayKey) cell.classList.add('is-today');
                     applyHeatColor(cell, seconds, monthMaximum);
                     const label = document.createElement('span');
@@ -713,13 +726,7 @@
                     duration.className = 'public-calendar-duration';
                     duration.textContent = compactDuration(seconds);
                     cell.append(label, duration);
-                    cell.addEventListener('click', () => {
-                        if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
-                            visibleMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-                            render();
-                        }
-                        openModal(key);
-                    });
+                    cell.addEventListener('click', () => openModal(key));
                     grid.appendChild(cell);
                 }
                 previous.disabled = monthNumber(visibleMonth) <= monthNumber(firstMonth);

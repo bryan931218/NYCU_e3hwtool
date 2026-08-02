@@ -253,6 +253,7 @@
         .calendar-weekdays { margin-top: 17px; color: var(--soft); font-size: 10px; font-weight: 900; text-align: center; }
         .calendar-weekdays span { padding: 3px 0; }
         .calendar-grid { margin-top: 6px; }
+        .calendar-day-placeholder { min-height: 64px; pointer-events: none; }
         .calendar-day {
             position: relative;
             display: flex;
@@ -272,7 +273,6 @@
             transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
         }
         .calendar-day:hover { z-index: 1; transform: translateY(-2px); border-color: rgba(20, 99, 217, .24); box-shadow: 0 7px 16px rgba(16, 42, 67, .10); }
-        .calendar-day.is-outside { opacity: .4; }
         .calendar-day.is-today { border-color: var(--blue); }
         .calendar-day.is-selected { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--blue); }
         .calendar-date { font-size: 11px; font-weight: 900; font-variant-numeric: tabular-nums; }
@@ -1302,12 +1302,18 @@
                         .filter(([key]) => key.startsWith(monthPrefix))
                         .map(([, seconds]) => seconds),
                 );
-                const firstVisible = new Date(year, month, 1 - new Date(year, month, 1).getDay());
+                const firstWeekday = new Date(year, month, 1).getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
                 heading.textContent = `${year} 年 ${month + 1} 月`;
                 grid.replaceChildren();
-                for (let offset = 0; offset < 42; offset += 1) {
-                    const date = new Date(firstVisible);
-                    date.setDate(firstVisible.getDate() + offset);
+                for (let offset = 0; offset < firstWeekday; offset += 1) {
+                    const placeholder = document.createElement('span');
+                    placeholder.className = 'calendar-day-placeholder';
+                    placeholder.setAttribute('aria-hidden', 'true');
+                    grid.appendChild(placeholder);
+                }
+                for (let day = 1; day <= daysInMonth; day += 1) {
+                    const date = new Date(year, month, day);
                     const key = dayKey(date);
                     const seconds = secondsByDay.get(key) || 0;
                     const cell = document.createElement('button');
@@ -1317,7 +1323,6 @@
                     cell.setAttribute('role', 'gridcell');
                     cell.setAttribute('aria-label', `${spokenDate(key)}，${fullDuration(seconds)}`);
                     cell.setAttribute('aria-selected', key === selectedKey ? 'true' : 'false');
-                    if (date.getMonth() !== month) cell.classList.add('is-outside');
                     if (key === todayKey) cell.classList.add('is-today');
                     if (key === selectedKey) cell.classList.add('is-selected');
                     applyHeatColor(cell, seconds, monthMaximum);
@@ -1329,18 +1334,8 @@
                     duration.textContent = compactDuration(seconds);
                     cell.append(dateLabel, duration);
                     cell.addEventListener('click', () => {
-                        if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
-                            visibleMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-                            selectedKey = key;
-                            render();
-                            openDayModal(key);
-                            return;
-                        }
                         updateFocus(key);
                         openDayModal(key);
-                            return;
-                        }
-                        updateFocus(key);
                     });
                     grid.appendChild(cell);
                 }
