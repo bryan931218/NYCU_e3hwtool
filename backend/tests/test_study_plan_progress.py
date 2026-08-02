@@ -524,7 +524,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("觀看時數", public_html)
             self.assertIn("data-public-study-calendar", public_html)
             self.assertIn("data-public-calendar-modal", public_html)
-            self.assertIn("點選日期可查看當天學習內容", public_html)
+            self.assertIn("data-public-calendar-average", public_html)
             self.assertIn(first_video["title"], public_html)
             self.assertIn("public-calendar-legend-gradient", public_html)
             self.assertIn("applyHeatColor", public_html)
