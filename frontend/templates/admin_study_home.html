@@ -276,7 +276,7 @@
         }
         .calendar-day:hover { z-index: 1; transform: translateY(-2px); border-color: rgba(20, 99, 217, .24); box-shadow: 0 7px 16px rgba(16, 42, 67, .10); }
         .calendar-day.is-today { border-color: var(--blue); }
-        .calendar-day.is-selected { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--blue); }
+        .calendar-day.is-selected { box-shadow: none; }
         .calendar-date { font-size: 11px; font-weight: 900; font-variant-numeric: tabular-nums; }
         .calendar-duration { align-self: flex-end; overflow: hidden; font-size: 9px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
         body.calendar-modal-open { overflow: hidden; }
@@ -846,7 +846,6 @@
             .calendar-nav button:nth-child(2) { flex: 1; }
             .calendar-weekdays, .calendar-grid { gap: 3px; }
             .calendar-day { min-height: 48px; padding: 5px; border-radius: 7px; }
-            .calendar-day.is-selected { box-shadow: none; }
             .calendar-duration { max-width: 42px; font-size: 8px; }
             .calendar-modal { padding: 10px; place-items: end center; }
             .calendar-dialog { width: 100%; max-height: calc(100vh - 20px); border-radius: 18px 18px 12px 12px; }
