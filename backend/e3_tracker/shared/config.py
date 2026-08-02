@@ -1,5 +1,28 @@
 import os
-from typing import Dict
+from typing import Dict, Optional
+
+
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"
+
+
+def normalize_openai_reasoning_effort(
+    model: str,
+    requested: Optional[str],
+    *,
+    compatible_default: str = "low",
+) -> Optional[str]:
+    """Keep current low-cost reasoning models compatible with legacy calls."""
+    normalized_model = str(model or "").strip().lower()
+    normalized_effort = str(requested or "").strip().lower()
+    needs_explicit_effort = (
+        normalized_model.startswith("gpt-5.6")
+        or normalized_model == "gpt-5.4-mini"
+    )
+    if not needs_explicit_effort:
+        return normalized_effort or None
+    if normalized_effort == "minimal":
+        return "none"
+    return normalized_effort or compatible_default
 
 
 def load_env_defaults() -> Dict[str, str]:
@@ -21,10 +44,10 @@ def load_env_defaults() -> Dict[str, str]:
         "session_cookie_samesite": os.getenv("E3_SESSION_COOKIE_SAMESITE", "Lax"),
         "database_url": os.getenv("E3_DATABASE_URL", ""),
         "support_email": os.getenv("E3_SUPPORT_EMAIL", "bryan931218@gmail.com"),
-        "app_home_url": os.getenv("E3_APP_HOME_URL", "https://e3hwtool.space/"),
+        "app_home_url": os.getenv("E3_APP_HOME_URL", "https://www.e3hwtool.space/"),
         "legal_entity_name": os.getenv("E3_LEGAL_ENTITY_NAME", "E3 Homework Tracker Project"),
         "legal_effective_date": os.getenv("E3_LEGAL_EFFECTIVE_DATE", "2024-11-19"),
         "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
-        "openai_model": os.getenv("E3_OPENAI_MODEL", "gpt-5-mini"),
+        "openai_model": os.getenv("E3_OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
         "study_upload_dir": os.getenv("E3_STUDY_UPLOAD_DIR", ""),
     }

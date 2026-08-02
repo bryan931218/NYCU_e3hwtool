@@ -26,6 +26,16 @@ PLAYLISTS = [
         "playlist_id": "PLCzFJSBZ0Y8k",
         "url": "https://www.youtube.com/playlist?list=PLCzFJSBZ0Y8k",
     },
+    {
+        "subject": "資料結構",
+        "playlist_id": "PLVQPv-6fTfFU",
+        "url": "https://www.youtube.com/playlist?list=PLVQPv-6fTfFU",
+    },
+    {
+        "subject": "離散數學",
+        "playlist_id": "PL_K5Hu3jjOvX7TBRl0BB2o2CIdRjdqtuU",
+        "url": "https://www.youtube.com/playlist?list=PL_K5Hu3jjOvX7TBRl0BB2o2CIdRjdqtuU",
+    },
 ]
 
 

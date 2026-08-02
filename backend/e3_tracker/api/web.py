@@ -1,4 +1,6 @@
 import base64
+import copy
+import io
 import json
 import math
 import os
@@ -9,13 +11,17 @@ import threading
 import time
 import hashlib
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
-from urllib.parse import urlsplit, urlunsplit
+from statistics import median
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 import requests
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 from flask import Flask, Response, flash, redirect, render_template_string, request, send_file, session, url_for, has_request_context
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -33,10 +39,44 @@ from ..services.google_calendar import (
     sync_assignments_to_google_calendar,
 )
 from ..services.http import login_with_password
-from ..shared.config import load_env_defaults
+from ..shared.config import (
+    DEFAULT_OPENAI_MODEL,
+    load_env_defaults,
+    normalize_openai_reasoning_effort,
+)
 from ..shared.constants import TAIPEI_TZ
 from ..shared.storage import PersistentStorage
 from ..shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
+from ..shared.source_localization import (
+    SOURCE_BBOX_VERSION,
+    SOURCE_PAGE_INDEX_VERSION,
+    assign_transcription_to_source_sections,
+    build_source_page_geometry,
+    canonicalize_source_text,
+    collapse_source_refs_by_image,
+    detect_source_horizontal_separator_candidates,
+    estimate_source_page_content_bounds,
+    estimated_source_line_count,
+    literal_source_evidence,
+    match_source_evidence_to_lines,
+    match_source_evidence_to_sections,
+    match_source_evidence_via_page_alignment,
+    resolve_source_evidence_page,
+    source_bbox_span_is_plausible,
+    source_bbox_from_lines,
+    source_line_match_is_candidate,
+    source_line_match_is_verified,
+    source_page_alignment_match_is_candidate,
+    source_page_alignment_match_is_verified,
+    source_section_match_is_candidate,
+    source_section_match_is_verified,
+    validated_source_bbox,
+)
+from ..shared.study_math import (
+    is_pure_math_expression,
+    repair_math_delimiters,
+    wrap_bare_math_candidate,
+)
 from ..shared.excel import build_excel
 from ..shared.utils import json_safe
 
@@ -64,6 +104,8 @@ ADMIN_FEEDBACK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_feedback.html"
 ADMIN_FEEDBACK_TEMPLATE = ADMIN_FEEDBACK_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_PLAN_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_plan.html"
 STUDY_PLAN_TEMPLATE = STUDY_PLAN_TEMPLATE_PATH.read_text(encoding="utf-8")
+STUDY_SETTINGS_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_settings.html"
+STUDY_SETTINGS_TEMPLATE = STUDY_SETTINGS_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_HOME_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_home.html"
 STUDY_HOME_TEMPLATE = STUDY_HOME_TEMPLATE_PATH.read_text(encoding="utf-8")
 PUBLIC_STUDY_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "public_study_progress.html"
@@ -82,8 +124,12 @@ STUDY_PLAN_BLOCKS = (
     {"subject": "計算機組織", "weeks": 5, "total_minutes": 8633.8, "lesson_targets": (17, 34, 51, 68, 78)},
 )
 STUDY_PLAN_START = "2026-06-29"
-STUDY_PLAN_END = "2026-12-06"
-STUDY_PLAN_SUBJECTS = tuple(block["subject"] for block in STUDY_PLAN_BLOCKS)
+STUDY_PLAN_INTERLEAVED_START = "2026-07-27"
+STUDY_PLAN_END = "2026-12-03"
+STUDY_PLAN_SUBJECTS = ("線性代數", "離散數學", "資料結構", "作業系統", "計算機組織", "演算法")
+STUDY_PLAN_DAILY_VIDEO_SECONDS = 3.5 * 60 * 60
+STUDY_PLAN_PHASE_ONE_SUBJECTS = ("離散數學", "資料結構")
+STUDY_PLAN_PHASE_TWO_SUBJECTS = ("作業系統", "計算機組織", "演算法")
 STUDY_PLAN_WEEKEND_VIDEO_HOUR_CAP = 4.0
 STUDY_PLAN_DAILY_LABELS = (
     "週一",
@@ -97,9 +143,68 @@ STUDY_PLAN_DAILY_LABELS = (
 STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS = 5.0
 STUDY_PLAN_COMPLETE_RATIO = 0.995
 STUDY_PLAN_DAY_CUTOFF_HOUR = 8
-STUDY_NOTE_MAX_IMAGE_BYTES = 3 * 1024 * 1024
-STUDY_NOTE_MAX_TOTAL_BYTES = 24 * 1024 * 1024
-STUDY_NOTE_MAX_REQUEST_BYTES = 28 * 1024 * 1024
+STUDY_NOTE_MAX_IMAGE_BYTES = 2 * 1024 * 1024
+STUDY_NOTE_MAX_REQUEST_BYTES = 16 * 1024 * 1024
+STUDY_NOTE_AI_BATCH_SIZE = 8
+STUDY_NOTE_STAGING_TTL_SECONDS = 6 * 60 * 60
+STUDY_UPLOAD_ANALYSIS_START_PROGRESS = 10
+STUDY_UPLOAD_BATCHES_END_PROGRESS = 94
+
+
+def _study_upload_time_weighted_progress(
+    local_progress: int,
+    *,
+    batch_index: int,
+    batch_count: int,
+) -> int:
+    """Map one batch's expensive AI work onto most of the visible progress bar."""
+    safe_batch_count = max(1, int(batch_count))
+    safe_batch_index = min(max(0, int(batch_index)), safe_batch_count - 1)
+    local_ratio = min(1.0, max(0.0, (int(local_progress) - 20) / 80))
+    overall_ratio = (safe_batch_index + local_ratio) / safe_batch_count
+    progress_span = STUDY_UPLOAD_BATCHES_END_PROGRESS - STUDY_UPLOAD_ANALYSIS_START_PROGRESS
+    return STUDY_UPLOAD_ANALYSIS_START_PROGRESS + round(overall_ratio * progress_span)
+
+
+def _offset_study_note_batch_analysis(analysis: Dict[str, Any], image_offset: int) -> None:
+    if image_offset <= 0:
+        return
+
+    def offset_image_index(item: Any) -> None:
+        if not isinstance(item, dict):
+            return
+        try:
+            item["image_index"] = int(item.get("image_index") or 0) + image_offset
+        except (TypeError, ValueError):
+            pass
+
+    for page in analysis.get("source_transcription") or []:
+        offset_image_index(page)
+    for fragment in analysis.get("uncertain_fragments") or []:
+        offset_image_index(fragment)
+    for record in analysis.get("correction_records") or []:
+        offset_image_index(record)
+    for concept in analysis.get("key_concepts") or []:
+        if not isinstance(concept, dict):
+            continue
+        for source_ref in concept.get("source_refs") or []:
+            offset_image_index(source_ref)
+            bbox = source_ref.get("bbox") if isinstance(source_ref, dict) else None
+            if isinstance(bbox, dict):
+                try:
+                    bbox["source_image_index"] = (
+                        int(bbox.get("source_image_index") or 0) + image_offset
+                    )
+                except (TypeError, ValueError):
+                    pass
+        concept["coverage_ids"] = [
+            re.sub(
+                r"^p(\d+)b",
+                lambda match: f"p{int(match.group(1)) + image_offset}b",
+                str(coverage_id),
+            )
+            for coverage_id in concept.get("coverage_ids") or []
+        ]
 
 
 def _study_plan_business_date(now: Optional[datetime] = None) -> date:
@@ -126,12 +231,19 @@ def _study_plan_business_day_from_timestamp(value: Any) -> Optional[str]:
         return None
 
 
-def _study_plan_video_completion(duration_seconds: Any, watched_seconds: Any) -> float:
+def _study_plan_nonnegative_number(value: Any) -> float:
     try:
-        duration = max(0.0, float(duration_seconds or 0))
-        watched = max(0.0, float(watched_seconds or 0))
+        parsed = float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+    if not math.isfinite(parsed):
+        return 0.0
+    return max(0.0, parsed)
+
+
+def _study_plan_video_completion(duration_seconds: Any, watched_seconds: Any) -> float:
+    duration = _study_plan_nonnegative_number(duration_seconds)
+    watched = _study_plan_nonnegative_number(watched_seconds)
     if duration <= 0:
         return 0.0
     if _study_plan_video_is_complete(duration, watched):
@@ -140,38 +252,230 @@ def _study_plan_video_completion(duration_seconds: Any, watched_seconds: Any) ->
 
 
 def _study_plan_video_is_complete(duration_seconds: Any, watched_seconds: Any) -> bool:
-    try:
-        duration = max(0.0, float(duration_seconds or 0))
-        watched = max(0.0, float(watched_seconds or 0))
-    except (TypeError, ValueError):
-        return False
+    duration = _study_plan_nonnegative_number(duration_seconds)
+    watched = _study_plan_nonnegative_number(watched_seconds)
     if duration <= 0:
         return False
     return watched >= duration - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / duration >= STUDY_PLAN_COMPLETE_RATIO
 
 
-def _study_plan_total_is_complete(target_seconds: Any, watched_seconds: Any) -> bool:
+def _parse_youtube_url(value: Any) -> Optional[Dict[str, str]]:
+    raw = str(value or "").strip()
+    if not raw:
+        return {"video_id": "", "playlist_id": "", "url": ""}
     try:
-        target = max(0.0, float(target_seconds or 0))
-        watched = max(0.0, float(watched_seconds or 0))
-    except (TypeError, ValueError):
-        return False
+        parsed = urlsplit(raw)
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    if parsed.scheme not in {"http", "https"} or host not in {"youtube.com", "m.youtube.com", "youtu.be"}:
+        return None
+    query = parse_qs(parsed.query)
+    video_id = ""
+    if host == "youtu.be":
+        video_id = parsed.path.strip("/").split("/", 1)[0]
+    else:
+        video_id = (query.get("v") or [""])[0]
+        if not video_id:
+            path_parts = [part for part in parsed.path.split("/") if part]
+            if len(path_parts) >= 2 and path_parts[0] in {"embed", "shorts", "live"}:
+                video_id = path_parts[1]
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id or ""):
+        return None
+    playlist_id = (query.get("list") or [""])[0]
+    if playlist_id and not re.fullmatch(r"[A-Za-z0-9_-]{10,128}", playlist_id):
+        playlist_id = ""
+    return {"video_id": video_id, "playlist_id": playlist_id, "url": raw}
+
+
+def _study_plan_total_is_complete(target_seconds: Any, watched_seconds: Any) -> bool:
+    target = _study_plan_nonnegative_number(target_seconds)
+    watched = _study_plan_nonnegative_number(watched_seconds)
     if target <= 0:
         return False
     return watched >= target - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / target >= STUDY_PLAN_COMPLETE_RATIO
 
 
 def _study_plan_completion_percent(target_seconds: Any, watched_seconds: Any, *, complete_override: bool = False) -> float:
-    try:
-        target = max(0.0, float(target_seconds or 0))
-        watched = max(0.0, float(watched_seconds or 0))
-    except (TypeError, ValueError):
-        return 0.0
+    target = _study_plan_nonnegative_number(target_seconds)
+    watched = _study_plan_nonnegative_number(watched_seconds)
     if target <= 0:
         return 0.0
     if complete_override or _study_plan_total_is_complete(target, watched):
         return 100.0
     return min(100.0, watched / target * 100)
+
+
+def _study_plan_progress_summary(videos: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    video_rows = list(videos)
+    total_target_seconds = 0.0
+    total_watched_seconds = 0.0
+    completed_videos = 0
+    recorded_videos = 0
+    for item in video_rows:
+        duration_seconds = _study_plan_nonnegative_number(item.get("duration_seconds"))
+        watched_seconds = min(
+            _study_plan_nonnegative_number(item.get("watched_seconds")),
+            duration_seconds,
+        )
+        total_target_seconds += duration_seconds
+        total_watched_seconds += watched_seconds
+        if _study_plan_video_is_complete(duration_seconds, watched_seconds):
+            completed_videos += 1
+        if watched_seconds > 0 or bool(str(item.get("notes") or "").strip()):
+            recorded_videos += 1
+
+    total_videos = len(video_rows)
+    all_videos_complete = bool(video_rows) and completed_videos == total_videos
+    return {
+        "total_target_seconds": total_target_seconds,
+        "total_watched_seconds": total_watched_seconds,
+        "total_target": total_target_seconds / 60,
+        "total_watched": total_watched_seconds / 60,
+        "completion": _study_plan_completion_percent(
+            total_target_seconds,
+            total_watched_seconds,
+            complete_override=all_videos_complete,
+        ),
+        "completed_videos": completed_videos,
+        "recorded_videos": recorded_videos,
+        "total_videos": total_videos,
+        "video_completion": min(
+            100.0,
+            (completed_videos / total_videos * 100) if total_videos else 0.0,
+        ),
+        "all_videos_complete": all_videos_complete,
+    }
+
+
+def _study_plan_subject_status(
+    subject_weeks: Iterable[Dict[str, Any]],
+    today: date,
+    *,
+    subject_is_complete: bool,
+) -> Tuple[str, str]:
+    if subject_is_complete:
+        return "complete", "已達標"
+
+    weeks = list(subject_weeks)
+    today_key = today.isoformat()
+    overdue_incomplete = [
+        row
+        for row in weeks
+        if str(row.get("end") or "")
+        and str(row.get("end") or "") < today_key
+        and float(row.get("completion") or 0) < 100
+    ]
+    if overdue_incomplete:
+        return "behind", "待補"
+
+    active_week = next(
+        (
+            row
+            for row in weeks
+            if str(row.get("start") or "") <= today_key <= str(row.get("end") or "")
+        ),
+        None,
+    )
+    if active_week:
+        return str(active_week.get("state") or "active"), str(active_week.get("state_label") or "進行中")
+
+    if any(str(row.get("start") or "") > today_key for row in weeks):
+        return "upcoming", "未開始"
+    return "behind", "待補"
+
+
+def _study_plan_progress_race(
+    watched_minutes: Any,
+    target_minutes_by_today: Any,
+    total_target_minutes: Any,
+    today_target_minutes: Any = 0,
+) -> Dict[str, Any]:
+    watched = _study_plan_nonnegative_number(watched_minutes)
+    target = _study_plan_nonnegative_number(target_minutes_by_today)
+    total = _study_plan_nonnegative_number(total_target_minutes)
+    today_target = _study_plan_nonnegative_number(today_target_minutes)
+    actual_percent = min(100.0, (watched / total * 100) if total else 0.0)
+    target_percent = min(100.0, (target / total * 100) if total else 0.0)
+    delta_minutes = watched - target
+    delta_hours = delta_minutes / 60
+
+    def format_duration(minutes: float) -> str:
+        full_hours, remainder_minutes = divmod(int(round(abs(minutes))), 60)
+        if full_hours and remainder_minutes:
+            return f"{full_hours} 小時 {remainder_minutes} 分鐘"
+        if full_hours:
+            return f"{full_hours} 小時"
+        return f"{remainder_minutes} 分鐘"
+
+    delta_label = format_duration(delta_minutes)
+    today_target_label = format_duration(today_target)
+    within_daily_allowance = bool(
+        delta_minutes < -1
+        and today_target > 1
+        and abs(delta_minutes) < today_target
+    )
+    is_behind = bool(
+        delta_minutes < -1
+        and not within_daily_allowance
+    )
+
+    if is_behind:
+        state = "behind"
+        state_label = "落後計畫"
+        status_label = f"落後 {delta_label}"
+        status_detail = "補足這段時間即可回到今天應有的進度"
+        headline_message = "目前進度落後，"
+        headline_unit = "小時待補"
+    elif delta_minutes > 1:
+        state = "early"
+        state_label = "超前計畫"
+        status_label = f"領先 {delta_label}"
+        status_detail = "已超過今天應看的時間，可保留作後續緩衝"
+        headline_message = "目前進度超前，"
+        headline_unit = "小時領先"
+    elif within_daily_allowance:
+        state = "active"
+        state_label = "進度正常"
+        status_label = f"差距 {delta_label}"
+        status_detail = f"小於今日安排的 {today_target_label}，不列為落後"
+        headline_message = "目前差距仍在今天安排的時數內。"
+        headline_unit = "小時今日差距"
+    else:
+        state = "active"
+        state_label = "進度同步"
+        status_label = "與計畫同步"
+        status_detail = "目前已達到今天應有的觀看進度"
+        headline_message = "目前與計畫進度同步。"
+        headline_unit = "小時差距"
+
+    runner_position = min(97.5, max(2.5, actual_percent))
+    plan_position = min(97.5, max(2.5, target_percent))
+    return {
+        "watched_hours": round(watched / 60, 1),
+        "target_hours": round(target / 60, 1),
+        "actual_percent": round(actual_percent, 1),
+        "target_percent": round(target_percent, 1),
+        "delta_hours": round(delta_hours, 1),
+        "delta_minutes": round(delta_minutes, 1),
+        "absolute_delta_hours": round(abs(delta_hours), 1),
+        "delta_label": delta_label,
+        "today_target_hours": round(today_target / 60, 1),
+        "today_target_label": today_target_label,
+        "within_daily_allowance": within_daily_allowance,
+        "state": state,
+        "state_label": state_label,
+        "status_label": status_label,
+        "status_detail": status_detail,
+        "headline_message": headline_message,
+        "headline_value": f"{abs(delta_hours):.1f}",
+        "headline_unit": headline_unit,
+        # Keep the runner and date marker fully visible at both track edges.
+        "runner_position": round(runner_position, 1),
+        "plan_position": round(plan_position, 1),
+        "gap_start": round(min(runner_position, plan_position), 1),
+        "gap_width": round(abs(runner_position - plan_position), 1),
+    }
 
 
 def _study_plan_daily_recommendations(
@@ -242,6 +546,231 @@ def _study_plan_daily_recommendations(
             }
         )
     return round(video_hours, 1), round(weekly_hours, 1), daily_rows
+
+
+def _study_plan_week_start(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _study_plan_schedule_definitions(videos: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Build fixed daily targets without moving unused time between subjects."""
+    video_rows = list(videos)
+    videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
+    for video in video_rows:
+        videos_by_subject.setdefault(str(video.get("subject") or ""), []).append(video)
+    for subject_videos in videos_by_subject.values():
+        subject_videos.sort(key=lambda item: int(item.get("sequence") or 0))
+
+    days: Dict[str, Dict[str, Any]] = {}
+
+    def add_day(day: date, allocations: Dict[str, float], focus: str = "") -> None:
+        days[day.isoformat()] = {
+            "date": day,
+            "allocations": {
+                subject: max(0.0, float(seconds))
+                for subject, seconds in allocations.items()
+                if float(seconds) > 0
+            },
+            "focus": focus,
+        }
+
+    # Preserve the completed linear-algebra portion of the original plan.
+    linear_targets = next(
+        block["lesson_targets"] for block in STUDY_PLAN_BLOCKS if block["subject"] == "線性代數"
+    )
+    prior_target = 0
+    cursor = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
+    linear_videos = videos_by_subject.get("線性代數", [])
+    for lesson_target in linear_targets:
+        week_videos = [
+            item
+            for item in linear_videos
+            if prior_target < int(item.get("sequence") or 0) <= int(lesson_target)
+        ]
+        week_seconds = sum(_study_plan_nonnegative_number(item.get("duration_seconds")) for item in week_videos)
+        remaining_week_seconds = week_seconds
+        for index in range(7):
+            remaining_days = 7 - index
+            target_seconds = remaining_week_seconds / remaining_days if remaining_days else 0.0
+            add_day(cursor + timedelta(days=index), {"線性代數": target_seconds})
+            remaining_week_seconds -= target_seconds
+        cursor += timedelta(days=7)
+        prior_target = int(lesson_target)
+
+    interleaved_start = datetime.strptime(STUDY_PLAN_INTERLEAVED_START, "%Y-%m-%d").date()
+    linear_complete = bool(linear_videos) and all(
+        _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
+        for item in linear_videos
+    )
+    transition_focus = "線代階段結束" if linear_complete else "補線代未完成影片"
+    for day_offset in range((interleaved_start - cursor).days):
+        add_day(cursor + timedelta(days=day_offset), {}, transition_focus)
+
+    subject_totals = {
+        subject: sum(
+            _study_plan_nonnegative_number(item.get("duration_seconds"))
+            for item in videos_by_subject.get(subject, [])
+        )
+        for subject in (*STUDY_PLAN_PHASE_ONE_SUBJECTS, *STUDY_PLAN_PHASE_TWO_SUBJECTS)
+    }
+    day = interleaved_start
+    for phase_subjects in (STUDY_PLAN_PHASE_ONE_SUBJECTS, STUDY_PLAN_PHASE_TWO_SUBJECTS):
+        phase_total = sum(subject_totals[subject] for subject in phase_subjects)
+        if phase_total <= 0.001:
+            continue
+        phase_day_count = max(1, math.ceil(phase_total / STUDY_PLAN_DAILY_VIDEO_SECONDS))
+        daily_allocations = {
+            subject: subject_totals[subject] / phase_day_count
+            for subject in phase_subjects
+            if subject_totals[subject] > 0.001
+        }
+        for _ in range(phase_day_count):
+            add_day(day, daily_allocations)
+            day += timedelta(days=1)
+
+    first_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
+    last_scheduled_day = max(item["date"] for item in days.values())
+    last_week_end = _study_plan_week_start(last_scheduled_day) + timedelta(days=6)
+    day = first_day
+    while day <= last_week_end:
+        if day.isoformat() not in days:
+            add_day(day, {}, "本期影片完成")
+        day += timedelta(days=1)
+
+    weeks: List[Dict[str, Any]] = []
+    week_cursor = _study_plan_week_start(first_day)
+    number = 1
+    while week_cursor <= last_week_end:
+        daily_targets = [days[(week_cursor + timedelta(days=index)).isoformat()] for index in range(7)]
+        subject_targets: Dict[str, float] = {}
+        for daily_target in daily_targets:
+            for subject, seconds in daily_target["allocations"].items():
+                subject_targets[subject] = subject_targets.get(subject, 0.0) + seconds
+        subjects = [subject for subject in STUDY_PLAN_SUBJECTS if subject_targets.get(subject, 0.0) > 0]
+        weeks.append(
+            {
+                "number": number,
+                "start": week_cursor,
+                "end": week_cursor + timedelta(days=6),
+                "subjects": subjects,
+                "subject_targets": subject_targets,
+                "daily_targets": daily_targets,
+            }
+        )
+        number += 1
+        week_cursor += timedelta(days=7)
+    return weeks
+
+
+def _study_plan_today_progress_days(
+    week_rows: Iterable[Dict[str, Any]],
+    videos: Iterable[Dict[str, Any]],
+    activity_events: Iterable[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Map today's positive viewing gains onto their scheduled study segments."""
+    watched_after_by_subject: Dict[str, float] = {}
+    for video in videos:
+        subject = str(video.get("subject") or "")
+        if not subject:
+            continue
+        duration_seconds = _study_plan_nonnegative_number(video.get("duration_seconds"))
+        watched_seconds = min(
+            _study_plan_nonnegative_number(video.get("watched_seconds")),
+            duration_seconds,
+        )
+        watched_after_by_subject[subject] = (
+            watched_after_by_subject.get(subject, 0.0) + watched_seconds
+        )
+
+    delta_by_subject: Dict[str, float] = {}
+    for event in activity_events:
+        subject = str(event.get("subject") or "")
+        if not subject:
+            continue
+        delta_seconds = float(event.get("delta_seconds") or 0)
+        if not math.isfinite(delta_seconds):
+            continue
+        delta_by_subject[subject] = delta_by_subject.get(subject, 0.0) + delta_seconds
+
+    watched_before_by_subject = {
+        subject: max(
+            0.0,
+            watched_after_by_subject.get(subject, 0.0)
+            - delta_by_subject.get(subject, 0.0),
+        )
+        for subject in set(watched_after_by_subject) | set(delta_by_subject)
+    }
+    planned_before_by_subject: Dict[str, float] = {}
+    progress_days: List[Dict[str, Any]] = []
+
+    for week in week_rows:
+        week_target_seconds = max(0.0, float(week.get("target_seconds") or 0))
+        week_before_seconds = 0.0
+        week_after_seconds = 0.0
+        gained_days: List[Dict[str, Any]] = []
+
+        for day in week.get("daily_recommendations") or []:
+            day_date = str(day.get("date") or "")
+            allocations = {
+                str(subject): _study_plan_nonnegative_number(seconds)
+                for subject, seconds in (day.get("allocations") or {}).items()
+                if str(subject or "") and _study_plan_nonnegative_number(seconds) > 0
+            }
+            day_before_seconds = 0.0
+            day_after_seconds = 0.0
+            for subject, target_seconds in allocations.items():
+                planned_before = planned_before_by_subject.get(subject, 0.0)
+                day_before_seconds += min(
+                    max(watched_before_by_subject.get(subject, 0.0) - planned_before, 0.0),
+                    target_seconds,
+                )
+                day_after_seconds += min(
+                    max(watched_after_by_subject.get(subject, 0.0) - planned_before, 0.0),
+                    target_seconds,
+                )
+                planned_before_by_subject[subject] = planned_before + target_seconds
+
+            week_before_seconds += day_before_seconds
+            week_after_seconds += day_after_seconds
+            gained_seconds = max(0.0, day_after_seconds - day_before_seconds)
+            gained_minutes = round(gained_seconds / 60, 1)
+            day_target_seconds = sum(allocations.values())
+            if gained_minutes > 0 and day_target_seconds > 0:
+                gained_days.append(
+                    {
+                        "week_number": int(week.get("number") or 0),
+                        "subject": str(week.get("subject") or ""),
+                        "label": str(day.get("label") or ""),
+                        "date": day_date,
+                        "minutes": gained_minutes,
+                        "day_target_minutes": round(day_target_seconds / 60, 1),
+                        "before_completion": round(
+                            min(100.0, day_before_seconds / day_target_seconds * 100),
+                            1,
+                        ),
+                        "after_completion": round(
+                            min(100.0, day_after_seconds / day_target_seconds * 100),
+                            1,
+                        ),
+                    }
+                )
+
+        week_before_completion = (
+            min(100.0, week_before_seconds / week_target_seconds * 100)
+            if week_target_seconds
+            else 0.0
+        )
+        week_after_completion = (
+            min(100.0, week_after_seconds / week_target_seconds * 100)
+            if week_target_seconds
+            else 0.0
+        )
+        for item in gained_days:
+            item["week_before_completion"] = round(week_before_completion, 1)
+            item["week_after_completion"] = round(week_after_completion, 1)
+            progress_days.append(item)
+
+    return progress_days
 
 
 class TrafficTracker:
@@ -940,6 +1469,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     app = Flask(__name__)
     app.secret_key = env_defaults["web_secret"]
+    app.extensions["e3_storage"] = storage
     app.jinja_env.globals["study_upload_tracker"] = STUDY_UPLOAD_TRACKER_TEMPLATE
     session_cookie_secure = _env_flag_truthy(env_defaults.get("session_cookie_secure"))
     session_cookie_samesite = env_defaults.get("session_cookie_samesite") or "Lax"
@@ -951,6 +1481,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         PREFERRED_URL_SCHEME="https",
         MAX_CONTENT_LENGTH=STUDY_NOTE_MAX_REQUEST_BYTES,
     )
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return Response(status=204)
     base_url = default_base_url or env_defaults["base_url"]
     default_scope = default_scope or env_defaults["scope"]
     default_moodle_session = env_defaults["session"]
@@ -967,19 +1501,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     support_email = (env_defaults.get("support_email") or "support@e3hwtool.space").strip()
     if not support_email:
         support_email = "support@e3hwtool.space"
-    app_home_url = (env_defaults.get("app_home_url") or "https://e3hwtool.space/").strip()
+    app_home_url = (env_defaults.get("app_home_url") or "https://www.e3hwtool.space/").strip()
     if app_home_url and not app_home_url.startswith(("http://", "https://")):
         app_home_url = f"https://{app_home_url.lstrip('/')}"
     if not app_home_url:
-        app_home_url = "https://e3hwtool.space/"
+        app_home_url = "https://www.e3hwtool.space/"
     if not app_home_url.endswith("/"):
         app_home_url = f"{app_home_url}/"
     legal_entity_name = env_defaults.get("legal_entity_name") or "E3 Homework Tracker Project"
     openai_api_key = (env_defaults.get("openai_api_key") or "").strip()
-    openai_model = (env_defaults.get("openai_model") or "gpt-5-mini").strip()
+    openai_model = (env_defaults.get("openai_model") or DEFAULT_OPENAI_MODEL).strip()
     configured_upload_dir = (env_defaults.get("study_upload_dir") or "").strip()
     study_upload_root = Path(configured_upload_dir).expanduser() if configured_upload_dir else data_root / "study_note_images"
     _ensure_private_dir(study_upload_root)
+    study_upload_staging_root = _ensure_private_dir(study_upload_root / "_staging")
     legal_effective_date = env_defaults.get("legal_effective_date") or "2024-11-19"
     traffic_event_limit = 500
     traffic_tracker = TrafficTracker(
@@ -1006,8 +1541,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_request_entity_too_large(_error: RequestEntityTooLarge):
-        if request.path == "/admin/study-recall/upload":
-            return _study_upload_error("筆記照片壓縮後仍超過 24MB，請減少張數後再試。", 413)
+        if request.path.startswith("/admin/study-recall/upload"):
+            return _study_upload_error("單張筆記照片超過傳輸限制，請縮小到 2MB 後再試。", 413)
         return Response("Request Entity Too Large", status=413, mimetype="text/plain")
 
     DEFAULT_PREFERENCES = {
@@ -1024,11 +1559,109 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     refresh_jobs: Dict[str, Dict[str, Any]] = {}
     study_upload_jobs_lock = threading.Lock()
     study_upload_jobs: Dict[str, Dict[str, Any]] = {}
+    study_source_jobs_lock = threading.Lock()
+    study_source_jobs: Dict[str, Dict[str, Any]] = {}
+    study_upload_context = threading.local()
     study_relation_rebuild_lock = threading.Lock()
+    study_progress_context_lock = threading.Lock()
+    study_progress_context_cache: Dict[str, Any] = {"expires_at": 0.0, "context": None}
+
+    def _study_upload_staging_directory(upload_id: str) -> Optional[Path]:
+        token = str(upload_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", token):
+            return None
+        root = study_upload_staging_root.resolve()
+        directory = (root / token).resolve()
+        if directory.parent != root:
+            return None
+        return directory
+
+    def _read_study_upload_manifest(upload_id: str, username: str) -> Tuple[Optional[Dict[str, Any]], Optional[Path]]:
+        directory = _study_upload_staging_directory(upload_id)
+        if directory is None:
+            return None, None
+        manifest_path = directory / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return None, directory
+        if not isinstance(manifest, dict) or str(manifest.get("username") or "") != username:
+            return None, directory
+        return manifest, directory
+
+    def _write_study_upload_manifest(directory: Path, manifest: Dict[str, Any]) -> None:
+        temporary = directory / "manifest.tmp"
+        temporary.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(directory / "manifest.json")
+
+    def _remove_study_upload_staging(upload_id: str, username: str) -> bool:
+        manifest, directory = _read_study_upload_manifest(upload_id, username)
+        if manifest is None or directory is None or not directory.is_dir():
+            return False
+        try:
+            shutil.rmtree(directory)
+        except OSError:
+            return False
+        return True
+
+    def _cleanup_expired_study_upload_staging() -> None:
+        cutoff = time.time() - STUDY_NOTE_STAGING_TTL_SECONDS
+        try:
+            directories = list(study_upload_staging_root.iterdir())
+        except OSError:
+            return
+        for directory in directories:
+            if not directory.is_dir():
+                continue
+            try:
+                manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+                updated_at = float(manifest.get("updated_at") or manifest.get("created_at") or 0)
+            except (OSError, ValueError, TypeError):
+                updated_at = 0
+            if updated_at >= cutoff:
+                continue
+            try:
+                shutil.rmtree(directory)
+            except OSError:
+                pass
+
+    class _StudyUploadCancelled(RuntimeError):
+        pass
+
+    def _raise_if_study_upload_cancelled() -> None:
+        cancel_event = getattr(study_upload_context, "cancel_event", None)
+        if isinstance(cancel_event, threading.Event) and cancel_event.is_set():
+            raise _StudyUploadCancelled("筆記處理已取消。")
+
+    def _study_upload_retry_wait(seconds: float) -> None:
+        cancel_event = getattr(study_upload_context, "cancel_event", None)
+        if isinstance(cancel_event, threading.Event):
+            if cancel_event.wait(max(0.0, seconds)):
+                raise _StudyUploadCancelled("筆記處理已取消。")
+            return
+        time.sleep(max(0.0, seconds))
 
     def _set_study_upload_job(job_id: str, **changes: Any) -> None:
         with study_upload_jobs_lock:
             job = study_upload_jobs.get(job_id)
+            if job is None:
+                return
+            if job.get("status") == "cancelled" and changes.get("status") != "cancelled":
+                return
+            if "progress" in changes and job.get("status") == "running":
+                try:
+                    changes["progress"] = max(
+                        int(job.get("progress") or 0),
+                        int(changes.get("progress") or 0),
+                    )
+                except (TypeError, ValueError):
+                    changes.pop("progress", None)
+            job.update(changes)
+            job["updated_at"] = time.time()
+
+    def _set_study_source_job(job_id: str, **changes: Any) -> None:
+        with study_source_jobs_lock:
+            job = study_source_jobs.get(job_id)
             if job is None:
                 return
             job.update(changes)
@@ -1767,127 +2400,222 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     def _study_plan_week_rows(videos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
         start_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
-        end_day = datetime.strptime(STUDY_PLAN_END, "%Y-%m-%d").date()
         today = _study_plan_business_date()
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {}
         for video in videos:
             subject = str(video.get("subject") or "")
             videos_by_subject.setdefault(subject, []).append(video)
+        for subject_videos in videos_by_subject.values():
+            subject_videos.sort(key=lambda item: int(item.get("sequence") or 0))
+
+        watched_by_subject = {
+            subject: sum(
+                min(
+                    _study_plan_nonnegative_number(item.get("watched_seconds")),
+                    _study_plan_nonnegative_number(item.get("duration_seconds")),
+                )
+                for item in videos_by_subject.get(subject, [])
+            )
+            for subject in STUDY_PLAN_SUBJECTS
+        }
+        video_ranges: Dict[str, List[Tuple[float, float, Dict[str, Any]]]] = {}
+        for subject, subject_videos in videos_by_subject.items():
+            cursor_seconds = 0.0
+            ranges: List[Tuple[float, float, Dict[str, Any]]] = []
+            for item in subject_videos:
+                duration_seconds = _study_plan_nonnegative_number(item.get("duration_seconds"))
+                ranges.append((cursor_seconds, cursor_seconds + duration_seconds, item))
+                cursor_seconds += duration_seconds
+            video_ranges[subject] = ranges
+
+        short_subject = {
+            "線性代數": "線代",
+            "離散數學": "離散",
+            "資料結構": "DS",
+            "作業系統": "OS",
+            "計算機組織": "計組",
+            "演算法": "演算法",
+        }
         week_rows: List[Dict[str, Any]] = []
-        cursor = start_day
-        week_number = 1
-        for block in STUDY_PLAN_BLOCKS:
-            prior_lesson_target = 0
-            for lesson_target in block["lesson_targets"]:
-                week_start = cursor
-                week_end = cursor + timedelta(days=6)
-                weekly_videos = [
-                    item
-                    for item in videos_by_subject.get(block["subject"], [])
-                    if prior_lesson_target < int(item.get("sequence") or 0) <= int(lesson_target)
-                ]
-                target_seconds = sum(float(item.get("duration_seconds") or 0) for item in weekly_videos)
-                watched_seconds = sum(
-                    min(float(item.get("watched_seconds") or 0), float(item.get("duration_seconds") or 0))
-                    for item in weekly_videos
-                )
-                completed_videos = sum(
-                    1
-                    for item in weekly_videos
-                    if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
-                )
-                week_is_complete = bool(weekly_videos) and (
-                    completed_videos == len(weekly_videos)
-                    or _study_plan_total_is_complete(target_seconds, watched_seconds)
-                )
-                video_hours, suggested_weekly_hours, daily_recommendations = _study_plan_daily_recommendations(
-                    str(block["subject"]),
+        planned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
+        for definition in _study_plan_schedule_definitions(videos):
+            week_start = definition["start"]
+            week_end = definition["end"]
+            subject_targets = dict(definition["subject_targets"])
+            subjects = list(definition["subjects"])
+            subject_credits: Dict[str, float] = {}
+            weekly_videos: Dict[int, Dict[str, Any]] = {}
+            for subject, target_seconds in subject_targets.items():
+                prior_seconds = planned_before.get(subject, 0.0)
+                credited_seconds = min(
+                    max(watched_by_subject.get(subject, 0.0) - prior_seconds, 0.0),
                     target_seconds,
-                    watched_seconds,
-                    week_start,
-                    today,
-                    week_is_complete=week_is_complete,
                 )
-                completion = _study_plan_completion_percent(
-                    target_seconds,
-                    watched_seconds,
-                    complete_override=week_is_complete,
-                )
-                if week_is_complete:
-                    if today < week_end:
-                        state = "early"
-                        state_label = "提早完成"
+                subject_credits[subject] = credited_seconds
+                range_end = prior_seconds + target_seconds
+                for video_start, video_end, video in video_ranges.get(subject, []):
+                    if video_end > prior_seconds and video_start < range_end:
+                        weekly_videos[int(video.get("id") or id(video))] = video
+
+            remaining_credit = dict(subject_credits)
+            daily_recommendations: List[Dict[str, Any]] = []
+            for index, daily_target in enumerate(definition["daily_targets"]):
+                allocations = dict(daily_target["allocations"])
+                target_seconds = sum(allocations.values())
+                credited_seconds = 0.0
+                daily_subject_progress: List[Dict[str, Any]] = []
+                for subject, subject_target in allocations.items():
+                    amount = min(subject_target, remaining_credit.get(subject, 0.0))
+                    credited_seconds += amount
+                    remaining_credit[subject] = max(0.0, remaining_credit.get(subject, 0.0) - amount)
+                    daily_subject_progress.append(
+                        {
+                            "name": subject,
+                            "short": short_subject.get(subject, subject),
+                            "target_seconds": subject_target,
+                            "target_hours": round(subject_target / 3600, 2),
+                            "credited_seconds": amount,
+                            "credited_hours": round(amount / 3600, 2),
+                            "completion": round(
+                                _study_plan_completion_percent(subject_target, amount),
+                                1,
+                            ),
+                        }
+                    )
+                has_target = target_seconds > 0
+                if has_target:
+                    completion = _study_plan_completion_percent(target_seconds, credited_seconds)
+                else:
+                    completion = 0.0
+                current_day = daily_target["date"]
+                if not has_target:
+                    if current_day == today:
+                        state = "active"
+                        state_label = "彈性日"
                     else:
-                        state = "complete"
-                        state_label = "已達標"
-                elif week_start <= today <= week_end:
+                        state = "upcoming"
+                        state_label = "未排程"
+                elif completion >= 100:
+                    state = "early" if today < current_day else "complete"
+                    state_label = "提早完成" if state == "early" else "完成"
+                elif completion > 0:
+                    state = "early" if today < current_day else "partial"
+                    state_label = "超前" if state == "early" else "部分"
+                elif current_day == today:
                     state = "active"
                     state_label = "進行中"
-                elif today > week_end:
-                    state = "behind"
-                    state_label = "待補"
+                elif today > current_day:
+                    state = "behind" if target_seconds > 0 else "complete"
+                    state_label = "待補" if state == "behind" else "完成"
                 else:
                     state = "upcoming"
                     state_label = "未開始"
-                week_rows.append(
+                focus = daily_target.get("focus") or "＋".join(
+                    f"{short_subject.get(subject, subject)} {round(seconds / 3600, 2):g}h"
+                    for subject, seconds in allocations.items()
+                )
+                daily_recommendations.append(
                     {
-                        "number": week_number,
-                        "subject": block["subject"],
-                        "start": week_start.isoformat(),
-                        "end": week_end.isoformat(),
-                        "target_minutes": target_seconds / 60,
+                        "label": STUDY_PLAN_DAILY_LABELS[index],
+                        "date": current_day.isoformat(),
+                        "short_date": current_day.strftime("%m/%d"),
+                        "focus": focus or "彈性整理",
+                        "allocations": allocations,
+                        "subject_progress": daily_subject_progress,
+                        "has_target": has_target,
                         "target_seconds": target_seconds,
-                        "video_hours": video_hours,
-                        "suggested_weekly_hours": suggested_weekly_hours,
-                        "daily_recommendations": daily_recommendations,
-                        "lesson_target": int(lesson_target),
-                        "video_count": len(weekly_videos),
-                        "completed_videos": completed_videos,
-                        "watched_seconds": watched_seconds,
-                        "watched_minutes": round(watched_seconds / 60, 1),
-                        "watched_hours": round(watched_seconds / 3600, 2),
-                        "completion": completion,
+                        "credited_seconds": credited_seconds,
+                        "hours": round(target_seconds / 3600, 2),
+                        "credited_hours": round(credited_seconds / 3600, 2),
+                        "completion": round(completion, 1),
                         "state": state,
                         "state_label": state_label,
                     }
                 )
-                cursor = week_end + timedelta(days=1)
-                week_number += 1
-                prior_lesson_target = int(lesson_target)
+
+            target_seconds = sum(subject_targets.values())
+            watched_seconds = sum(subject_credits.values())
+            week_is_complete = _study_plan_total_is_complete(target_seconds, watched_seconds)
+            completion = _study_plan_completion_percent(
+                target_seconds,
+                watched_seconds,
+                complete_override=week_is_complete,
+            )
+            if week_is_complete:
+                state = "early" if today < week_end else "complete"
+                state_label = "提早完成" if state == "early" else "已達標"
+            elif week_start <= today <= week_end:
+                state = "active"
+                state_label = "進行中"
+            elif today > week_end:
+                state = "behind"
+                state_label = "待補"
+            else:
+                state = "upcoming"
+                state_label = "未開始"
+            subject_mix = [
+                {
+                    "name": subject,
+                    "short": short_subject.get(subject, subject),
+                    "target_seconds": subject_targets[subject],
+                    "target_hours": round(subject_targets[subject] / 3600, 1),
+                    "watched_seconds": subject_credits.get(subject, 0.0),
+                    "watched_hours": round(subject_credits.get(subject, 0.0) / 3600, 1),
+                    "completion": round(
+                        _study_plan_completion_percent(
+                            subject_targets[subject],
+                            subject_credits.get(subject, 0.0),
+                        ),
+                        1,
+                    ),
+                }
+                for subject in subjects
+            ]
+            week_rows.append(
+                {
+                    "number": definition["number"],
+                    "subject": "＋".join(subjects) if subjects else "彈性整理",
+                    "subjects": subjects,
+                    "subject_mix": subject_mix,
+                    "start": week_start.isoformat(),
+                    "end": week_end.isoformat(),
+                    "target_minutes": target_seconds / 60,
+                    "target_seconds": target_seconds,
+                    "video_hours": round(target_seconds / 3600, 1),
+                    "suggested_weekly_hours": round(target_seconds / 3600, 1),
+                    "active_days": sum(1 for day in daily_recommendations if day["target_seconds"] > 0),
+                    "daily_average_hours": round(
+                        target_seconds
+                        / 3600
+                        / max(1, sum(1 for day in daily_recommendations if day["target_seconds"] > 0)),
+                        1,
+                    ),
+                    "daily_recommendations": daily_recommendations,
+                    "video_count": len(weekly_videos),
+                    "completed_videos": sum(
+                        1
+                        for video in weekly_videos.values()
+                        if _study_plan_video_is_complete(video.get("duration_seconds"), video.get("watched_seconds"))
+                    ),
+                    "watched_seconds": watched_seconds,
+                    "watched_minutes": round(watched_seconds / 60, 1),
+                    "watched_hours": round(watched_seconds / 3600, 2),
+                    "remaining_hours": round(
+                        max(0.0, target_seconds - watched_seconds) / 3600,
+                        1,
+                    ),
+                    "completion": completion,
+                    "state": state,
+                    "state_label": state_label,
+                }
+            )
+            for subject, target_seconds in subject_targets.items():
+                planned_before[subject] = planned_before.get(subject, 0.0) + target_seconds
 
         active_week = next((row for row in week_rows if row["start"] <= today.isoformat() <= row["end"]), None)
         if active_week is None:
             active_week = week_rows[0] if today < start_day else week_rows[-1]
-        total_target_seconds = sum(float(item.get("duration_seconds") or 0) for item in videos)
-        total_watched_seconds = sum(
-            min(float(item.get("watched_seconds") or 0), float(item.get("duration_seconds") or 0))
-            for item in videos
-        )
-        total_target = total_target_seconds / 60
-        total_watched = total_watched_seconds / 60
-        completed_videos = sum(
-            1
-            for item in videos
-            if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
-        )
-        all_videos_complete = bool(videos) and completed_videos == len(videos)
-        recorded_videos = sum(
-            1
-            for item in videos
-            if float(item.get("watched_seconds") or 0) > 0 or bool(str(item.get("notes") or "").strip())
-        )
-        summary = {
-            "total_target": total_target,
-            "total_watched": total_watched,
-            "completion": _study_plan_completion_percent(
-                total_target_seconds,
-                total_watched_seconds,
-                complete_override=all_videos_complete,
-            ),
-            "completed_videos": completed_videos,
-            "recorded_videos": recorded_videos,
-            "total_videos": len(videos),
-        }
+        summary = _study_plan_progress_summary(videos)
         return week_rows, active_week, summary
 
     def _build_study_home_context(
@@ -1906,45 +2634,40 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         total_target_minutes = float(summary.get("total_target") or 0)
         watched_minutes_total = float(summary.get("total_watched") or 0)
         target_minutes_by_today = 0.0
+        today_target_minutes = 0.0
         today_iso = today.isoformat()
-        previous_day_iso = (today - timedelta(days=1)).isoformat()
-        previous_day_row: Optional[Dict[str, Any]] = None
         for row in week_rows:
             row_start = str(row.get("start") or "")
             row_end = str(row.get("end") or "")
-            if row_start and row_start <= previous_day_iso <= row_end:
-                previous_day_row = next(
-                    (day for day in row.get("daily_recommendations", []) if str(day.get("date") or "") == previous_day_iso),
-                    previous_day_row,
-                )
             if row_end and row_end < today_iso:
                 target_minutes_by_today += float(row.get("target_minutes") or 0)
             elif row_start and row_start <= today_iso <= row_end:
                 for day in row.get("daily_recommendations", []):
                     day_key = str(day.get("date") or "")
+                    day_target_minutes = float(day.get("target_seconds") or 0) / 60
+                    if day_key == today_iso:
+                        today_target_minutes += day_target_minutes
                     if day_key <= today_iso:
-                        target_minutes_by_today += float(day.get("target_seconds") or 0) / 60
+                        target_minutes_by_today += day_target_minutes
         target_minutes_by_today = min(max(target_minutes_by_today, 0.0), total_target_minutes)
         scheduled_percent = min(100.0, (target_minutes_by_today / total_target_minutes * 100) if total_target_minutes else 0.0)
         pace_delta = completion - scheduled_percent
         pace_minutes = watched_minutes_total - target_minutes_by_today
-        previous_day_incomplete = bool(previous_day_row and float(previous_day_row.get("completion") or 0) < 100)
-        if previous_day_incomplete:
+        progress_race = _study_plan_progress_race(
+            watched_minutes_total,
+            target_minutes_by_today,
+            total_target_minutes,
+            today_target_minutes,
+        )
+        pace_state = str(progress_race["state"])
+        pace_message = str(progress_race["headline_message"])
+        if pace_state == "behind":
             pace_state = "behind"
             pace_label = "待補"
-            pace_message = f"目前比計畫進度慢 {abs(pace_delta):.1f} 個百分點。"
-        elif pace_delta >= 3:
-            pace_state = "early"
-            pace_label = "提早完成"
-            pace_message = f"目前比計畫進度快 {abs(pace_delta):.1f} 個百分點。"
-        elif pace_delta <= -3:
-            pace_state = "behind"
-            pace_label = "待補"
-            pace_message = f"目前比計畫進度慢 {abs(pace_delta):.1f} 個百分點。"
+        elif pace_state == "early":
+            pace_label = "超前進度"
         else:
-            pace_state = "active"
             pace_label = "穩定推進"
-            pace_message = "目前大致貼近計畫進度。"
 
         subject_rows: List[Dict[str, Any]] = []
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
@@ -1952,24 +2675,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             videos_by_subject.setdefault(str(video.get("subject") or ""), []).append(video)
         for subject in STUDY_PLAN_SUBJECTS:
             subject_videos = videos_by_subject.get(subject, [])
-            target_seconds = sum(float(item.get("duration_seconds") or 0) for item in subject_videos)
-            watched_seconds = sum(
-                min(float(item.get("watched_seconds") or 0), float(item.get("duration_seconds") or 0))
-                for item in subject_videos
+            subject_progress = _study_plan_progress_summary(subject_videos)
+            target_seconds = float(subject_progress["total_target_seconds"])
+            watched_seconds = float(subject_progress["total_watched_seconds"])
+            completed_count = int(subject_progress["completed_videos"])
+            subject_is_complete = bool(subject_progress["all_videos_complete"]) or _study_plan_total_is_complete(
+                target_seconds,
+                watched_seconds,
             )
-            completed_count = sum(
-                1
-                for item in subject_videos
-                if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
-            )
-            subject_is_complete = bool(subject_videos) and (
-                completed_count == len(subject_videos)
-                or _study_plan_total_is_complete(target_seconds, watched_seconds)
-            )
-            subject_weeks = [row for row in week_rows if row["subject"] == subject]
-            active_subject_week = next(
-                (row for row in subject_weeks if row["start"] <= today.isoformat() <= row["end"]),
-                subject_weeks[0] if subject_weeks else None,
+            subject_weeks = [row for row in week_rows if subject in row.get("subjects", [row.get("subject")])]
+            subject_state, subject_state_label = _study_plan_subject_status(
+                subject_weeks,
+                today,
+                subject_is_complete=subject_is_complete,
             )
             subject_completion = _study_plan_completion_percent(
                 target_seconds,
@@ -1984,8 +2702,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "watched_hours": round(watched_seconds / 3600, 1),
                     "completed_videos": completed_count,
                     "total_videos": len(subject_videos),
-                    "state": "complete" if subject_is_complete else active_subject_week["state"] if active_subject_week else "upcoming",
-                    "state_label": "已達標" if subject_is_complete else active_subject_week["state_label"] if active_subject_week else "未開始",
+                    "state": subject_state,
+                    "state_label": subject_state_label,
                 }
             )
         weak_subjects = sorted(
@@ -2002,24 +2720,26 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 (row for row in current_week.get("daily_recommendations", []) if row.get("state") in {"active", "upcoming", "behind"}),
                 (current_week.get("daily_recommendations") or [{}])[0],
             )
-        current_subject_videos = videos_by_subject.get(str(current_week.get("subject") or ""), [])
         next_videos: List[Dict[str, Any]] = []
-        for video in current_subject_videos:
-            duration = float(video.get("duration_seconds") or 0)
-            watched = min(float(video.get("watched_seconds") or 0), duration)
-            if duration <= 0 or _study_plan_video_is_complete(duration, watched):
-                continue
-            next_videos.append(
-                {
-                    "id": int(video.get("id") or 0),
-                    "subject": str(video.get("subject") or current_week.get("subject") or ""),
-                    "sequence": int(video.get("sequence") or 0),
-                    "title": str(video.get("title") or ""),
-                    "remaining_minutes": round(max(0.0, duration - watched) / 60, 1),
-                    "completion": round(min(100.0, watched / duration * 100), 1),
-                }
-            )
-            if len(next_videos) >= 1:
+        overdue_subjects = [item["name"] for item in subject_rows if item["state"] == "behind"]
+        current_subjects = list(current_week.get("subjects") or [str(current_week.get("subject") or "")])
+        suggested_subjects = list(dict.fromkeys([*overdue_subjects, *current_subjects]))
+        for current_subject in suggested_subjects:
+            for video in videos_by_subject.get(current_subject, []):
+                duration = float(video.get("duration_seconds") or 0)
+                watched = min(float(video.get("watched_seconds") or 0), duration)
+                if duration <= 0 or _study_plan_video_is_complete(duration, watched):
+                    continue
+                next_videos.append(
+                    {
+                        "id": int(video.get("id") or 0),
+                        "subject": str(video.get("subject") or current_subject),
+                        "sequence": int(video.get("sequence") or 0),
+                        "title": str(video.get("title") or ""),
+                        "remaining_minutes": round(max(0.0, duration - watched) / 60, 1),
+                        "completion": round(min(100.0, watched / duration * 100), 1),
+                    }
+                )
                 break
 
         last_updated_label = "尚未開始"
@@ -2051,7 +2771,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         visual_angle = round(completion / 100 * 360, 1)
         pace_hours = pace_minutes / 60
         daily_target_minutes = (float(summary.get("total_target") or 0) / total_plan_days) if total_plan_days else 0.0
-        catchup_minutes_per_day = math.ceil(abs(pace_minutes) / 7) if pace_minutes < 0 else 0
+        try:
+            current_week_end = datetime.strptime(str(current_week.get("end") or ""), "%Y-%m-%d").date()
+        except ValueError:
+            current_week_end = today
+        days_remaining_this_week = max(1, (current_week_end - today).days + 1)
+        catchup_minutes_per_day = (
+            math.ceil(abs(pace_minutes) / days_remaining_this_week) if pace_minutes < 0 else 0
+        )
         catchup_hours, catchup_remainder_minutes = divmod(catchup_minutes_per_day, 60)
         if catchup_hours and catchup_remainder_minutes:
             catchup_time_label = f"{catchup_hours} 小時 {catchup_remainder_minutes} 分鐘"
@@ -2062,64 +2789,58 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         buffer_days = max(0.0, pace_minutes / daily_target_minutes) if pace_minutes > 0 and daily_target_minutes else 0.0
         pace_meter_position = min(96.0, max(4.0, 50.0 + pace_delta * 2.2))
         if pace_state == "behind":
-            pace_action = f"若要 1 週內追完，每天需多看 {catchup_time_label}。"
-            pace_primary_value = f"{abs(pace_hours):.1f}"
-            pace_primary_unit = "小時待補"
+            pace_action = f"若要這週追完，每天需多看 {catchup_time_label}。"
+            pace_delta_stat_label = "本週每日加看"
+            pace_delta_stat_value = catchup_time_label
         elif pace_state == "early":
             pace_action = f"已累積約 {buffer_days:.1f} 天緩衝，可休息或提前下一週。"
-            pace_primary_value = f"{abs(pace_hours):.1f}"
-            pace_primary_unit = "小時領先"
+            pace_delta_stat_label = "時間緩衝"
+            pace_delta_stat_value = str(progress_race["delta_label"])
         else:
-            pace_action = "維持目前節奏即可貼近計畫進度。"
-            pace_primary_value = f"{abs(pace_hours):.1f}"
-            pace_primary_unit = "小時差距"
+            if progress_race["within_daily_allowance"]:
+                pace_action = "目前不列為落後，完成今天安排的內容即可。"
+                pace_delta_stat_label = "今日容許差距"
+                pace_delta_stat_value = str(progress_race["today_target_label"])
+            else:
+                pace_action = "維持目前節奏即可貼近計畫進度。"
+                pace_delta_stat_label = "進度差距"
+                pace_delta_stat_value = str(progress_race["delta_label"])
 
         pace_insight = {
             "state": pace_state,
             "label": pace_label,
             "message": pace_message,
             "action": pace_action,
-            "primary_value": pace_primary_value,
-            "primary_unit": pace_primary_unit,
+            "primary_value": progress_race["headline_value"],
+            "primary_unit": progress_race["headline_unit"],
             "delta_hours": round(pace_hours, 1),
             "catchup_minutes_per_day": catchup_minutes_per_day,
+            "days_remaining_this_week": days_remaining_this_week,
             "buffer_days": round(buffer_days, 1),
             "meter_position": round(pace_meter_position, 1),
             "target_today_hours": round(target_minutes_by_today / 60, 1),
             "watched_hours": round(watched_minutes_total / 60, 1),
+            "delta_stat_label": pace_delta_stat_label,
+            "delta_stat_value": pace_delta_stat_value,
         }
 
         metric_cards = [
             {
-                "label": "影片總時長",
-                "value": f"{total_hours:.1f}",
-                "unit": "小時",
-                "icon": "play",
-                "state": "blue",
-            },
-            {
-                "label": "已觀看時長",
-                "value": f"{watched_hours:.1f}",
-                "unit": "小時",
-                "icon": "clock",
-                "state": "green",
-            },
-            {
-                "label": "目前進度",
+                "label": "整體完成率",
                 "value": f"{completion:.1f}",
                 "unit": "%",
                 "icon": "progress",
                 "state": pace_state,
             },
             {
-                "label": "預估完成率",
-                "value": pace_label,
-                "unit": "",
-                "icon": "target",
-                "state": pace_state,
+                "label": "觀看時數",
+                "value": f"{watched_hours:.1f}",
+                "unit": f"/ {total_hours:.1f}h",
+                "icon": "clock",
+                "state": "green",
             },
             {
-                "label": "已完成影片",
+                "label": "完成影片",
                 "value": str(int(summary.get("completed_videos") or 0)),
                 "unit": f"/ {int(summary.get('total_videos') or 0)} 支",
                 "icon": "check",
@@ -2239,72 +2960,34 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         today_study_minutes = int(round(today_study_hours * 60))
         total_target_seconds = max(0.0, float(summary.get("total_target") or 0) * 60)
         today_progress_delta = (today_delta_seconds / total_target_seconds * 100) if total_target_seconds else 0.0
+        today_target_hours = max(0.0, today_target_minutes / 60)
+        today_effective_hours = max(0.0, today_study_hours)
+        today_remaining_hours = max(0.0, today_target_hours - today_effective_hours)
+        today_target_completion = min(
+            100.0,
+            (today_effective_hours / today_target_hours * 100) if today_target_hours else 0.0,
+        )
+        if today_target_hours <= 0.001:
+            today_task_state, today_task_label = "upcoming", "今日無排程"
+        elif today_remaining_hours <= 0.01:
+            today_task_state, today_task_label = "complete", "今日已達標"
+        elif today_effective_hours > 0.001:
+            today_task_state, today_task_label = "active", "進行中"
+        else:
+            today_task_state, today_task_label = "upcoming", "未開始"
 
         today_activity_events = activity_events_by_day.get(today.isoformat(), [])
-        week_delta_seconds: Dict[int, float] = {}
-        subject_week_targets: Dict[str, List[Tuple[int, int, Dict[str, Any]]]] = {}
-        for week in week_rows:
-            subject = str(week.get("subject") or "")
-            prior_target = subject_week_targets.get(subject, [])[-1][1] if subject_week_targets.get(subject) else 0
-            subject_week_targets.setdefault(subject, []).append(
-                (prior_target, int(week.get("lesson_target") or 0), week)
-            )
-        for event in today_activity_events:
-            delta_seconds = float(event.get("delta_seconds") or 0)
-            if abs(delta_seconds) < 0.01:
-                continue
-            subject = str(event.get("subject") or "")
-            sequence = int(event.get("sequence") or 0)
-            for lower_sequence, upper_sequence, week in subject_week_targets.get(subject, []):
-                if lower_sequence < sequence <= upper_sequence:
-                    week_number = int(week.get("number") or 0)
-                    week_delta_seconds[week_number] = week_delta_seconds.get(week_number, 0.0) + delta_seconds
-                    break
-
-        makeup_days: List[Dict[str, Any]] = []
-        for week in week_rows:
-            week_number = int(week.get("number") or 0)
-            net_delta_seconds = week_delta_seconds.get(week_number, 0.0)
-            if net_delta_seconds <= 0:
-                continue
-            after_seconds = max(0.0, float(week.get("watched_seconds") or 0))
-            before_seconds = max(0.0, after_seconds - net_delta_seconds)
-            week_target_seconds = max(0.0, float(week.get("target_seconds") or 0))
-            week_before_completion = min(100.0, before_seconds / week_target_seconds * 100) if week_target_seconds else 0.0
-            week_after_completion = min(100.0, after_seconds / week_target_seconds * 100) if week_target_seconds else 0.0
-            cumulative_seconds = 0.0
-            for day in week.get("daily_recommendations", []):
-                target_seconds = float(day.get("target_seconds") or 0)
-                if target_seconds <= 0:
-                    continue
-                start_seconds = cumulative_seconds
-                end_seconds = cumulative_seconds + target_seconds
-                before_credited = max(0.0, min(before_seconds, end_seconds) - start_seconds)
-                after_credited = max(0.0, min(after_seconds, end_seconds) - start_seconds)
-                gained_seconds = max(0.0, after_credited - before_credited)
-                if gained_seconds > 0:
-                    before_completion = min(100.0, before_credited / target_seconds * 100)
-                    after_completion = min(100.0, after_credited / target_seconds * 100)
-                    makeup_days.append(
-                        {
-                            "week_number": week_number,
-                            "subject": str(week.get("subject") or ""),
-                            "label": str(day.get("label") or ""),
-                            "date": str(day.get("date") or ""),
-                            "minutes": round(gained_seconds / 60, 1),
-                            "day_target_minutes": round(target_seconds / 60, 1),
-                            "before_completion": round(before_completion, 1),
-                            "after_completion": round(after_completion, 1),
-                            "week_before_completion": round(week_before_completion, 1),
-                            "week_after_completion": round(week_after_completion, 1),
-                        }
-                    )
-                cumulative_seconds = end_seconds
+        today_progress_days = _study_plan_today_progress_days(
+            week_rows,
+            videos,
+            today_activity_events,
+        )
 
         today_videos = []
         for item in activity_events_by_day.get(today.isoformat(), []):
             delta_seconds = float(item.get("delta_seconds") or 0)
-            if abs(delta_seconds) < 0.01:
+            activity_minutes = round(abs(delta_seconds) / 60, 1)
+            if activity_minutes <= 0:
                 continue
             duration_seconds = max(0.0, float(item.get("duration_seconds") or 0))
             watched_seconds = max(0.0, float(item.get("watched_seconds") or 0))
@@ -2313,7 +2996,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "subject": str(item.get("subject") or ""),
                     "sequence": int(item.get("sequence") or 0),
                     "title": str(item.get("title") or ""),
-                    "minutes": round(abs(delta_seconds) / 60, 1),
+                    "minutes": activity_minutes,
                     "is_correction": delta_seconds < 0,
                     "completion": round(min(100.0, watched_seconds / duration_seconds * 100) if duration_seconds else 0.0, 1),
                 }
@@ -2324,7 +3007,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "hours": round(today_study_hours, 2),
             "minutes": today_study_minutes,
             "progress_delta": round(today_progress_delta, 2),
-            "makeup_days": makeup_days,
+            "target_hours": round(today_target_hours, 2),
+            "remaining_hours": round(today_remaining_hours, 2),
+            "target_completion": round(today_target_completion, 1),
+            "task_state": today_task_state,
+            "task_label": today_task_label,
+            "progress_days": today_progress_days,
             "videos": today_videos,
         }
         return {
@@ -2340,6 +3028,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "pace_label": pace_label,
             "pace_message": pace_message,
             "pace_insight": pace_insight,
+            "progress_race": progress_race,
             "visual_angle": visual_angle,
             "metric_cards": metric_cards,
             "subject_rows": subject_rows,
@@ -2357,14 +3046,59 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "week_chart": week_chart,
         }
 
-    _RECALL_EXCLUDED_CARD_MARKERS = ("待確認", "已修正", "需修正", "校正", "原筆記", "筆記中")
+    def _invalidate_study_progress_context() -> None:
+        with study_progress_context_lock:
+            study_progress_context_cache["expires_at"] = 0.0
+            study_progress_context_cache["context"] = None
+
+    def _load_study_progress_context() -> Dict[str, Any]:
+        now = time.monotonic()
+        with study_progress_context_lock:
+            cached_context = study_progress_context_cache.get("context")
+            if cached_context is not None and now < float(study_progress_context_cache.get("expires_at") or 0):
+                return copy.deepcopy(cached_context)
+
+        videos = storage.list_study_plan_videos_with_records()
+        week_rows, current_week, summary = _study_plan_week_rows(videos)
+        context = _build_study_home_context(videos, week_rows, current_week, summary)
+        with study_progress_context_lock:
+            study_progress_context_cache["context"] = context
+            study_progress_context_cache["expires_at"] = time.monotonic() + 20.0
+        return copy.deepcopy(context)
+
+    _RECALL_EXCLUDED_CARD_MARKERS = (
+        "待確認",
+        "已修正",
+        "需修正",
+        "校正",
+        "原筆記",
+        "筆記中",
+        "模糊",
+        "無法辨識",
+        "無法確認",
+    )
 
     def _is_recall_concept_eligible(concept: Any) -> bool:
         if not isinstance(concept, dict):
             return False
+        required_fields = (("concept", 120), ("explanation", 900))
+        for field, max_length in required_fields:
+            value = _repair_study_decoded_text(concept.get(field))
+            if _study_text_quality_issue(value, max_length=max_length):
+                return False
         card_text = "\n".join(
             str(concept.get(field) or "").strip()
-            for field in ("concept", "explanation", "memory_hint")
+            for field in (
+                "concept",
+                "recall_cue",
+                "core_summary",
+                "explanation",
+                "simple_example",
+                "example_problem",
+                "example_method",
+                "common_confusion",
+                "memory_hint",
+            )
         )
         return bool(card_text) and not any(marker in card_text for marker in _RECALL_EXCLUDED_CARD_MARKERS)
 
@@ -2387,6 +3121,41 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             concepts = recall_session.get("key_concepts") or []
             if concept_index >= len(concepts) or not _is_recall_concept_eligible(concepts[concept_index]):
                 continue
+            concepts[concept_index]["topic"] = _normalize_study_concept_title(
+                concepts[concept_index].get("topic"), recall_session.get("title") or "細分觀念"
+            )
+            concepts[concept_index]["concept"] = _normalize_study_concept_title(
+                concepts[concept_index].get("concept"), concepts[concept_index].get("topic")
+            )
+            concepts[concept_index]["explanation"] = _normalize_study_math_markup(concepts[concept_index].get("explanation"))
+            concepts[concept_index]["recall_cue"] = _normalize_study_math_markup(
+                concepts[concept_index].get("recall_cue")
+                or f"先回想「{concepts[concept_index].get('concept') or '這個觀念'}」的條件、核心關係與結論。"
+            )
+            concepts[concept_index]["core_summary"] = _normalize_study_math_markup(
+                concepts[concept_index].get("core_summary")
+            )
+            concepts[concept_index]["card_type"] = (
+                "example" if concepts[concept_index].get("card_type") == "example" else "concept"
+            )
+            concepts[concept_index]["example_problem"] = _normalize_study_math_markup(
+                concepts[concept_index].get("example_problem")
+            )
+            concepts[concept_index]["example_method"] = _normalize_study_math_markup(
+                concepts[concept_index].get("example_method")
+            )
+            concepts[concept_index]["simple_example"] = _normalize_study_math_markup(
+                concepts[concept_index].get("simple_example")
+            )
+            concepts[concept_index]["reasoning_steps"] = [
+                _normalize_study_math_markup(step)
+                for step in (concepts[concept_index].get("reasoning_steps") or [])[:4]
+                if str(step or "").strip()
+            ]
+            concepts[concept_index]["common_confusion"] = _normalize_study_math_markup(
+                concepts[concept_index].get("common_confusion")
+            )
+            concepts[concept_index]["memory_hint"] = _normalize_study_math_markup(concepts[concept_index].get("memory_hint"))
             cards.append({**due_card, "concept_data": concepts[concept_index]})
         return {
             "due_count": len(cards),
@@ -2422,42 +3191,4841 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     return content["text"].strip()
         return ""
 
-    def _validate_recall_output(payload: Any) -> Optional[Dict[str, Any]]:
+    _STUDY_LATEX_COMMANDS = frozenset(
+        """
+        acute aleph alpha angle approx arccos arcsin arctan arg array ast bar begin beta
+        bmatrix boldsymbol boxed breve bullet cap cdot cdots check chi circ closure cong cos
+        cosh cot coth csc cup ddagger ddot ddots degree delta det dfrac dim displaystyle div
+        dot dots downarrow ell emptyset end epsilon equiv eta exists exp forall frac gamma gcd
+        ge geq grad hat hbar hline hom hookrightarrow iff implies in infinity int iota ker lambda
+        langle lbrace lceil ldots le left leftarrow leftrightarrow leq lfloor lim limits ln log
+        longleftarrow longleftrightarrow longrightarrow mapsto mathbb mathbf mathcal mathit mathrm
+        mathsf mathtt matrix max min mod mp nabla natural ne neg neq nexists ni norm not notin nu
+        odot oint omega ominus operatorname oplus otimes overbrace overline partial phi pi pm pmatrix
+        prod psi rangle rbrace rceil Re ref right rightarrow rfloor rho rm root scriptstyle sec setminus
+        sigma sin sinh smallmatrix sqrt stackrel subset subseteq sum sup superset superseteq tan tanh tau
+        text textbf textit textnormal theta tilde times to top triangle underbrace underline uparrow upsilon
+        varepsilon varphi varpi varrho varsigma vartheta vdash vec vee vert vphantom wedge widehat widetilde
+        xi zeta
+        """.split()
+    )
+
+    def _repair_openai_latex_json_escapes(raw: str) -> str:
+        """Protect LaTeX commands before JSON turns their prefixes into controls."""
+        text = str(raw or "")
+        repaired: List[str] = []
+        in_string = False
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char == '"':
+                in_string = not in_string
+                repaired.append(char)
+                index += 1
+                continue
+            if not in_string or char != "\\" or index + 1 >= len(text):
+                repaired.append(char)
+                index += 1
+                continue
+            following = text[index + 1]
+            if following == "\\":
+                repaired.append(text[index:index + 2])
+                index += 2
+                continue
+            if following in {'"', "/"}:
+                repaired.append(text[index:index + 2])
+                index += 2
+                continue
+            if following == "u" and re.fullmatch(r"[0-9A-Fa-f]{4}", text[index + 2:index + 6]):
+                repaired.append(text[index:index + 6])
+                index += 6
+                continue
+            command_match = re.match(r"[A-Za-z]+", text[index + 1:])
+            command = command_match.group(0) if command_match else ""
+            is_latex_command = command in _STUDY_LATEX_COMMANDS
+            is_latex_symbol = following in "()[]{}|,;!:%#&_"
+            if is_latex_command or is_latex_symbol:
+                repaired.append("\\\\")
+                index += 1
+                continue
+            repaired.append(char)
+            index += 1
+        return "".join(repaired)
+
+    def _repair_study_decoded_text(value: Any) -> str:
+        text = str(value or "")
+        corruption_markers = ("Ã", "Â", "â€", "ðŸ", "ï»¿", "锟斤拷")
+        if any(marker in text for marker in corruption_markers) or any(0x80 <= ord(char) <= 0x9F for char in text):
+            candidates = [text]
+            for encoding in ("latin1", "cp1252"):
+                try:
+                    candidates.append(text.encode(encoding).decode("utf-8"))
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    continue
+
+            def corruption_score(candidate: str) -> int:
+                return (
+                    sum(candidate.count(marker) for marker in corruption_markers) * 8
+                    + candidate.count("\ufffd") * 12
+                    + sum(1 for char in candidate if 0x80 <= ord(char) <= 0x9F) * 4
+                )
+
+            text = min(candidates, key=corruption_score)
+        text = text.replace("\x08", "\\b").replace("\x0c", "\\f")
+        text = re.sub(r"\t(?=[A-Za-z])", r"\\t", text)
+        text = re.sub(r"\r(?=[A-Za-z])", r"\\r", text)
+        text = re.sub(
+            r"\n(?=(?:abla|e(?:q|xists)?|ot|u\b|atural|i\b|oindent|orm|ewline)(?:\b|[_^{}]))",
+            r"\\n",
+            text,
+        )
+        return text
+
+    def _study_latex_markup_issue(value: Any) -> Optional[str]:
+        text = str(value or "")
+        delimiter_patterns = (
+            (r"(?<!\\)\\\(", r"(?<!\\)\\\)"),
+            (r"(?<!\\)\\\[", r"(?<!\\)\\\]"),
+        )
+        for opening, closing in delimiter_patterns:
+            if len(re.findall(opening, text)) != len(re.findall(closing, text)):
+                return "unbalanced_math_delimiter"
+        math_spans = re.findall(
+            r"(?<!\\)\\\[(.*?)(?<!\\)\\\]|(?<!\\)\\\((.*?)(?<!\\)\\\)",
+            text,
+            flags=re.DOTALL,
+        )
+        for display_body, inline_body in math_spans:
+            body = display_body or inline_body
+            if "\\(" in body or "\\)" in body or "\\[" in body or "\\]" in body:
+                return "nested_math_delimiter"
+            prose_free_body = re.sub(
+                r"\\text\{(?:[^{}]|\{[^{}]*\})*\}",
+                "",
+                body,
+            )
+            if re.search(r"[\u3400-\u9fff]", prose_free_body):
+                return "chinese_inside_math"
+            brace_depth = 0
+            for match in re.finditer(r"(?<!\\)[{}]", body):
+                brace_depth += 1 if match.group(0) == "{" else -1
+                if brace_depth < 0:
+                    return "unbalanced_math_brace"
+            if brace_depth:
+                return "unbalanced_math_brace"
+            environments = re.findall(r"\\begin\{([^{}]+)\}", body)
+            closed_environments = re.findall(r"\\end\{([^{}]+)\}", body)
+            if environments != closed_environments:
+                return "unbalanced_math_environment"
+            if re.search(r"\\(?:b|f|n|r|t)(?![A-Za-z])", body) or body.rstrip().endswith("\\"):
+                return "broken_latex_command"
+        return None
+
+    def _openai_error_details(response: Any) -> Tuple[str, str, str]:
+        if response is None:
+            return "", "", ""
+        try:
+            payload = response.json()
+        except (TypeError, ValueError, requests.RequestException):
+            return "", "", ""
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if not isinstance(error, dict):
+            return "", "", ""
+        return (
+            str(error.get("code") or "").strip().lower(),
+            str(error.get("type") or "").strip().lower(),
+            str(error.get("message") or "").strip(),
+        )
+
+    def _is_openai_quota_error(code: str, error_type: str, message: str) -> bool:
+        quota_codes = {
+            "billing_hard_limit_reached",
+            "billing_not_active",
+            "insufficient_quota",
+            "usage_limit_reached",
+        }
+        normalized_code = str(code or "").strip().lower()
+        normalized_type = str(error_type or "").strip().lower()
+        normalized_message = str(message or "").strip().lower()
+        return (
+            normalized_code in quota_codes
+            or normalized_type in quota_codes
+            or "current quota" in normalized_message
+            or "billing" in normalized_message
+            or "run out of credits" in normalized_message
+        )
+
+    def _call_openai_json(
+        *,
+        name: str,
+        schema: Dict[str, Any],
+        content: List[Dict[str, Any]],
+        timeout: int = 120,
+        reasoning_effort: Optional[str] = None,
+        max_output_tokens: int = 12000,
+        repair_simple_location_json: bool = False,
+        json_retry_attempts: int = 1,
+    ) -> Dict[str, Any]:
+        _raise_if_study_upload_cancelled()
+
+        def repair_strings(value: Any) -> Any:
+            if isinstance(value, str):
+                return _repair_study_decoded_text(value)
+            if isinstance(value, list):
+                return [repair_strings(item) for item in value]
+            if isinstance(value, dict):
+                return {key: repair_strings(item) for key, item in value.items()}
+            return value
+
+        request_body = {
+            "model": openai_model,
+            "store": False,
+            "input": [{"role": "user", "content": content}],
+            "text": {"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
+            "max_output_tokens": max_output_tokens,
+        }
+        effective_reasoning_effort = normalize_openai_reasoning_effort(
+            openai_model,
+            reasoning_effort,
+        )
+        if effective_reasoning_effort:
+            request_body["reasoning"] = {"effort": effective_reasoning_effort}
+        response = None
+        for attempt in range(6):
+            _raise_if_study_upload_cancelled()
+            try:
+                response = requests.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
+                    json=request_body,
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                _raise_if_study_upload_cancelled()
+                break
+            except requests.RequestException as exc:
+                error_response = getattr(exc, "response", None)
+                status_code = getattr(error_response, "status_code", None)
+                error_code, error_type, error_message = _openai_error_details(error_response)
+                quota_exhausted = status_code == 429 and _is_openai_quota_error(
+                    error_code,
+                    error_type,
+                    error_message,
+                )
+                setattr(exc, "openai_error_code", error_code)
+                setattr(exc, "openai_error_type", error_type)
+                setattr(exc, "openai_error_message", error_message)
+                retryable = (
+                    status_code is None
+                    or (status_code == 429 and not quota_exhausted)
+                    or (status_code is not None and status_code >= 500)
+                )
+                retry_limit = 6 if status_code == 429 else 4
+                if not retryable or attempt + 1 >= retry_limit:
+                    raise
+                retry_after = 0.0
+                if error_response is not None:
+                    try:
+                        retry_after = float(error_response.headers.get("Retry-After") or 0)
+                    except (TypeError, ValueError):
+                        retry_after = 0.0
+                retry_delay = min(
+                    90.0,
+                    max(retry_after, 5.0 * (2 ** attempt) if status_code == 429 else 2.0 * (attempt + 1)),
+                )
+                job_id = getattr(study_upload_context, "job_id", None)
+                if job_id and status_code == 429:
+                    _set_study_upload_job(
+                        job_id,
+                        message=(
+                            f"AI 服務目前忙碌，{math.ceil(retry_delay)} 秒後自動重試"
+                            f"（第 {attempt + 1}／{retry_limit - 1} 次）。"
+                        ),
+                    )
+                app.logger.warning(
+                    "Retrying OpenAI request %s after status=%s in %.1fs (attempt %s/%s)",
+                    name,
+                    status_code,
+                    retry_delay,
+                    attempt + 1,
+                    retry_limit - 1,
+                )
+                _study_upload_retry_wait(retry_delay)
+        if response is None:
+            raise requests.RequestException("OpenAI request did not return a response")
+        response_payload = response.json()
+        output_text = _extract_openai_text(response_payload)
+        if not output_text:
+            incomplete = response_payload.get("incomplete_details") or {}
+            raise ValueError(
+                f"OpenAI returned no output text (status={response_payload.get('status')}, "
+                f"reason={incomplete.get('reason')})"
+            )
+        protected_output_text = _repair_openai_latex_json_escapes(output_text)
+        try:
+            parsed = json.loads(protected_output_text)
+        except json.JSONDecodeError as parse_error:
+            incomplete = response_payload.get("incomplete_details") or {}
+            app.logger.warning(
+                "Invalid JSON for %s (status=%s, reason=%s, chars=%s, error=%s)",
+                name,
+                response_payload.get("status"),
+                incomplete.get("reason"),
+                len(output_text),
+                parse_error,
+            )
+            if not repair_simple_location_json and json_retry_attempts > 0:
+                retry_content = list(content) + [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "上一個回應的 JSON 字串未完整結束或格式損壞，因此未被接收。"
+                            "請重新從頭輸出一份完整、合法且符合 schema 的 JSON；不要省略結尾，"
+                            "不要輸出 Markdown 或任何 JSON 以外的文字。"
+                        ),
+                    }
+                ]
+                return _call_openai_json(
+                    name=name,
+                    schema=schema,
+                    content=retry_content,
+                    timeout=max(timeout, 360),
+                    reasoning_effort=reasoning_effort,
+                    max_output_tokens=min(24000, max_output_tokens + 4000),
+                    repair_simple_location_json=repair_simple_location_json,
+                    json_retry_attempts=json_retry_attempts - 1,
+                )
+            if not repair_simple_location_json:
+                raise
+            location_fields = (
+                "location_id|found|left|top|right|bottom|start_x|start_y|end_x|end_y|confidence"
+            )
+            repaired_output = re.sub(
+                rf"(true|false|-?\d+|\}}|\])\s*(?=\"(?:{location_fields})\"\s*:)",
+                r"\1,",
+                protected_output_text,
+            )
+            repaired_output = re.sub(r"}\s*{", "},{", repaired_output)
+            repaired_output = re.sub(r",\s*([}\]])", r"\1", repaired_output)
+            try:
+                parsed = json.loads(repaired_output)
+            except json.JSONDecodeError:
+                if json_retry_attempts > 0:
+                    return _call_openai_json(
+                        name=name,
+                        schema=schema,
+                        content=content,
+                        timeout=max(timeout, 360),
+                        reasoning_effort=reasoning_effort,
+                        max_output_tokens=min(24000, max_output_tokens + 4000),
+                        repair_simple_location_json=repair_simple_location_json,
+                        json_retry_attempts=json_retry_attempts - 1,
+                    )
+                app.logger.warning(
+                    "Invalid simple location JSON for %s (status=%s, reason=%s, chars=%s)",
+                    name,
+                    response_payload.get("status"),
+                    incomplete.get("reason"),
+                    len(output_text),
+                )
+                raise
+        if not isinstance(parsed, dict):
+            raise ValueError("OpenAI did not return a JSON object")
+        return repair_strings(parsed)
+
+    def _study_text_quality_issue(value: Any, *, max_length: int) -> Optional[str]:
+        text = str(value or "")
+        if not text.strip():
+            return "empty"
+        if len(text) > max_length:
+            return "too_long"
+        if any(
+            (ord(char) < 32 and char != "\n")
+            or 0x7F <= ord(char) <= 0x9F
+            or 0xE000 <= ord(char) <= 0xF8FF
+            for char in text
+        ):
+            return "control_character"
+        if "\ufffd" in text or any(marker in text for marker in ("Ã", "Â", "â€", "ðŸ", "锟斤拷", "ï»¿")):
+            return "encoding_corruption"
+        if re.search(r"\\(?:\(|\[)\s*(?:\.{3}|\\cdots|null|undefined|[?？])\s*\\(?:\)|\])", text, re.IGNORECASE):
+            return "formula_placeholder"
+        if re.search(r"\\\(\s*\\\)|\\\[\s*\\\]", text):
+            return "empty_formula"
+        latex_issue = _study_latex_markup_issue(text)
+        if latex_issue:
+            return latex_issue
+
+        compact_lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if compact_lines:
+            line_counts: Dict[str, int] = {}
+            for line in compact_lines:
+                line_counts[line] = line_counts.get(line, 0) + 1
+            most_repeated = max(line_counts.values())
+            if most_repeated >= 10 and most_repeated / len(compact_lines) >= 0.45:
+                return "repeated_lines"
+
+        inline_atoms = [match.strip() for match in re.findall(r"\\\((.{1,48}?)\\\)", text, flags=re.DOTALL)]
+        if inline_atoms:
+            atom_counts: Dict[str, int] = {}
+            for atom in inline_atoms:
+                atom_counts[atom] = atom_counts.get(atom, 0) + 1
+            if max(atom_counts.values()) >= 12 and max(atom_counts.values()) / len(inline_atoms) >= 0.45:
+                return "repeated_formula"
+        return None
+
+    def _study_relation_association_signature(
+        association: Any,
+        *,
+        source_title: Any = "",
+        target_title: Any = "",
+    ) -> str:
+        """Return a stable content key so templated relation copy is not repeated."""
+        normalized = _normalize_study_math_markup(association).casefold()
+        for title in (source_title, target_title):
+            title_text = _normalize_study_math_markup(title).casefold().strip()
+            if title_text:
+                normalized = normalized.replace(title_text, "{card}")
+        return re.sub(r"[\s，。；：、！？,.!?()（）\[\]{}]", "", normalized)
+
+    def _study_relation_association_issue(
+        association: Any,
+        *,
+        source_title: Any = "",
+        target_title: Any = "",
+    ) -> Optional[str]:
+        issue = _study_text_quality_issue(association, max_length=240)
+        if issue:
+            return issue
+        signature = _study_relation_association_signature(
+            association,
+            source_title=source_title,
+            target_title=target_title,
+        )
+        generic_signatures = (
+            "這兩張卡屬於同一份筆記中的直接相關觀念可一起對照複習",
+            "這兩張卡適合一起複習",
+            "兩張卡適合一起複習",
+            "兩者相關可一起複習",
+        )
+        if not signature or any(generic in signature for generic in generic_signatures):
+            return "generic_relation"
+        return None
+
+    def _study_has_invalid_negation_counterexample(value: Any) -> bool:
+        canonical = str(value or "")
+
+        def matrix_to_vector(match: re.Match[str]) -> str:
+            body = match.group(1)
+            body = re.sub(r"\\\\(?:\[[^\]]*\])?", ";", body)
+            body = body.replace("&", ",")
+            return "[" + body + "]"
+
+        canonical = re.sub(
+            r"\\begin\{(?:p|b|v|V|B)?matrix\}(.*?)\\end\{(?:p|b|v|V|B)?matrix\}",
+            matrix_to_vector,
+            canonical,
+            flags=re.DOTALL,
+        )
+        canonical = canonical.replace("\\left", "").replace("\\right", "")
+        canonical = canonical.replace("\\(", "").replace("\\)", "")
+        pattern = re.compile(
+            r"[A-Za-z][A-Za-z0-9_]*\(\s*\[([+\-\d\s,;]+)\]\s*\)\s*"
+            r"(?:≠|!=|\\ne)\s*-\s*"
+            r"[A-Za-z][A-Za-z0-9_]*\(\s*\[([+\-\d\s,;]+)\]\s*\)"
+        )
+        for match in pattern.finditer(canonical):
+            try:
+                left = [int(part) for part in re.split(r"[,;\s]+", match.group(1).strip()) if part]
+                right = [int(part) for part in re.split(r"[,;\s]+", match.group(2).strip()) if part]
+            except ValueError:
+                continue
+            if len(left) != len(right) or any(
+                left_value != -right_value
+                for left_value, right_value in zip(left, right)
+            ):
+                return True
+        return False
+
+    def _normalize_study_math_markup(value: Any) -> str:
+        """Make model formula output renderable while leaving ordinary prose alone."""
+        text = _repair_study_decoded_text(value).replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+        text = re.sub(r"\\n(?=\s|\\[\[(])", "\n", text)
+        # Older model output was sometimes JSON-escaped twice, leaving literal
+        # ``\\(`` and ``\\beta`` in the browser. Collapse one extra escape only
+        # when it precedes a KaTeX delimiter or command.
+        structured_environments: List[str] = []
+        text = re.sub(
+            r"\\\\(?=(?:begin|end)\{(?:matrix|bmatrix|pmatrix|smallmatrix|vmatrix|Vmatrix|array|aligned|cases)\})",
+            r"\\",
+            text,
+        )
+
+        def protect_structured_environment(match: re.Match[str]) -> str:
+            structured_environments.append(match.group(0))
+            return f"E3LATEXENVPLACEHOLDER{len(structured_environments) - 1}END"
+
+        structured_pattern = re.compile(
+            r"\\begin\{(matrix|bmatrix|pmatrix|smallmatrix|vmatrix|Vmatrix|array|aligned|cases)\}"
+            r".*?\\end\{\1\}",
+            flags=re.DOTALL,
+        )
+        text = structured_pattern.sub(protect_structured_environment, text)
+        for _ in range(3):
+            repaired = re.sub(r"\\\\(?=[()A-Za-z])", r"\\", text)
+            repaired = re.sub(
+                r"\\\\(?=\[(?!\s*-?\d+(?:\.\d+)?(?:pt|em|ex|px|mm|cm|in)\s*\]))",
+                r"\\",
+                repaired,
+            )
+            repaired = re.sub(r"\\\\(?=\])", r"\\", repaired)
+            if repaired == text:
+                break
+            text = repaired
+        for environment_index, environment_text in enumerate(structured_environments):
+            text = text.replace(
+                f"E3LATEXENVPLACEHOLDER{environment_index}END",
+                environment_text,
+            )
+        text = re.sub(r"\\begin\{(equation\*?|align\*?|gather\*?)\}", r"\\[", text)
+        text = re.sub(r"\\end\{(equation\*?|align\*?|gather\*?)\}", r"\\]", text)
+        text = re.sub(r"\$\$(.+?)\$\$", lambda match: "\\[" + match.group(1).strip() + "\\]", text, flags=re.DOTALL)
+        text = re.sub(r"(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)", lambda match: "\\(" + match.group(1).strip() + "\\)", text)
+
+        # Structured output can still contain duplicated delimiters or a bare formula
+        # embedded in Chinese prose. Repair markup only; never rewrite note content.
+        for _ in range(3):
+            text = re.sub(r"(?<!\\)\\\[\s*(?<!\\)\\\[", r"\\[", text)
+            text = re.sub(r"(?<!\\)\\\]\s*(?<!\\)\\\]", r"\\]", text)
+            text = re.sub(r"(?<!\\)\\\(\s*(?<!\\)\\\(", r"\\(", text)
+            text = re.sub(r"(?<!\\)\\\)\s*(?<!\\)\\\)", r"\\)", text)
+        text = repair_math_delimiters(text)
+
+        math_signal = re.compile(r"(?:=|≠|!=|⇔|→|↔|≤|≥|∈|∉|\\(?:ne|to|le|ge|in|notin|frac|sum|prod|int|begin\{(?:matrix|bmatrix|pmatrix|smallmatrix|vmatrix|Vmatrix|array|aligned|cases)\})|[A-Za-z]\s*\([^\n)]*\)|[A-Za-z]\s*[A-Za-z0-9]*[_^])")
+        normalized_lines: List[str] = []
+        in_display_math = False
+        for line in text.split("\n"):
+            stripped = line.strip()
+            display_open_count = len(re.findall(r"(?<!\\)\\\[", stripped))
+            display_close_count = len(re.findall(r"(?<!\\)\\\]", stripped))
+            if (
+                not stripped
+                or "\\(" in stripped
+                or "\\[" in stripped
+                or in_display_math
+            ):
+                normalized_lines.append(line)
+                in_display_math = max(
+                    0,
+                    int(in_display_math) + display_open_count - display_close_count,
+                ) > 0
+                continue
+            if math_signal.search(stripped):
+                cjk_count = len(re.findall(r"[\u3400-\u9fff]", stripped))
+                if cjk_count == 0 and is_pure_math_expression(stripped):
+                    normalized_lines.append(
+                        wrap_bare_math_candidate(stripped, display_if_pure=True)
+                    )
+                    continue
+                prefix_match = re.match(r"^(.*?[：:]\s*)(.+)$", stripped)
+                if (
+                    prefix_match
+                    and len(re.findall(r"[\u3400-\u9fff]", prefix_match.group(2))) <= 2
+                    and is_pure_math_expression(prefix_match.group(2).strip())
+                ):
+                    normalized_lines.append(
+                        prefix_match.group(1)
+                        + wrap_bare_math_candidate(prefix_match.group(2))
+                    )
+                    continue
+            normalized_lines.append(line)
+        normalized = "\n".join(normalized_lines).strip()
+
+        protected_math = re.compile(
+            r"((?<!\\)\\\[.*?(?<!\\)\\\]|(?<!\\)\\\(.*?(?<!\\)\\\))",
+            re.DOTALL,
+        )
+        bare_candidate = re.compile(r"[A-Za-z0-9\\{}\[\]()`'_^=+\-*/<>|,:;. \t×≠⇔→↔≤≥∈∉]+")
+        binary_math = re.compile(
+            r"(?:\b[A-Za-z]\b|\d+|[)\]}])\s*[+\-*/]\s*(?:\b[A-Za-z]\b|\d+|[(\[{\\])"
+        )
+        standalone_symbol = re.compile(r"(?:[A-Za-z]|[A-Z]{2,4})(?:_\{?[^\s}]+\}?|\^\{?[^\s}]+\}?)?")
+
+        def wrap_candidate(match: re.Match[str]) -> str:
+            raw = match.group(0)
+            body = raw.strip()
+            if not body:
+                return raw
+            looks_like_math = bool(
+                math_signal.search(body)
+                or binary_math.search(body)
+                or standalone_symbol.fullmatch(body)
+            )
+            if not looks_like_math:
+                return raw
+            return wrap_bare_math_candidate(raw)
+
+        chunks = protected_math.split(normalized)
+        def normalize_plain_chunk(chunk: str) -> str:
+            environments: List[str] = []
+
+            def protect_environment(match: re.Match[str]) -> str:
+                environments.append(match.group(0))
+                return f"E3LATEXBAREENVPH{len(environments) - 1}END"
+
+            repaired = structured_pattern.sub(protect_environment, chunk)
+            repaired = bare_candidate.sub(wrap_candidate, repaired)
+            for environment_index, environment_text in enumerate(environments):
+                repaired = repaired.replace(
+                    f"E3LATEXBAREENVPH{environment_index}END",
+                    f"\\({environment_text}\\)",
+                )
+            return repaired
+
+        normalized = "".join(
+            chunk if index % 2 else normalize_plain_chunk(chunk)
+            for index, chunk in enumerate(chunks)
+        )
+
+        def keep_cjk_out_of_math(match: re.Match[str]) -> str:
+            opener = match.group(1)
+            body = match.group(2)
+            closer = "\\)" if opener == "\\(" else "\\]"
+            protected_text: List[str] = []
+
+            def protect_text(command_match: re.Match[str]) -> str:
+                protected_text.append(command_match.group(0))
+                return f"E3LATEXTEXTPH{len(protected_text) - 1}END"
+
+            repaired_body = re.sub(
+                r"\\text\{(?:[^{}]|\{[^{}]*\})*\}",
+                protect_text,
+                body,
+            )
+            repaired_body = re.sub(
+                r"[\u3400-\u9fff]+",
+                lambda cjk: f"\\text{{{cjk.group(0)}}}",
+                repaired_body,
+            )
+            for text_index, protected in enumerate(protected_text):
+                repaired_body = repaired_body.replace(
+                    f"E3LATEXTEXTPH{text_index}END",
+                    protected,
+                )
+            return f"{opener}{repaired_body}{closer}"
+
+        normalized = re.sub(
+            r"(\\\(|\\\[)(.*?)(?:\\\)|\\\])",
+            keep_cjk_out_of_math,
+            normalized,
+            flags=re.DOTALL,
+        )
+        return re.sub(r"\n{3,}", "\n\n", normalized).strip()
+
+    def _strip_study_process_narration(value: Any) -> str:
+        """Remove model workflow narration without rewriting study content."""
+        text = _normalize_study_math_markup(value)
+        leading_patterns = (
+            r"^(?:保留(?:原始)?來源內容並(?:已)?修正為可直接使用的筆記)",
+            r"^(?:(?:本|此|原始)?筆記(?:給出|註明|記載|紀載|整理|說明|指出))",
+            r"^(?:(?:根據|依據|依照|參考)(?:原始)?(?:筆記|來源)(?:內容)?)",
+            r"^(?:以下(?:是|為)(?:整理後|修正後)?(?:的)?(?:筆記|重點|內容))",
+        )
+        changed = True
+        while changed:
+            changed = False
+            for pattern in leading_patterns:
+                repaired = re.sub(pattern + r"[：:，,。\s]*", "", text, count=1)
+                if repaired != text:
+                    text = repaired.strip()
+                    changed = True
+        text = re.sub(
+            r"[，,；;]\s*其(?:公式|矩陣|定義|內容)?(?:皆|均|分別)?如(?:原始)?"
+            r"(?:來源|原文|筆記)(?:中)?(?:所)?(?:列|示|載|述)[。.]?",
+            "。",
+            text,
+        )
+        text = re.sub(
+            r"(?:如|詳見)(?:原始)?(?:來源|原文|筆記)(?:中)?(?:所)?(?:列|示|載|述)",
+            "",
+            text,
+        )
+        text = re.sub(r"。{2,}", "。", text)
+        return re.sub(r"\s+([，。；：])", r"\1", text).strip(" \t\n：:，,")
+
+    def _normalize_study_concept_title(value: Any, fallback: Any = "") -> str:
+        """Keep titles compact while preserving formulas required by the card."""
+
+        def clean(candidate: Any) -> str:
+            text = _repair_study_decoded_text(candidate).replace("\n", " ").strip()
+            text = re.sub(
+                r"\s*[（(][^（）()]{0,12}(?:例題|範例|例證|概念|定義|性質|方法)\s*[）)]?\s*$",
+                "",
+                text,
+                flags=re.IGNORECASE,
+            )
+            text = re.sub(r"\s+", " ", text)
+            text = text.strip(" \t:：,，;；/|·。-－—_")
+            return _normalize_study_math_markup(text) if text else ""
+
+        return clean(value) or clean(fallback) or "重點觀念"
+
+    def _study_coordinate_guide_data_url(source: Image.Image) -> str:
+        coordinate_guide = source.convert("RGBA")
+        max_side = max(coordinate_guide.size)
+        if max_side > 1800 or max_side < 500:
+            scale = (1800 if max_side > 1800 else 500) / max_side
+            coordinate_guide = coordinate_guide.resize(
+                (
+                    max(1, round(coordinate_guide.width * scale)),
+                    max(1, round(coordinate_guide.height * scale)),
+                ),
+                Image.Resampling.LANCZOS,
+            )
+        pixel_width, pixel_height = coordinate_guide.size
+        overlay = Image.new("RGBA", coordinate_guide.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        line_width = max(2, round(min(pixel_width, pixel_height) / 550))
+        font_size = max(18, round(min(pixel_width, pixel_height) / 42))
+        try:
+            guide_font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+        except OSError:
+            guide_font = ImageFont.load_default()
+        for coordinate in range(0, 1001, 100):
+            x = min(pixel_width - 1, round(pixel_width * coordinate / 1000))
+            y = min(pixel_height - 1, round(pixel_height * coordinate / 1000))
+            draw.line((x, 0, x, pixel_height), fill=(220, 30, 55, 115), width=line_width)
+            draw.line((0, y, pixel_width, y), fill=(220, 30, 55, 115), width=line_width)
+            if coordinate < 1000:
+                if x + 2 < pixel_width:
+                    draw.rectangle(
+                        (x + 2, 0, min(pixel_width, x + font_size * 2.8), min(pixel_height, font_size * 1.25)),
+                        fill=(255, 255, 255, 220),
+                    )
+                    draw.text((x + 4, 1), f"X{coordinate}", fill=(180, 0, 25, 255), font=guide_font)
+                if y + 2 < pixel_height:
+                    draw.rectangle(
+                        (0, y + 2, min(pixel_width, font_size * 2.8), min(pixel_height, y + font_size * 1.3)),
+                        fill=(255, 255, 255, 220),
+                    )
+                    draw.text((2, y + 3), f"Y{coordinate}", fill=(180, 0, 25, 255), font=guide_font)
+        coordinate_guide = Image.alpha_composite(coordinate_guide, overlay).convert("RGB")
+        guide_buffer = io.BytesIO()
+        coordinate_guide.save(guide_buffer, format="JPEG", quality=88, optimize=True)
+        return f"data:image/jpeg;base64,{base64.b64encode(guide_buffer.getvalue()).decode('ascii')}"
+
+    def _study_image_data_url(source: Image.Image, *, max_side: int = 1800) -> str:
+        encoded_image = source.convert("RGB")
+        current_max_side = max(encoded_image.size)
+        if current_max_side > max_side:
+            scale = max_side / current_max_side
+            encoded_image = encoded_image.resize(
+                (
+                    max(1, round(encoded_image.width * scale)),
+                    max(1, round(encoded_image.height * scale)),
+                ),
+                Image.Resampling.LANCZOS,
+            )
+        image_buffer = io.BytesIO()
+        encoded_image.save(image_buffer, format="JPEG", quality=90, optimize=True)
+        return f"data:image/jpeg;base64,{base64.b64encode(image_buffer.getvalue()).decode('ascii')}"
+
+    def _canonical_study_source_match_text(value: Any) -> str:
+        return canonicalize_source_text(value)
+
+    def _literal_study_source_evidence(value: Any) -> str:
+        return literal_source_evidence(value)
+
+    def _match_study_source_evidence_to_lines(
+        evidence: str,
+        lines: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
+        return match_source_evidence_to_lines(evidence, lines)
+
+    def _build_study_source_ink_mask(source: Image.Image) -> Image.Image:
+        working = source.convert("RGB")
+        max_side = max(working.size)
+        if max_side > 1800:
+            scale = 1800 / max_side
+            working = working.resize(
+                (max(1, round(working.width * scale)), max(1, round(working.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        gray = ImageOps.grayscale(working)
+        background = gray.filter(ImageFilter.GaussianBlur(radius=max(4.0, min(working.size) / 52)))
+        local_contrast = ImageChops.difference(background, gray)
+        mask = local_contrast.point(lambda value: 255 if value >= 14 else 0)
+        return mask.filter(ImageFilter.MaxFilter(3))
+
+    def _study_source_visual_line_bands(source: Image.Image) -> List[Tuple[int, int]]:
+        """Segment physical ink rows; coordinates are normalized to the crop."""
+        mask = _build_study_source_ink_mask(source)
+        width, height = mask.size
+        if width < 40 or height < 40:
+            return []
+        projection = list(mask.resize((1, height), Image.Resampling.BOX).getdata())
+        smoothed = [
+            sum(projection[max(0, index - 2) : min(height, index + 3)])
+            / max(1, min(height, index + 3) - max(0, index - 2))
+            for index in range(height)
+        ]
+        positive = sorted(value for value in smoothed if value > 0)
+        background = positive[min(len(positive) - 1, round(len(positive) * 0.22))] if positive else 0
+        threshold = max(3.0, min(12.0, background * 1.6))
+        active_rows = [index for index, value in enumerate(smoothed) if value >= threshold]
+        if not active_rows:
+            return []
+        maximum_gap = max(2, round(height * 0.004))
+        raw_bands: List[Tuple[int, int]] = []
+        band_start = active_rows[0]
+        previous = active_rows[0]
+        for current in active_rows[1:]:
+            if current - previous > maximum_gap:
+                raw_bands.append((band_start, previous + 1))
+                band_start = current
+            previous = current
+        raw_bands.append((band_start, previous + 1))
+
+        bands: List[Tuple[int, int]] = []
+        for band_top, band_bottom in raw_bands:
+            band_height = band_bottom - band_top
+            if band_height < max(2, round(height * 0.004)):
+                continue
+            strip = mask.crop((0, band_top, width, band_bottom))
+            column_projection = list(strip.resize((width, 1), Image.Resampling.BOX).getdata())
+            active_columns = [index for index, value in enumerate(column_projection) if value >= 3]
+            if not active_columns:
+                continue
+            ink_width_ratio = (active_columns[-1] - active_columns[0] + 1) / width
+            normalized_height = band_height * 1000 / height
+            if normalized_height <= 13 and ink_width_ratio >= 0.42:
+                continue
+            if normalized_height >= 115 and ink_width_ratio >= 0.62:
+                continue
+            bands.append(
+                (
+                    max(0, round((band_top - max(1, height * 0.002)) * 1000 / height)),
+                    min(1000, round((band_bottom + max(1, height * 0.002)) * 1000 / height)),
+                )
+            )
+        return bands
+
+    def _study_source_band_sheet_data_urls(
+        source: Image.Image,
+        bands: List[Tuple[int, int]],
+    ) -> List[str]:
+        """Render physical ink rows with fixed IDs so OCR cannot swap their y positions."""
+        if not bands:
+            return []
+        working = source.convert("RGB")
+        content_width = min(1500, working.width)
+        scale = content_width / max(1, working.width)
+        label_width = 92
+        try:
+            label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 25)
+        except OSError:
+            label_font = ImageFont.load_default()
+        sheet_urls: List[str] = []
+        for group_start in range(0, len(bands), 8):
+            rendered_rows: List[Image.Image] = []
+            for band_index in range(group_start, min(len(bands), group_start + 8)):
+                band_top, band_bottom = bands[band_index]
+                pixel_top = max(0, math.floor(working.height * band_top / 1000))
+                pixel_bottom = min(
+                    working.height,
+                    max(pixel_top + 1, math.ceil(working.height * band_bottom / 1000)),
+                )
+                vertical_padding = max(3, round((pixel_bottom - pixel_top) * 0.22))
+                strip = working.crop(
+                    (
+                        0,
+                        max(0, pixel_top - vertical_padding),
+                        working.width,
+                        min(working.height, pixel_bottom + vertical_padding),
+                    )
+                )
+                if strip.width != content_width:
+                    strip = strip.resize(
+                        (content_width, max(1, round(strip.height * scale))),
+                        Image.Resampling.LANCZOS,
+                    )
+                row_height = max(54, strip.height + 12)
+                row = Image.new("RGB", (label_width + content_width, row_height), "white")
+                row.paste(strip, (label_width, max(0, round((row_height - strip.height) / 2))))
+                row_draw = ImageDraw.Draw(row)
+                row_draw.rectangle(
+                    (0, 0, row.width - 1, row.height - 1),
+                    outline=(62, 92, 124),
+                    width=2,
+                )
+                row_draw.text(
+                    (12, max(4, round((row_height - 30) / 2))),
+                    f"B{band_index + 1:02d}",
+                    fill=(12, 72, 130),
+                    font=label_font,
+                )
+                rendered_rows.append(row)
+            sheet = Image.new(
+                "RGB",
+                (label_width + content_width, sum(row.height for row in rendered_rows)),
+                "white",
+            )
+            offset_y = 0
+            for row in rendered_rows:
+                sheet.paste(row, (0, offset_y))
+                offset_y += row.height
+            sheet_urls.append(_study_image_data_url(sheet, max_side=2400))
+        return sheet_urls
+
+    def _align_study_source_lines_to_visual_bands(
+        lines: List[Dict[str, Any]],
+        bands: List[Tuple[int, int]],
+    ) -> Dict[int, Tuple[int, int]]:
+        """Monotonically align OCR line order to image-derived ink bands."""
+        line_count = len(lines)
+        band_count = len(bands)
+        if not line_count or band_count < line_count or band_count > line_count * 3 + 8:
+            return {}
+        line_centers = [(line["top"] + line["bottom"]) / 2 for line in lines]
+        band_centers = [(top + bottom) / 2 for top, bottom in bands]
+        line_span = max(1.0, line_centers[-1] - line_centers[0])
+        band_span = max(1.0, band_centers[-1] - band_centers[0])
+
+        def assignment_cost(line_index: int, band_index: int) -> float:
+            observed_cost = abs(line_centers[line_index] - band_centers[band_index])
+            line_position = (
+                (line_centers[line_index] - line_centers[0]) / line_span
+                if line_count > 1
+                else 0.5
+            )
+            band_position = (
+                (band_centers[band_index] - band_centers[0]) / band_span
+                if band_count > 1
+                else 0.5
+            )
+            order_cost = abs(line_position - band_position) * 1000
+            return observed_cost * 0.58 + order_cost * 0.42
+
+        previous_costs = [float("inf")] * band_count
+        backtrack: List[List[int]] = [[-1] * band_count for _ in range(line_count)]
+        for band_index in range(0, band_count - line_count + 1):
+            previous_costs[band_index] = assignment_cost(0, band_index)
+        for line_index in range(1, line_count):
+            current_costs = [float("inf")] * band_count
+            best_previous_cost = float("inf")
+            best_previous_index = -1
+            minimum_band = line_index
+            maximum_band = band_count - (line_count - line_index)
+            for band_index in range(minimum_band, maximum_band + 1):
+                candidate_previous_index = band_index - 1
+                candidate_previous_cost = previous_costs[candidate_previous_index]
+                if candidate_previous_cost < best_previous_cost:
+                    best_previous_cost = candidate_previous_cost
+                    best_previous_index = candidate_previous_index
+                if best_previous_index >= 0:
+                    current_costs[band_index] = best_previous_cost + assignment_cost(
+                        line_index,
+                        band_index,
+                    )
+                    backtrack[line_index][band_index] = best_previous_index
+            previous_costs = current_costs
+        final_band = min(range(band_count), key=lambda index: previous_costs[index])
+        if not math.isfinite(previous_costs[final_band]):
+            return {}
+        assignments = [final_band]
+        for line_index in range(line_count - 1, 0, -1):
+            final_band = backtrack[line_index][final_band]
+            if final_band < 0:
+                return {}
+            assignments.append(final_band)
+        assignments.reverse()
+        return {
+            id(line): bands[band_index]
+            for line, band_index in zip(lines, assignments)
+        }
+
+    def _study_source_page_content_top(source: Image.Image) -> int:
+        """Find the first note row below a detected blue note-app toolbar."""
+        working = source.convert("RGB")
+        if working.width > 360:
+            scale = 360 / working.width
+            working = working.resize(
+                (360, max(1, round(working.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        pixels = working.load()
+        scan_bottom = max(1, round(working.height * 0.28))
+        blue_rows: List[int] = []
+        for y in range(scan_bottom):
+            blue_pixels = 0
+            for x in range(working.width):
+                red, green, blue = pixels[x, y]
+                if blue >= red + 24 and blue >= green + 12 and blue >= 70:
+                    blue_pixels += 1
+            if blue_pixels / working.width >= 0.18:
+                blue_rows.append(y)
+        if not blue_rows:
+            return 0
+        toolbar_bottom = max(blue_rows)
+        toolbar_bottom_normalized = round(toolbar_bottom * 1000 / working.height)
+        mask = _build_study_source_ink_mask(working)
+        for band_top, band_bottom in _study_source_visual_line_bands(working):
+            if band_top <= toolbar_bottom_normalized + 5:
+                continue
+            pixel_top = max(0, round(band_top * mask.height / 1000))
+            pixel_bottom = min(mask.height, max(pixel_top + 1, round(band_bottom * mask.height / 1000)))
+            strip = mask.crop((0, pixel_top, mask.width, pixel_bottom))
+            column_projection = list(strip.resize((mask.width, 1), Image.Resampling.BOX).getdata())
+            active_columns = [index for index, value in enumerate(column_projection) if value >= 3]
+            if not active_columns:
+                continue
+            ink_width_ratio = (active_columns[-1] - active_columns[0] + 1) / mask.width
+            if ink_width_ratio >= 0.22 and band_bottom - band_top >= 12:
+                return max(toolbar_bottom_normalized, band_top - 8)
+        return min(1000, toolbar_bottom_normalized + 35)
+
+    def _refine_study_source_bbox_with_text_lines(
+        mask: Image.Image,
+        bbox: Dict[str, int],
+        *,
+        start_x: int,
+        start_y: int,
+        end_x: int,
+        end_y: int,
+        evidence_length: int,
+    ) -> Tuple[Dict[str, int], bool]:
+        width, height = mask.size
+        if width < 40 or height < 40:
+            return bbox, False
+
+        def normalized_x(pixel: int) -> int:
+            return max(0, min(1000, round(pixel * 1000 / width)))
+
+        def normalized_y(pixel: int) -> int:
+            return max(0, min(1000, round(pixel * 1000 / height)))
+
+        def pixel_x(value: int) -> int:
+            return max(0, min(width, round(width * value / 1000)))
+
+        def pixel_y(value: int) -> int:
+            return max(0, min(height, round(height * value / 1000)))
+
+        def merged_ranges(indices: List[int], max_gap: int) -> List[Tuple[int, int]]:
+            if not indices:
+                return []
+            ranges: List[Tuple[int, int]] = []
+            range_start = indices[0]
+            previous = indices[0]
+            for current in indices[1:]:
+                if current - previous > max_gap:
+                    ranges.append((range_start, previous + 1))
+                    range_start = current
+                previous = current
+            ranges.append((range_start, previous + 1))
+            return ranges
+
+        context_left = max(0, min(bbox["left"], start_x, end_x) - 70)
+        context_right = min(1000, max(bbox["right"], start_x, end_x) + 70)
+        context_top = max(0, min(bbox["top"], start_y, end_y) - 70)
+        context_bottom = min(1000, max(bbox["bottom"], start_y, end_y) + 70)
+        crop_left = pixel_x(context_left)
+        crop_right = pixel_x(context_right)
+        crop_top = pixel_y(context_top)
+        crop_bottom = pixel_y(context_bottom)
+        if crop_right - crop_left < 20 or crop_bottom - crop_top < 20:
+            return bbox, False
+
+        region = mask.crop((crop_left, crop_top, crop_right, crop_bottom))
+        row_projection = list(region.resize((1, region.height), Image.Resampling.BOX).getdata())
+        sorted_projection = sorted(row_projection)
+        background_level = sorted_projection[min(len(sorted_projection) - 1, round(len(sorted_projection) * 0.55))]
+        row_threshold = max(4, min(16, round(background_level * 1.45)))
+        smoothed_rows = [
+            sum(row_projection[max(0, index - 1) : min(len(row_projection), index + 2)])
+            / max(1, min(len(row_projection), index + 2) - max(0, index - 1))
+            for index in range(len(row_projection))
+        ]
+        active_rows = [index for index, value in enumerate(smoothed_rows) if value >= row_threshold]
+        raw_bands = merged_ranges(active_rows, max(2, round(height * 0.0015)))
+        maximum_rule_height = max(5, round(height * 0.0045))
+        text_bands: List[Tuple[int, int]] = []
+        rule_bands: List[Tuple[int, int]] = []
+        for band_top, band_bottom in raw_bands:
+            band_values = row_projection[band_top:band_bottom]
+            band_height = band_bottom - band_top
+            is_horizontal_rule = (
+                band_height <= maximum_rule_height
+                and band_values
+                and max(band_values) >= 42
+                and sum(band_values) / len(band_values) >= 18
+            )
+            if is_horizontal_rule:
+                rule_bands.append((band_top, band_bottom))
+            elif band_height >= 3:
+                text_bands.append((band_top, band_bottom))
+        if not text_bands:
+            return bbox, False
+
+        local_start_y = pixel_y(start_y) - crop_top
+        local_end_y = pixel_y(end_y) - crop_top
+
+        def band_distance(band: Tuple[int, int], anchor: int) -> int:
+            if band[0] <= anchor <= band[1]:
+                return 0
+            return min(abs(anchor - band[0]), abs(anchor - band[1]))
+
+        start_index = min(range(len(text_bands)), key=lambda index: band_distance(text_bands[index], local_start_y))
+        end_index = min(range(len(text_bands)), key=lambda index: band_distance(text_bands[index], local_end_y))
+        anchor_limit = max(24, round(height * 0.045))
+        if (
+            band_distance(text_bands[start_index], local_start_y) > anchor_limit
+            or band_distance(text_bands[end_index], local_end_y) > anchor_limit
+        ):
+            return bbox, False
+        if start_index > end_index:
+            start_index, end_index = end_index, start_index
+
+        selected_top = text_bands[start_index][0]
+        selected_bottom = text_bands[end_index][1]
+        selected_height = selected_bottom - selected_top
+        if selected_height < 4:
+            return bbox, False
+
+        selected = region.crop((0, selected_top, region.width, selected_bottom))
+        selected_draw = ImageDraw.Draw(selected)
+        for rule_top, rule_bottom in rule_bands:
+            if rule_bottom <= selected_top or rule_top >= selected_bottom:
+                continue
+            selected_draw.rectangle(
+                (0, max(0, rule_top - selected_top), selected.width, min(selected.height, rule_bottom - selected_top)),
+                fill=0,
+            )
+        column_projection = list(selected.resize((selected.width, 1), Image.Resampling.BOX).getdata())
+        active_columns = [index for index, value in enumerate(column_projection) if value >= 2]
+        if not active_columns:
+            return bbox, False
+
+        total_column_ink = sum(column_projection[index] for index in active_columns)
+
+        def weighted_column(quantile: float) -> int:
+            target = total_column_ink * quantile
+            running = 0
+            for index in active_columns:
+                running += column_projection[index]
+                if running >= target:
+                    return index
+            return active_columns[-1]
+
+        ink_left = weighted_column(0.003)
+        ink_right = weighted_column(0.997) + 1
+        pad_x = max(4, round(width * 0.006))
+        pad_y = max(4, round(height * 0.004))
+        refined = {
+            **bbox,
+            "left": normalized_x(max(0, crop_left + ink_left - pad_x)),
+            "top": normalized_y(max(0, crop_top + selected_top - pad_y)),
+            "right": normalized_x(min(width, crop_left + ink_right + pad_x)),
+            "bottom": normalized_y(min(height, crop_top + selected_bottom + pad_y)),
+        }
+        refined["left"] = max(0, min(refined["left"], start_x - 8, end_x - 8))
+        refined["top"] = max(0, min(refined["top"], start_y - 8, end_y - 8))
+        refined["right"] = min(1000, max(refined["right"], start_x + 8, end_x + 8))
+        refined["bottom"] = min(1000, max(refined["bottom"], start_y + 8, end_y + 8))
+        refined_width = refined["right"] - refined["left"]
+        refined_height = refined["bottom"] - refined["top"]
+        if evidence_length > 120 and refined_width < min(180, (bbox["right"] - bbox["left"]) * 0.35):
+            return bbox, False
+        if not (12 <= refined_width <= 960 and 8 <= refined_height <= 850):
+            return bbox, False
+        return refined, True
+
+    def _snap_study_source_bbox_to_ink(
+        image_bytes: bytes,
+        bbox: Dict[str, int],
+    ) -> Dict[str, int]:
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as source_image:
+                source = ImageOps.exif_transpose(source_image).convert("RGB")
+            image_width, image_height = source.size
+            margin_x = 24
+            margin_y = 28
+            crop_left = max(0, round(image_width * (bbox["left"] - margin_x) / 1000))
+            crop_top = max(0, round(image_height * (bbox["top"] - margin_y) / 1000))
+            crop_right = min(image_width, round(image_width * (bbox["right"] + margin_x) / 1000))
+            crop_bottom = min(image_height, round(image_height * (bbox["bottom"] + margin_y) / 1000))
+            if crop_right - crop_left < 24 or crop_bottom - crop_top < 16:
+                return bbox
+            crop = source.crop((crop_left, crop_top, crop_right, crop_bottom))
+            max_side = max(crop.size)
+            if max_side > 1200:
+                scale = 1200 / max_side
+                crop = crop.resize(
+                    (max(1, round(crop.width * scale)), max(1, round(crop.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            gray = ImageOps.grayscale(crop)
+            blur_radius = max(3.0, min(crop.size) / 55)
+            local_background = gray.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+            contrast = ImageChops.difference(local_background, gray)
+            mask = contrast.point(lambda value: 255 if value >= 16 else 0)
+            mask = mask.filter(ImageFilter.MaxFilter(3))
+
+            local_left = round((bbox["left"] / 1000 * image_width - crop_left) * crop.width / max(1, crop_right - crop_left))
+            local_top = round((bbox["top"] / 1000 * image_height - crop_top) * crop.height / max(1, crop_bottom - crop_top))
+            local_right = round((bbox["right"] / 1000 * image_width - crop_left) * crop.width / max(1, crop_right - crop_left))
+            local_bottom = round((bbox["bottom"] / 1000 * image_height - crop_top) * crop.height / max(1, crop_bottom - crop_top))
+            row_projection = list(mask.resize((1, mask.height), Image.Resampling.BOX).getdata())
+            row_threshold = 3
+            row_padding = max(3, round(mask.height * 0.012))
+            row_candidates = [
+                index
+                for index, value in enumerate(row_projection)
+                if value >= row_threshold and local_top - row_padding <= index <= local_bottom + row_padding
+            ]
+            if not row_candidates:
+                return bbox
+            ink_top = max(0, min(row_candidates) - 3)
+            ink_bottom = min(mask.height, max(row_candidates) + 4)
+            line_mask = mask.crop((0, ink_top, mask.width, max(ink_top + 1, ink_bottom)))
+            column_projection = list(line_mask.resize((line_mask.width, 1), Image.Resampling.BOX).getdata())
+            column_padding = max(4, round(mask.width * 0.012))
+            column_candidates = [
+                index
+                for index, value in enumerate(column_projection)
+                if value >= 3 and local_left - column_padding <= index <= local_right + column_padding
+            ]
+            if not column_candidates:
+                return bbox
+            ink_left = max(0, min(column_candidates) - 4)
+            ink_right = min(mask.width, max(column_candidates) + 5)
+
+            def x_to_normalized(value: int) -> int:
+                pixel = crop_left + value / max(1, crop.width) * (crop_right - crop_left)
+                return round(pixel * 1000 / image_width)
+
+            def y_to_normalized(value: int) -> int:
+                pixel = crop_top + value / max(1, crop.height) * (crop_bottom - crop_top)
+                return round(pixel * 1000 / image_height)
+
+            snapped = {
+                **bbox,
+                "left": max(bbox["left"] - 20, min(bbox["left"] + 20, x_to_normalized(ink_left))),
+                "top": max(bbox["top"] - 20, min(bbox["top"] + 20, y_to_normalized(ink_top))),
+                "right": max(bbox["right"] - 20, min(bbox["right"] + 20, x_to_normalized(ink_right))),
+                "bottom": max(bbox["bottom"] - 20, min(bbox["bottom"] + 20, y_to_normalized(ink_bottom))),
+            }
+            if snapped["right"] - snapped["left"] < 12 or snapped["bottom"] - snapped["top"] < 8:
+                return bbox
+            return snapped
+        except (OSError, ValueError, TypeError):
+            return bbox
+
+    def _expand_study_source_bbox_through_edge_ink(
+        image_bytes: bytes,
+        bbox: Dict[str, int],
+        *,
+        end_x: int,
+        end_y: int,
+        evidence_length: int,
+    ) -> Dict[str, int]:
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as source_image:
+                source = ImageOps.exif_transpose(source_image).convert("RGB")
+            max_side = max(source.size)
+            if max_side > 1400:
+                scale = 1400 / max_side
+                source = source.resize(
+                    (max(1, round(source.width * scale)), max(1, round(source.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            gray = ImageOps.grayscale(source)
+            background = gray.filter(ImageFilter.GaussianBlur(radius=max(3.0, min(source.size) / 55)))
+            contrast = ImageChops.difference(background, gray)
+            mask = contrast.point(lambda value: 255 if value >= 16 else 0).filter(ImageFilter.MaxFilter(3))
+
+            left = round(mask.width * bbox["left"] / 1000)
+            top = round(mask.height * bbox["top"] / 1000)
+            right = round(mask.width * bbox["right"] / 1000)
+            bottom = round(mask.height * bbox["bottom"] / 1000)
+
+            def extend_projection(
+                projection: List[int],
+                edge: int,
+                limit: int,
+                trigger_gap: int,
+                stop_gap: int,
+            ) -> int:
+                active = [
+                    index
+                    for index, value in enumerate(projection)
+                    if value >= 3 and edge - trigger_gap <= index <= limit
+                ]
+                if not active:
+                    return edge
+                first_after_edge = next((index for index in active if index >= edge), None)
+                if first_after_edge is None or first_after_edge - edge > trigger_gap:
+                    return edge
+                extended = first_after_edge
+                previous = first_after_edge
+                for index in active:
+                    if index < first_after_edge:
+                        continue
+                    if index - previous > stop_gap:
+                        break
+                    extended = index
+                    previous = index
+                return max(edge, extended + 5)
+
+            expanded = dict(bbox)
+            if (evidence_length > 180 or bbox["right"] - end_x <= 50) and right < mask.width:
+                vertical_top = max(0, top - round(mask.height * 0.01))
+                vertical_bottom = min(mask.height, bottom + round(mask.height * 0.01))
+                right_projection = list(
+                    mask.crop((0, vertical_top, mask.width, max(vertical_top + 1, vertical_bottom)))
+                    .resize((mask.width, 1), Image.Resampling.BOX)
+                    .getdata()
+                )
+                right_limit = min(
+                    mask.width - 1,
+                    right + round(mask.width * (0.35 if evidence_length > 160 else 0.30)),
+                )
+                extended_right = extend_projection(
+                    right_projection,
+                    right,
+                    right_limit,
+                    max(12, round(mask.width * 0.02)),
+                    max(16, round(mask.width * (0.045 if evidence_length > 160 else 0.018))),
+                )
+                expanded["right"] = min(1000, round(extended_right * 1000 / mask.width))
+            if bbox["bottom"] - end_y <= 50 and bottom < mask.height:
+                horizontal_left = max(0, left - round(mask.width * 0.01))
+                horizontal_right = min(mask.width, right + round(mask.width * 0.01))
+                bottom_projection = list(
+                    mask.crop((horizontal_left, 0, max(horizontal_left + 1, horizontal_right), mask.height))
+                    .resize((1, mask.height), Image.Resampling.BOX)
+                    .getdata()
+                )
+                bottom_limit = min(
+                    mask.height - 1,
+                    bottom + round(mask.height * (0.08 if evidence_length > 160 else 0.12)),
+                )
+                extended_bottom = extend_projection(
+                    bottom_projection,
+                    bottom,
+                    bottom_limit,
+                    max(12, round(mask.height * 0.012)),
+                    max(10, round(mask.height * 0.009)),
+                )
+                expanded["bottom"] = min(1000, round(extended_bottom * 1000 / mask.height))
+            if _validated_study_source_bbox(expanded) is None:
+                return bbox
+            return expanded
+        except (OSError, ValueError, TypeError):
+            return bbox
+
+    def _localize_study_card_sources_legacy(
+        images: List[Tuple[str, bytes, str]],
+        key_concepts: List[Dict[str, Any]],
+    ) -> Tuple[int, int]:
+        requests_by_id: Dict[str, Dict[str, Any]] = {}
+        requests_by_image: Dict[int, List[Dict[str, Any]]] = {}
+        for concept_index, concept in enumerate(key_concepts):
+            if not isinstance(concept, dict):
+                continue
+            for source_ref_index, source_ref in enumerate(concept.get("source_refs") or []):
+                if not isinstance(source_ref, dict):
+                    continue
+                source_ref.pop("bbox", None)
+                try:
+                    image_index = int(source_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                evidence = _literal_study_source_evidence(source_ref.get("evidence"))
+                if not (1 <= image_index <= len(images)) or not evidence:
+                    continue
+                location_id = f"c{concept_index}r{source_ref_index}"
+                requests_by_id[location_id] = source_ref
+                requests_by_image.setdefault(image_index, []).append(
+                    {
+                        "location_id": location_id,
+                        "image_index": image_index,
+                        "concept": str(concept.get("concept") or "")[:80],
+                        "evidence": evidence[:240],
+                    }
+                )
+        total = len(requests_by_id)
+        if not total:
+            return 0, 0
+        located = 0
+        seen: Set[str] = set()
+        failed_pages = 0
+        for image_index, localization_input in sorted(requests_by_image.items()):
+            _raise_if_study_upload_cancelled()
+            item_count = len(localization_input)
+            location_schema = {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["locations"],
+                "properties": {
+                    "locations": {
+                        "type": "array",
+                        "minItems": item_count,
+                        "maxItems": item_count,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["location_id", "left", "top", "right", "bottom", "confidence"],
+                            "properties": {
+                                "location_id": {"type": "string", "maxLength": 12},
+                                "left": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "top": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "right": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "bottom": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+                            },
+                        },
+                    },
+                },
+            }
+            filename, image_bytes, mime_type = images[image_index - 1]
+            with Image.open(io.BytesIO(image_bytes)) as source_image:
+                clean_page = ImageOps.exif_transpose(source_image).convert("RGB")
+            pixel_width, pixel_height = clean_page.size
+            guide_data_url = _study_coordinate_guide_data_url(clean_page)
+            prompt = (
+                f"你是手寫筆記的精確視覺定位員。現在只提供 image_index={image_index} 這一張完整原圖，"
+                f"原始 bitmap 尺寸為 {pixel_width}×{pixel_height} 像素，檔名為 {filename}。"
+                "每個 location_id 都有卡片名稱與來源 evidence；請直接在眼前這張圖逐字比對，不得依段落順序或內容類型猜位置。"
+                "先辨認支撐 evidence 的第一個可見字與最後一個可見字，再框出它們實際占用的最小連續區域；"
+                "evidence 可能同時包含兩個定義、數條公式或題幹加推導；必須逐項確認 evidence 明確提到的每一部分都落在框內，"
+                "不能找到第一個關鍵詞後就停止。決定 bottom 前，務必確認 evidence 最後一個定義或公式完整位於 bottom 上方。"
+                "若是例題或推導，框必須涵蓋該卡使用的題幹與必要計算行，但排除相鄰且無關的題目或章節。"
+                "座標必須相對於完整 bitmap（包含工具列、黑邊與頁面空白），左上為 (0,0)、右下為 (1000,1000)。"
+                "left/top/right/bottom 使用整數，四周只保留約 8 至 15 個座標單位，不能用粗略的半頁或整段區帶。"
+                "完整涵蓋來源的優先順序高於框得極小；需要涵蓋多個相鄰項目時可以適度擴張，但仍排除下一個無關段落。"
+                "你會依序看到乾淨原圖與完全相同尺寸的紅色座標網格圖；用乾淨圖辨字，用網格上的 X0..X900、Y0..Y900 讀取位置。"
+                "禁止使用模型內部縮圖的像素座標，輸出的數字必須直接對齊第二張圖的紅色網格標籤。"
+                "若同一 evidence 跨相鄰數行，以一個矩形完整包住；若圖片無法唯一確認位置，confidence 必須低於 60。"
+                "每個 location_id 恰好輸出一次且不得改名，只輸出 schema 指定 JSON。\n\n待定位來源：\n"
+                + json.dumps(localization_input, ensure_ascii=False, separators=(",", ":"))
+            )
+            content: List[Dict[str, Any]] = [
+                {"type": "input_text", "text": prompt},
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                    "detail": "high",
+                },
+                {"type": "input_text", "text": "以下是同一張原圖的紅色 0–1000 座標網格輔助圖。"},
+                {"type": "input_image", "image_url": guide_data_url, "detail": "high"},
+            ]
+            try:
+                result = _call_openai_json(
+                    name="study_recall_source_locations",
+                    schema=location_schema,
+                    content=content,
+                    timeout=240,
+                    reasoning_effort="medium",
+                    max_output_tokens=8000,
+                )
+                locations = result.get("locations") if isinstance(result, dict) else None
+                if not isinstance(locations, list):
+                    raise ValueError("Missing source locations")
+            except (requests.RequestException, ValueError, TypeError):
+                failed_pages += 1
+                app.logger.exception("Study-note source localization failed for image %s", image_index)
+                continue
+            coarse_by_id: Dict[str, Dict[str, int]] = {}
+            for item in locations:
+                if not isinstance(item, dict):
+                    continue
+                location_id = str(item.get("location_id") or "")
+                source_ref = requests_by_id.get(location_id)
+                if source_ref is None or location_id in coarse_by_id or location_id in seen:
+                    continue
+                try:
+                    left = int(item.get("left"))
+                    top = int(item.get("top"))
+                    right = int(item.get("right"))
+                    bottom = int(item.get("bottom"))
+                    confidence = int(item.get("confidence"))
+                except (TypeError, ValueError):
+                    continue
+                width = right - left
+                height = bottom - top
+                if confidence < 60 or not (0 <= left < right <= 1000 and 0 <= top < bottom <= 1000):
+                    continue
+                if width < 12 or height < 8 or width > 960 or height > 850:
+                    continue
+                coarse_by_id[location_id] = {
+                    "left": left,
+                    "top": top,
+                    "right": right,
+                    "bottom": bottom,
+                    "confidence": confidence,
+                }
+            if not coarse_by_id:
+                continue
+
+            crop_specs: Dict[str, Dict[str, Any]] = {}
+            refine_content: List[Dict[str, Any]] = []
+            refinement_targets = {
+                item["location_id"]: item
+                for item in localization_input
+                if item.get("location_id") in coarse_by_id
+            }
+            refine_prompt = (
+                "你是手寫筆記來源框的第二階段精校員。每個 target 會依序提供同一個局部裁切的乾淨圖與紅色 "
+                "0–1000 網格圖；座標只相對於該 target 的局部裁切，不是整張原圖。"
+                "請逐字比對 concept 與 evidence，框住真正支撐卡片內容的第一個可見字到最後一個可見字。"
+                "evidence 若明確包含定義、公式、條件或推導中的多個部分，矩形必須完整包含它們，但排除相鄰無關段落。"
+                "先在乾淨圖確認文字，再用網格讀取 left/top/right/bottom；不得沿用或猜測第一階段座標。"
+                "框的四周只留約 5 至 12 個局部座標單位，不能裁掉上下標、分數、矩陣、根號或公式末端。"
+                "只有在裁切內可唯一辨識完整來源時 found=true；找不到、只有部分內容或有多個無法區分的位置時，"
+                "found=false 且 confidence 低於 60。每個 location_id 必須恰好輸出一次且不得改名，只輸出 schema 指定 JSON。"
+                "start_x/start_y 是起點錨點可見文字的中心，end_x/end_y 是終點錨點可見文字的中心；"
+                "四者也使用局部 0–1000 座標，且 found=true 時兩個錨點都必須落在輸出矩形內。"
+            )
+            refine_content.append({"type": "input_text", "text": refine_prompt})
+            for location_id, coarse in coarse_by_id.items():
+                target = refinement_targets[location_id]
+                target_evidence_length = len(str(target.get("evidence") or ""))
+                coarse_width = coarse["right"] - coarse["left"]
+                coarse_height = coarse["bottom"] - coarse["top"]
+                padding_x = max(120, min(220, round(coarse_width / 3)))
+                padding_y = max(140, min(240, coarse_height * 2))
+                if target_evidence_length > 160:
+                    padding_x = max(padding_x, 320)
+                    padding_y = max(padding_y, 220)
+                normalized_left = max(0, coarse["left"] - padding_x)
+                normalized_top = max(0, coarse["top"] - padding_y)
+                normalized_right = min(1000, coarse["right"] + padding_x)
+                normalized_bottom = min(1000, coarse["bottom"] + padding_y)
+                pixel_left = max(0, min(pixel_width - 1, math.floor(pixel_width * normalized_left / 1000)))
+                pixel_top = max(0, min(pixel_height - 1, math.floor(pixel_height * normalized_top / 1000)))
+                pixel_right = max(pixel_left + 1, min(pixel_width, math.ceil(pixel_width * normalized_right / 1000)))
+                pixel_bottom = max(pixel_top + 1, min(pixel_height, math.ceil(pixel_height * normalized_bottom / 1000)))
+                crop = clean_page.crop((pixel_left, pixel_top, pixel_right, pixel_bottom))
+                crop_bounds = {
+                    "left": round(pixel_left * 1000 / pixel_width),
+                    "top": round(pixel_top * 1000 / pixel_height),
+                    "right": round(pixel_right * 1000 / pixel_width),
+                    "bottom": round(pixel_bottom * 1000 / pixel_height),
+                }
+                target_evidence = " ".join(str(target.get("evidence") or "").split())
+                start_anchor = target_evidence[:28]
+                end_anchor = target_evidence[-28:]
+                target_label = (
+                    f"TARGET {location_id}｜卡片：{target.get('concept') or ''}｜"
+                    f"來源：{target_evidence}｜必須框入的起點錨點：{start_anchor}｜"
+                    f"必須框入的終點錨點：{end_anchor}。輸出前逐字確認兩個錨點都在矩形內。"
+                )
+                clean_crop_url = _study_image_data_url(crop)
+                guide_crop_url = _study_coordinate_guide_data_url(crop)
+                crop_specs[location_id] = {
+                    "bounds": crop_bounds,
+                    "target_label": target_label,
+                    "clean_url": clean_crop_url,
+                    "guide_url": guide_crop_url,
+                }
+                refine_content.extend(
+                    [
+                        {"type": "input_text", "text": target_label},
+                        {"type": "input_image", "image_url": clean_crop_url, "detail": "high"},
+                        {
+                            "type": "input_text",
+                            "text": f"TARGET {location_id} 的同一裁切，以下為局部 0–1000 座標網格。",
+                        },
+                        {"type": "input_image", "image_url": guide_crop_url, "detail": "high"},
+                    ]
+                )
+
+            refine_item_count = len(coarse_by_id)
+            refinement_schema = {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["locations"],
+                "properties": {
+                    "locations": {
+                        "type": "array",
+                        "minItems": refine_item_count,
+                        "maxItems": refine_item_count,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": [
+                                "location_id",
+                                "found",
+                                "left",
+                                "top",
+                                "right",
+                                "bottom",
+                                "start_x",
+                                "start_y",
+                                "end_x",
+                                "end_y",
+                                "confidence",
+                            ],
+                            "properties": {
+                                "location_id": {"type": "string", "maxLength": 12},
+                                "found": {"type": "boolean"},
+                                "left": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "top": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "right": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "bottom": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "start_x": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "start_y": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "end_x": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "end_y": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+                            },
+                        },
+                    }
+                },
+            }
+            group_refinement_failed = False
+            try:
+                if refine_item_count > 1:
+                    group_refinement_failed = True
+                    refined_locations = []
+                else:
+                    refinement_result = _call_openai_json(
+                        name="study_recall_source_locations_refined",
+                        schema=refinement_schema,
+                        content=refine_content,
+                        timeout=240,
+                        reasoning_effort="minimal",
+                        max_output_tokens=4000,
+                        repair_simple_location_json=True,
+                    )
+                    refined_locations = (
+                        refinement_result.get("locations") if isinstance(refinement_result, dict) else None
+                    )
+                if not isinstance(refined_locations, list):
+                    raise ValueError("Missing refined source locations")
+            except ValueError as exc:
+                app.logger.warning("Study-note grouped source refinement was incomplete for image %s: %s", image_index, exc)
+                group_refinement_failed = True
+                refined_locations = []
+            except (requests.RequestException, TypeError):
+                app.logger.exception("Study-note source refinement failed for image %s", image_index)
+                group_refinement_failed = True
+                refined_locations = []
+
+            refined_by_id: Dict[str, Dict[str, Any]] = {}
+            for item in refined_locations:
+                if not isinstance(item, dict):
+                    continue
+                location_id = str(item.get("location_id") or "")
+                if location_id not in coarse_by_id or location_id in refined_by_id:
+                    continue
+                refined_by_id[location_id] = item
+
+            def refinement_is_usable(location_id: str, item: Any) -> bool:
+                if not isinstance(item, dict) or item.get("found") is not True:
+                    return False
+                try:
+                    local_left = int(item.get("left"))
+                    local_top = int(item.get("top"))
+                    local_right = int(item.get("right"))
+                    local_bottom = int(item.get("bottom"))
+                    start_x = int(item.get("start_x"))
+                    start_y = int(item.get("start_y"))
+                    end_x = int(item.get("end_x"))
+                    end_y = int(item.get("end_y"))
+                    confidence = int(item.get("confidence"))
+                except (TypeError, ValueError):
+                    return False
+                if not all(0 <= value <= 1000 for value in (start_x, start_y, end_x, end_y)):
+                    return False
+                local_left = max(0, min(local_left, start_x - 12, end_x - 12))
+                local_top = max(0, min(local_top, start_y - 12, end_y - 12))
+                local_right = min(1000, max(local_right, start_x + 12, end_x + 12))
+                local_bottom = min(1000, max(local_bottom, start_y + 12, end_y + 12))
+                width = local_right - local_left
+                height = local_bottom - local_top
+                if not (
+                    confidence >= 70
+                    and 0 <= local_left < local_right <= 1000
+                    and 0 <= local_top < local_bottom <= 1000
+                    and 12 <= width <= 980
+                    and 8 <= height <= 920
+                ):
+                    return False
+                crop_bounds = crop_specs[location_id]["bounds"]
+                crop_width = crop_bounds["right"] - crop_bounds["left"]
+                crop_height = crop_bounds["bottom"] - crop_bounds["top"]
+                refined_center_x = crop_bounds["left"] + (local_left + local_right) * crop_width / 2000
+                refined_center_y = crop_bounds["top"] + (local_top + local_bottom) * crop_height / 2000
+                coarse = coarse_by_id[location_id]
+                coarse_center_x = (coarse["left"] + coarse["right"]) / 2
+                coarse_center_y = (coarse["top"] + coarse["bottom"]) / 2
+                max_center_shift_x = max(140, (coarse["right"] - coarse["left"]) * 0.45)
+                max_center_shift_y = max(140, (coarse["bottom"] - coarse["top"]) * 0.45)
+                refined_width = width * crop_width / 1000
+                refined_height = height * crop_height / 1000
+                coarse_width = coarse["right"] - coarse["left"]
+                coarse_height = coarse["bottom"] - coarse["top"]
+                evidence_length = len(str(refinement_targets[location_id].get("evidence") or ""))
+                refined_area = refined_width * refined_height
+                refined_aspect_ratio = refined_width / max(1, refined_height)
+                if (
+                    evidence_length > 160
+                    and refined_width < coarse_width * 0.75
+                    and refined_height < coarse_height * 0.55
+                ):
+                    return False
+                if evidence_length > 180 and refined_area < 60_000 and refined_aspect_ratio < 8:
+                    return False
+                return (
+                    abs(refined_center_x - coarse_center_x) <= max_center_shift_x
+                    and abs(refined_center_y - coarse_center_y) <= max_center_shift_y
+                )
+
+            retry_ids = [
+                location_id
+                for location_id in coarse_by_id
+                if not refinement_is_usable(location_id, refined_by_id.get(location_id))
+            ]
+            if not group_refinement_failed:
+                retry_ids = retry_ids[:3]
+            if retry_ids:
+                single_refinement_schema = json.loads(json.dumps(refinement_schema))
+                single_locations_schema = single_refinement_schema["properties"]["locations"]
+                single_locations_schema["minItems"] = 1
+                single_locations_schema["maxItems"] = 1
+                for location_id in retry_ids:
+                    _raise_if_study_upload_cancelled()
+                    crop_spec = crop_specs[location_id]
+                    prior_item: Optional[Dict[str, Any]] = None
+                    for retry_attempt in range(2):
+                        _raise_if_study_upload_cancelled()
+                        second_attempt_note = ""
+                        if retry_attempt and prior_item:
+                            second_attempt_note = (
+                                "上一個候選框未通過完整性或位置一致性檢查。請重新檢查 evidence 的最後一行，"
+                                "必要時擴大框；不要重複上一組座標："
+                                + json.dumps(prior_item, ensure_ascii=False, separators=(",", ":"))
+                            )
+                        retry_content = [
+                            {
+                                "type": "input_text",
+                                "text": (
+                                    refine_prompt
+                                    + "現在只處理下列唯一 target。請先逐項核對 evidence 的起點、每條公式與終點；"
+                                    "框內必須完整包含 evidence 的所有可見內容，但不能納入 evidence 結束後的下一個定義、例題或段落。"
+                                    "請從乾淨裁切逐字找到來源，再用網格獨立讀取局部座標。"
+                                    + second_attempt_note
+                                ),
+                            },
+                            {"type": "input_text", "text": crop_spec["target_label"]},
+                            {"type": "input_image", "image_url": crop_spec["clean_url"], "detail": "high"},
+                            {
+                                "type": "input_text",
+                                "text": f"TARGET {location_id} 的同一裁切，以下為局部 0–1000 座標網格。",
+                            },
+                            {"type": "input_image", "image_url": crop_spec["guide_url"], "detail": "high"},
+                        ]
+                        try:
+                            retry_result = _call_openai_json(
+                                name="study_recall_source_location_retry",
+                                schema=single_refinement_schema,
+                                content=retry_content,
+                                timeout=180,
+                                reasoning_effort="low",
+                                max_output_tokens=8000,
+                                repair_simple_location_json=True,
+                            )
+                            retry_locations = retry_result.get("locations") if isinstance(retry_result, dict) else None
+                            retry_item = retry_locations[0] if isinstance(retry_locations, list) and retry_locations else None
+                            prior_item = retry_item if isinstance(retry_item, dict) else None
+                            if (
+                                isinstance(retry_item, dict)
+                                and str(retry_item.get("location_id") or "") == location_id
+                                and refinement_is_usable(location_id, retry_item)
+                            ):
+                                refined_by_id[location_id] = retry_item
+                                break
+                        except (requests.RequestException, ValueError, TypeError, IndexError):
+                            app.logger.exception(
+                                "Study-note individual source refinement failed for image %s target %s",
+                                image_index,
+                                location_id,
+                            )
+            for location_id, coarse in coarse_by_id.items():
+                item = refined_by_id.get(location_id)
+                if not refinement_is_usable(location_id, item):
+                    continue
+                try:
+                    local_left = int(item.get("left"))
+                    local_top = int(item.get("top"))
+                    local_right = int(item.get("right"))
+                    local_bottom = int(item.get("bottom"))
+                    start_x = int(item.get("start_x"))
+                    start_y = int(item.get("start_y"))
+                    end_x = int(item.get("end_x"))
+                    end_y = int(item.get("end_y"))
+                    refined_confidence = int(item.get("confidence"))
+                except (TypeError, ValueError):
+                    continue
+                local_left = max(0, min(local_left, start_x - 12, end_x - 12))
+                local_top = max(0, min(local_top, start_y - 12, end_y - 12))
+                local_right = min(1000, max(local_right, start_x + 12, end_x + 12))
+                local_bottom = min(1000, max(local_bottom, start_y + 12, end_y + 12))
+                local_width = local_right - local_left
+                local_height = local_bottom - local_top
+                if refined_confidence < 70:
+                    continue
+                if not (0 <= local_left < local_right <= 1000 and 0 <= local_top < local_bottom <= 1000):
+                    continue
+                if local_width < 12 or local_height < 8 or local_width > 980 or local_height > 920:
+                    continue
+                crop_bounds = crop_specs[location_id]["bounds"]
+                crop_width = crop_bounds["right"] - crop_bounds["left"]
+                crop_height = crop_bounds["bottom"] - crop_bounds["top"]
+                candidate = {
+                    "left": crop_bounds["left"] + round(local_left * crop_width / 1000),
+                    "top": crop_bounds["top"] + round(local_top * crop_height / 1000),
+                    "right": crop_bounds["left"] + round(local_right * crop_width / 1000),
+                    "bottom": crop_bounds["top"] + round(local_bottom * crop_height / 1000),
+                    "confidence": min(coarse["confidence"], refined_confidence),
+                    "version": 2,
+                }
+                candidate = _snap_study_source_bbox_to_ink(image_bytes, candidate)
+                end_x_full = crop_bounds["left"] + round(end_x * crop_width / 1000)
+                end_y_full = crop_bounds["top"] + round(end_y * crop_height / 1000)
+                candidate = _expand_study_source_bbox_through_edge_ink(
+                    image_bytes,
+                    candidate,
+                    end_x=end_x_full,
+                    end_y=end_y_full,
+                    evidence_length=len(str(refinement_targets[location_id].get("evidence") or "")),
+                )
+                if _validated_study_source_bbox(candidate) is None:
+                    continue
+                requests_by_id[location_id]["bbox"] = candidate
+                seen.add(location_id)
+                located += 1
+
+            def canonical_evidence(value: Any) -> str:
+                return re.sub(r"\s+", "", str(value or "")).casefold()
+
+            for location_id in coarse_by_id:
+                if location_id not in seen:
+                    continue
+                target_evidence = canonical_evidence(refinement_targets[location_id].get("evidence"))
+                target_bbox = _validated_study_source_bbox(requests_by_id[location_id].get("bbox"))
+                if not target_evidence or not target_bbox:
+                    continue
+                containing_boxes = []
+                for candidate_id in coarse_by_id:
+                    if candidate_id == location_id or candidate_id not in seen:
+                        continue
+                    candidate_evidence = canonical_evidence(refinement_targets[candidate_id].get("evidence"))
+                    candidate_bbox = _validated_study_source_bbox(requests_by_id[candidate_id].get("bbox"))
+                    if (
+                        not candidate_bbox
+                        or len(candidate_evidence) <= len(target_evidence) + 5
+                        or target_evidence not in candidate_evidence
+                    ):
+                        continue
+                    overlap_width = max(
+                        0,
+                        min(target_bbox["right"], candidate_bbox["right"])
+                        - max(target_bbox["left"], candidate_bbox["left"]),
+                    )
+                    overlap_height = max(
+                        0,
+                        min(target_bbox["bottom"], candidate_bbox["bottom"])
+                        - max(target_bbox["top"], candidate_bbox["top"]),
+                    )
+                    target_area = (
+                        (target_bbox["right"] - target_bbox["left"])
+                        * (target_bbox["bottom"] - target_bbox["top"])
+                    )
+                    overlap_ratio = overlap_width * overlap_height / max(1, target_area)
+                    if overlap_ratio >= 0.2:
+                        continue
+                    candidate_area = (
+                        (candidate_bbox["right"] - candidate_bbox["left"])
+                        * (candidate_bbox["bottom"] - candidate_bbox["top"])
+                    )
+                    containing_boxes.append((candidate_area, candidate_bbox))
+                if containing_boxes:
+                    _, containing_bbox = min(containing_boxes, key=lambda value: value[0])
+                    requests_by_id[location_id]["bbox"] = {
+                        **containing_bbox,
+                        "confidence": max(60, containing_bbox["confidence"] - 5),
+                        "version": 2,
+                    }
+
+            for location_id in coarse_by_id:
+                if location_id in seen:
+                    continue
+                target_evidence = canonical_evidence(refinement_targets[location_id].get("evidence"))
+                if not target_evidence:
+                    continue
+                containing_boxes = []
+                for candidate_id in coarse_by_id:
+                    if candidate_id == location_id or candidate_id not in seen:
+                        continue
+                    candidate_evidence = canonical_evidence(refinement_targets[candidate_id].get("evidence"))
+                    candidate_bbox = _validated_study_source_bbox(requests_by_id[candidate_id].get("bbox"))
+                    if (
+                        not candidate_bbox
+                        or len(candidate_evidence) <= len(target_evidence) + 5
+                        or target_evidence not in candidate_evidence
+                    ):
+                        continue
+                    area = (
+                        (candidate_bbox["right"] - candidate_bbox["left"])
+                        * (candidate_bbox["bottom"] - candidate_bbox["top"])
+                    )
+                    containing_boxes.append((area, candidate_bbox))
+                if not containing_boxes:
+                    continue
+                _, containing_bbox = min(containing_boxes, key=lambda value: value[0])
+                requests_by_id[location_id]["bbox"] = {
+                    **containing_bbox,
+                    "confidence": max(60, containing_bbox["confidence"] - 5),
+                    "version": 2,
+                }
+                seen.add(location_id)
+                located += 1
+        if failed_pages == len(requests_by_image):
+            raise ValueError("Source localization failed for every image")
+        return located, total
+
+    def _localize_study_card_sources_band_experiment(
+        images: List[Tuple[str, bytes, str]],
+        key_concepts: List[Dict[str, Any]],
+    ) -> Tuple[int, int]:
+        requests_by_id: Dict[str, Dict[str, Any]] = {}
+        requests_by_image: Dict[int, List[Dict[str, Any]]] = {}
+        for concept_index, concept in enumerate(key_concepts):
+            if not isinstance(concept, dict):
+                continue
+            for source_ref_index, source_ref in enumerate(concept.get("source_refs") or []):
+                if not isinstance(source_ref, dict):
+                    continue
+                source_ref.pop("bbox", None)
+                try:
+                    image_index = int(source_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                evidence = _literal_study_source_evidence(source_ref.get("evidence"))
+                if not (1 <= image_index <= len(images)) or not evidence:
+                    continue
+                location_id = f"c{concept_index}r{source_ref_index}"
+                requests_by_id[location_id] = source_ref
+                requests_by_image.setdefault(image_index, []).append(
+                    {
+                        "location_id": location_id,
+                        "concept": str(concept.get("concept") or "")[:80],
+                        "evidence": evidence[:600],
+                        "start_anchor_text": evidence[:36],
+                        "end_anchor_text": evidence[-36:],
+                    }
+                )
+        total = len(requests_by_id)
+        if not total:
+            return 0, 0
+
+        located = 0
+        failed_pages = 0
+        for image_index, localization_input in sorted(requests_by_image.items()):
+            _raise_if_study_upload_cancelled()
+            item_count = len(localization_input)
+            location_schema = {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["locations"],
+                "properties": {
+                    "locations": {
+                        "type": "array",
+                        "minItems": item_count,
+                        "maxItems": item_count,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": [
+                                "location_id",
+                                "left",
+                                "top",
+                                "right",
+                                "bottom",
+                                "start_x",
+                                "start_y",
+                                "end_x",
+                                "end_y",
+                                "confidence",
+                            ],
+                            "properties": {
+                                "location_id": {"type": "string", "maxLength": 12},
+                                "left": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "top": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "right": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "bottom": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "start_x": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "start_y": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "end_x": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "end_y": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+                            },
+                        },
+                    }
+                },
+            }
+            filename, image_bytes, _mime_type = images[image_index - 1]
+            try:
+                with Image.open(io.BytesIO(image_bytes)) as source_image:
+                    clean_page = ImageOps.exif_transpose(source_image).convert("RGB")
+                pixel_width, pixel_height = clean_page.size
+                clean_data_url = _study_image_data_url(clean_page)
+                guide_data_url = _study_coordinate_guide_data_url(clean_page)
+                prompt = (
+                    f"你是手寫筆記來源的精確視覺定位員。這是第 {image_index} 張、檔名 {filename}、"
+                    f"canonical bitmap {pixel_width}×{pixel_height}。待定位項目都只來自這一張圖。"
+                    "逐項比對 evidence，先找出 start_anchor_text 對應之第一段可見文字的中心，再找出 "
+                    "end_anchor_text 對應之最後一段可見文字的中心；start_x/start_y 與 end_x/end_y 必須是這兩個"
+                    "實際文字錨點的中心，不是矩形角落。接著以 left/top/right/bottom 框住從首錨點至尾錨點"
+                    "所涵蓋的全部定義、條件、公式及必要推導。不得納入 evidence 結束後的下一個標題、例題或定義，"
+                    "也不得因為先找到關鍵詞就漏掉 evidence 後半段。若 evidence 是較短內容，即使附近另有相關筆記也只框"
+                    "該 evidence 本身。所有座標都相對於完整 canonical bitmap，左上 (0,0)、右下 (1000,1000)。"
+                    "你會看到完全相同方向與長寬比的乾淨圖及紅色座標網格圖；乾淨圖用於逐字辨識，網格圖只用於讀座標。"
+                    "矩形四周保留約 6 至 12 個座標單位，必須完整涵蓋上下標、矩陣、分數與公式末端。"
+                    "每個 location_id 恰好輸出一次且不得改名；無法唯一辨識時 confidence 低於 60。只輸出 schema JSON。\n\n"
+                    + json.dumps(localization_input, ensure_ascii=False, separators=(",", ":"))
+                )
+                source_content = [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": clean_data_url, "detail": "high"},
+                    {"type": "input_text", "text": "同一張 canonical bitmap 的 0–1000 座標網格："},
+                    {"type": "input_image", "image_url": guide_data_url, "detail": "high"},
+                ]
+                locations = None
+                for source_attempt in range(2):
+                    try:
+                        result = _call_openai_json(
+                            name="study_recall_source_locations_v3",
+                            schema=location_schema,
+                            content=source_content,
+                            timeout=240,
+                            reasoning_effort="minimal",
+                            max_output_tokens=10000,
+                            repair_simple_location_json=True,
+                        )
+                        locations = result.get("locations") if isinstance(result, dict) else None
+                        if not isinstance(locations, list):
+                            raise ValueError("Missing source locations")
+                        break
+                    except ValueError:
+                        if source_attempt:
+                            raise
+                        app.logger.warning("Retrying incomplete source localization for image %s", image_index)
+            except (OSError, requests.RequestException, ValueError, TypeError):
+                failed_pages += 1
+                app.logger.exception("Study-note source localization v3 failed for image %s", image_index)
+                continue
+
+            page_targets = {item["location_id"]: item for item in localization_input}
+            coarse_by_id: Dict[str, Dict[str, int]] = {}
+            for item in locations:
+                if not isinstance(item, dict):
+                    continue
+                location_id = str(item.get("location_id") or "")
+                if location_id not in page_targets or location_id in coarse_by_id:
+                    continue
+                try:
+                    left = int(item.get("left"))
+                    top = int(item.get("top"))
+                    right = int(item.get("right"))
+                    bottom = int(item.get("bottom"))
+                    start_x = int(item.get("start_x"))
+                    start_y = int(item.get("start_y"))
+                    end_x = int(item.get("end_x"))
+                    end_y = int(item.get("end_y"))
+                    confidence = int(item.get("confidence"))
+                except (TypeError, ValueError):
+                    continue
+                if confidence < 60 or not all(
+                    0 <= value <= 1000
+                    for value in (left, top, right, bottom, start_x, start_y, end_x, end_y)
+                ):
+                    continue
+                coarse = {
+                    "left": max(0, min(left, start_x - 12, end_x - 12)),
+                    "top": max(0, min(top, start_y - 12, end_y - 12)),
+                    "right": min(1000, max(right, start_x + 12, end_x + 12)),
+                    "bottom": min(1000, max(bottom, start_y + 12, end_y + 12)),
+                    "confidence": confidence,
+                    "version": 3,
+                }
+                if _validated_study_source_bbox(coarse) is None:
+                    continue
+                coarse_by_id[location_id] = {
+                    **coarse,
+                    "start_x": start_x,
+                    "start_y": start_y,
+                    "end_x": end_x,
+                    "end_y": end_y,
+                }
+
+            crop_specs: Dict[str, Dict[str, Any]] = {}
+            refinement_prompt = (
+                "你是手寫筆記的逐行轉錄員。第一張圖是完整局部裁切，只用來理解前後文；後續 BAND 圖由"
+                "影像演算法將同一裁切中的實體書寫列切開並固定編號。你必須為每個 BAND 恰好輸出一筆，"
+                "line_id 就是藍色 B 編號的數字，順序不可交換、遺漏或重複。text 只能轉錄該 BAND 圖內"
+                "實際看得到的文字或公式，不得把相鄰 BAND 的內容移入、摘要、修正或依上下文補寫；若只有"
+                "分隔線、零碎筆畫或沒有可辨識文字，text 輸出空字串且 confidence 為 0。left/right 相對於"
+                "原始裁切的筆記寬度，不包含 BAND 圖左側藍色標籤欄，最左為 0、最右為 1000。只輸出 schema JSON。"
+            )
+            for location_id, coarse in coarse_by_id.items():
+                coarse_width = coarse["right"] - coarse["left"]
+                coarse_height = coarse["bottom"] - coarse["top"]
+                padding_x = max(90, min(180, round(coarse_width * 0.28)))
+                padding_y = max(90, min(190, round(coarse_height * 0.65)))
+                target = page_targets[location_id]
+                if len(str(target.get("evidence") or "")) > 160:
+                    padding_x = max(padding_x, 150)
+                    padding_y = max(padding_y, 150)
+                crop_left = max(0, math.floor(pixel_width * max(0, coarse["left"] - padding_x) / 1000))
+                crop_top = max(0, math.floor(pixel_height * max(0, coarse["top"] - padding_y) / 1000))
+                crop_right = min(
+                    pixel_width,
+                    math.ceil(pixel_width * min(1000, coarse["right"] + padding_x) / 1000),
+                )
+                crop_bottom = min(
+                    pixel_height,
+                    math.ceil(pixel_height * min(1000, coarse["bottom"] + padding_y) / 1000),
+                )
+                if crop_right - crop_left < 20 or crop_bottom - crop_top < 20:
+                    continue
+                crop = clean_page.crop((crop_left, crop_top, crop_right, crop_bottom))
+                visual_bands = _study_source_visual_line_bands(crop)
+                if not visual_bands or len(visual_bands) > 60:
+                    continue
+                band_sheet_urls = _study_source_band_sheet_data_urls(crop, visual_bands)
+                if not band_sheet_urls:
+                    continue
+                crop_specs[location_id] = {
+                    "left": round(crop_left * 1000 / pixel_width),
+                    "top": round(crop_top * 1000 / pixel_height),
+                    "right": round(crop_right * 1000 / pixel_width),
+                    "bottom": round(crop_bottom * 1000 / pixel_height),
+                    "image": crop,
+                    "clean_url": _study_image_data_url(crop),
+                    "visual_bands": visual_bands,
+                    "band_sheet_urls": band_sheet_urls,
+                }
+
+            refined_by_id: Dict[str, Dict[str, int]] = {}
+            if crop_specs:
+                refinement_schema = {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["lines"],
+                    "properties": {
+                        "lines": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 60,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["line_id", "text", "left", "right", "confidence"],
+                                "properties": {
+                                    "line_id": {"type": "integer", "minimum": 1},
+                                    "text": {"type": "string", "maxLength": 260},
+                                    "left": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                    "right": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                    "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+                                },
+                            },
+                        }
+                    },
+                }
+                parent_cancel_event = getattr(study_upload_context, "cancel_event", None)
+
+                def refine_one_source(location_id: str) -> Tuple[str, Optional[Dict[str, int]]]:
+                    if isinstance(parent_cancel_event, threading.Event):
+                        study_upload_context.cancel_event = parent_cancel_event
+                    crop_spec = crop_specs[location_id]
+                    try:
+                        visual_bands = crop_spec["visual_bands"]
+                        refinement_content: List[Dict[str, Any]] = [
+                            {"type": "input_text", "text": refinement_prompt},
+                            {
+                                "type": "input_text",
+                                "text": (
+                                    f"TARGET {location_id} 共有 {len(visual_bands)} 個 BAND。"
+                                    "先看完整裁切理解內容，再逐張轉錄 BAND 圖。"
+                                ),
+                            },
+                            {"type": "input_image", "image_url": crop_spec["clean_url"], "detail": "high"},
+                        ]
+                        for sheet_index, sheet_url in enumerate(crop_spec["band_sheet_urls"], start=1):
+                            first_band = (sheet_index - 1) * 8 + 1
+                            last_band = min(len(visual_bands), first_band + 7)
+                            refinement_content.extend(
+                                [
+                                    {
+                                        "type": "input_text",
+                                        "text": f"BAND B{first_band:02d} 至 B{last_band:02d}：",
+                                    },
+                                    {"type": "input_image", "image_url": sheet_url, "detail": "high"},
+                                ]
+                            )
+                        refinement_result = _call_openai_json(
+                            name="study_recall_source_bands_v7",
+                            schema=refinement_schema,
+                            content=refinement_content,
+                            timeout=180,
+                            reasoning_effort="minimal",
+                            max_output_tokens=12000,
+                        )
+                        raw_lines = refinement_result.get("lines") if isinstance(refinement_result, dict) else None
+                        if not isinstance(raw_lines, list):
+                            raise ValueError("Missing source text lines")
+                        valid_lines: List[Dict[str, Any]] = []
+                        seen_band_ids: Set[int] = set()
+                        for line in raw_lines:
+                            if not isinstance(line, dict):
+                                continue
+                            try:
+                                line_id = int(line.get("line_id"))
+                                if not (1 <= line_id <= len(visual_bands)) or line_id in seen_band_ids:
+                                    continue
+                                band_top, band_bottom = visual_bands[line_id - 1]
+                                normalized_line = {
+                                    "line_id": line_id,
+                                    "text": str(line.get("text") or "").strip(),
+                                    "left": int(line.get("left")),
+                                    "top": band_top,
+                                    "right": int(line.get("right")),
+                                    "bottom": band_bottom,
+                                    "confidence": int(line.get("confidence")),
+                                }
+                            except (TypeError, ValueError):
+                                continue
+                            seen_band_ids.add(line_id)
+                            if (
+                                normalized_line["text"]
+                                and normalized_line["confidence"] >= 45
+                                and 0 <= normalized_line["left"] < normalized_line["right"] <= 1000
+                                and 0 <= normalized_line["top"] < normalized_line["bottom"] <= 1000
+                            ):
+                                valid_lines.append(normalized_line)
+                        if seen_band_ids != set(range(1, len(visual_bands) + 1)):
+                            raise ValueError("Incomplete or duplicate source bands")
+                        valid_lines.sort(key=lambda line: line["line_id"])
+                        selected_lines, match_metrics = _match_study_source_evidence_to_lines(
+                            str(page_targets[location_id].get("evidence") or ""),
+                            valid_lines,
+                        )
+                        if not selected_lines or not source_line_match_is_verified(
+                            str(page_targets[location_id].get("evidence") or ""),
+                            match_metrics,
+                        ):
+                            return location_id, None
+                        selected_ids = {id(line) for line in selected_lines}
+                        selected_indices = [
+                            index for index, line in enumerate(valid_lines) if id(line) in selected_ids
+                        ]
+                        first_index = min(selected_indices)
+                        last_index = max(selected_indices)
+                        selected_left = min(line["left"] for line in selected_lines)
+                        selected_top = min(line["top"] for line in selected_lines)
+                        selected_right = max(line["right"] for line in selected_lines)
+                        selected_bottom = max(line["bottom"] for line in selected_lines)
+                        visual_alignment = {
+                            id(line): (line["top"], line["bottom"])
+                            for line in valid_lines
+                        }
+                        using_visual_alignment = True
+                        typical_line_height = median(
+                            line["bottom"] - line["top"] for line in selected_lines
+                        )
+                        vertical_padding = max(18, min(52, round(typical_line_height * 0.58)))
+                        horizontal_padding = max(18, min(38, round(typical_line_height * 0.34)))
+
+                        def overlaps_selected_width(line: Dict[str, Any]) -> bool:
+                            overlap = max(
+                                0,
+                                min(selected_right, line["right"]) - max(selected_left, line["left"]),
+                            )
+                            narrower_width = max(
+                                1,
+                                min(selected_right - selected_left, line["right"] - line["left"]),
+                            )
+                            return overlap / narrower_width >= 0.18
+
+                        local_top = max(0, selected_top - vertical_padding)
+                        local_bottom = min(1000, selected_bottom + vertical_padding)
+                        if first_index > 0:
+                            previous_line = valid_lines[first_index - 1]
+                            previous_bottom = (
+                                visual_alignment[id(previous_line)][1]
+                                if using_visual_alignment and id(previous_line) in visual_alignment
+                                else previous_line["bottom"]
+                            )
+                            if (
+                                overlaps_selected_width(previous_line)
+                                and previous_bottom <= selected_top
+                            ):
+                                local_top = max(
+                                    local_top,
+                                    round((previous_bottom + selected_top) / 2),
+                                )
+                        if last_index + 1 < len(valid_lines):
+                            next_line = valid_lines[last_index + 1]
+                            next_top = (
+                                visual_alignment[id(next_line)][0]
+                                if using_visual_alignment and id(next_line) in visual_alignment
+                                else next_line["top"]
+                            )
+                            if (
+                                overlaps_selected_width(next_line)
+                                and next_top >= selected_bottom
+                            ):
+                                local_bottom = min(
+                                    local_bottom,
+                                    round((selected_bottom + next_top) / 2),
+                                )
+                        local_left = max(0, selected_left - horizontal_padding)
+                        local_right = min(1000, selected_right + horizontal_padding)
+                        first_line = selected_lines[0]
+                        last_line = selected_lines[-1]
+                        local_start_x = round((first_line["left"] + first_line["right"]) / 2)
+                        local_start_y_candidate = (
+                            round(sum(visual_alignment[id(first_line)]) / 2)
+                            if using_visual_alignment
+                            else round((first_line["top"] + first_line["bottom"]) / 2)
+                        )
+                        local_start_y = max(selected_top, min(selected_bottom, local_start_y_candidate))
+                        local_end_x = round((last_line["left"] + last_line["right"]) / 2)
+                        local_end_y_candidate = (
+                            round(sum(visual_alignment[id(last_line)]) / 2)
+                            if using_visual_alignment
+                            else round((last_line["top"] + last_line["bottom"]) / 2)
+                        )
+                        local_end_y = max(selected_top, min(selected_bottom, local_end_y_candidate))
+                        verification_confidence = round(
+                            (
+                                float(match_metrics.get("score") or 0.0) * 0.30
+                                + float(match_metrics.get("coverage") or 0.0) * 0.42
+                                + float(match_metrics.get("boundary_coverage") or 0.0) * 0.28
+                            )
+                            * 100
+                        )
+                        refined_confidence = min(
+                            coarse_by_id[location_id]["confidence"],
+                            round(sum(line["confidence"] for line in selected_lines) / len(selected_lines)),
+                            verification_confidence,
+                        )
+                        if refined_confidence < 60:
+                            return location_id, None
+                        crop_width = crop_spec["right"] - crop_spec["left"]
+                        crop_height = crop_spec["bottom"] - crop_spec["top"]
+
+                        def full_x(value: int) -> int:
+                            return crop_spec["left"] + round(value * crop_width / 1000)
+
+                        def full_y(value: int) -> int:
+                            return crop_spec["top"] + round(value * crop_height / 1000)
+
+                        refined_left = full_x(local_left)
+                        refined_top = full_y(local_top)
+                        refined_right = full_x(local_right)
+                        refined_bottom = full_y(local_bottom)
+                        return location_id, {
+                            "left": max(0, refined_left),
+                            "top": max(0, refined_top),
+                            "right": min(1000, refined_right),
+                            "bottom": min(1000, refined_bottom),
+                            "start_x": full_x(local_start_x),
+                            "start_y": full_y(local_start_y),
+                            "end_x": full_x(local_end_x),
+                            "end_y": full_y(local_end_y),
+                            "confidence": refined_confidence,
+                            "version": SOURCE_BBOX_VERSION,
+                            "text_verified": True,
+                            "match_score": round(float(match_metrics.get("score") or 0.0), 4),
+                            "match_coverage": round(float(match_metrics.get("coverage") or 0.0), 4),
+                            "boundary_coverage": round(
+                                float(match_metrics.get("boundary_coverage") or 0.0),
+                                4,
+                            ),
+                            "evidence_length": len(
+                                _canonical_study_source_match_text(
+                                    page_targets[location_id].get("evidence")
+                                )
+                            ),
+                        }
+                    except _StudyUploadCancelled:
+                        raise
+                    except (requests.RequestException, ValueError, TypeError, IndexError):
+                        app.logger.exception(
+                            "Study-note source line matching v5 failed for image %s target %s",
+                            image_index,
+                            location_id,
+                        )
+                        return location_id, None
+                    finally:
+                        if hasattr(study_upload_context, "cancel_event"):
+                            del study_upload_context.cancel_event
+
+                executor = ThreadPoolExecutor(
+                    max_workers=min(4, len(crop_specs)),
+                    thread_name_prefix="study-source-locator",
+                )
+                try:
+                    futures = [executor.submit(refine_one_source, location_id) for location_id in crop_specs]
+                    for future in as_completed(futures):
+                        _raise_if_study_upload_cancelled()
+                        location_id, refined = future.result()
+                        if refined is not None:
+                            refined_by_id[location_id] = refined
+                except _StudyUploadCancelled:
+                    for future in futures:
+                        future.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
+                else:
+                    executor.shutdown(wait=True)
+
+            seen_page: Set[str] = set()
+            for location_id in coarse_by_id:
+                model_location = refined_by_id.get(location_id)
+                if model_location is None:
+                    continue
+                start_x = int(model_location["start_x"])
+                start_y = int(model_location["start_y"])
+                end_x = int(model_location["end_x"])
+                end_y = int(model_location["end_y"])
+                confidence = int(model_location["confidence"])
+                location_version = int(model_location.get("version") or 3)
+                candidate_seed = {
+                    "left": max(0, min(int(model_location["left"]), start_x - 12, end_x - 12)),
+                    "top": max(0, min(int(model_location["top"]), start_y - 12, end_y - 12)),
+                    "right": min(1000, max(int(model_location["right"]), start_x + 12, end_x + 12)),
+                    "bottom": min(1000, max(int(model_location["bottom"]), start_y + 12, end_y + 12)),
+                    "confidence": confidence,
+                    "version": location_version,
+                    "text_verified": bool(model_location.get("text_verified")),
+                    "match_score": model_location.get("match_score"),
+                    "match_coverage": model_location.get("match_coverage"),
+                    "boundary_coverage": model_location.get("boundary_coverage"),
+                    "evidence_length": model_location.get("evidence_length"),
+                }
+                if _validated_study_source_bbox(candidate_seed) is None:
+                    continue
+                candidate = candidate_seed
+                if _validated_study_source_bbox(candidate) is None:
+                    continue
+                requests_by_id[location_id]["bbox"] = candidate
+                seen_page.add(location_id)
+                located += 1
+
+        if failed_pages == len(requests_by_image):
+            raise ValueError("Source localization failed for every image")
+        return located, total
+
+    def _localize_study_card_sources_model_consensus_legacy(
+        images: List[Tuple[str, bytes, str]],
+        key_concepts: List[Dict[str, Any]],
+    ) -> Tuple[int, int]:
+        targets_by_image: Dict[int, List[Dict[str, Any]]] = {}
+        for concept_index, concept in enumerate(key_concepts):
+            if not isinstance(concept, dict):
+                continue
+            for source_ref_index, source_ref in enumerate(concept.get("source_refs") or []):
+                if not isinstance(source_ref, dict):
+                    continue
+                source_ref.pop("bbox", None)
+                try:
+                    image_index = int(source_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                evidence = _literal_study_source_evidence(source_ref.get("evidence"))
+                if not (1 <= image_index <= len(images)) or not evidence:
+                    continue
+                targets_by_image.setdefault(image_index, []).append(
+                    {
+                        "location_id": f"c{concept_index}r{source_ref_index}",
+                        "concept": str(concept.get("concept") or "")[:100],
+                        "card_context": " ".join(
+                            str(concept.get(field) or "").strip()
+                            for field in (
+                                "core_summary",
+                                "explanation",
+                                "simple_example",
+                                "example_problem",
+                                "example_method",
+                                "memory_hint",
+                            )
+                            if str(concept.get(field) or "").strip()
+                        )[:900],
+                        "evidence": evidence[:700],
+                        "source_ref": source_ref,
+                    }
+                )
+        total = sum(len(targets) for targets in targets_by_image.values())
+        if not total:
+            return 0, 0
+        debug_localization = _env_flag_truthy(os.getenv("E3_SOURCE_LOCALIZATION_DEBUG"))
+
+        def record_debug(target: Dict[str, Any], stage: str, **details: Any) -> None:
+            if debug_localization:
+                target["source_ref"]["_localization_debug"] = {
+                    "stage": stage,
+                    **json_safe(details),
+                }
+
+        location_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "found",
+                "visible_excerpt",
+                "left",
+                "top",
+                "right",
+                "bottom",
+                "start_x",
+                "start_y",
+                "end_x",
+                "end_y",
+                "confidence",
+            ],
+            "properties": {
+                "found": {"type": "boolean"},
+                "visible_excerpt": {"type": "string", "maxLength": 900},
+                "left": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "top": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "right": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "bottom": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "start_x": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "start_y": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "end_x": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "end_y": {"type": "integer", "minimum": 0, "maximum": 1000},
+                "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+            },
+        }
+        crop_transcription_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["visible_text"],
+            "properties": {
+                "visible_text": {"type": "string", "maxLength": 2500},
+            },
+        }
+
+        def agreement_between(
+            first: Dict[str, Any],
+            second: Dict[str, Any],
+        ) -> Optional[Tuple[float, Dict[str, Any]]]:
+            intersection_width = max(
+                0,
+                min(first["right"], second["right"]) - max(first["left"], second["left"]),
+            )
+            intersection_height = max(
+                0,
+                min(first["bottom"], second["bottom"]) - max(first["top"], second["top"]),
+            )
+            first_width = first["right"] - first["left"]
+            first_height = first["bottom"] - first["top"]
+            second_width = second["right"] - second["left"]
+            second_height = second["bottom"] - second["top"]
+            intersection_area = intersection_width * intersection_height
+            smaller_area = min(first_width * first_height, second_width * second_height)
+            smaller_overlap = intersection_area / max(1, smaller_area)
+            horizontal_overlap = intersection_width / max(1, min(first_width, second_width))
+            vertical_overlap = intersection_height / max(1, min(first_height, second_height))
+            first_center = (
+                (first["left"] + first["right"]) / 2,
+                (first["top"] + first["bottom"]) / 2,
+            )
+            second_center = (
+                (second["left"] + second["right"]) / 2,
+                (second["top"] + second["bottom"]) / 2,
+            )
+            center_distance = math.hypot(
+                (first_center[0] - second_center[0]) / max(80, first_width, second_width),
+                (first_center[1] - second_center[1]) / max(55, first_height, second_height),
+            )
+            center_score = max(0.0, 1.0 - center_distance)
+            anchor_y_tolerance = max(38, round(max(first_height, second_height) * 0.28))
+            anchor_x_tolerance = max(70, round(max(first_width, second_width) * 0.38))
+            anchor_differences = (
+                abs(first["start_x"] - second["start_x"]),
+                abs(first["start_y"] - second["start_y"]),
+                abs(first["end_x"] - second["end_x"]),
+                abs(first["end_y"] - second["end_y"]),
+            )
+            if (
+                anchor_differences[0] > anchor_x_tolerance
+                or anchor_differences[2] > anchor_x_tolerance
+                or anchor_differences[1] > anchor_y_tolerance
+                or anchor_differences[3] > anchor_y_tolerance
+            ):
+                return None
+            anchor_score = max(
+                0.0,
+                1.0
+                - (
+                    anchor_differences[1] + anchor_differences[3]
+                )
+                / max(1, anchor_y_tolerance * 2),
+            )
+            agreement = (
+                smaller_overlap * 0.38
+                + vertical_overlap * 0.20
+                + horizontal_overlap * 0.13
+                + center_score * 0.11
+                + anchor_score * 0.18
+            )
+            if (
+                smaller_overlap < 0.52
+                or vertical_overlap < 0.62
+                or horizontal_overlap < 0.42
+                or agreement < 0.64
+            ):
+                return None
+            first_area = first_width * first_height
+            second_area = second_width * second_height
+            tighter = first if first_area <= second_area else second
+            return agreement, tighter
+
+        located = 0
+        failed_pages = 0
+        parent_cancel_event = getattr(study_upload_context, "cancel_event", None)
+        for image_index, page_targets in sorted(targets_by_image.items()):
+            _raise_if_study_upload_cancelled()
+            filename, image_bytes, _mime_type = images[image_index - 1]
+            try:
+                with Image.open(io.BytesIO(image_bytes)) as opened:
+                    clean_page = ImageOps.exif_transpose(opened).convert("RGB")
+                clean_data_url = _study_image_data_url(clean_page)
+                guide_data_url = _study_coordinate_guide_data_url(clean_page)
+                page_width, page_height = clean_page.size
+            except (OSError, ValueError, TypeError):
+                failed_pages += 1
+                app.logger.exception("Unable to prepare source image %s", image_index)
+                continue
+
+            def locate_one_target(
+                target: Dict[str, Any],
+            ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], bool]:
+                if isinstance(parent_cancel_event, threading.Event):
+                    study_upload_context.cancel_event = parent_cancel_event
+                successful_response = False
+                candidates: List[Dict[str, Any]] = []
+                try:
+                    for pass_index in range(2):
+                        _raise_if_study_upload_cancelled()
+                        prompt = (
+                            f"你是手寫筆記的單一來源定位員。這次只定位一個項目，不得搜尋或輸出其他重點。"
+                            f"圖片是第 {image_index} 張 {filename}，canonical bitmap 為 {page_width}×{page_height}。"
+                            f"卡片標題：{target['concept']}。待找原文 evidence：{target['evidence']}。"
+                            "先逐字確認 evidence 的開頭、公式關係與結尾都真的出現在同一個連續區塊；只看到相同關鍵詞、"
+                            "相鄰例題或語意相關內容都不算。start_x/start_y 是 evidence 第一個可見字元或公式的中心，"
+                            "end_x/end_y 是最後一個可見字元或公式的中心，兩者都不是矩形角落。visible_excerpt 必須逐字轉錄矩形內實際看見、且與 evidence"
+                            "對應的完整文字，不可直接複製提示中的 evidence，不可摘要或補字。矩形只框該連續原文及其"
+                            "必要公式，不含上一個標題、下一題、相鄰定義或大片空白。所有座標相對完整 canonical bitmap，"
+                            "左上 (0,0)、右下 (1000,1000)，四周只留 5 至 10 單位。若無法同時確認首尾文字或位置不唯一，"
+                            "found=false，所有矩形與首尾錨點座標填 0、visible_excerpt 留空、confidence 低於 60。"
+                            f"這是第 {pass_index + 1} 次獨立定位，不得假設另一輪的答案。只輸出 schema JSON。"
+                        )
+                        if pass_index == 0:
+                            content = [
+                                {"type": "input_text", "text": prompt},
+                                {"type": "input_image", "image_url": clean_data_url, "detail": "high"},
+                                {"type": "input_text", "text": "同一張圖片的座標網格，只用來讀座標："},
+                                {"type": "input_image", "image_url": guide_data_url, "detail": "high"},
+                            ]
+                        else:
+                            content = [
+                                {"type": "input_text", "text": prompt},
+                                {"type": "input_text", "text": "先用網格確認區域，再回乾淨圖逐字核對："},
+                                {"type": "input_image", "image_url": guide_data_url, "detail": "high"},
+                                {"type": "input_image", "image_url": clean_data_url, "detail": "high"},
+                            ]
+                        try:
+                            result = _call_openai_json(
+                                name=f"study_recall_source_consensus_v12_{pass_index + 1}",
+                                schema=location_schema,
+                                content=content,
+                                timeout=240,
+                                reasoning_effort="low",
+                                max_output_tokens=1800,
+                            )
+                            successful_response = True
+                        except (requests.RequestException, ValueError, TypeError):
+                            app.logger.exception(
+                                "Independent source locator failed for image %s target %s pass %s",
+                                image_index,
+                                target["location_id"],
+                                pass_index + 1,
+                            )
+                            continue
+                        if not bool(result.get("found")):
+                            continue
+                        try:
+                            candidate = {
+                                "left": int(result.get("left")),
+                                "top": int(result.get("top")),
+                                "right": int(result.get("right")),
+                                "bottom": int(result.get("bottom")),
+                                "start_x": int(result.get("start_x")),
+                                "start_y": int(result.get("start_y")),
+                                "end_x": int(result.get("end_x")),
+                                "end_y": int(result.get("end_y")),
+                                "confidence": int(result.get("confidence")),
+                            }
+                        except (TypeError, ValueError):
+                            continue
+                        if candidate["confidence"] < 68 or _validated_study_source_bbox(
+                            {**candidate, "version": 1}
+                        ) is None:
+                            continue
+                        if not all(
+                            0 <= candidate[key] <= 1000
+                            for key in ("start_x", "start_y", "end_x", "end_y")
+                        ):
+                            continue
+                        visible_excerpt = str(result.get("visible_excerpt") or "").strip()
+                        selected, metrics = _match_study_source_evidence_to_lines(
+                            target["evidence"],
+                            [{"text": visible_excerpt}],
+                        )
+                        if not selected or not source_line_match_is_verified(target["evidence"], metrics):
+                            continue
+                        candidate["match_metrics"] = metrics
+                        candidates.append(candidate)
+                    if len(candidates) != 2:
+                        return target, None, successful_response
+                    consensus = agreement_between(candidates[0], candidates[1])
+                    if consensus is None:
+                        return target, None, successful_response
+                    agreement, tighter = consensus
+                    metrics = {
+                        key: min(
+                            float(candidates[0]["match_metrics"].get(key) or 0.0),
+                            float(candidates[1]["match_metrics"].get(key) or 0.0),
+                        )
+                        for key in ("score", "coverage", "boundary_coverage")
+                    }
+                    confidence = min(
+                        int(candidates[0]["confidence"]),
+                        int(candidates[1]["confidence"]),
+                        round(agreement * 100),
+                        round(
+                            (
+                                metrics["score"] * 0.32
+                                + metrics["coverage"] * 0.42
+                                + metrics["boundary_coverage"] * 0.26
+                            )
+                            * 100
+                        ),
+                    )
+                    if confidence < 64:
+                        return target, None, successful_response
+                    evidence_length = len(_canonical_study_source_match_text(target["evidence"]))
+                    expected_lines = estimated_source_line_count(target["evidence"])
+                    start_anchor_y = round(median(candidate["start_y"] for candidate in candidates))
+                    end_anchor_y = round(median(candidate["end_y"] for candidate in candidates))
+                    anchor_margin = min(46, 30 + max(0, expected_lines - 1) * 2)
+                    candidate_seed = {
+                        "left": tighter["left"],
+                        "top": max(
+                            tighter["top"],
+                            min(start_anchor_y, end_anchor_y) - anchor_margin,
+                        ),
+                        "right": tighter["right"],
+                        "bottom": min(
+                            tighter["bottom"],
+                            max(start_anchor_y, end_anchor_y) + anchor_margin,
+                        ),
+                        "confidence": confidence,
+                        "version": SOURCE_BBOX_VERSION,
+                    }
+                    if (
+                        _validated_study_source_bbox(
+                            {**candidate_seed, "version": 1}
+                        )
+                        is None
+                        or not source_bbox_span_is_plausible(
+                            target["evidence"], candidate_seed
+                        )
+                    ):
+                        return target, None, successful_response
+                    crop_left = max(
+                        0, math.floor(candidate_seed["left"] * page_width / 1000)
+                    )
+                    crop_top = max(
+                        0, math.floor(candidate_seed["top"] * page_height / 1000)
+                    )
+                    crop_right = min(
+                        page_width,
+                        math.ceil(candidate_seed["right"] * page_width / 1000),
+                    )
+                    crop_bottom = min(
+                        page_height,
+                        math.ceil(candidate_seed["bottom"] * page_height / 1000),
+                    )
+                    if crop_right <= crop_left or crop_bottom <= crop_top:
+                        return target, None, successful_response
+                    crop_image = clean_page.crop(
+                        (crop_left, crop_top, crop_right, crop_bottom)
+                    )
+                    try:
+                        crop_result = _call_openai_json(
+                            name="study_recall_source_crop_transcription_v12",
+                            schema=crop_transcription_schema,
+                            content=[
+                                {
+                                    "type": "input_text",
+                                    "text": (
+                                        "你只會看到一張從手寫筆記裁下的小圖，且不知道系統正在尋找什麼。"
+                                        "請按由上到下、由左到右的順序，逐字轉錄裁切範圍內真正可見的所有文字、"
+                                        "數字與公式。不得猜測裁切外內容，不得依學科常識補句，不得摘要、改寫或"
+                                        "修正；被邊界切斷而無法辨識的字元以〔截斷〕表示。只輸出 schema JSON。"
+                                    ),
+                                },
+                                {
+                                    "type": "input_image",
+                                    "image_url": _study_image_data_url(crop_image),
+                                    "detail": "high",
+                                },
+                            ],
+                            timeout=180,
+                            reasoning_effort="low",
+                            max_output_tokens=2200,
+                        )
+                    except (requests.RequestException, ValueError, TypeError):
+                        app.logger.exception(
+                            "Blind crop verification failed for image %s target %s",
+                            image_index,
+                            target["location_id"],
+                        )
+                        return target, None, successful_response
+                    crop_visible_text = str(crop_result.get("visible_text") or "").strip()
+                    crop_selected, crop_metrics = _match_study_source_evidence_to_lines(
+                        target["evidence"],
+                        [{"text": crop_visible_text}],
+                    )
+                    if not crop_selected or not source_line_match_is_verified(
+                        target["evidence"], crop_metrics
+                    ):
+                        return target, None, successful_response
+                    metrics = {
+                        key: min(float(metrics.get(key) or 0.0), float(crop_metrics.get(key) or 0.0))
+                        for key in ("score", "coverage", "boundary_coverage")
+                    }
+                    candidate = {
+                        **candidate_seed,
+                        "confidence": confidence,
+                        "version": SOURCE_BBOX_VERSION,
+                        "text_verified": True,
+                        "match_score": round(metrics["score"], 4),
+                        "match_coverage": round(metrics["coverage"], 4),
+                        "boundary_coverage": round(metrics["boundary_coverage"], 4),
+                        "evidence_length": evidence_length,
+                        "coordinate_agreement": round(agreement, 4),
+                        "expected_lines": expected_lines,
+                        "span_verified": True,
+                        "crop_verified": True,
+                        "crop_match_score": round(float(crop_metrics.get("score") or 0.0), 4),
+                        "crop_match_coverage": round(float(crop_metrics.get("coverage") or 0.0), 4),
+                        "crop_boundary_coverage": round(
+                            float(crop_metrics.get("boundary_coverage") or 0.0), 4
+                        ),
+                        "crop_match_precision": round(
+                            float(crop_metrics.get("precision") or 0.0), 4
+                        ),
+                    }
+                    if _validated_study_source_bbox(candidate) is None:
+                        return target, None, successful_response
+                    return target, candidate, successful_response
+                finally:
+                    if hasattr(study_upload_context, "cancel_event"):
+                        del study_upload_context.cancel_event
+
+            executor = ThreadPoolExecutor(
+                max_workers=min(4, len(page_targets)),
+                thread_name_prefix="study-source-consensus",
+            )
+            page_had_response = False
+            try:
+                futures = [executor.submit(locate_one_target, target) for target in page_targets]
+                for future in as_completed(futures):
+                    _raise_if_study_upload_cancelled()
+                    target, candidate, successful_response = future.result()
+                    page_had_response = page_had_response or successful_response
+                    if candidate is None:
+                        continue
+                    target["source_ref"]["bbox"] = candidate
+                    located += 1
+            except _StudyUploadCancelled:
+                for future in futures:
+                    future.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            else:
+                executor.shutdown(wait=True)
+            if not page_had_response:
+                failed_pages += 1
+
+        if failed_pages == len(targets_by_image):
+            raise ValueError("Source localization failed for every image")
+        return located, total
+
+    def _study_source_index_pages(source_pages: Any) -> List[Dict[str, Any]]:
+        """Build page text from OCR that was independently cropped from each image."""
+        indexed_pages: List[Dict[str, Any]] = []
+        for page in source_pages or []:
+            if not isinstance(page, dict):
+                continue
+            try:
+                image_index = int(page.get("image_index") or 0)
+            except (TypeError, ValueError):
+                continue
+            localization_index = page.get("localization_index")
+            if (
+                image_index <= 0
+                or not isinstance(localization_index, dict)
+                or int(localization_index.get("version") or 0)
+                != SOURCE_PAGE_INDEX_VERSION
+                or str(localization_index.get("kind") or "") != "sections"
+                or not isinstance(localization_index.get("lines"), list)
+            ):
+                continue
+            section_texts = [
+                str(line.get("text") or "").strip()
+                for line in localization_index["lines"]
+                if isinstance(line, dict) and str(line.get("text") or "").strip()
+            ]
+            if section_texts:
+                indexed_pages.append(
+                    {
+                        "image_index": image_index,
+                        "transcription": "\n\n".join(section_texts),
+                    }
+                )
+        return indexed_pages
+
+    def _resolve_study_source_page(
+        evidence: Any,
+        source_pages: Any,
+        *,
+        preferred_image_index: Any = None,
+        context: Any = "",
+    ) -> Optional[Dict[str, Any]]:
+        indexed_pages = _study_source_index_pages(source_pages)
+        if indexed_pages:
+            indexed_resolution = resolve_source_evidence_page(
+                evidence,
+                indexed_pages,
+                preferred_image_index=preferred_image_index,
+                context=context,
+            )
+            if indexed_resolution:
+                return {**indexed_resolution, "page_match_source": "section_ocr"}
+        transcription_resolution = resolve_source_evidence_page(
+            evidence,
+            source_pages or [],
+            preferred_image_index=preferred_image_index,
+            context=context,
+        )
+        if transcription_resolution:
+            return {
+                **transcription_resolution,
+                "page_match_source": "page_transcription",
+            }
+        return None
+
+    def _localize_study_card_sources(
+        images: List[Tuple[str, bytes, str]],
+        key_concepts: List[Dict[str, Any]],
+        source_pages: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[int, int]:
+        """Locate sources from image-derived geometry and target-free OCR text."""
+        targets_by_image: Dict[int, List[Dict[str, Any]]] = {}
+        for concept_index, concept in enumerate(key_concepts):
+            if not isinstance(concept, dict):
+                continue
+            card_context = " ".join(
+                str(concept.get(field) or "").strip()
+                for field in (
+                    "concept",
+                    "topic",
+                    "core_summary",
+                    "explanation",
+                    "example_problem",
+                    "example_method",
+                    "simple_example",
+                )
+                if str(concept.get(field) or "").strip()
+            )[:1800]
+            for source_ref_index, source_ref in enumerate(concept.get("source_refs") or []):
+                if not isinstance(source_ref, dict):
+                    continue
+                source_ref.pop("bbox", None)
+                try:
+                    image_index = int(source_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                evidence = _literal_study_source_evidence(source_ref.get("evidence"))
+                if not evidence:
+                    continue
+                page_resolution = (
+                    _resolve_study_source_page(
+                        evidence,
+                        source_pages or [],
+                        preferred_image_index=image_index,
+                        context=card_context,
+                    )
+                    if source_pages
+                    else {
+                        "image_index": image_index,
+                        "page_verified": 1 <= image_index <= len(images),
+                        "match_kind": "legacy_assigned",
+                        "match_margin": 0.0,
+                    }
+                )
+                if not page_resolution:
+                    continue
+                image_index = int(page_resolution.get("image_index") or 0)
+                if not (1 <= image_index <= len(images)):
+                    continue
+                source_ref["image_index"] = image_index
+                targets_by_image.setdefault(image_index, []).append(
+                    {
+                        "location_id": f"c{concept_index}r{source_ref_index}",
+                        "concept": str(concept.get("concept") or "")[:100],
+                        "card_context": card_context,
+                        "evidence": evidence[:700],
+                        "source_ref": source_ref,
+                        "page_resolution": page_resolution,
+                    }
+                )
+        total = sum(len(targets) for targets in targets_by_image.values())
+        if not total:
+            return 0, 0
+        debug_localization = _env_flag_truthy(os.getenv("E3_SOURCE_LOCALIZATION_DEBUG"))
+
+        def record_debug(target: Dict[str, Any], stage: str, **details: Any) -> None:
+            if debug_localization:
+                target["source_ref"]["_localization_debug"] = {
+                    "stage": stage,
+                    **json_safe(details),
+                }
+
+        pages_by_index: Dict[int, Dict[str, Any]] = {}
+        for page in source_pages or []:
+            if not isinstance(page, dict):
+                continue
+            try:
+                image_index = int(page.get("image_index") or 0)
+            except (TypeError, ValueError):
+                continue
+            if image_index > 0:
+                pages_by_index[image_index] = page
+
+        crop_batch_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["crops"],
+            "properties": {
+                "crops": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["crop_id", "visible_text", "confidence"],
+                        "properties": {
+                            "crop_id": {"type": "string", "maxLength": 40},
+                            "visible_text": {"type": "string", "maxLength": 3200},
+                            "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+                        },
+                    },
+                }
+            },
+        }
+        section_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["separator_ids"],
+            "properties": {
+                "separator_ids": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "items": {"type": "string", "maxLength": 8},
+                }
+            },
+        }
+        reanchor_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["matches"],
+            "properties": {
+                "matches": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "location_id",
+                            "section_id",
+                            "anchor",
+                            "confidence",
+                        ],
+                        "properties": {
+                            "location_id": {"type": "string", "maxLength": 40},
+                            "section_id": {"type": "integer", "minimum": 0, "maximum": 80},
+                            "anchor": {"type": "string", "maxLength": 420},
+                            "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+                        },
+                    },
+                }
+            },
+        }
+
+        def fallback_page_sections(page: Image.Image) -> List[Dict[str, Any]]:
+            bounds = estimate_source_page_content_bounds(page)
+            return [
+                {
+                    "line_id": 1,
+                    **bounds,
+                    "geometry_confidence": 0.62,
+                    "text": "",
+                }
+            ]
+
+        def separator_marker_image(
+            page: Image.Image,
+            candidates: List[Dict[str, Any]],
+        ) -> Image.Image:
+            page = page.convert("RGB")
+            margin_width = max(150, round(page.width * 0.14))
+            marked = Image.new("RGB", (page.width + margin_width, page.height), "white")
+            marked.paste(page, (0, 0))
+            draw = ImageDraw.Draw(marked)
+            ruler_left = page.width + max(8, round(margin_width * 0.08))
+            draw.line(
+                (ruler_left, 0, ruler_left, page.height),
+                fill=(125, 125, 125),
+                width=max(1, round(page.width * 0.0015)),
+            )
+            try:
+                font = ImageFont.load_default(size=max(12, round(page.width * 0.018)))
+            except TypeError:
+                font = ImageFont.load_default()
+            for candidate in candidates:
+                pixel_y = round(int(candidate["y"]) * page.height / 1000)
+                draw.line(
+                    (ruler_left, pixel_y, ruler_left + round(margin_width * 0.32), pixel_y),
+                    fill=(220, 20, 105),
+                    width=max(2, round(page.width * 0.0025)),
+                )
+                draw.text(
+                    (ruler_left + round(margin_width * 0.38), max(0, pixel_y - 10)),
+                    str(candidate["separator_id"]),
+                    fill=(180, 0, 80),
+                    font=font,
+                )
+            return marked
+
+        def segment_page_sections(
+            page: Image.Image,
+            *,
+            image_index: int,
+            filename: str,
+        ) -> Tuple[List[Dict[str, Any]], bool]:
+            content_bounds = estimate_source_page_content_bounds(page)
+            separator_candidates = detect_source_horizontal_separator_candidates(page)
+            if not separator_candidates:
+                return fallback_page_sections(page), True
+            marked_page = separator_marker_image(page, separator_candidates)
+            prompt = (
+                "你是筆記區塊分隔線分類員，完全不知道之後要搜尋的卡片內容。原圖右側新增白色標尺欄，"
+                "洋紅色短刻度與 S 編號只用來指出像素演算法找到的候選高度，不是筆記內容。請選出真正把上下兩個"
+                "筆記主題、題目或觀念區塊分開的候選線編號。橫跨主要筆記寬度的手繪虛線或實線可選；"
+                "大型矩形內容框的下緣若確實把框內內容與下方內容分開，也可選。短底線、公式分數線、矩陣線、"
+                "刪除線、照片或工具列邊框、文字筆畫都不可選。沒有真正區塊分隔線時輸出空陣列。"
+                "只可輸出圖上存在的 S 編號，不可自行估算座標。"
+                f"這是第 {image_index} 張 {filename}。只輸出 schema JSON。"
+            )
+            try:
+                result = _call_openai_json(
+                    name="study_source_page_sections_v15",
+                    schema=section_schema,
+                    content=[
+                        {"type": "input_text", "text": prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": _study_image_data_url(marked_page),
+                            "detail": "high",
+                        },
+                    ],
+                    timeout=240,
+                    reasoning_effort="low",
+                    max_output_tokens=3200,
+                )
+                had_response = True
+            except (requests.RequestException, ValueError, TypeError):
+                app.logger.exception("Study-note page section segmentation failed for image %s", image_index)
+                # Continue with high-confidence image-derived separator rules.
+                # This keeps section geometry available during API rate limits.
+                result = {"separator_ids": []}
+                had_response = False
+            content_left = max(20, int(content_bounds["left"]))
+            content_top = max(0, int(content_bounds["top"]))
+            content_right = min(980, int(content_bounds["right"]))
+            content_bottom = min(1000, int(content_bounds["bottom"]))
+            if content_right - content_left < 80 or content_bottom - content_top < 25:
+                return fallback_page_sections(page), had_response
+            candidates_by_id = {
+                str(candidate["separator_id"]): candidate
+                for candidate in separator_candidates
+            }
+            selected_ids = {
+                str(separator_id).strip().upper()
+                for separator_id in result.get("separator_ids") or []
+            }
+            selected_ids.update(
+                str(candidate["separator_id"])
+                for candidate in separator_candidates
+                if float(candidate.get("full_span") or 0.0) >= 0.45
+                and (
+                    float(candidate.get("full_coverage") or 0.0)
+                    / max(1, int(candidate.get("run_count") or 0))
+                ) >= 0.018
+                and float(candidate.get("full_longest_run") or 0.0) <= 0.065
+                and int(candidate.get("run_count") or 0) >= 8
+                and int(candidate.get("thickness") or 999) <= 18
+                and float(candidate.get("context_density") or 1.0) <= 0.13
+                and float(candidate.get("separator_likelihood") or 0.0) >= 0.50
+            )
+            selected_ids.update(
+                str(candidate["separator_id"])
+                for candidate in separator_candidates
+                if float(candidate.get("full_span") or 0.0) >= 0.40
+                and (
+                    float(candidate.get("full_coverage") or 0.0)
+                    / max(1, int(candidate.get("run_count") or 0))
+                ) >= 0.018
+                and float(candidate.get("full_longest_run") or 0.0) <= 0.06
+                and int(candidate.get("run_count") or 0) >= 8
+                and int(candidate.get("thickness") or 999) <= 12
+                and float(candidate.get("context_density") or 1.0) <= 0.05
+                and float(candidate.get("separator_likelihood") or 0.0) >= 0.42
+            )
+            selected_ids.update(
+                str(candidate["separator_id"])
+                for candidate in separator_candidates
+                if float(candidate.get("full_span") or 0.0) >= 0.70
+                and float(candidate.get("full_coverage") or 0.0) >= 0.18
+                and float(candidate.get("full_longest_run") or 0.0) <= 0.09
+                and int(candidate.get("run_count") or 0) >= 8
+                and int(candidate.get("thickness") or 999) <= 18
+                and float(candidate.get("separator_likelihood") or 0.0) >= 0.42
+            )
+            selected_ids.update(
+                str(candidate["separator_id"])
+                for candidate in separator_candidates
+                if 0.32 <= float(candidate.get("full_span") or 0.0) < 0.43
+                and float(candidate.get("full_coverage") or 0.0) >= 0.15
+                and (
+                    float(candidate.get("full_coverage") or 0.0)
+                    / max(1, int(candidate.get("run_count") or 0))
+                ) >= 0.019
+                and float(candidate.get("full_longest_run") or 0.0) <= 0.04
+                and int(candidate.get("run_count") or 0) >= 8
+                and int(candidate.get("thickness") or 999) <= 6
+                and float(candidate.get("context_density") or 1.0) <= 0.04
+                and float(candidate.get("separator_likelihood") or 0.0) >= 0.33
+            )
+            selected_ids.update(
+                str(candidate["separator_id"])
+                for candidate in separator_candidates
+                if float(candidate.get("full_span") or 0.0) >= 0.80
+                and float(candidate.get("full_coverage") or 0.0) >= 0.70
+                and float(candidate.get("full_longest_run") or 0.0) >= 0.55
+                and int(candidate.get("run_count") or 99) <= 4
+                and float(candidate.get("separator_likelihood") or 0.0) >= 0.55
+            )
+            selected_candidates = sorted(
+                (
+                    candidate
+                    for separator_id, candidate in candidates_by_id.items()
+                    if separator_id in selected_ids
+                    and content_top + 20 < int(candidate["y"]) < content_bottom - 20
+                ),
+                key=lambda candidate: int(candidate["y"]),
+            )
+            snapped_candidates: List[Dict[str, Any]] = []
+            used_separator_ids: Set[str] = set()
+            for selected_candidate in selected_candidates:
+                selected_y = int(selected_candidate["y"])
+                nearby = [
+                    candidate
+                    for candidate in separator_candidates
+                    if str(candidate["separator_id"]) not in used_separator_ids
+                    and abs(int(candidate["y"]) - selected_y) <= 110
+                    and content_top + 20 < int(candidate["y"]) < content_bottom - 20
+                ]
+                best_nearby = max(
+                    nearby or [selected_candidate],
+                    key=lambda candidate: (
+                        float(candidate.get("separator_likelihood") or 0.0),
+                        -abs(int(candidate["y"]) - selected_y),
+                    ),
+                )
+                selected_likelihood = float(
+                    selected_candidate.get("separator_likelihood") or 0.0
+                )
+                snapped = (
+                    best_nearby
+                    if float(best_nearby.get("separator_likelihood") or 0.0)
+                    >= selected_likelihood + 0.05
+                    else selected_candidate
+                )
+                if (
+                    float(snapped.get("context_density") or 0.0) > 0.075
+                    and int(snapped.get("thickness") or 0) > 20
+                    and float(snapped.get("full_longest_run") or 0.0) > 0.09
+                    and not (
+                        float(snapped.get("full_span") or 0.0) >= 0.80
+                        and float(snapped.get("full_coverage") or 0.0) >= 0.70
+                    )
+                ):
+                    continue
+                if float(snapped.get("separator_likelihood") or 0.0) < 0.30:
+                    continue
+                if snapped_candidates and int(snapped["y"]) - int(snapped_candidates[-1]["y"]) < 24:
+                    previous = snapped_candidates[-1]
+                    if float(snapped.get("separator_likelihood") or 0.0) > float(
+                        previous.get("separator_likelihood") or 0.0
+                    ):
+                        used_separator_ids.discard(str(previous["separator_id"]))
+                        snapped_candidates[-1] = snapped
+                        used_separator_ids.add(str(snapped["separator_id"]))
+                    continue
+                snapped_candidates.append(snapped)
+                used_separator_ids.add(str(snapped["separator_id"]))
+            boundaries = [
+                (
+                    int(candidate["y"]),
+                    round(74 + min(0.22, float(candidate["score"])) * 100),
+                )
+                for candidate in snapped_candidates
+            ]
+
+            sections: List[Dict[str, Any]] = []
+            section_top = content_top
+            for y, confidence in [*boundaries, (content_bottom, 85)]:
+                section_bottom = content_bottom if y == content_bottom else max(section_top + 25, y - 5)
+                if section_bottom - section_top < 25:
+                    section_top = min(content_bottom, y + 5)
+                    continue
+                sections.append(
+                    {
+                        "line_id": len(sections) + 1,
+                        "left": content_left,
+                        "top": section_top,
+                        "right": content_right,
+                        "bottom": section_bottom,
+                        "geometry_confidence": round(confidence / 100, 4),
+                        "text": "",
+                    }
+                )
+                section_top = min(content_bottom, y + 5)
+            return (sections or fallback_page_sections(page)), had_response
+
+        def crop_from_bbox(
+            page: Image.Image,
+            bbox: Dict[str, Any],
+            *,
+            context_ratio: float,
+        ) -> Optional[Image.Image]:
+            try:
+                left = int(bbox["left"])
+                top = int(bbox["top"])
+                right = int(bbox["right"])
+                bottom = int(bbox["bottom"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            pixel_left = math.floor(left * page.width / 1000)
+            pixel_top = math.floor(top * page.height / 1000)
+            pixel_right = math.ceil(right * page.width / 1000)
+            pixel_bottom = math.ceil(bottom * page.height / 1000)
+            vertical_padding = max(5, round((pixel_bottom - pixel_top) * context_ratio))
+            horizontal_padding = max(7, round(page.width * 0.007))
+            pixel_left = max(0, pixel_left - horizontal_padding)
+            pixel_right = min(page.width, pixel_right + horizontal_padding)
+            pixel_top = max(0, pixel_top - vertical_padding)
+            pixel_bottom = min(page.height, pixel_bottom + vertical_padding)
+            if pixel_right - pixel_left < 12 or pixel_bottom - pixel_top < 8:
+                return None
+            crop = page.crop((pixel_left, pixel_top, pixel_right, pixel_bottom)).convert("RGB")
+            if crop.height < 150:
+                scale = min(3.2, 150 / max(1, crop.height))
+                crop = crop.resize(
+                    (max(1, round(crop.width * scale)), max(1, round(crop.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            return crop
+
+        def transcribe_crops(
+            crop_specs: List[Tuple[str, Image.Image]],
+            *,
+            purpose: str,
+        ) -> Tuple[Dict[str, Dict[str, Any]], bool]:
+            transcribed: Dict[str, Dict[str, Any]] = {}
+            had_response = False
+            pending_specs = list(crop_specs)
+            for attempt in range(2):
+                if not pending_specs:
+                    break
+                for batch_start in range(0, len(pending_specs), 8):
+                    _raise_if_study_upload_cancelled()
+                    batch = pending_specs[batch_start : batch_start + 8]
+                    content: List[Dict[str, Any]] = [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "你是手寫筆記裁切圖的逐字轉錄員。你不知道系統之後要找哪張卡，也不會看到任何待搜尋文字。"
+                                "下方每個 crop_id 後緊接該裁切圖；請逐一按圖中自然閱讀順序轉錄真正可見的文字、數字與公式。"
+                                "公式請盡量用 LaTeX，保留 =、不等號、箭頭、上下標、矩陣列與運算次序；不得依學科常識修正、"
+                                "摘要或補入裁切外文字。無法辨識才使用〔不清楚〕，空白或純分隔線則 visible_text 留空。"
+                                "每個輸入 crop_id 必須恰好輸出一次，且不得交換代碼。只輸出 schema JSON。"
+                            ),
+                        }
+                    ]
+                    for crop_id, crop in batch:
+                        content.append({"type": "input_text", "text": f"crop_id={crop_id}"})
+                        content.append(
+                            {
+                                "type": "input_image",
+                                "image_url": _study_image_data_url(crop, max_side=2200),
+                                "detail": "high",
+                            }
+                        )
+                    try:
+                        result = _call_openai_json(
+                            name=f"study_source_section_ocr_{purpose}_v14_retry_{attempt}",
+                            schema=crop_batch_schema,
+                            content=content,
+                            timeout=240,
+                            reasoning_effort="low",
+                            max_output_tokens=5200,
+                        )
+                        had_response = True
+                    except (requests.RequestException, ValueError, TypeError):
+                        app.logger.exception("Target-free source crop OCR failed for %s", purpose)
+                        continue
+                    expected_ids = {crop_id for crop_id, _crop in batch}
+                    for item in result.get("crops") or []:
+                        if not isinstance(item, dict):
+                            continue
+                        crop_id = str(item.get("crop_id") or "").strip()
+                        if crop_id not in expected_ids or crop_id in transcribed:
+                            continue
+                        try:
+                            confidence = max(0, min(100, int(item.get("confidence") or 0)))
+                        except (TypeError, ValueError):
+                            confidence = 0
+                        candidate_transcription = {
+                            "text": str(item.get("visible_text") or "").strip()[:3200],
+                            "confidence": confidence,
+                        }
+                        if confidence >= 40 or attempt == 1:
+                            transcribed[crop_id] = candidate_transcription
+                pending_specs = [
+                    spec for spec in pending_specs if spec[0] not in transcribed
+                ]
+            return transcribed, had_response
+
+        def reanchor_targets_to_sections(
+            targets: List[Dict[str, Any]],
+            lines: List[Dict[str, Any]],
+            *,
+            image_index: int,
+            _retry: bool = False,
+        ) -> Dict[str, Dict[str, Any]]:
+            """Repair legacy descriptive evidence using literal section OCR text."""
+            if not targets or not lines:
+                return {}
+            lines_by_id = {
+                int(line.get("line_id") or 0): line
+                for line in lines
+                if isinstance(line, dict)
+                and int(line.get("line_id") or 0) > 0
+                and str(line.get("text") or "").strip()
+            }
+            if not lines_by_id:
+                return {}
+            section_catalog = [
+                {
+                    "section_id": line_id,
+                    "visible_text": str(line.get("text") or "")[:3200],
+                }
+                for line_id, line in sorted(lines_by_id.items())
+            ]
+            resolved: Dict[str, Dict[str, Any]] = {}
+            for batch_start in range(0, len(targets), 8):
+                _raise_if_study_upload_cancelled()
+                batch = targets[batch_start : batch_start + 8]
+                target_catalog = [
+                    {
+                        "location_id": str(target["location_id"]),
+                        "concept": str(target.get("concept") or "")[:100],
+                        "card_content": str(target.get("card_context") or "")[:900],
+                        "legacy_evidence": str(target.get("evidence") or "")[:700],
+                    }
+                    for target in batch
+                ]
+                prompt = (
+                    "你是舊筆記來源錨點修復員。section_catalog 是已按原圖方格逐字 OCR 的文字，"
+                    "target_catalog 是卡片與舊來源描述。對每個 target，只能在某一個 section 的 visible_text "
+                    "確實直接支持該卡片時配對；不確定就不要輸出該 target。section_id=0 表示不配對，但不要為它"
+                    "編造 anchor。anchor 必須從所選 visible_text 逐字連續複製 12 至 220 個字元，保留公式、數字與"
+                    "運算符，不可摘要、改寫、修正或拼接兩段。優先複製能唯一識別觀念或公式的最短完整片段。"
+                    "同一 target 最多一筆；只輸出 schema JSON。\n"
+                    + (
+                        "這是第二次核對。上一輪未找到可靠錨點，請逐一重新檢查所有 section；仍不確定就省略。\n"
+                        if _retry
+                        else ""
+                    )
+                    + f"image_index={image_index}\n"
+                    + "section_catalog="
+                    + json.dumps(section_catalog, ensure_ascii=False, separators=(",", ":"))
+                    + "\ntarget_catalog="
+                    + json.dumps(target_catalog, ensure_ascii=False, separators=(",", ":"))
+                )
+                try:
+                    result = _call_openai_json(
+                        name=(
+                            "study_source_legacy_reanchor_v1_retry"
+                            if _retry
+                            else "study_source_legacy_reanchor_v1"
+                        ),
+                        schema=reanchor_schema,
+                        content=[{"type": "input_text", "text": prompt}],
+                        timeout=180,
+                        reasoning_effort="low",
+                        max_output_tokens=3600,
+                    )
+                except (requests.RequestException, ValueError, TypeError):
+                    app.logger.exception(
+                        "Legacy source re-anchoring failed for image %s",
+                        image_index,
+                    )
+                    continue
+                targets_by_id = {
+                    str(target["location_id"]): target for target in batch
+                }
+                for item in result.get("matches") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    location_id = str(item.get("location_id") or "").strip()
+                    target = targets_by_id.get(location_id)
+                    if target is None or location_id in resolved:
+                        continue
+                    try:
+                        section_id = int(item.get("section_id") or 0)
+                        model_confidence = int(item.get("confidence") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    line = lines_by_id.get(section_id)
+                    anchor = _literal_study_source_evidence(item.get("anchor"))
+                    canonical_anchor = _canonical_study_source_match_text(anchor)
+                    canonical_line = _canonical_study_source_match_text(
+                        (line or {}).get("text")
+                    )
+                    if (
+                        line is None
+                        or model_confidence < 70
+                        or len(canonical_anchor) < 8
+                        or canonical_anchor not in canonical_line
+                    ):
+                        continue
+                    anchor_lines, anchor_metrics = match_source_evidence_to_sections(
+                        anchor,
+                        lines,
+                    )
+                    if (
+                        not anchor_lines
+                        or int(anchor_lines[0].get("line_id") or 0) != section_id
+                        or not source_section_match_is_verified(anchor, anchor_metrics)
+                        or float(anchor_metrics.get("uniqueness") or 0.0) < 0.24
+                    ):
+                        continue
+                    _original_lines, original_metrics = match_source_evidence_to_sections(
+                        target["evidence"],
+                        [line],
+                    )
+                    _concept_lines, concept_metrics = match_source_evidence_to_sections(
+                        target.get("concept") or "",
+                        [line],
+                    )
+                    _context_lines, context_metrics = match_source_evidence_to_sections(
+                        target.get("card_context") or "",
+                        [line],
+                    )
+                    semantic_score = max(
+                        float(original_metrics.get("score") or 0.0),
+                        float(concept_metrics.get("score") or 0.0),
+                        float(context_metrics.get("score") or 0.0),
+                    )
+                    semantic_coverage = max(
+                        float(original_metrics.get("coverage") or 0.0),
+                        float(concept_metrics.get("coverage") or 0.0),
+                        float(context_metrics.get("coverage") or 0.0),
+                    )
+                    semantic_formula = float(
+                        original_metrics.get("formula_coverage") or 0.0
+                    )
+                    if (
+                        semantic_score < 0.24
+                        and semantic_coverage < 0.18
+                        and semantic_formula < 0.40
+                    ):
+                        continue
+                    resolved[location_id] = {
+                        "line": line,
+                        "anchor": anchor,
+                        "metrics": anchor_metrics,
+                        "model_confidence": model_confidence,
+                        "semantic_score": semantic_score,
+                    }
+            if not _retry:
+                still_unresolved = [
+                    target
+                    for target in targets
+                    if str(target["location_id"]) not in resolved
+                ]
+                if still_unresolved:
+                    resolved.update(
+                        reanchor_targets_to_sections(
+                            still_unresolved,
+                            lines,
+                            image_index=image_index,
+                            _retry=True,
+                        )
+                    )
+            return resolved
+
+        located = 0
+        successful_page_ocr = False
+        used_cached_index = False
+        used_transcription_fallback = False
+        parent_cancel_event = getattr(study_upload_context, "cancel_event", None)
+        for image_index, page_targets in sorted(targets_by_image.items()):
+            _raise_if_study_upload_cancelled()
+            filename, image_bytes, _mime_type = images[image_index - 1]
+            try:
+                with Image.open(io.BytesIO(image_bytes)) as opened:
+                    clean_page = ImageOps.exif_transpose(opened).convert("RGB")
+            except (OSError, ValueError, TypeError):
+                app.logger.exception("Unable to prepare source image %s", image_index)
+                continue
+            page_digest = hashlib.sha256(image_bytes).hexdigest()
+            source_page = pages_by_index.get(image_index)
+            page_transcription = str((source_page or {}).get("transcription") or "")
+            transcription_isolated = (
+                str((source_page or {}).get("transcription_mode") or "")
+                == "isolated_v1"
+            )
+            cached_index = source_page.get("localization_index") if source_page else None
+            lines: List[Dict[str, Any]] = []
+            if (
+                isinstance(cached_index, dict)
+                and int(cached_index.get("version") or 0) == SOURCE_PAGE_INDEX_VERSION
+                and str(cached_index.get("kind") or "") == "sections"
+                and str(cached_index.get("image_sha256") or "") == page_digest
+                and isinstance(cached_index.get("lines"), list)
+            ):
+                for cached_line in cached_index["lines"]:
+                    if not isinstance(cached_line, dict):
+                        continue
+                    try:
+                        line = {
+                            "line_id": int(cached_line.get("line_id") or len(lines) + 1),
+                            "left": int(cached_line["left"]),
+                            "top": int(cached_line["top"]),
+                            "right": int(cached_line["right"]),
+                            "bottom": int(cached_line["bottom"]),
+                            "geometry_confidence": float(cached_line.get("geometry_confidence") or 0.0),
+                            "ocr_confidence": int(cached_line.get("ocr_confidence") or 0),
+                            "text": str(cached_line.get("text") or "")[:3200],
+                            "transcription_fallback": bool(
+                                cached_line.get("transcription_fallback")
+                            ),
+                            "transcription_isolated": bool(
+                                cached_line.get("transcription_isolated")
+                            ),
+                        }
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if line["text"] and 0 <= line["left"] < line["right"] <= 1000 and 0 <= line["top"] < line["bottom"] <= 1000:
+                        lines.append(line)
+                used_cached_index = used_cached_index or bool(lines)
+
+            if not lines:
+                geometry, segmentation_had_response = segment_page_sections(
+                    clean_page,
+                    image_index=image_index,
+                    filename=filename,
+                )
+                successful_page_ocr = successful_page_ocr or segmentation_had_response
+                line_crops: List[Tuple[str, Image.Image]] = []
+                for line in geometry:
+                    crop = crop_from_bbox(clean_page, line, context_ratio=0.01)
+                    if crop is not None:
+                        line_crops.append((f"L{int(line['line_id']):03d}", crop))
+                line_texts, had_response = transcribe_crops(
+                    line_crops,
+                    purpose=f"page_{image_index}_sections",
+                )
+                successful_page_ocr = successful_page_ocr or had_response
+                for line in geometry:
+                    crop_id = f"L{int(line['line_id']):03d}"
+                    result = line_texts.get(crop_id) or {}
+                    text = str(result.get("text") or "").strip()
+                    if not text:
+                        continue
+                    lines.append(
+                        {
+                            **line,
+                            "text": text[:3200],
+                            "ocr_confidence": int(result.get("confidence") or 0),
+                        }
+                    )
+                if (
+                    transcription_isolated
+                    and page_transcription
+                    and len(lines) < len(geometry)
+                ):
+                    fallback_lines = assign_transcription_to_source_sections(
+                        page_transcription,
+                        geometry,
+                    )
+                    if fallback_lines:
+                        lines = fallback_lines
+                        used_transcription_fallback = True
+                if source_page is not None:
+                    source_page["localization_index"] = {
+                        "version": SOURCE_PAGE_INDEX_VERSION,
+                        "kind": "sections",
+                        "bbox_version": SOURCE_BBOX_VERSION,
+                        "image_sha256": page_digest,
+                        "image_width": clean_page.width,
+                        "image_height": clean_page.height,
+                        "lines": lines,
+                    }
+            if not lines:
+                continue
+
+            candidates: List[Dict[str, Any]] = []
+            unresolved_targets: List[Dict[str, Any]] = []
+
+            def append_candidate(
+                target: Dict[str, Any],
+                selected_lines: List[Dict[str, Any]],
+                metrics: Dict[str, Any],
+                *,
+                alignment_fallback: bool = False,
+                verification_evidence: Optional[str] = None,
+                reanchored: bool = False,
+                anchor_model_confidence: int = 0,
+            ) -> bool:
+                candidate_bbox = source_bbox_from_lines(selected_lines)
+                if candidate_bbox is None:
+                    return False
+                candidate_bbox = {
+                    "left": max(20, int(candidate_bbox["left"])),
+                    "top": max(0, int(candidate_bbox["top"])),
+                    "right": min(980, int(candidate_bbox["right"])),
+                    "bottom": min(1000, int(candidate_bbox["bottom"])),
+                }
+                if (
+                    candidate_bbox["right"] - candidate_bbox["left"] < 80
+                    or candidate_bbox["bottom"] - candidate_bbox["top"] < 25
+                ):
+                    return False
+                crop = crop_from_bbox(clean_page, candidate_bbox, context_ratio=0.0)
+                if crop is None:
+                    return False
+                candidates.append(
+                    {
+                        "target": target,
+                        "selected_lines": selected_lines,
+                        "metrics": metrics,
+                        "bbox": candidate_bbox,
+                        "crop": crop,
+                        "alignment_fallback": alignment_fallback,
+                        "verification_evidence": (
+                            verification_evidence or target["evidence"]
+                        ),
+                        "reanchored": reanchored,
+                        "anchor_model_confidence": anchor_model_confidence,
+                        "transcription_fallback": bool(selected_lines)
+                        and all(
+                            bool(line.get("transcription_fallback"))
+                            and bool(line.get("transcription_isolated"))
+                            for line in selected_lines
+                        ),
+                    }
+                )
+                return True
+
+            for target in page_targets:
+                direct_lines, direct_metrics = match_source_evidence_to_sections(
+                    target["evidence"],
+                    lines,
+                )
+                direct_candidate = bool(direct_lines) and source_section_match_is_candidate(
+                    target["evidence"], direct_metrics
+                )
+                alignment_lines, alignment_metrics = (
+                    match_source_evidence_via_page_alignment(
+                        target["evidence"],
+                        page_transcription,
+                        lines,
+                    )
+                    if page_transcription
+                    else ([], {})
+                )
+                alignment_candidate = bool(
+                    alignment_lines
+                ) and source_page_alignment_match_is_candidate(
+                    target["evidence"], alignment_metrics
+                )
+                selected_lines: List[Dict[str, Any]] = []
+                metrics: Dict[str, Any] = {}
+                alignment_fallback = False
+                if direct_candidate:
+                    selected_lines = direct_lines
+                    metrics = direct_metrics
+                    if (
+                        alignment_candidate
+                        and int(alignment_lines[0].get("line_id") or 0)
+                        == int(direct_lines[0].get("line_id") or 0)
+                    ):
+                        metrics = {**direct_metrics, **alignment_metrics}
+                elif alignment_candidate:
+                    selected_lines = alignment_lines
+                    metrics = alignment_metrics
+                    alignment_fallback = True
+                else:
+                    unresolved_targets.append(
+                        {
+                            "target": target,
+                            "direct_metrics": direct_metrics,
+                            "alignment_metrics": alignment_metrics,
+                        }
+                    )
+                    continue
+                if not append_candidate(
+                    target,
+                    selected_lines,
+                    metrics,
+                    alignment_fallback=alignment_fallback,
+                ):
+                    record_debug(target, "candidate_geometry_rejected")
+
+            if unresolved_targets:
+                repairs = reanchor_targets_to_sections(
+                    [item["target"] for item in unresolved_targets],
+                    lines,
+                    image_index=image_index,
+                )
+                for unresolved in unresolved_targets:
+                    target = unresolved["target"]
+                    repair = repairs.get(str(target["location_id"]))
+                    if repair is None or not append_candidate(
+                        target,
+                        [repair["line"]],
+                        repair["metrics"],
+                        verification_evidence=str(repair["anchor"]),
+                        reanchored=True,
+                        anchor_model_confidence=int(
+                            repair.get("model_confidence") or 0
+                        ),
+                    ):
+                        record_debug(
+                            target,
+                            "candidate_match_rejected",
+                            direct_metrics=unresolved["direct_metrics"],
+                            alignment_metrics=unresolved["alignment_metrics"],
+                            reanchor_attempted=True,
+                        )
+
+            verification_crops: Dict[Tuple[int, int, int, int], Tuple[str, Image.Image]] = {}
+            for candidate in candidates:
+                bbox = candidate["bbox"]
+                bbox_key = (
+                    int(bbox["left"]),
+                    int(bbox["top"]),
+                    int(bbox["right"]),
+                    int(bbox["bottom"]),
+                )
+                verification_id = f"S{len(verification_crops) + 1:03d}"
+                if bbox_key not in verification_crops:
+                    verification_crops[bbox_key] = (verification_id, candidate["crop"])
+                candidate["verification_id"] = verification_crops[bbox_key][0]
+            verification_specs = list(verification_crops.values())
+            crop_texts, crop_had_response = transcribe_crops(
+                verification_specs,
+                purpose=f"page_{image_index}_verify",
+            )
+            successful_page_ocr = successful_page_ocr or crop_had_response
+            for candidate in candidates:
+                target = candidate["target"]
+                verification_evidence = str(
+                    candidate.get("verification_evidence") or target["evidence"]
+                )
+                crop_result = crop_texts.get(str(candidate["verification_id"])) or {}
+                crop_visible_text = str(crop_result.get("text") or "").strip()
+                transcription_fallback_verified = False
+                if not crop_visible_text:
+                    fallback_metrics = candidate["metrics"]
+                    transcription_fallback_verified = bool(
+                        candidate.get("transcription_fallback")
+                        and not candidate.get("alignment_fallback")
+                        and target.get("page_resolution", {}).get("page_verified")
+                        and source_section_match_is_verified(
+                            verification_evidence,
+                            fallback_metrics,
+                        )
+                        and float(fallback_metrics.get("uniqueness") or 0.0)
+                        >= 0.20
+                    )
+                    if not transcription_fallback_verified:
+                        record_debug(target, "verification_ocr_missing")
+                        continue
+                    crop_visible_text = "\n".join(
+                        str(line.get("text") or "")
+                        for line in candidate["selected_lines"]
+                    )
+                    crop_result = {"confidence": 72}
+                crop_selected, crop_metrics = match_source_evidence_to_sections(
+                    verification_evidence,
+                    [{"text": crop_visible_text}],
+                )
+                crop_direct_verified = bool(
+                    crop_selected
+                ) and source_section_match_is_verified(
+                    verification_evidence, crop_metrics
+                )
+                index_alignment_metrics = candidate["metrics"]
+                has_index_alignment = (
+                    float(index_alignment_metrics.get("alignment_score") or 0.0) > 0.0
+                    and source_page_alignment_match_is_candidate(
+                        verification_evidence, index_alignment_metrics
+                    )
+                )
+                crop_alignment_metrics: Dict[str, Any] = {}
+                crop_alignment_verified = False
+                if has_index_alignment and page_transcription:
+                    source_start = int(
+                        index_alignment_metrics.get("alignment_source_start") or 0
+                    )
+                    source_end = int(
+                        index_alignment_metrics.get("alignment_source_end") or 0
+                    )
+                    _crop_alignment_lines, crop_alignment_metrics = (
+                        match_source_evidence_via_page_alignment(
+                            verification_evidence,
+                            page_transcription,
+                            [{"line_id": 1, "text": crop_visible_text}],
+                            expected_source_span=(source_start, source_end),
+                        )
+                    )
+                    crop_alignment_verified = source_page_alignment_match_is_verified(
+                        verification_evidence, crop_alignment_metrics
+                    )
+                verification_passed = (
+                    crop_alignment_verified
+                    if candidate.get("alignment_fallback")
+                    else crop_direct_verified or crop_alignment_verified
+                )
+                if not verification_passed:
+                    record_debug(
+                        target,
+                        "verification_match_rejected",
+                        crop_text=crop_visible_text,
+                        direct_metrics=crop_metrics,
+                        alignment_metrics=crop_alignment_metrics,
+                    )
+                    continue
+                index_metrics = candidate["metrics"]
+                alignment_verified = bool(
+                    crop_alignment_verified and has_index_alignment
+                )
+                formula_token_count = int(index_metrics.get("formula_token_count") or 0)
+                formula_coverage = min(
+                    float(index_metrics.get("formula_coverage") or 0.0),
+                    float(crop_metrics.get("formula_coverage") or 0.0),
+                )
+                match_score = min(
+                    float(index_metrics.get("score") or 0.0),
+                    float(crop_metrics.get("score") or 0.0),
+                )
+                match_coverage = min(
+                    float(index_metrics.get("coverage") or 0.0),
+                    float(crop_metrics.get("coverage") or 0.0),
+                )
+                boundary_coverage = min(
+                    float(index_metrics.get("boundary_coverage") or 0.0),
+                    float(crop_metrics.get("boundary_coverage") or 0.0),
+                )
+                uniqueness = float(index_metrics.get("uniqueness") or 0.0)
+                segmentation_stability = min(
+                    float(line.get("geometry_confidence") or 0.0)
+                    for line in candidate["selected_lines"]
+                )
+                if alignment_verified:
+                    alignment_support = min(
+                        max(
+                            float(index_metrics.get("alignment_evidence_coverage") or 0.0),
+                            float(index_metrics.get("alignment_context_coverage") or 0.0),
+                        ),
+                        max(
+                            float(crop_alignment_metrics.get("alignment_evidence_coverage") or 0.0),
+                            float(crop_alignment_metrics.get("alignment_context_coverage") or 0.0),
+                        ),
+                    )
+                    confidence_score = (
+                        min(
+                            float(index_metrics.get("alignment_score") or 0.0),
+                            float(crop_alignment_metrics.get("alignment_score") or 0.0),
+                        )
+                        * 0.34
+                        + min(
+                            float(index_metrics.get("alignment_interval_coverage") or 0.0),
+                            float(crop_alignment_metrics.get("alignment_interval_coverage") or 0.0),
+                        )
+                        * 0.20
+                        + min(
+                            float(index_metrics.get("alignment_section_coverage") or 0.0),
+                            float(crop_alignment_metrics.get("alignment_section_coverage") or 0.0),
+                        )
+                        * 0.12
+                        + min(
+                            float(index_metrics.get("alignment_page_coverage") or 0.0),
+                            float(crop_alignment_metrics.get("alignment_page_coverage") or 0.0),
+                        )
+                        * 0.10
+                        + alignment_support * 0.08
+                        + uniqueness * 0.08
+                        + segmentation_stability * 0.08
+                    )
+                else:
+                    formula_component = formula_coverage if formula_token_count else match_coverage
+                    confidence_score = (
+                        match_coverage * 0.39
+                        + formula_component * 0.20
+                        + boundary_coverage * 0.17
+                        + float(crop_metrics.get("precision") or 0.0) * 0.02
+                        + uniqueness * 0.12
+                        + segmentation_stability * 0.10
+                    )
+                crop_ocr_confidence = int(crop_result.get("confidence") or 0)
+                if crop_ocr_confidence < 40:
+                    record_debug(
+                        target,
+                        "verification_ocr_low_confidence",
+                        confidence=crop_ocr_confidence,
+                        crop_text=crop_visible_text,
+                    )
+                    continue
+                confidence = round(
+                    confidence_score * 90 + crop_ocr_confidence * 0.10
+                )
+                if alignment_verified:
+                    # The two transcript alignments and same-span crop check are
+                    # the hard acceptance gates. Keep the aggregate score as a
+                    # display confidence without rejecting that verified result.
+                    confidence = max(72, confidence)
+                if transcription_fallback_verified:
+                    confidence = max(72, confidence)
+                if candidate.get("reanchored"):
+                    confidence = max(78, confidence)
+                minimum_confidence = (
+                    72
+                    if alignment_verified or transcription_fallback_verified
+                    else 78
+                    if candidate.get("reanchored")
+                    else 82
+                )
+                if confidence < minimum_confidence:
+                    record_debug(
+                        target,
+                        "confidence_rejected",
+                        confidence=confidence,
+                        crop_text=crop_visible_text,
+                        index_metrics=index_metrics,
+                        crop_metrics=crop_metrics,
+                        crop_alignment_metrics=crop_alignment_metrics,
+                    )
+                    continue
+                expected_lines = max(
+                    1,
+                    estimated_source_line_count(verification_evidence),
+                    len(candidate["selected_lines"]),
+                )
+                bbox = {
+                    **candidate["bbox"],
+                    "confidence": confidence,
+                    "version": SOURCE_BBOX_VERSION,
+                    "text_verified": True,
+                    "match_score": round(match_score, 4),
+                    "match_coverage": round(match_coverage, 4),
+                    "boundary_coverage": round(boundary_coverage, 4),
+                    "evidence_length": len(
+                        _canonical_study_source_match_text(verification_evidence)
+                    ),
+                    "expected_lines": expected_lines,
+                    "span_verified": True,
+                    "crop_verified": not transcription_fallback_verified,
+                    "transcription_fallback_verified": transcription_fallback_verified,
+                    "transcription_isolated": bool(
+                        transcription_fallback_verified
+                    ),
+                    "crop_match_score": round(float(crop_metrics.get("score") or 0.0), 4),
+                    "crop_match_coverage": round(float(crop_metrics.get("coverage") or 0.0), 4),
+                    "crop_boundary_coverage": round(
+                        float(crop_metrics.get("boundary_coverage") or 0.0), 4
+                    ),
+                    "crop_match_precision": round(float(crop_metrics.get("precision") or 0.0), 4),
+                    "geometry_verified": True,
+                    "page_verified": bool(
+                        target.get("page_resolution", {}).get("page_verified")
+                    ),
+                    "source_image_index": image_index,
+                    "page_match_kind": str(
+                        target.get("page_resolution", {}).get("match_kind") or ""
+                    ),
+                    "page_match_margin": round(
+                        float(
+                            target.get("page_resolution", {}).get("match_margin")
+                            or 0.0
+                        ),
+                        4,
+                    ),
+                    "formula_coverage": round(formula_coverage, 4),
+                    "formula_token_count": formula_token_count,
+                    "uniqueness": round(uniqueness, 4),
+                    "segmentation_stability": round(segmentation_stability, 4),
+                    "localization_method": (
+                        "section_transcription_fallback"
+                        if transcription_fallback_verified
+                        else "section_ocr_reanchored"
+                        if candidate.get("reanchored")
+                        else "section_ocr_alignment"
+                        if alignment_verified
+                        else "section_ocr_rag"
+                    ),
+                    "anchor_verified": bool(candidate.get("reanchored")),
+                    "localization_anchor": (
+                        verification_evidence[:420]
+                        if candidate.get("reanchored")
+                        else ""
+                    ),
+                    "alignment_verified": alignment_verified,
+                    "alignment_score": round(
+                        float(index_metrics.get("alignment_score") or 0.0), 4
+                    ),
+                    "alignment_evidence_coverage": round(
+                        float(index_metrics.get("alignment_evidence_coverage") or 0.0), 4
+                    ),
+                    "alignment_interval_coverage": round(
+                        float(index_metrics.get("alignment_interval_coverage") or 0.0), 4
+                    ),
+                    "alignment_context_coverage": round(
+                        float(index_metrics.get("alignment_context_coverage") or 0.0), 4
+                    ),
+                    "alignment_section_coverage": round(
+                        float(index_metrics.get("alignment_section_coverage") or 0.0), 4
+                    ),
+                    "alignment_page_coverage": round(
+                        float(index_metrics.get("alignment_page_coverage") or 0.0), 4
+                    ),
+                    "alignment_expected_span_agreement": round(
+                        float(index_metrics.get("alignment_expected_span_agreement") or 0.0), 4
+                    ),
+                    "crop_alignment_score": round(
+                        float(crop_alignment_metrics.get("alignment_score") or 0.0), 4
+                    ),
+                    "crop_alignment_evidence_coverage": round(
+                        float(crop_alignment_metrics.get("alignment_evidence_coverage") or 0.0), 4
+                    ),
+                    "crop_alignment_interval_coverage": round(
+                        float(crop_alignment_metrics.get("alignment_interval_coverage") or 0.0), 4
+                    ),
+                    "crop_alignment_context_coverage": round(
+                        float(crop_alignment_metrics.get("alignment_context_coverage") or 0.0), 4
+                    ),
+                    "crop_alignment_section_coverage": round(
+                        float(crop_alignment_metrics.get("alignment_section_coverage") or 0.0), 4
+                    ),
+                    "crop_alignment_page_coverage": round(
+                        float(crop_alignment_metrics.get("alignment_page_coverage") or 0.0), 4
+                    ),
+                    "crop_alignment_expected_span_agreement": round(
+                        float(crop_alignment_metrics.get("alignment_expected_span_agreement") or 0.0), 4
+                    ),
+                }
+                validated = _validated_study_source_bbox(
+                    bbox,
+                    require_text_verified=True,
+                    expected_image_index=image_index,
+                )
+                if validated is None:
+                    record_debug(target, "bbox_validation_rejected", bbox=bbox)
+                    continue
+                target["source_ref"]["bbox"] = validated
+                target["source_ref"].pop("_localization_debug", None)
+                located += 1
+
+        if (
+            not successful_page_ocr
+            and not used_cached_index
+            and not used_transcription_fallback
+        ):
+            raise ValueError("Source page OCR failed for every image")
+        if isinstance(parent_cancel_event, threading.Event):
+            study_upload_context.cancel_event = parent_cancel_event
+        return located, total
+
+    app.extensions["study_source_localizer"] = _localize_study_card_sources
+
+    def _validated_study_source_bbox(
+        value: Any,
+        *,
+        require_text_verified: bool = False,
+        expected_image_index: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        return validated_source_bbox(
+            value,
+            require_text_verified=require_text_verified,
+            expected_image_index=expected_image_index,
+        )
+
+    def _study_source_coverage_items(source_pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        example_heading_pattern = re.compile(
+            r"(?:^|(?<=[\n。；;]))\s*(?:"
+            r"例題|範例|例子|算例|反例|練習題|練習|題目|問題|作業題|示範題|案例"
+            r"|(?:worked\s+)?example|ex\.?|exercise|problem|question"
+            r")\s*(?:[：:.)、-]|\d{0,3})",
+            flags=re.IGNORECASE,
+        )
+
+        def is_example_block(value: str) -> bool:
+            normalized = " ".join(value.split()).strip()
+            if example_heading_pattern.search(normalized):
+                return True
+            # A question-shaped block is an example only when it also has a
+            # concrete request or a solution marker. This avoids promoting
+            # ordinary explanatory sentences containing "for example".
+            has_request = bool(
+                re.search(
+                    r"(?:求出|求解|計算|判斷|證明|找出|解出|求其|是否|試證|solve|show\s+that|find|calculate|determine|prove)",
+                    normalized,
+                    flags=re.IGNORECASE,
+                )
+            )
+            has_solution = bool(
+                re.search(r"(?:解答|解：|解:|答案|solution|answer)", normalized, flags=re.IGNORECASE)
+            )
+            return has_request and (has_solution or bool(re.search(r"[?？=→≤≥]", normalized)))
+
+        def split_blocks(value: str) -> List[str]:
+            paragraphs = [part for part in re.split(r"\n\s*\n+", value) if part.strip()]
+            result: List[str] = []
+            for paragraph in paragraphs:
+                # Notes frequently place several examples one after another
+                # without a blank line. Split at explicit example headings,
+                # while leaving numbered equations and normal prose intact.
+                matches = list(example_heading_pattern.finditer(paragraph))
+                if len(matches) <= 1:
+                    result.append(paragraph)
+                    continue
+                starts = [match.start() for match in matches]
+                if starts[0] > 0 and paragraph[: starts[0]].strip():
+                    result.append(paragraph[: starts[0]])
+                for index, start in enumerate(starts):
+                    end = starts[index + 1] if index + 1 < len(starts) else len(paragraph)
+                    result.append(paragraph[start:end])
+            return result
+
+        items: List[Dict[str, Any]] = []
+        for page in source_pages:
+            try:
+                image_index = int(page.get("image_index") or 0)
+            except (TypeError, ValueError):
+                continue
+            block_index = 0
+            for block in split_blocks(str(page.get("transcription") or "")):
+                compact = " ".join(block.split()).strip()
+                clear_text = re.sub(r"〔[^〕]*〕", "", compact).strip(" -—_")
+                if "〔無法推定〕" in compact:
+                    continue
+                example_block = is_example_block(clear_text)
+                has_structure = bool(
+                    re.search(
+                        r"(?:=|≠|⇔|→|≤|≥|∈|∉|\\(?:frac|sum|prod|int|to|in|oplus)|"
+                        r"\b(?:if|then|rank|det|Ex\.)\b|定義|條件|方法|性質|結論|證明|範例|例題)",
+                        clear_text,
+                        flags=re.IGNORECASE,
+                    )
+                )
+                if len(clear_text) < 8 or (len(clear_text) < 20 and not example_block) or (
+                    len(clear_text) < 34 and not has_structure and not example_block
+                ):
+                    continue
+                block_index += 1
+                items.append(
+                    {
+                        "id": f"p{image_index}b{block_index}",
+                        "image_index": image_index,
+                        "text": compact,
+                        "priority": "required" if has_structure or example_block else "supporting",
+                        "content_type": "example" if example_block else "concept",
+                        "is_example": example_block,
+                    }
+                )
+        return items
+
+    def _study_source_page_coverage_plan(source_pages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        page_scores: Dict[int, int] = {}
+        example_counts: Dict[int, int] = {}
+        for page in source_pages:
+            try:
+                image_index = int(page.get("image_index") or 0)
+            except (TypeError, ValueError):
+                continue
+            meaningful_blocks: List[str] = []
+            page_items = [
+                item
+                for item in _study_source_coverage_items([page])
+                if int(item.get("image_index") or 0) == image_index
+            ]
+            for item in page_items:
+                block = str(item.get("text") or "")
+                compact = " ".join(block.split()).strip()
+                clear_text = re.sub(r"〔[^〕]*〕", "", compact).strip()
+                if len(clear_text) >= 20:
+                    meaningful_blocks.append(clear_text)
+            if not meaningful_blocks:
+                continue
+            clear_length = sum(len(block) for block in meaningful_blocks)
+            page_scores[image_index] = max(len(meaningful_blocks), math.ceil(clear_length / 220))
+            example_counts[image_index] = sum(1 for item in page_items if item.get("is_example"))
+        if not page_scores:
+            return {"target_cards": 1, "page_quotas": {}}
+
+        target_cards = max(
+            len(page_scores),
+            math.ceil(sum(page_scores.values()) / 2),
+            sum(example_counts.values()),
+        )
+        page_quotas = {
+            image_index: max(1, example_counts.get(image_index, 0))
+            for image_index in page_scores
+        }
+        target_cards = max(target_cards, sum(page_quotas.values()))
+        while sum(page_quotas.values()) < target_cards:
+            image_index = max(
+                page_scores,
+                key=lambda index: (
+                    page_scores[index] / (page_quotas[index] + 1),
+                    page_scores[index],
+                    -index,
+                ),
+            )
+            page_quotas[image_index] += 1
+        return {"target_cards": target_cards, "page_quotas": page_quotas}
+
+    def _study_coverage_evidence_matches(evidence: Any, item_text: Any) -> bool:
+        evidence_text = _canonical_study_source_match_text(evidence)
+        coverage_text = _canonical_study_source_match_text(item_text)
+        if not evidence_text or not coverage_text:
+            return False
+        if evidence_text in coverage_text or coverage_text in evidence_text:
+            return True
+        match = SequenceMatcher(None, evidence_text, coverage_text, autojunk=False).find_longest_match()
+        return match.size >= 18 and match.size / max(1, min(len(evidence_text), len(coverage_text))) >= 0.72
+
+    def _enrich_study_card_coverage_ids(payload: Any, source_pages: List[Dict[str, Any]]) -> None:
+        if not isinstance(payload, dict) or not isinstance(payload.get("key_concepts"), list):
+            return
+        coverage_items = _study_source_coverage_items(source_pages)
+        for concept in payload["key_concepts"]:
+            if not isinstance(concept, dict):
+                continue
+            matched_ids: List[str] = []
+            for source_ref in concept.get("source_refs") or []:
+                if not isinstance(source_ref, dict):
+                    continue
+                try:
+                    image_index = int(source_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                evidence = source_ref.get("evidence") or ""
+                for item in coverage_items:
+                    if (
+                        item["image_index"] == image_index
+                        and item["id"] not in matched_ids
+                        and _study_coverage_evidence_matches(evidence, item["text"])
+                    ):
+                        matched_ids.append(item["id"])
+            concept["coverage_ids"] = matched_ids[:8]
+
+    def _study_recall_coverage_gaps(payload: Any, source_pages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("key_concepts"), list):
+            return {"page_quotas": {"payload": "invalid"}, "coverage_items": ["all"], "example_items": ["all"]}
+        page_texts = {
+            int(page.get("image_index") or 0): " ".join(str(page.get("transcription") or "").split())
+            for page in source_pages
+            if isinstance(page, dict)
+        }
+        cards_by_page: Dict[int, int] = {image_index: 0 for image_index in page_texts}
+        for concept in payload["key_concepts"]:
+            if not isinstance(concept, dict):
+                continue
+            valid_pages: Set[int] = set()
+            for source_ref in concept.get("source_refs") or []:
+                if not isinstance(source_ref, dict):
+                    continue
+                try:
+                    image_index = int(source_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                evidence = " ".join(str(source_ref.get("evidence") or "").split()).strip()
+                if evidence and evidence in page_texts.get(image_index, ""):
+                    valid_pages.add(image_index)
+            for image_index in valid_pages:
+                cards_by_page[image_index] = cards_by_page.get(image_index, 0) + 1
+        coverage_plan = _study_source_page_coverage_plan(source_pages)
+        missing_page_quotas = {
+            image_index: {
+                "current": cards_by_page.get(image_index, 0),
+                "required": quota,
+            }
+            for image_index, quota in coverage_plan["page_quotas"].items()
+            if cards_by_page.get(image_index, 0) < quota
+        }
+        coverage_items = {item["id"]: item for item in _study_source_coverage_items(source_pages)}
+        covered_ids: Set[str] = set()
+        example_covered_ids: Set[str] = set()
+        for concept in payload["key_concepts"]:
+            if not isinstance(concept, dict):
+                continue
+            source_evidence = [
+                (
+                    int(source_ref.get("image_index") or 0),
+                    " ".join(str(source_ref.get("evidence") or "").split()).strip(),
+                )
+                for source_ref in concept.get("source_refs") or []
+                if isinstance(source_ref, dict)
+            ]
+            for coverage_id in concept.get("coverage_ids") or []:
+                item = coverage_items.get(str(coverage_id))
+                if not item:
+                    continue
+                if any(
+                    image_index == item["image_index"]
+                    and _study_coverage_evidence_matches(evidence, item["text"])
+                    for image_index, evidence in source_evidence
+                ):
+                    covered_ids.add(str(coverage_id))
+                    if item.get("is_example") and concept.get("card_type") == "example":
+                        example_covered_ids.add(str(coverage_id))
+            # Some model responses omit coverage_ids even when source_refs are
+            # valid. Resolve example coverage directly from the evidence so a
+            # missing example cannot pass as an ordinary concept card.
+            if concept.get("card_type") == "example":
+                for item_id, item in coverage_items.items():
+                    if not item.get("is_example") or item_id in example_covered_ids:
+                        continue
+                    if any(
+                        image_index == item["image_index"]
+                        and _study_coverage_evidence_matches(evidence, item["text"])
+                        for image_index, evidence in source_evidence
+                    ):
+                        example_covered_ids.add(item_id)
+                        covered_ids.add(item_id)
+        example_items = {
+            item_id: item
+            for item_id, item in coverage_items.items()
+            if item.get("is_example")
+        }
+        return {
+            "page_quotas": missing_page_quotas,
+            "coverage_items": sorted(set(coverage_items) - covered_ids),
+            "example_items": [
+                {
+                    "id": item_id,
+                    "image_index": item["image_index"],
+                    "text": str(item["text"])[:600],
+                }
+                for item_id, item in sorted(example_items.items())
+                if item_id not in example_covered_ids
+            ],
+        }
+
+    def _study_recall_page_coverage_met(payload: Any, source_pages: List[Dict[str, Any]]) -> bool:
+        gaps = _study_recall_coverage_gaps(payload, source_pages)
+        return not gaps["page_quotas"] and not gaps["coverage_items"] and not gaps.get("example_items")
+
+    def _study_recall_coverage_metrics(
+        payload: Any,
+        source_pages: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        gaps = _study_recall_coverage_gaps(payload, source_pages)
+        coverage_items = _study_source_coverage_items(source_pages)
+        missing_ids = set(gaps["coverage_items"])
+        required_items = [item for item in coverage_items if item.get("priority") == "required"]
+        supporting_items = [item for item in coverage_items if item.get("priority") != "required"]
+        example_items = [item for item in coverage_items if item.get("is_example")]
+        required_covered = sum(item["id"] not in missing_ids for item in required_items)
+        supporting_covered = sum(item["id"] not in missing_ids for item in supporting_items)
+        example_missing = len(gaps.get("example_items") or [])
+        page_plan = _study_source_page_coverage_plan(source_pages)
+        planned_pages = set(page_plan["page_quotas"])
+        missing_pages = {
+            int(image_index)
+            for image_index, values in gaps["page_quotas"].items()
+            if isinstance(values, dict) and int(values.get("current") or 0) <= 0
+        }
+        represented_pages = len(planned_pages - missing_pages)
+        required_ratio = required_covered / len(required_items) if required_items else 1.0
+        supporting_ratio = supporting_covered / len(supporting_items) if supporting_items else 1.0
+        page_ratio = represented_pages / len(planned_pages) if planned_pages else 1.0
+        overall_ratio = (
+            (len(coverage_items) - len(missing_ids)) / len(coverage_items)
+            if coverage_items
+            else 1.0
+        )
+        quality_score = required_ratio * 0.65 + page_ratio * 0.25 + supporting_ratio * 0.10
+        return {
+            "quality_score": round(quality_score, 4),
+            "example_ratio": round(
+                ((len(example_items) - example_missing) / len(example_items))
+                if example_items else 1.0,
+                4,
+            ),
+            "required_ratio": round(required_ratio, 4),
+            "supporting_ratio": round(supporting_ratio, 4),
+            "page_ratio": round(page_ratio, 4),
+            "overall_ratio": round(overall_ratio, 4),
+            "required_total": len(required_items),
+            "required_missing": len(required_items) - required_covered,
+            "example_total": len(example_items),
+            "example_missing": example_missing,
+            "supporting_total": len(supporting_items),
+            "supporting_missing": len(supporting_items) - supporting_covered,
+            "planned_pages": len(planned_pages),
+            "missing_pages": sorted(missing_pages),
+            "gaps": gaps,
+        }
+
+    def _study_recall_coverage_needs_repair(
+        payload: Any,
+        source_pages: List[Dict[str, Any]],
+    ) -> bool:
+        metrics = _study_recall_coverage_metrics(payload, source_pages)
+        return bool(
+            metrics["example_ratio"] < 1.0
+            or metrics["required_ratio"] < 0.90
+            or metrics["page_ratio"] < 0.80
+            or metrics["quality_score"] < 0.82
+        )
+
+    def _validate_recall_output(payload: Any, source_pages: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        def normalize_math_markup(value: str) -> str:
+            return _normalize_study_math_markup(value)
+
+        def strip_process_narration(value: str) -> str:
+            return _strip_study_process_narration(value)
+
+        def has_transpose_dimension_conflict(value: str) -> bool:
+            if not ("A^T" in value or "A^{T}" in value or "轉置" in value):
+                return False
+            match = re.search(
+                r"M_\{([^{}\s]+)[×x]([^{}\s]+)\}\s*(?:→|\\to)\s*M_\{([^{}\s]+)[×x]([^{}\s]+)\}",
+                value,
+            )
+            if not match:
+                return False
+            source_rows, source_columns, target_rows, target_columns = match.groups()
+            return target_rows != source_columns or target_columns != source_rows
+
+        def mapping_signatures(value: str) -> Set[str]:
+            canonical = str(value or "")
+            canonical = re.sub(r"\\mathbb\{([A-Za-z])\}", r"\1", canonical)
+            canonical = canonical.replace("\\mathbb R", "R").replace("ℝ", "R").replace("ℂ", "C")
+            canonical = canonical.replace("\\times", "×").replace("\\to", "→").replace("->", "→")
+            canonical = re.sub(r"(?<=[A-Za-z0-9])\s*x\s*(?=[A-Za-z0-9])", "×", canonical)
+            canonical = re.sub(r"[{}\s_]", "", canonical)
+            space = r"(?:[A-Z][A-Za-z0-9]*(?:\^[A-Za-z0-9]+(?:×[A-Za-z0-9]+)?)?(?:×[A-Za-z0-9]+)?)"
+            return set(re.findall(rf"{space}→{space}", canonical))
+
+        def has_mapping_signature_conflict(value: str, source_refs: List[Dict[str, Any]]) -> bool:
+            card_signatures = mapping_signatures(value)
+            if not card_signatures:
+                return False
+            source_signatures = mapping_signatures(" ".join(ref["evidence"] for ref in source_refs))
+            if not source_signatures:
+                return False
+            return not card_signatures.issubset(source_signatures)
+
+        def has_invalid_negation_counterexample(value: str) -> bool:
+            return _study_has_invalid_negation_counterexample(value)
+
+        def has_matrix_product_dimension_conflict(value: str) -> bool:
+            canonical = str(value or "")
+            canonical = canonical.replace("\\times", "×").replace("\\(", "").replace("\\)", "")
+            canonical = canonical.replace("\\[", "").replace("\\]", "")
+            dimensions: Dict[str, Tuple[str, str]] = {}
+            for name, rows, columns in re.findall(
+                r"\b([A-Z])_?\{?([A-Za-z0-9]+)×([A-Za-z0-9]+)\}?",
+                canonical,
+            ):
+                dimensions[name] = (rows, columns)
+            for name, rows, columns in re.findall(
+                r"\b([A-Z])\b\s*(?:為|is|:)\s*\{?([A-Za-z0-9]+)×([A-Za-z0-9]+)\}?",
+                canonical,
+                flags=re.IGNORECASE,
+            ):
+                dimensions[name.upper()] = (rows, columns)
+            for left, right, rows, columns in re.findall(
+                r"\(?([A-Z])([A-Z])\)?_?\{?([A-Za-z0-9]+)×([A-Za-z0-9]+)\}?",
+                canonical,
+            ):
+                left_dimensions = dimensions.get(left)
+                right_dimensions = dimensions.get(right)
+                if not left_dimensions or not right_dimensions:
+                    continue
+                if left_dimensions[1] != right_dimensions[0]:
+                    return True
+                if (rows, columns) != (left_dimensions[0], right_dimensions[1]):
+                    return True
+            return False
+
         if not isinstance(payload, dict):
             return None
-        summary = str(payload.get("summary") or "").strip()
+        summary = strip_process_narration(str(payload.get("summary") or ""))
         detected_topic = str(payload.get("detected_topic") or "").strip()
+        detected_topic = re.sub(r"[（(][^）)]*(?:修正|校正|審核)[^）)]*[）)]", "", detected_topic).strip()
         raw_concepts = payload.get("key_concepts")
-        if not summary or not detected_topic or not isinstance(raw_concepts, list):
+        if (
+            not summary
+            or _study_text_quality_issue(summary, max_length=1200)
+            or not detected_topic
+            or _study_text_quality_issue(detected_topic, max_length=120)
+            or not isinstance(raw_concepts, list)
+        ):
             return None
+        page_transcriptions = {
+            int(page.get("image_index") or 0): " ".join(str(page.get("transcription") or "").split())
+            for page in source_pages
+            if isinstance(page, dict)
+        }
+        valid_coverage_ids = {item["id"] for item in _study_source_coverage_items(source_pages)}
         prepared_concepts: List[Dict[str, Any]] = []
-        for item in raw_concepts[:15]:
+        correction_records: List[Dict[str, Any]] = []
+        rejected_corrupted_content = False
+        for item in raw_concepts:
             if not isinstance(item, dict):
                 continue
             concept = str(item.get("concept") or "").strip()
-            explanation = str(item.get("explanation") or "").strip()
-            memory_hint = str(item.get("memory_hint") or "").strip()
-            topic = str(item.get("topic") or detected_topic).strip()
-            related_concepts = item.get("related_concepts")
-            if concept and explanation and _is_recall_concept_eligible(
-                {"concept": concept, "explanation": explanation, "memory_hint": memory_hint}
-            ):
-                prepared_concepts.append(
-                    {
-                        "concept": concept[:80],
-                        "explanation": explanation[:720],
-                        "memory_hint": memory_hint[:120],
-                        "topic": topic[:48] or detected_topic[:48],
-                        "note_topic": detected_topic[:80],
-                        "related_concepts": [
-                            str(value).strip()[:80]
-                            for value in related_concepts[:2]
-                            if str(value).strip()
-                        ] if isinstance(related_concepts, list) else [],
-                    }
+            concept = re.sub(r"[（(][^）)]*(?:修正|校正|審核)[^）)]*[）)]", "", concept).strip()
+            recall_cue = normalize_math_markup(strip_process_narration(str(item.get("recall_cue") or "").strip()))
+            core_summary = normalize_math_markup(strip_process_narration(str(item.get("core_summary") or "").strip()))
+            explanation = normalize_math_markup(strip_process_narration(str(item.get("explanation") or "").strip()))
+            card_type = "example" if item.get("card_type") == "example" else "concept"
+            example_problem = normalize_math_markup(strip_process_narration(str(item.get("example_problem") or "").strip()))
+            example_method = normalize_math_markup(strip_process_narration(str(item.get("example_method") or "").strip()))
+            simple_example = normalize_math_markup(strip_process_narration(str(item.get("simple_example") or "").strip()))
+            memory_hint = normalize_math_markup(strip_process_narration(str(item.get("memory_hint") or "").strip()))
+            common_confusion = normalize_math_markup(strip_process_narration(str(item.get("common_confusion") or "").strip()))
+            reasoning_steps = [
+                normalize_math_markup(strip_process_narration(str(step or "").strip()))
+                for step in (item.get("reasoning_steps") or [])[:4]
+                if str(step or "").strip()
+            ] if isinstance(item.get("reasoning_steps"), list) else []
+            topic = _normalize_study_concept_title(item.get("topic"), detected_topic)
+            concept = _normalize_study_concept_title(concept, topic or detected_topic)
+            quality_issues = (
+                _study_text_quality_issue(concept, max_length=120),
+                _study_text_quality_issue(recall_cue, max_length=180),
+                _study_text_quality_issue(core_summary, max_length=320),
+                _study_text_quality_issue(explanation, max_length=900),
+                _study_text_quality_issue(example_problem, max_length=420) if example_problem else None,
+                _study_text_quality_issue(example_method, max_length=340) if example_method else None,
+                _study_text_quality_issue(simple_example, max_length=420) if simple_example else None,
+                _study_text_quality_issue(memory_hint, max_length=240) if memory_hint else None,
+                _study_text_quality_issue(common_confusion, max_length=240) if common_confusion else None,
+                *(_study_text_quality_issue(step, max_length=220) for step in reasoning_steps),
+                _study_text_quality_issue(topic, max_length=80),
+            )
+            source_bound_card_text = " ".join(
+                [
+                    core_summary,
+                    explanation,
+                    example_problem,
+                    example_method,
+                    common_confusion,
+                    *reasoning_steps,
+                ]
+            )
+            if any(quality_issues):
+                rejected_corrupted_content = True
+                continue
+            if card_type == "example" and example_problem and not example_method:
+                # Keep a clearly detected source example even when the model
+                # did not find a worked solution. Never invent a method just
+                # to satisfy the card schema.
+                example_method = "來源未提供完整解法"
+                source_bound_card_text = " ".join(
+                    [core_summary, explanation, example_problem, example_method, *reasoning_steps]
                 )
+            if card_type == "example" and not example_problem:
+                continue
+            if card_type == "concept" and not simple_example:
+                continue
+            if card_type != "example":
+                example_problem = ""
+                example_method = ""
+            else:
+                simple_example = ""
+            related_concepts = item.get("related_concepts")
+            search_keywords = [
+                " ".join(str(value or "").split()).strip()[:40]
+                for value in (item.get("search_keywords") or [])[:8]
+                if str(value or "").strip()
+            ] if isinstance(item.get("search_keywords"), list) else []
+            source_refs: List[Dict[str, Any]] = []
+            for source_ref in item.get("source_refs") or []:
+                if not isinstance(source_ref, dict):
+                    continue
+                try:
+                    image_index = int(source_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                evidence = _literal_study_source_evidence(source_ref.get("evidence"))
+                page_resolution = _resolve_study_source_page(
+                    evidence,
+                    source_pages,
+                    preferred_image_index=image_index,
+                    context=" ".join(
+                        (
+                            concept,
+                            topic,
+                            recall_cue,
+                            core_summary,
+                            source_bound_card_text,
+                        )
+                    ),
+                )
+                if not page_resolution:
+                    continue
+                image_index = int(page_resolution["image_index"])
+                source_refs.append({"image_index": image_index, "evidence": evidence[:240]})
+            correction = item.get("correction") if isinstance(item.get("correction"), dict) else {}
+            correction_applied = bool(correction.get("applied"))
+            correction_original = " ".join(str(correction.get("original") or "").split()).strip()
+            correction_corrected = " ".join(str(correction.get("corrected") or "").split()).strip()
+            correction_reason = " ".join(str(correction.get("reason") or "").split()).strip()
+            coverage_ids = [
+                str(value).strip()
+                for value in (item.get("coverage_ids") or [])
+                if str(value).strip() in valid_coverage_ids
+            ] if isinstance(item.get("coverage_ids"), list) else []
+            keyword_corpus = _canonical_study_source_match_text(
+                " ".join(
+                    [
+                        concept,
+                        topic,
+                        recall_cue,
+                        source_bound_card_text,
+                        *(source_ref["evidence"] for source_ref in source_refs),
+                    ]
+                )
+            )
+            search_keywords = [
+                keyword
+                for keyword in search_keywords
+                if len(_canonical_study_source_match_text(keyword)) >= 2
+                and _canonical_study_source_match_text(keyword) in keyword_corpus
+            ]
+            if (
+                concept
+                and explanation
+                and source_refs
+                and not has_transpose_dimension_conflict(source_bound_card_text)
+                and not has_mapping_signature_conflict(source_bound_card_text, source_refs)
+                and not has_invalid_negation_counterexample(source_bound_card_text)
+                and not has_matrix_product_dimension_conflict(source_bound_card_text)
+                and _is_recall_concept_eligible(
+                {"concept": concept, "explanation": explanation, "memory_hint": memory_hint}
+                )
+            ):
+                prepared = {
+                    "concept": concept[:80],
+                    "recall_cue": recall_cue,
+                    "core_summary": core_summary,
+                    "explanation": explanation,
+                    "card_type": card_type,
+                    "example_problem": example_problem,
+                    "example_method": example_method,
+                    "simple_example": simple_example,
+                    "reasoning_steps": reasoning_steps,
+                    "common_confusion": common_confusion,
+                    "memory_hint": memory_hint,
+                    "topic": topic[:48] or detected_topic[:48],
+                    "note_topic": detected_topic[:80],
+                    "source_refs": source_refs[:4],
+                    "coverage_ids": list(dict.fromkeys(coverage_ids))[:8],
+                    "related_concepts": [
+                        str(value).strip()[:80]
+                        for value in related_concepts[:2]
+                        if str(value).strip()
+                    ] if isinstance(related_concepts, list) else [],
+                    "search_keywords": list(dict.fromkeys(search_keywords))[:8],
+                }
+                prepared_concepts.append(prepared)
+                if correction_applied and correction_original and correction_corrected and correction_reason:
+                    correction_records.append(
+                        {
+                            "concept": prepared["concept"],
+                            "original": correction_original[:240],
+                            "corrected": correction_corrected[:240],
+                            "reason": correction_reason[:300],
+                            "image_index": source_refs[0]["image_index"],
+                        }
+                    )
+        if rejected_corrupted_content:
+            app.logger.warning(
+                "Discarded one or more corrupted study cards before final validation; kept=%s",
+                len(prepared_concepts),
+            )
         if not prepared_concepts:
             return None
+        prepared_payload = {"key_concepts": prepared_concepts}
+        if not _study_recall_page_coverage_met(prepared_payload, source_pages):
+            app.logger.warning(
+                "Final study-card coverage has non-blocking gaps after filtering: %s",
+                _study_recall_coverage_metrics(prepared_payload, source_pages),
+            )
         title_lookup = {item["concept"].casefold(): item["concept"] for item in prepared_concepts}
         concepts_by_title = {item["concept"]: item for item in prepared_concepts}
         for item in prepared_concepts:
@@ -2474,70 +8042,236 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     target["related_concepts"] = (target["related_concepts"] + [item["concept"]])[:2]
         return {
             "detected_topic": detected_topic[:80],
-            "summary": summary[:800],
+            "summary": summary,
             "key_concepts": prepared_concepts,
+            "correction_records": correction_records,
         }
 
-    def _analyze_study_note_images(images: List[Tuple[str, bytes, str]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    def _analyze_study_note_image_batch(
+        images: List[Tuple[str, bytes, str]],
+        *,
+        subject: str,
+        allow_corrections: bool,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        _raise_if_study_upload_cancelled()
         if not openai_api_key:
             return None, "尚未設定 OPENAI_API_KEY，無法分析筆記。"
-        content: List[Dict[str, Any]] = [
-            {
-                "type": "input_text",
-                "text": (
-                    "你是研究所考試的嚴謹助教。請閱讀上傳的繁體中文筆記，整理成精確、好理解且好記憶的繁體中文重點卡。"
-                    "卡片內容必須以影像中實際寫到的資訊為主，只可補上理解原句所必需的最少說明，不得自行擴寫成課本章節。"
-                    "不要因為筆記提到某個專有名詞，就額外建立該名詞的定義卡；只有筆記本身正在記錄、定義或解釋該名詞時，才建立對應重點卡。"
-                    "每張卡片只保留一個可直接複習的考試概念；concept 是不超過 16 字的短標題。explanation 請用 2 至 5 句說清楚："
-                    "先下定義或結論，再說明成立條件、用途、推論原因或容易混淆處；資訊要完整但避免背景敘述、重複語句與空泛提醒。"
-                    "memory_hint 是不超過 32 字的口訣或辨識線索。"
-                    "影像中每個可辨識、具考試價值的公式、定義式或符號關係，都必須建立至少一張獨立的 key_concepts 公式卡，"
-                    "不可只附在其他概念卡的 explanation 中。公式卡須完整列出公式並解釋符號、成立條件或如何使用。"
-                    "請先用 detected_topic 為整份筆記命名一個精確的學科主題，不要使用日期或『今日筆記』等泛稱。"
-                    "每張卡的 topic 是較細的觀念群組名稱；同一觀念群的卡片必須使用完全相同的 topic，讓頁面能自動分組。"
-                    "若兩張卡具有前置知識、推導、比較、互逆或應用關係，請在 related_concepts 填入對方完全相同的 concept 標題，"
-                    "最多 2 張且只保留最能幫助理解或記憶的強關聯；關聯需雙向，沒有明確關係時輸出空陣列，不可為了湊數建立關聯。"
-                    "所有數學表達式請使用 LaTeX：行內公式一律寫成 \\( ... \\)，獨立公式一律寫成 \\[ ... \\]；"
-                    "若公式推導較長，必須在獨立公式中使用 \\begin{aligned} ... \\\\ ... \\end{aligned}，依等號或推導步驟合理換行，避免輸出單一超長公式。"
-                    "保留變數、上下標、分數、轉置、向量與條件，不要輸出 Markdown 程式碼區塊或純文字替代公式。"
-                    "請用可靠的學科知識檢查筆記：若定義、符號、公式、推論或例子可明確判定為錯誤，先靜默修正為正確版本，再建立一般重點卡。"
-                    "不得建立『待確認／已修正／錯誤說明』卡片，也不得在 summary、explanation 或 memory_hint 解釋你做了修正。"
-                    "只有數字、符號或公式模糊到無法可靠判定時才略過；不可猜測。"
-                    "逐一涵蓋其餘每個獨立且有考試價值的概念，不要把不同概念硬合併；每次最多建立 15 張重點卡。"
-                    "若超過 15 項，先保留所有公式卡，再保留最核心、最常考且能涵蓋其他細節的概念。"
-                    "輸出繁體中文 JSON：summary 是卡片後方的『重點總結』，以 3 至 5 行整理考前必記結論、公式關係與判斷順序，"
-                    "最多 400 字，只摘要實際保留的卡片內容。"
-                    "key_concepts 至少 1 項、最多 15 項。不要輸出考題、選項、答案或任何題庫資料。"
-                ),
-            }
-        ]
-        for _filename, image_bytes, mime_type in images:
-            encoded = base64.b64encode(image_bytes).decode("ascii")
-            content.append(
-                {
-                    "type": "input_image",
-                    "image_url": f"data:{mime_type};base64,{encoded}",
-                    "detail": "high",
-                }
+
+        def review_zoom_crops(image_bytes: bytes) -> List[Dict[str, Any]]:
+            try:
+                with Image.open(io.BytesIO(image_bytes)) as opened:
+                    source = ImageOps.exif_transpose(opened).convert("RGB")
+                    width, height = source.size
+                    if width < 320 or height < 320:
+                        return []
+                    if height >= width:
+                        boxes = [
+                            (0, 0, width, max(1, round(height * 0.5))),
+                            (0, min(height - 1, round(height * 0.25)), width, max(1, round(height * 0.75))),
+                            (0, min(height - 1, round(height * 0.5)), width, height),
+                        ]
+                    else:
+                        boxes = [
+                            (0, 0, max(1, round(width * 0.5)), height),
+                            (min(width - 1, round(width * 0.25)), 0, max(1, round(width * 0.75)), height),
+                            (min(width - 1, round(width * 0.5)), 0, width, height),
+                        ]
+                    crops: List[Dict[str, Any]] = []
+                    for crop_index, box in enumerate(boxes, start=1):
+                        original_crop = source.crop(box)
+                        max_dimension = max(original_crop.size)
+                        scale = min(2.4, max(1.6, 2800 / max(1, max_dimension)))
+                        target_size = (
+                            max(1, round(original_crop.width * scale)),
+                            max(1, round(original_crop.height * scale)),
+                        )
+
+                        color_crop = original_crop.resize(target_size, Image.Resampling.LANCZOS)
+                        color_crop = color_crop.filter(
+                            ImageFilter.UnsharpMask(radius=1.1, percent=170, threshold=2)
+                        )
+                        color_output = io.BytesIO()
+                        color_crop.save(color_output, format="JPEG", quality=94, optimize=True)
+                        crops.append(
+                            {
+                                "label": f"重疊區塊 {crop_index} 的彩色銳化放大版",
+                                "bytes": color_output.getvalue(),
+                            }
+                        )
+
+                        contrast_crop = ImageOps.grayscale(original_crop)
+                        contrast_crop = ImageOps.autocontrast(contrast_crop, cutoff=0.5)
+                        contrast_crop = contrast_crop.resize(target_size, Image.Resampling.LANCZOS)
+                        contrast_crop = contrast_crop.filter(
+                            ImageFilter.UnsharpMask(radius=1.0, percent=190, threshold=1)
+                        ).convert("RGB")
+                        contrast_output = io.BytesIO()
+                        contrast_crop.save(contrast_output, format="JPEG", quality=94, optimize=True)
+                        crops.append(
+                            {
+                                "label": f"重疊區塊 {crop_index} 的灰階高對比放大版",
+                                "bytes": contrast_output.getvalue(),
+                            }
+                        )
+                    return crops
+            except (OSError, ValueError):
+                return []
+
+        def transcription_has_example_signals(value: Any) -> bool:
+            text = " ".join(str(value or "").split())
+            return bool(
+                re.search(
+                    r"(?:例題|範例|算例|反例|練習題|題目|問題|解答|"
+                    r"\b(?:worked\s+example|example|ex\.|exercise|problem|question|solution)\b|"
+                    r"(?:求出|求解|計算|判斷|證明|找出|解出|求其|是否|試證).{0,80}(?:[?？=→≤≥]|答案|解：|解:))",
+                    text,
+                    flags=re.IGNORECASE,
+                )
             )
-        schema = {
+        transcription_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["detected_topic", "pages"],
+            "properties": {
+                "detected_topic": {"type": "string", "maxLength": 80},
+                "pages": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": len(images),
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["image_index", "transcription", "uncertain_fragments"],
+                        "properties": {
+                            "image_index": {"type": "integer", "minimum": 1, "maximum": len(images)},
+                            "transcription": {"type": "string", "maxLength": 8000},
+                            "uncertain_fragments": {
+                                "type": "array",
+                                "maxItems": 20,
+                                "items": {"type": "string", "maxLength": 240},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        def single_page_transcription_schema(image_index: int) -> Dict[str, Any]:
+            schema = json.loads(json.dumps(transcription_schema))
+            schema["properties"]["pages"]["minItems"] = 1
+            schema["properties"]["pages"]["maxItems"] = 1
+            schema["properties"]["pages"]["items"]["properties"]["image_index"] = {
+                "type": "integer",
+                "enum": [image_index],
+            }
+            return schema
+
+        def parsed_single_page(result: Any, image_index: int) -> Dict[str, Any]:
+            pages = result.get("pages") if isinstance(result, dict) else None
+            if not isinstance(pages, list) or len(pages) != 1 or not isinstance(pages[0], dict):
+                raise ValueError(f"Incomplete transcription for image {image_index}")
+            page = pages[0]
+            returned_index = int(page.get("image_index") or 0)
+            page_text = str(page.get("transcription") or "").strip()
+            if returned_index != image_index or not page_text:
+                raise ValueError(f"Invalid transcription for image {image_index}")
+            return {
+                "image_index": image_index,
+                "transcription": page_text[:8000],
+                "transcription_mode": "isolated_v1",
+                "uncertain_fragments": [
+                    " ".join(str(value).split())[:240]
+                    for value in (page.get("uncertain_fragments") or [])[:20]
+                    if str(value).strip()
+                ],
+            }
+
+        def run_isolated_page_jobs(
+            page_indices: List[int],
+            worker: Callable[[int, Tuple[str, bytes, str]], Dict[str, Any]],
+            on_completed: Optional[Callable[[int, int, int], None]] = None,
+        ) -> Dict[int, Dict[str, Any]]:
+            """Run page-isolated model calls concurrently without sharing images."""
+            if not page_indices:
+                return {}
+            parent_cancel_event = getattr(study_upload_context, "cancel_event", None)
+
+            def wrapped(image_index: int) -> Tuple[int, Dict[str, Any]]:
+                if isinstance(parent_cancel_event, threading.Event):
+                    study_upload_context.cancel_event = parent_cancel_event
+                try:
+                    _raise_if_study_upload_cancelled()
+                    return image_index, worker(image_index, images[image_index - 1])
+                finally:
+                    if hasattr(study_upload_context, "cancel_event"):
+                        del study_upload_context.cancel_event
+
+            results: Dict[int, Dict[str, Any]] = {}
+            executor = ThreadPoolExecutor(
+                max_workers=min(3, len(page_indices)),
+                thread_name_prefix="study-page-ocr",
+            )
+            futures = {
+                executor.submit(wrapped, image_index): image_index
+                for image_index in page_indices
+            }
+            try:
+                completed = 0
+                for future in as_completed(futures):
+                    _raise_if_study_upload_cancelled()
+                    image_index, result = future.result()
+                    results[image_index] = result
+                    completed += 1
+                    if on_completed:
+                        on_completed(image_index, completed, len(page_indices))
+            except BaseException:
+                for future in futures:
+                    future.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            else:
+                executor.shutdown(wait=True)
+            return results
+
+        transcription_instruction = (
+                    f"你是跨學科筆記的忠實轉錄員。這次網站選定科目是「{subject}」，網站允許的科目只有：{ '、'.join(STUDY_PLAN_SUBJECTS) }。"
+                    "逐張轉錄看得清楚的標題、敘述、定義、步驟、例子、表格文字、專有名詞與符號，不要整理、解釋、修正知識內容或補充原圖沒有的觀念；只允許依下述規則做最小的字元級上下文補全。例題辨識要逐區塊執行：檢查『例題、範例、算例、反例、練習題、題目、問題、案例、解答』等中文標籤，以及 Example、Ex.、Exercise、Problem、Question、Solution 等英文標籤；也檢查有編號的小題、問號或明確的求解／計算／證明／判斷要求，和題目後接解答或計算過程的版面。每一個獨立題設都要原樣轉錄，不能只記錄最後答案，也不能把相鄰不同題目的數值或解法合併。"
+                    "transcription 只能依自然閱讀順序寫入圖片上實際存在的字元；不得用括號或句子描述頁面位置、顏色、圖示、照片、版面或內容大意，例如『頁中列出』『右側原稿示意』『下方有例子』都不屬於轉錄。圖形若沒有可辨識文字就不要替它寫說明。"
+                    "凡是原圖中的數學式、物理量關係、化學方程式、統計式、程式碼片段或其他具有結構的符號表達，請使用可渲染的 LaTeX：行內使用 \\( ... \\)，獨立式使用 \\[ ... \\]；保留等號、條件、上下標、矩陣、反應箭頭與原本順序。普通文字、專有名詞與非公式內容不要硬改成 LaTeX。"
+                    "若局部字元、數字或符號無法直接辨認，先利用同頁前後文、同份筆記重複出現的記號、公式成對結構、表格欄列與相鄰推導判斷。只有候選內容可被這些局部證據唯一決定時才補入 transcription，不可用課本常識延伸整句或補入新觀念。"
+                    "每個補全都要在 uncertain_fragments 記錄『已補全｜推定：...｜依據：...｜信心：高／中』；若仍有兩種以上合理結果，才在原位置寫〔無法推定〕，並記錄『未補全｜上下文：...』。補全後的 transcription 直接放可讀文字，不要插入待確認說明。"
+                    "所有原文中的具體名稱、數值、單位、變數、符號、版本、日期、條件與例外都必須保留；不得擅自泛化、特例化、翻譯成不同概念或套用其他科目的知識。detected_topic 只能描述這份「{subject}」筆記實際出現的主題，不得建立第七個科目。"
+                    "你這次只會看到一張原圖；不得想像、延續或抄入其他頁的內容。detected_topic 只依目前這張圖實際內容命名。"
+        )
+        card_schema = {
             "type": "object",
             "additionalProperties": False,
             "required": ["detected_topic", "summary", "key_concepts"],
             "properties": {
                 "detected_topic": {"type": "string", "maxLength": 80},
-                "summary": {"type": "string", "maxLength": 800},
+                "summary": {"type": "string", "maxLength": 900},
                 "key_concepts": {
                     "type": "array",
                     "minItems": 1,
-                    "maxItems": 15,
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["concept", "explanation", "memory_hint", "topic", "related_concepts"],
+                        "required": ["concept", "card_type", "recall_cue", "core_summary", "explanation", "simple_example", "example_problem", "example_method", "reasoning_steps", "common_confusion", "memory_hint", "topic", "related_concepts", "search_keywords", "source_refs", "coverage_ids", "correction"],
                         "properties": {
                             "concept": {"type": "string", "maxLength": 80},
-                            "explanation": {"type": "string", "maxLength": 720},
+                            "card_type": {"type": "string", "enum": ["concept", "example"]},
+                            "recall_cue": {"type": "string", "maxLength": 160},
+                            "core_summary": {"type": "string", "maxLength": 280},
+                            "explanation": {"type": "string", "maxLength": 620},
+                            "simple_example": {"type": "string", "maxLength": 360},
+                            "example_problem": {"type": "string", "maxLength": 360},
+                            "example_method": {"type": "string", "maxLength": 280},
+                            "reasoning_steps": {
+                                "type": "array",
+                                "maxItems": 4,
+                                "items": {"type": "string", "maxLength": 180},
+                            },
+                            "common_confusion": {"type": "string", "maxLength": 180},
                             "memory_hint": {"type": "string", "maxLength": 120},
                             "topic": {"type": "string", "maxLength": 48},
                             "related_concepts": {
@@ -2545,40 +8279,1892 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                                 "maxItems": 2,
                                 "items": {"type": "string", "maxLength": 80},
                             },
+                            "search_keywords": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "items": {"type": "string", "maxLength": 40},
+                            },
+                            "source_refs": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 4,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["image_index", "evidence"],
+                                    "properties": {
+                                        "image_index": {"type": "integer", "minimum": 1, "maximum": len(images)},
+                                        "evidence": {"type": "string", "maxLength": 240},
+                                    },
+                                },
+                            },
+                            "coverage_ids": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 8,
+                                "items": {"type": "string", "maxLength": 16},
+                            },
+                            "correction": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["applied", "original", "corrected", "reason"],
+                                "properties": {
+                                    "applied": {"type": "boolean"},
+                                    "original": {"type": "string", "maxLength": 240},
+                                    "corrected": {"type": "string", "maxLength": 240},
+                                    "reason": {"type": "string", "maxLength": 300},
+                                },
+                            },
                         },
                     },
                 },
             },
         }
-        request_body = {
-            "model": openai_model,
-            "store": False,
-            "input": [{"role": "user", "content": content}],
-            "text": {"format": {"type": "json_schema", "name": "study_recall_note", "strict": True, "schema": schema}},
-        }
         try:
-            response = requests.post(
-                "https://api.openai.com/v1/responses",
-                headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
-                json=request_body,
-                timeout=90,
+            if progress_callback:
+                progress_callback(20, "正在逐頁忠實轉錄文字、符號與公式，不做延伸解釋。")
+            def transcribe_initial_page(
+                image_index: int,
+                image: Tuple[str, bytes, str],
+            ) -> Dict[str, Any]:
+                _filename, image_bytes, mime_type = image
+                transcription = _call_openai_json(
+                    name=f"study_note_transcription_page_{image_index}",
+                    schema=single_page_transcription_schema(image_index),
+                    content=[
+                        {
+                            "type": "input_text",
+                            "text": (
+                                transcription_instruction
+                                + f" 這是整批中的第 {image_index} 張；pages 必須只輸出 image_index={image_index}。"
+                            ),
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                            "detail": "high",
+                        },
+                    ],
+                    timeout=180,
+                )
+                return parsed_single_page(
+                    transcription,
+                    image_index,
+                )
+
+            def report_initial_page(
+                _image_index: int,
+                completed: int,
+                total_pages: int,
+            ) -> None:
+                if progress_callback:
+                    progress_callback(
+                        20 + round(completed / max(1, total_pages) * 11),
+                        f"已完成 {completed}/{total_pages} 張逐頁轉錄，頁面來源彼此隔離。",
+                    )
+            pages_by_index = run_isolated_page_jobs(
+                list(range(1, len(images) + 1)),
+                transcribe_initial_page,
+                report_initial_page,
             )
-            response.raise_for_status()
-            output_text = _extract_openai_text(response.json())
-            parsed = json.loads(output_text)
+            source_pages = [pages_by_index[index] for index in range(1, len(images) + 1) if index in pages_by_index]
+            if len(source_pages) != len(images):
+                raise ValueError("Incomplete transcription")
+            initial_source_pages = json.loads(json.dumps(source_pages, ensure_ascii=False))
+
+            symbol_audit_instruction = (
+                "你是獨立的跨學科逐字元核對與上下文補全員。第一輪 transcription 只是待核草稿；請重新查看目前這一張完整原圖與其放大裁切，輸出修正過的完整單頁轉錄。"
+                "逐一核對所有文字、專有名詞、數字、單位、符號、標點、大小寫、上下標、指數、分數、表格欄位、公式、方程式、反應式、程式碼與條件。字跡不清時，必須主動比較同頁前後句、同頁重複記號、公式左右結構、表格欄列和相鄰推導。"
+                "例題與題組要執行額外數字符號稽核：先逐項列出題號、所有常數、係數、座標、矩陣元素、範圍端點、單位及答案數值，再逐一對照完整原圖、彩色銳化版與灰階高對比版。特別區分 0／6／8／9、1／7、3／5、正負號、小數點、逗號、分數線、括號、次方與上下標；兩個版本衝突時回到完整原圖與公式內部一致性判斷，不能只採信其中一張增強圖。"
+                "輸出只能包含原圖實際書寫的字元，不得以『頁中／圖中／上方／下方／右側／原稿／黑板』等敘事描述圖片、位置或圖形；第一輪若有這類描述必須刪除，不能當作原文保留。"
+                "只有上下文使缺字或符號只剩一個合理結果時才補上；可做最小字元級推理，但不得用外部課本知識補成更完整的定義、定理、結論或解法。不要因單一筆畫模糊就刪掉整段。"
+                "原圖的具體值不得改成變數，變數不得改成具體值，專有名詞不得換成相近名詞，原圖未寫出的定義域、範圍、因果或結論不得補入。"
+                "若草稿與原圖不一致，以原圖為準。每個採用的上下文補全都列入 uncertain_fragments，格式為『已補全｜推定：...｜依據：...｜信心：高／中』；若仍有兩種以上合理結果，才在 transcription 對應位置寫〔無法推定〕並記錄『未補全｜上下文：...』。"
+                "不得寫入目前原圖以外的其他頁內容，即使草稿看起來像有接續內容也必須以目前原圖為準。"
+            )
+            def audit_symbol_page(
+                image_index: int,
+                image: Tuple[str, bytes, str],
+            ) -> Dict[str, Any]:
+                _filename, image_bytes, mime_type = image
+                symbol_audit_content: List[Dict[str, Any]] = [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            symbol_audit_instruction
+                            + f" 目前是第 {image_index} 張，pages 只能輸出 image_index={image_index}。"
+                            + "\n待核草稿="
+                            + json.dumps(
+                                pages_by_index[image_index],
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
+                        ),
+                    },
+                    {
+                        "type": "input_text",
+                        "text": "以下是目前唯一允許轉錄的完整原圖；後面的圖都是同一頁重疊裁切，不是新頁面。",
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                        "detail": "high",
+                    },
+                ]
+                for crop in review_zoom_crops(image_bytes):
+                    symbol_audit_content.extend(
+                        [
+                            {
+                                "type": "input_text",
+                                "text": (
+                                    f"目前原圖的{crop['label']}，只用來核對同一頁的小字、數字與符號。"
+                                    "請逐字比較原圖與不同增強版本；增強造成的邊緣或雜點不得當成小數點、負號或筆畫。"
+                                ),
+                            },
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:image/jpeg;base64,{base64.b64encode(crop['bytes']).decode('ascii')}",
+                                "detail": "high",
+                            },
+                        ]
+                    )
+                symbol_audit = _call_openai_json(
+                    name=f"study_note_symbol_audit_page_{image_index}",
+                    schema=single_page_transcription_schema(image_index),
+                    content=symbol_audit_content,
+                    timeout=210,
+                )
+                return parsed_single_page(
+                    symbol_audit,
+                    image_index,
+                )
+
+            def report_audited_page(
+                _image_index: int,
+                completed: int,
+                total_pages: int,
+            ) -> None:
+                if progress_callback:
+                    progress_callback(
+                        32 + round(completed / max(1, total_pages) * 10),
+                        f"已完成 {completed}/{total_pages} 張獨立符號核對。",
+                    )
+            audited_pages_by_index = run_isolated_page_jobs(
+                list(range(1, len(images) + 1)),
+                audit_symbol_page,
+                report_audited_page,
+            )
+            source_pages = [
+                audited_pages_by_index[index]
+                for index in range(1, len(images) + 1)
+                if index in audited_pages_by_index
+            ]
+            if len(source_pages) != len(images):
+                raise ValueError("Incomplete symbol-audited transcription")
+
+            reconciliation_instruction = (
+                "你是單頁轉錄完整性仲裁員。initial_transcription 與 symbol_audit 是兩次獨立查看目前同一張圖片的結果，兩者都可能漏段或誤讀。"
+                "請重新查看目前原圖，逐段比較兩稿的每一個標題、定義、公式、例題、證明、表格、程式碼與結論，輸出目前這一頁的完整最終轉錄。"
+                "任何只出現在其中一稿的段落都必須回到圖片確認：圖片可見就完整保留，不可因另一稿漏掉而刪除；圖片不支持就不要保留，也不可把兩稿內容直接盲目拼接。"
+                "最終 transcription 仍只能是圖片上實際可見字元；不得新增頁面位置、顏色、圖示、照片、版面或內容摘要等視覺敘事。若任一稿含『頁中列出』『右側原稿』『下方示意』等描述，除非這些字真的寫在圖上，否則一律移除。"
+                "逐頁由上到下輸出，不可省略側欄、右半部、頁尾、小字例題或接續公式。例題的題設、操作與結論均須轉錄；請逐一盤點中文例題／範例／算例／反例／練習題／題目／問題／解答標籤、英文 Example／Ex.／Exercise／Problem／Question／Solution 標籤、編號小題，以及含明確求解要求的題組；不同題設必須分開保留，不能只留下答案或把多題合併。原圖本身的錯誤也照原樣轉錄，留給後續內容校正。"
+                "仍無法唯一辨識的字元依前後文做最小補全並記錄信心；無法唯一推定才標〔無法推定〕。不得用課本知識補入圖片沒有的定義或解法。"
+                "數學與結構化符號使用可渲染的 LaTeX。你看不到也不得輸出其他頁內容；pages 只能有目前這一頁。"
+            )
+            initial_pages_by_index = {
+                int(page.get("image_index") or 0): page
+                for page in initial_source_pages
+                if isinstance(page, dict)
+            }
+            reconciliation_required_indices: Set[int] = set()
+            for audited_page in source_pages:
+                image_index = int(audited_page.get("image_index") or 0)
+                initial_page = initial_pages_by_index.get(image_index) or {}
+                initial_text = _canonical_study_source_match_text(
+                    initial_page.get("transcription") or ""
+                )
+                audited_text = _canonical_study_source_match_text(
+                    audited_page.get("transcription") or ""
+                )
+                shorter_length = min(len(initial_text), len(audited_text))
+                longer_length = max(len(initial_text), len(audited_text), 1)
+                similarity = (
+                    SequenceMatcher(None, initial_text, audited_text, autojunk=False).ratio()
+                    if initial_text and audited_text
+                    else 0.0
+                )
+                uncertainty_text = " ".join(
+                    str(value or "")
+                    for value in (
+                        *(initial_page.get("uncertain_fragments") or []),
+                        *(audited_page.get("uncertain_fragments") or []),
+                    )
+                )
+                has_example_signals = transcription_has_example_signals(
+                    " ".join(
+                        (
+                            str(initial_page.get("transcription") or ""),
+                            str(audited_page.get("transcription") or ""),
+                        )
+                    )
+                )
+                if (
+                    has_example_signals
+                    or similarity < 0.985
+                    or shorter_length / longer_length < 0.97
+                    or "未補全" in uncertainty_text
+                    or "〔無法推定〕" in str(initial_page.get("transcription") or "")
+                    or "〔無法推定〕" in str(audited_page.get("transcription") or "")
+                ):
+                    reconciliation_required_indices.add(image_index)
+            if progress_callback:
+                progress_callback(
+                    43,
+                    "正在比對兩輪轉錄差異，補回任何被單次辨識遺漏的段落。"
+                    if reconciliation_required_indices
+                    else "兩輪轉錄高度一致，已略過不必要的第三次辨識。",
+                )
+            reconciled_pages_by_index: Dict[int, Dict[str, Any]] = {
+                image_index: audited_pages_by_index[image_index]
+                for image_index in range(1, len(images) + 1)
+                if image_index not in reconciliation_required_indices
+            }
+
+            def reconcile_page(
+                image_index: int,
+                image: Tuple[str, bytes, str],
+            ) -> Dict[str, Any]:
+                _filename, image_bytes, mime_type = image
+                reconciliation_content: List[Dict[str, Any]] = [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            reconciliation_instruction
+                            + f" 目前是第 {image_index} 張，pages 只能輸出 image_index={image_index}。"
+                            + "\ninitial_transcription="
+                            + json.dumps(
+                                initial_pages_by_index[image_index],
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
+                            + "\nsymbol_audit="
+                            + json.dumps(
+                                audited_pages_by_index[image_index],
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
+                        ),
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                        "detail": "high",
+                    },
+                ]
+                if transcription_has_example_signals(
+                    " ".join(
+                        (
+                            str(initial_pages_by_index[image_index].get("transcription") or ""),
+                            str(audited_pages_by_index[image_index].get("transcription") or ""),
+                        )
+                    )
+                ):
+                    reconciliation_content[0]["text"] += (
+                        "\n這一頁含有疑似例題。請建立數字符號核對清單，逐一比對題號、所有數值、"
+                        "小數點、正負號、分子分母、括號、上下標、矩陣元素與運算符；兩稿即使一致，"
+                        "仍必須以原圖和放大版重新確認，不能沿用共同誤讀。只把核對後結果寫入 transcription。"
+                    )
+                    for crop in review_zoom_crops(image_bytes):
+                        reconciliation_content.extend(
+                            [
+                                {
+                                    "type": "input_text",
+                                    "text": (
+                                        f"例題數字符號專用：{crop['label']}。"
+                                        "同時參照完整原圖判斷，不可把影像增強雜點當成符號。"
+                                    ),
+                                },
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/jpeg;base64,{base64.b64encode(crop['bytes']).decode('ascii')}",
+                                    "detail": "high",
+                                },
+                            ]
+                        )
+                reconciled = _call_openai_json(
+                    name=f"study_note_transcription_reconciled_page_{image_index}",
+                    schema=single_page_transcription_schema(image_index),
+                    content=reconciliation_content,
+                    timeout=240,
+                    max_output_tokens=9000,
+                )
+                return parsed_single_page(
+                    reconciled,
+                    image_index,
+                )
+            reconciled_pages_by_index.update(
+                run_isolated_page_jobs(
+                    sorted(reconciliation_required_indices),
+                    reconcile_page,
+                )
+            )
+            source_pages = [
+                reconciled_pages_by_index[index]
+                for index in range(1, len(images) + 1)
+                if index in reconciled_pages_by_index
+            ]
+            if len(source_pages) != len(images):
+                raise ValueError("Incomplete reconciled transcription")
+            for page in source_pages:
+                transcription_text = str(page.get("transcription") or "")
+                transcription_text = re.sub(
+                    r"\$\$(.+?)\$\$",
+                    lambda match: "\\[" + match.group(1).strip() + "\\]",
+                    transcription_text,
+                    flags=re.DOTALL,
+                )
+                transcription_text = re.sub(
+                    r"(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)",
+                    lambda match: "\\(" + match.group(1).strip() + "\\)",
+                    transcription_text,
+                )
+                page["transcription"] = transcription_text
+
+            coverage_plan = _study_source_page_coverage_plan(source_pages)
+            audit_card_floor = int(coverage_plan["target_cards"])
+            page_card_quotas = {
+                str(image_index): quota
+                for image_index, quota in coverage_plan["page_quotas"].items()
+            }
+            coverage_checklist = [
+                {
+                    "id": item["id"],
+                    "image_index": item["image_index"],
+                    "text": str(item["text"])[:500],
+                    "content_type": item.get("content_type") or "concept",
+                    "is_example": bool(item.get("is_example")),
+                }
+                for item in _study_source_coverage_items(source_pages)
+            ]
+            correction_rule = (
+                "只可修正可由來源已有的標準定義、公式或直接計算毫無歧義地確認的錯誤；遇到這類錯誤時必須保留該觀念、輸出最小必要修正後的正確卡片並填寫 correction，不得以刪卡取代校正。不得為了修正補入來源未使用的新觀念或解法。"
+                if allow_corrections
+                else "不得修正任何內容；所有 correction.applied 必須是 false，其餘欄位為空字串。"
+            )
+            organizer_prompt = (
+                "你是跨學科的忠實筆記編輯，只能根據下方逐頁轉錄稿整理重點卡。除了 concept 卡 simple_example 可依後述規則做最小代入示範外，不得加入轉錄稿沒有的定義、背景知識、例子、用途、推導、因果關係或專有名詞解釋；"
+                "不得把僅被提到的術語另做定義卡。可以改寫語序與合併同一觀念的重複句，但每一句資訊都必須能在轉錄稿找到。"
+                "每張卡只處理一個原筆記正在記錄的觀念，concept 使用不超過 18 個中文字的短標題。recall_cue 是揭示內容前的回想線索，以 2 至 4 個來源已有的關鍵詞呈現，可使用『條件 → 關係 → 結論』等短結構，但不能直接洩露完整答案、不能使用問號，也不能寫成考題。core_summary 用 1 至 2 個短句或一個完整公式直接寫出這張卡最需要記住的結論。explanation 再補足成立條件、觀念脈絡與來源確實寫出的最短推導；通常 2 至 4 個短句即可。"
+                "reasoning_steps 只在來源確實包含推導、程序或解題步驟時填入 2 至 4 個可重用短步驟，純定義卡輸出空陣列。common_confusion 只有來源明確比較兩個觀念、指出易錯處，或允許校正且有直接可驗證錯誤時才填寫，否則輸出空字串；不可自行猜測學生會錯在哪裡。"
+                "若來源是例題、範例或算例，card_type 必須為 example；一般觀念卡為 concept。example 卡的 example_problem 必須寫成一個可直接作答的具體題目示例，完整保留必要的數值、向量、矩陣、函數、條件與明確要求，不可只寫『判斷某性質』卻省略實際題設；example_method 只用 1 至 2 個短句寫來源實際採用、可重複使用的核心判斷或策略，不得編號或逐步列舉；reasoning_steps 再列必要操作。題目、方法與步驟不可混寫或重複。example 卡的 simple_example 必須是空字串。"
+                "每張 concept 卡都要填 simple_example：優先整理來源中原有的最短例子；若來源沒有例子，只能把該卡來源已寫出的定義或公式代入最簡單的數值、符號或情境，做 1 至 2 句的最小示範。不得引入新定理、新術語、新條件、不同題型或來源外的解法，也不能只是重複定義。concept 卡的 example_problem 與 example_method 必須是空字串。"
+                "例題卡可刪除不影響作答的冗長背景，但不得刪掉具體題設、必要數值、給定式或要求，也不可只給最終答案。不得把偶然數值寫進 core_summary。只有用來否定性質的最小反例，才可保留證明失敗所必需的數值。"
+                "例題方法可以把來源中反覆使用或清楚展示的操作抽象成一般步驟，但每個步驟都必須能由該例題的 source_refs 支持；不可補入來源沒用到的定理、捷徑或新解法。若來源只有題目和答案、沒有可辨識過程，就不要臆造解法。"
+                "刪除教學口吻、重要性說明、驗證過程、重複結論、公式的文字重述、同義改寫、延伸提醒與『換句話說』『這表示』『可以看出』『值得注意』等填充語。"
+                "所有文字欄位與 summary 都必須直接陳述知識，禁止使用『筆記給出』『筆記註明』『筆記記載／紀載』『筆記指出』『筆記中提到』『根據筆記可知』『筆記的重點是』或任何同義前綴。不要考題，也不要提到原文、來源、OCR、核對或修正過程。輸出前逐欄自檢；只要出現這類來源敘事，就重新改寫成直接知識陳述後才輸出。"
+                "影像中清楚可辨的公式、方程式、反應式、統計式、程式碼或其他關鍵結構都要保留；卡片數量不設上限。由你依複習目標判斷拆分或合併，但不可漏掉來源中的核心內容。coverage_checklist 中每一個 is_example=true 的獨立例題、範例、反例、練習題、題目或英文 Example/Exercise/Problem 都必須各自出現在一張 card_type=example 卡中；不可只把題目塞進 concept 卡的 explanation 或 simple_example，也不可把兩個有不同題設的例題合成一張。題目若只有題設沒有解法，仍要建立例題卡，example_method 誠實填寫『來源未提供完整解法』，不得自行補解。"
+                f"先按頁建立完整內容清單，再依實際資訊量分配卡片。建議總卡數至少約 {audit_card_floor} 張、各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}，但不是固定張數。優先保留每個清楚公式、定義、方法、例題策略與結論；同一觀念的成對定義、同方法例題或同一定理下的緊密內容可由你合併，一張卡若包含不同複習目標則應拆開，不得為湊張數重複寫卡。"
+                f"coverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}。priority=required 的區塊應優先進入卡片；supporting 區塊可在不破壞單一卡片主題的前提下併入 explanation。is_example=true 的區塊是不可合併遺漏的逐題清單，coverage_ids 與 source_refs 必須真實對應，不可虛報。"
+                "所有公式與結構化符號一律使用 \\( ... \\) 或 \\[ ... \\] 包住的 LaTeX；長公式用 aligned 合理換行。矩陣與向量必須使用可渲染的 matrix/bmatrix/pmatrix 環境，欄之間用 &，列之間用 \\\\，不可把多個分量直接黏在同一格。不要使用裸露的 $...$、$$...$$ 或只寫線性純文字公式。普通文字保持自然繁體中文。memory_hint 只有原文存在明確記憶線索時才填寫，否則輸出空字串。"
+                "每張卡必須提供 1 至 4 個 source_refs。緊密相關的連續內容可由同一卡引用多段，讓卡片在不混雜不同觀念的前提下保留更多資訊。evidence 必須逐字複製對應頁 transcription 中一段連續、且能直接在原圖看到的文字，連空白與 LaTeX 都不要改，作為可程式比對的來源。evidence 禁止改寫、摘要或描述頁面位置與圖形；不得輸出『頁中列出』『右側原稿示意』『下方有例子』等非原文字句。若卡片跨兩段，分成兩個 source_refs，不可自行寫一段銜接敘述。"
+                "source_pages 的 uncertain_fragments 若標為『已補全』且信心為高或中，代表該缺字已由第二輪模型依局部上下文獨立核對，可將 transcription 中補全後的連續文字正常整理成卡片；標為『未補全』或仍含〔無法推定〕的片段不得作為關鍵事實。不要在卡片正文提到補全過程。"
+                "整理時盡量沿用轉錄稿原本的名詞、短語、變數、條件排列與公式，不要為了流暢改成課本式同義說法。只有字元辨識不清、前後自相矛盾、公式結構不可能成立或可由來源直接驗算出錯時，才做最小必要補全或校正。每張卡的 search_keywords 保留 3 至 8 個最可能被使用者回想起來搜尋的原文詞、專有名詞、縮寫、變數組合或公式名稱；只能取自該卡內容、source_refs 或已完成的高信心校正，不得加入來源外同義詞。"
+                "topic 必須是科目底下精確的細分觀念，例如『線性映射判定』『像與反像』『直和與基底』『矩陣可逆性』；禁止直接使用線性代數、離散數學、資料結構、演算法、作業系統、計算機組織等科目名稱，也不要使用『其他』『綜合重點』『課堂筆記』等空泛名稱。"
+                "依內容自然分成 3 至 8 個細分主題；同一 topic 的卡片應共享明確觀念脈絡，彼此不同的定義、方法或章節必須拆開。topic 只能表達一個觀念群組，不得為湊數而用斜線、頓號或『與』串接像／反像、直和、線性判定等無直接從屬關係的分類。related_concepts 最多 2 個，只連結本批卡片中明確有推導、比較或前置關係者。summary 最多 5 個完整短句，只列最後保留的核心結論，不重複推導與例子，不可新增資訊，也不可在句中截斷。"
+                + correction_rule
+                + "\n\n逐頁忠實轉錄稿：\n"
+                + json.dumps(source_pages, ensure_ascii=False, separators=(",", ":"))
+            )
+            if progress_callback:
+                progress_callback(52, "符號核對完成，正在只依原文整理重點卡。")
+            draft = _call_openai_json(
+                name="study_recall_grounded_draft",
+                schema=card_schema,
+                content=[{"type": "input_text", "text": organizer_prompt}],
+                timeout=300,
+                max_output_tokens=20000,
+            )
+            verifier_prompt = (
+                "你是跨學科筆記忠實度審核員。請重新查看隨附原始圖片，逐句核對 draft、source_pages 與圖片，輸出修訂後的完整 JSON。"
+                "圖片是最終依據：先修正 OCR 對係數、正負號、上下標、矩陣分量或 LaTeX 的誤讀，再確認卡片與原圖一致。"
+                "逐一核對名稱、數值、單位、符號、範圍、條件、例外、表格欄位與步驟；一般知識卡的具體內容必須原樣保留，不可改成更一般或更特殊的形式。例題方法卡可以省略非必要題目數值並抽出來源已展示的解題流程，但不得改變方法成立的條件或增加來源沒有的步驟。"
+                "對來源中明確寫出的公式、方程式、反應式、統計式、程式碼或推導做相應的內部一致性檢查；若結果與來源不相容，依原圖修正，原圖本身確實錯誤且允許校正時才建立 correction。不要把數學驗證規則套用到沒有公式的科目。"
+                "刪除任何無法由來源直接支持的句子、卡片、口訣或關聯；不得自行補上更完整的課本知識。"
+                "每個 source_refs.evidence 必須仍是對應 transcription 中逐字連續出現、而且能直接在原圖看到的片段，錯頁或不完全相同就修正引用。evidence 不得以括號描述頁面位置、圖示、照片、顏色、原稿或內容大意；遇到這類非原文字句要改成真正可見的連續文字。已由上下文唯一補全且列有高／中信心紀錄的文字可正常保留；只有仍含〔無法推定〕或沒有可靠來源的卡片才刪除。"
+                "正文與 search_keywords 都應優先保留原筆記實際使用的詞彙、記號和條件順序；不要用外部同義詞取代。search_keywords 只保留能在卡片、source_refs 或高信心校正結果中找到的搜尋詞。"
+                "保留清楚可辨的原筆記公式。correction 只有在錯誤毫無歧義且允許校正時才能保留，否則恢復原文或刪除該項。"
+                "再次排除重複句、公式的文字重述、教學口吻與不影響複習的補充。所有卡片文字欄位與 summary 只要仍含『筆記給出／註明／記載／指出／提到』及其同義寫法，就視為審核不合格並改寫為直接知識陳述。recall_cue 不得洩露 core_summary，也不得寫成問題；reasoning_steps 與 common_confusion 沒有直接來源支持時必須留空。summary 只能用最多 5 個短句直接摘要核心結論。不要輸出審核說明。"
+                "另外檢查所有例題卡：card_type 必須為 example，example_problem 必須包含一個具體、可直接作答的完整題目示例與明確要求，example_method 只留來源真正使用的可重用判斷，reasoning_steps 只留操作順序，simple_example 留空。三者不可互相重複，也不能創造新技巧。每張 concept 卡的 simple_example 都必須是簡短具體示範；若原文沒有例子，只允許對來源已有定義或公式做最小數值或符號代入，不得補充來源外知識。"
+                "所有聲稱某性質不成立的例題都必須重新驗算前提與運算：測試輸入若不符合該性質的前提、計算錯誤，或實際上反而滿足該性質，就不能當成反例。來源清楚且允許校正時，必須依來源已有的映射、定義與直接計算修正成正確卡片並記入 correction；只有原圖與前後文仍無法唯一推定時才略過。"
+                "先逐段清點 source_pages 與圖片中的標題、定義、公式、例題方法與結論；draft 漏掉但圖片或高／中信心的上下文補全仍足以確認核心觀念時，必須補回卡片。局部字跡不清不代表整段都要刪除；先利用重複記號、句法、公式結構與相鄰推導補全，只略過仍有多種合理結果且會影響正確性的字元。來源中清楚可辨但結論錯誤的觀念必須修正後補回，不得視為無來源。"
+                f"各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}。逐頁檢查 source_refs，優先讓有公式、定義、方法或例題策略的頁面得到代表卡；一般補充內容可併入相關卡片，不得用無關卡片虛報引用。"
+                f"逐一核對 coverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}；priority=required 的 id 優先保留，supporting id 可合併；coverage_ids 的來源 evidence 仍必須與該段重疊。"
+                "逐張檢查 topic：不得等於任何科目名稱或空泛大分類，必須改成能描述該卡核心內容的單一細分觀念；明顯不同章節或方法不得共用同一 topic，禁止用斜線、頓號或『與』拼接互不從屬的分類。依全部內容整理成 3 至 8 個群組。"
+                f"\nallow_corrections={str(allow_corrections).lower()}"
+                "\nsource_pages=" + json.dumps(source_pages, ensure_ascii=False, separators=(",", ":"))
+                + "\ndraft=" + json.dumps(draft, ensure_ascii=False, separators=(",", ":"))
+            )
+            if progress_callback:
+                progress_callback(70, "正在逐句核對來源，移除無依據的延伸內容。")
+            verifier_content: List[Dict[str, Any]] = [{"type": "input_text", "text": verifier_prompt}]
+            for _filename, image_bytes, mime_type in images:
+                verifier_content.append(
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                        "detail": "high",
+                    }
+                )
+            verified = _call_openai_json(
+                name="study_recall_grounded_verified",
+                schema=card_schema,
+                content=verifier_content,
+                timeout=300,
+                max_output_tokens=20000,
+            )
+            formula_audit_instruction = (
+                "你是最後一道跨學科內容與忠實度稽核。根據原始圖片、source_pages 與 verified，輸出通過稽核的完整 JSON，不要輸出稽核過程。"
+                "逐卡檢查內容是否能由原圖直接支持，並檢查名稱、數值、單位、條件、範圍、符號、步驟、表格與結論是否一致。原圖有公式、方程式、反應式、統計式或程式碼時，才對其做相應的結構與內部一致性檢查；沒有這些內容時不要自行補公式。"
+                "所有推導、計算、分類、因果或比較都必須符合來源中明示的前提。來源本身清楚但內容有誤，且 allow_corrections=true 時，必須做最小必要修正、保留為正確卡片並記入 correction，不得以刪卡代替校正；只有結果完全沒有來源支持時才能刪除。"
+                "重新對照圖片，OCR 與圖片不同時以圖片為準；這類 OCR、上下文補字、漏字、標點或 LaTeX 排版修復不算筆記內容校正，不得建立 correction。correction 只記錄原圖筆記本身可直接驗證的知識、公式、計算或結論錯誤。若某個文字、數字或符號無法直接辨認，先以同頁前後文、重複記號、公式結構與相鄰推導做最小補全；已被唯一推定且有高／中信心紀錄時保留。仍有多種合理結果時才刪除受影響的卡片，不可在卡片中寫模糊或待確認說明。"
+                "除例題方法卡可從來源已展示的操作整理成可重用步驟外，禁止在具體內容與一般內容之間擅自轉換，禁止加入課本延伸、跨科聯想或來源沒有的教學解釋。方法卡只能描述 source_refs 實際出現的判斷與操作，不得替操作新增來源沒寫的理論名稱、資料結構、演算法、定理、空間分類、證明或另一套解法。"
+                "同時刪除原筆記未明說的通則、額外定義、延伸例子與教學詮釋；唯一例外是 concept 卡 simple_example 可對來源既有定義或公式做最小數值／符號代入，不得因此產生新知識。source_refs.evidence 仍必須逐字存在於對應 transcription，並且是原圖可見字元，不得是頁面位置、圖示或內容大意的描述；"
+                "優先保留來源原本的專有名詞、關鍵短語、變數與條件順序，只做最小必要的模糊字補全或可直接驗證校正。search_keywords 必須是可從卡片、source_refs 或高信心校正結果直接找到的原始搜尋詞，不得自行擴充同義詞。"
+                "若修正結果是由來源中的明確內容直接得到，可引用包含該內容的原文。卡片正文只寫可複習的來源內容，絕對不可提到筆記、原稿、OCR、核對、稽核或修正過程；"
+                "每張卡只輸出一個核心觀念所需的最短完整內容：recall_cue 提供不洩漏答案的關鍵詞，core_summary 放最需要記住的結論，explanation 放條件與脈絡，reasoning_steps 只放來源已有的必要推導或操作。不得輸出重複結論、驗證代回、同義重述、重要性說明與教學填充語。所有文字欄位與 summary 禁止出現『筆記給出』『筆記註明』『筆記記載／紀載』『根據筆記』『原文指出』等來源敘事；發現時必須先改寫，不能原樣輸出。"
+                "例題卡的 card_type 必須為 example，並把具體且可直接作答的完整必要題設、可重用解法、操作順序分別寫入 example_problem、example_method、reasoning_steps，simple_example 留空；可刪冗長背景但不可省略數值、給定式、條件或要求。若來源沒有足夠過程可整理方法，仍保留該例題卡，example_method 填『來源未提供完整解法』，不可臆造解法。一般卡為 concept，example_problem 與 example_method 留空，simple_example 必須是來源例子或只對來源已有定義／公式所做的最小代入示範。"
+                "對每個反例或性質判定例，逐項驗證輸入是否符合欲檢查性質的前提，並重新計算映射結果；來源清楚且 allow_corrections=true 時，錯誤反例、錯誤等號或錯誤結論必須校正並記錄，不能刪除該觀念。只有影像與前後文都不足以唯一判定正確內容時才略過。"
+                f"稽核前先建立 source_pages 的內容清單，逐段比對 verified；依目前資訊量，本批建議至少約 {audit_card_floor} 張互不重複的候選卡片，但卡片數量不設上限，也不可為達成張數拆出空泛卡。圖片或高／中信心補全仍可確認核心定義、公式、方法或結論的段落若遭漏掉，應優先補回；同一張卡若混入可各自複習的獨立定義、方法或章節，才需要拆卡。局部不清先做最小上下文補全，不得刪除其餘可確認觀念；若清楚觀念本身寫錯且允許校正，補回修正後的正確卡片。"
+                f"各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}。逐頁計數 source_refs，優先補回缺頁的公式、定義、方法、例題策略與結論；一般補充段落可以併入同觀念卡。不可用與該頁無關的卡片虛報引用。"
+                f"輸出前再核對 coverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}；priority=required 的區塊優先進入卡片，supporting 區塊可合併；coverage_ids 與 evidence 必須實際對應。"
+                "topic 必須是科目內的單一細分觀念，不得使用六科科目名稱、整份筆記標題或『綜合重點』等空泛文字，也不得用斜線、頓號或『與』把無直接從屬關係的分類硬併在一起；依最後保留卡片整理成 3 至 8 個群組。"
+                "修正過程只放在 correction。summary 最多 5 個完整短句，只可摘要最後保留的卡片，禁止句中截斷或用空公式結尾。"
+                f"\nallow_corrections={str(allow_corrections).lower()}"
+            )
+            if progress_callback:
+                progress_callback(78, "正在驗證上下文補全與各科內容一致性，排除仍無法判定的片段。")
+            verified_cards = [
+                card
+                for card in (verified.get("key_concepts") or [])
+                if isinstance(card, dict)
+            ]
+
+            def audit_formula_card_batch(
+                batch: List[Dict[str, Any]],
+                *,
+                batch_label: str,
+            ) -> List[Dict[str, Any]]:
+                _raise_if_study_upload_cancelled()
+                if not batch:
+                    return []
+                relevant_indices = sorted(
+                    {
+                        int(source_ref.get("image_index") or 0)
+                        for card in batch
+                        for source_ref in (card.get("source_refs") or [])
+                        if isinstance(source_ref, dict)
+                        and 1 <= int(source_ref.get("image_index") or 0) <= len(images)
+                    }
+                )
+                if not relevant_indices:
+                    relevant_indices = list(range(1, len(images) + 1))
+                relevant_pages = [
+                    page
+                    for page in source_pages
+                    if int(page.get("image_index") or 0) in relevant_indices
+                ]
+                batch_payload = {
+                    "detected_topic": str(verified.get("detected_topic") or "")[:80],
+                    "summary": str(verified.get("summary") or "")[:900],
+                    "key_concepts": batch,
+                }
+                batch_schema = json.loads(json.dumps(card_schema))
+                batch_schema["properties"]["key_concepts"]["minItems"] = 0
+                batch_schema["properties"]["key_concepts"]["maxItems"] = len(batch)
+                batch_prompt = (
+                    formula_audit_instruction
+                    + "\n這是完整卡片集合中的獨立稽核批次。只能核對、最小修正或刪除 batch_cards 已有卡片；"
+                    "不得新增其他卡片、不得補做其他頁內容、不得把兩張卡合成一張。輸出順序必須保持與 batch_cards 相同。"
+                    f"\nbatch_label={batch_label}"
+                    "\nsource_pages="
+                    + json.dumps(relevant_pages, ensure_ascii=False, separators=(",", ":"))
+                    + "\nbatch_cards="
+                    + json.dumps(batch_payload, ensure_ascii=False, separators=(",", ":"))
+                )
+                batch_content: List[Dict[str, Any]] = [
+                    {"type": "input_text", "text": batch_prompt}
+                ]
+                for image_index in relevant_indices:
+                    _filename, image_bytes, mime_type = images[image_index - 1]
+                    batch_content.extend(
+                        [
+                            {
+                                "type": "input_text",
+                                "text": f"此圖是 source_pages 的 image_index={image_index}。",
+                            },
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                                "detail": "high",
+                            },
+                        ]
+                    )
+                try:
+                    result = _call_openai_json(
+                        name=f"study_recall_formula_audited_{batch_label}",
+                        schema=batch_schema,
+                        content=batch_content,
+                        timeout=300,
+                        reasoning_effort="medium",
+                        max_output_tokens=max(4200, min(10000, len(batch) * 1800)),
+                    )
+                    output_cards = [
+                        card
+                        for card in (result.get("key_concepts") or [])
+                        if isinstance(card, dict)
+                    ]
+                    if len(output_cards) <= len(batch):
+                        return output_cards
+                    raise ValueError("Formula audit returned extra cards")
+                except (requests.RequestException, ValueError, TypeError) as exc:
+                    if len(batch) > 1:
+                        midpoint = max(1, len(batch) // 2)
+                        app.logger.warning(
+                            "Formula audit batch %s failed; splitting %s cards: %s",
+                            batch_label,
+                            len(batch),
+                            exc,
+                        )
+                        return audit_formula_card_batch(
+                            batch[:midpoint],
+                            batch_label=f"{batch_label}a",
+                        ) + audit_formula_card_batch(
+                            batch[midpoint:],
+                            batch_label=f"{batch_label}b",
+                        )
+                    app.logger.warning(
+                        "Formula audit for one card failed; preserving verified card %s: %s",
+                        str(batch[0].get("concept") or "")[:80],
+                        exc,
+                    )
+                    return list(batch)
+
+            audited_cards: List[Dict[str, Any]] = []
+            formula_batches = [
+                verified_cards[index : index + 6]
+                for index in range(0, len(verified_cards), 6)
+            ]
+            for batch_index, batch in enumerate(formula_batches, start=1):
+                audited_cards.extend(
+                    audit_formula_card_batch(
+                        batch,
+                        batch_label=f"batch_{batch_index}",
+                    )
+                )
+                if progress_callback:
+                    progress_callback(
+                        78 + round(batch_index / max(1, len(formula_batches)) * 2),
+                        f"已完成第 {batch_index}/{len(formula_batches)} 批內容稽核。",
+                    )
+            audited = {
+                "detected_topic": str(verified.get("detected_topic") or "")[:80],
+                "summary": str(verified.get("summary") or "")[:900],
+                "key_concepts": audited_cards or verified_cards,
+            }
+            _enrich_study_card_coverage_ids(audited, source_pages)
+            initial_coverage_metrics = _study_recall_coverage_metrics(audited, source_pages)
+            if _study_recall_coverage_needs_repair(audited, source_pages):
+                coverage_gaps = _study_recall_coverage_gaps(audited, source_pages)
+                if progress_callback:
+                    progress_callback(
+                        81,
+                        "正在補強缺少的公式、定義、方法與例題策略，已完成內容會完整保留。",
+                    )
+                _raise_if_study_upload_cancelled()
+                coverage_repair_schema = json.loads(json.dumps(card_schema))
+                coverage_repair_prompt = (
+                    "你是筆記資訊補強編輯。current_cards 已通過原圖內容審核；請完整保留其中正確、互不重複的卡片，只補強 coverage_gaps 中真正重要的遺漏內容並輸出完整 JSON。example_items 是逐題不可遺漏清單；其中每個 id 都必須新增或修正為一張獨立的 card_type=example 卡，不能以一般 concept 卡代替，也不能把不同 id 合併。"
+                    "只能使用 source_pages 與原圖已有內容，不得補充課本知識。priority=required 的公式、定義、方法、例題策略與結論優先補回；supporting 一般敘述可併入最相關卡片，不必獨立成卡。"
+                    "同一觀念的成對定義、連續推導或同方法例題可以合併成資訊完整的一張卡；不同章節或不同複習目標才拆卡。卡片數量不設上限，由你依來源資訊與複習目標決定。"
+                    "source_refs.evidence 必須逐字連續存在於對應頁 transcription，並且能在原圖直接看到，不得用頁面位置、圖示或內容大意取代原文；coverage_ids 只能標記該卡實際整理的區塊，不可用無關卡片虛報。"
+                    "例題必須使用 card_type=example，example_problem 要保留可直接作答的具體題設、數值／給定式、條件與要求，並和可重用解法 example_method、操作 reasoning_steps 分欄；simple_example 留空。若來源未提供解法，example_method 填『來源未提供完整解法』，不可臆造。一般卡使用 card_type=concept，兩個 example 欄位留空，simple_example 必須提供來源例子或只對來源既有定義／公式做最小代入的短示範。"
+                    "卡片正文不得出現來源敘事、稽核說明、外部延伸或來源沒有的術語。錯誤只做可由原圖內容直接驗證的最小修正。不可因卡片數量而刪除重點。"
+                    f"\nallow_corrections={str(allow_corrections).lower()}"
+                    f"\npage_information_targets={json.dumps(coverage_plan['page_quotas'], ensure_ascii=False)}"
+                    f"\ncurrent_coverage_metrics={json.dumps(initial_coverage_metrics, ensure_ascii=False, separators=(',', ':'))}"
+                    f"\ncoverage_gaps={json.dumps(coverage_gaps, ensure_ascii=False, separators=(',', ':'))}"
+                    f"\ncoverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}"
+                    "\nsource_pages=" + json.dumps(source_pages, ensure_ascii=False, separators=(",", ":"))
+                    + "\ncurrent_cards=" + json.dumps(audited, ensure_ascii=False, separators=(",", ":"))
+                )
+                coverage_repair_content: List[Dict[str, Any]] = [
+                    {"type": "input_text", "text": coverage_repair_prompt}
+                ]
+                for _filename, image_bytes, mime_type in images:
+                    coverage_repair_content.append(
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                            "detail": "high",
+                        }
+                    )
+                try:
+                    repaired_audited = _call_openai_json(
+                        name="study_recall_coverage_repair",
+                        schema=coverage_repair_schema,
+                        content=coverage_repair_content,
+                        timeout=240,
+                        reasoning_effort="medium",
+                        max_output_tokens=16000,
+                    )
+                    _enrich_study_card_coverage_ids(repaired_audited, source_pages)
+                    repaired_metrics = _study_recall_coverage_metrics(repaired_audited, source_pages)
+                    initial_rank = (
+                        initial_coverage_metrics["example_ratio"],
+                        initial_coverage_metrics["required_ratio"],
+                        initial_coverage_metrics["page_ratio"],
+                        initial_coverage_metrics["quality_score"],
+                        initial_coverage_metrics["overall_ratio"],
+                    )
+                    repaired_rank = (
+                        repaired_metrics["example_ratio"],
+                        repaired_metrics["required_ratio"],
+                        repaired_metrics["page_ratio"],
+                        repaired_metrics["quality_score"],
+                        repaired_metrics["overall_ratio"],
+                    )
+                    if repaired_rank > initial_rank:
+                        audited = repaired_audited
+                    else:
+                        app.logger.warning(
+                            "Study-note coverage repair did not improve reliable coverage; preserving original cards: before=%s after=%s",
+                            initial_coverage_metrics,
+                            repaired_metrics,
+                        )
+                except (requests.RequestException, ValueError, TypeError) as exc:
+                    app.logger.warning(
+                        "Study-note coverage repair failed; preserving the already validated cards: %s",
+                        exc,
+                    )
+
+            missing_example_items = list(
+                _study_recall_coverage_gaps(audited, source_pages).get("example_items") or []
+            )
+            if missing_example_items:
+                if progress_callback:
+                    progress_callback(
+                        82,
+                        f"正在逐題補回 {len(missing_example_items)} 個遺漏例題，並重新核對數字符號。",
+                    )
+                existing_titles = [
+                    str(card.get("concept") or "")[:80]
+                    for card in audited.get("key_concepts") or []
+                    if isinstance(card, dict) and str(card.get("concept") or "").strip()
+                ]
+                for missing_index, missing_item in enumerate(missing_example_items, start=1):
+                    _raise_if_study_upload_cancelled()
+                    target_id = str(missing_item.get("id") or "")
+                    try:
+                        target_image_index = int(missing_item.get("image_index") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if not target_id or not (1 <= target_image_index <= len(images)):
+                        continue
+                    relevant_page = next(
+                        (
+                            page
+                            for page in source_pages
+                            if int(page.get("image_index") or 0) == target_image_index
+                        ),
+                        None,
+                    )
+                    if not relevant_page:
+                        continue
+                    recovery_schema = json.loads(json.dumps(card_schema))
+                    recovery_schema["properties"]["key_concepts"]["minItems"] = 1
+                    recovery_schema["properties"]["key_concepts"]["maxItems"] = 1
+                    recovery_prompt = (
+                        "你是遺漏例題的逐題補卡員。只處理 missing_example，不得重寫、刪除或合併既有卡片。"
+                        "輸出恰好一張 card_type=example 卡，coverage_ids 必須只包含 missing_example.id。"
+                        "example_problem 要完整保留可直接作答所需的題號、所有數字、係數、向量、矩陣、函數、"
+                        "條件與要求；example_method 與 reasoning_steps 只整理來源實際出現的解法。"
+                        "若來源只有題目沒有解法，example_method 填『來源未提供完整解法』，不可自行補解。"
+                        "請把完整原圖、彩色銳化放大版與灰階高對比放大版交叉比較，逐一確認 0/6/8/9、1/7、3/5、"
+                        "正負號、小數點、分數線、括號、上下標、矩陣元素與運算符；增強圖有衝突時以完整原圖和公式"
+                        "內部一致性為準。source_refs.evidence 必須逐字連續存在於 page.transcription。"
+                        "其餘欄位遵守既有卡片 schema；不得增加來源外知識、另一種解法或不在圖片中的數值。"
+                        f"\nallow_corrections={str(allow_corrections).lower()}"
+                        f"\nmissing_example={json.dumps(missing_item, ensure_ascii=False, separators=(',', ':'))}"
+                        f"\npage={json.dumps(relevant_page, ensure_ascii=False, separators=(',', ':'))}"
+                        f"\nexisting_titles={json.dumps(existing_titles, ensure_ascii=False, separators=(',', ':'))}"
+                    )
+                    _filename, image_bytes, mime_type = images[target_image_index - 1]
+                    recovery_content: List[Dict[str, Any]] = [
+                        {"type": "input_text", "text": recovery_prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                            "detail": "high",
+                        },
+                    ]
+                    for crop in review_zoom_crops(image_bytes):
+                        recovery_content.extend(
+                            [
+                                {
+                                    "type": "input_text",
+                                    "text": f"例題數字符號核對用：{crop['label']}。",
+                                },
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/jpeg;base64,{base64.b64encode(crop['bytes']).decode('ascii')}",
+                                    "detail": "high",
+                                },
+                            ]
+                        )
+                    recovered_card: Optional[Dict[str, Any]] = None
+                    for recovery_attempt in range(2):
+                        try:
+                            recovery_result = _call_openai_json(
+                                name=f"study_recall_missing_example_{missing_index}_{recovery_attempt + 1}",
+                                schema=recovery_schema,
+                                content=recovery_content,
+                                timeout=240,
+                                reasoning_effort="medium",
+                                max_output_tokens=5200,
+                            )
+                            _enrich_study_card_coverage_ids(recovery_result, source_pages)
+                            candidate = next(
+                                (
+                                    card
+                                    for card in recovery_result.get("key_concepts") or []
+                                    if isinstance(card, dict)
+                                    and card.get("card_type") == "example"
+                                    and target_id in (card.get("coverage_ids") or [])
+                                    and str(card.get("example_problem") or "").strip()
+                                ),
+                                None,
+                            )
+                            if candidate is not None:
+                                recovered_card = candidate
+                                break
+                        except (requests.RequestException, ValueError, TypeError) as exc:
+                            app.logger.warning(
+                                "Missing example recovery %s attempt %s failed: %s",
+                                target_id,
+                                recovery_attempt + 1,
+                                exc,
+                            )
+                    if recovered_card is not None:
+                        audited.setdefault("key_concepts", []).append(recovered_card)
+                        existing_titles.append(str(recovered_card.get("concept") or "")[:80])
+                    else:
+                        app.logger.warning(
+                            "Missing example recovery remained incomplete for %s",
+                            target_id,
+                        )
+                    if progress_callback:
+                        progress_callback(
+                            82 + round(missing_index / max(1, len(missing_example_items)) * 2),
+                            f"已完成 {missing_index}/{len(missing_example_items)} 個遺漏例題的逐題核對。",
+                        )
+                _enrich_study_card_coverage_ids(audited, source_pages)
+
+            if not _study_recall_page_coverage_met(audited, source_pages):
+                app.logger.warning(
+                    "Study-note coverage has non-blocking gaps; preserving reliable cards: %s",
+                    _study_recall_coverage_metrics(audited, source_pages),
+                )
+
+            card_indices: List[int] = []
+            example_indices: List[int] = []
+            for index, card in enumerate(audited.get("key_concepts") or []):
+                if not isinstance(card, dict):
+                    continue
+                card_indices.append(index)
+                evidence_text = " ".join(
+                    str(source_ref.get("evidence") or "")
+                    for source_ref in card.get("source_refs") or []
+                    if isinstance(source_ref, dict)
+                )
+                source_marks_example = bool(
+                    re.search(
+                        r"(?:\bEx(?:ample)?\s*\.|例題|範例|算例|反例|題目\s*[：:])",
+                        evidence_text,
+                        flags=re.IGNORECASE,
+                    )
+                )
+                if card.get("card_type") == "example" or source_marks_example:
+                    card["card_type"] = "example"
+                    example_indices.append(index)
+
+            if card_indices:
+                example_schema = {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["cards"],
+                    "properties": {
+                        "cards": {
+                            "type": "array",
+                            "minItems": len(card_indices),
+                            "maxItems": len(card_indices),
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": [
+                                    "concept_index",
+                                    "card_type",
+                                    "simple_example",
+                                    "example_problem",
+                                    "example_method",
+                                ],
+                                "properties": {
+                                    "concept_index": {"type": "integer", "minimum": 0, "maximum": max(card_indices)},
+                                    "card_type": {"type": "string", "enum": ["concept", "example"]},
+                                    "simple_example": {"type": "string", "maxLength": 360},
+                                    "example_problem": {"type": "string", "maxLength": 360},
+                                    "example_method": {"type": "string", "maxLength": 280},
+                                },
+                            },
+                        }
+                    },
+                }
+                example_catalog = [
+                    {
+                        "concept_index": index,
+                        "concept": audited["key_concepts"][index].get("concept") or "",
+                        "card_type": audited["key_concepts"][index].get("card_type") or "concept",
+                        "core_summary": audited["key_concepts"][index].get("core_summary") or "",
+                        "explanation": audited["key_concepts"][index].get("explanation") or "",
+                        "current_simple_example": audited["key_concepts"][index].get("simple_example") or "",
+                        "current_problem": audited["key_concepts"][index].get("example_problem") or "",
+                        "current_method": audited["key_concepts"][index].get("example_method") or "",
+                        "current_steps": audited["key_concepts"][index].get("reasoning_steps") or [],
+                        "source_evidence": [
+                            source_ref.get("evidence") or ""
+                            for source_ref in audited["key_concepts"][index].get("source_refs") or []
+                            if isinstance(source_ref, dict)
+                        ],
+                    }
+                    for index in card_indices
+                ]
+                example_prompt = (
+                    "你是重點卡例子格式編輯。只根據 source_evidence 與卡片既有內容，替每張卡整理一個清楚、短而具體的示例，不得加入來源外的知識。"
+                    "card_type=example 的卡不可改成 concept。example_problem 必須是一個拿到後可以直接開始作答的具體題目示例：保留所有必要數值、向量、矩陣、函數、給定式、條件及明確要求；可以刪除不影響作答的背景敘述，但不可只留下抽象的『判斷是否成立』而沒有實際題設，也不可包含完整運算或最終答案。simple_example 必須留空。"
+                    "example_method 用 1 至 2 個短句說明來源實際採用、可重用的判斷或策略，不得編號、不得寫『步驟一』，也不得直接重複 reasoning_steps；"
+                    "既有 reasoning_steps 已在前一階段完成，不要在這次輸出重寫。"
+                    "card_type=concept 的卡不可改成 example。simple_example 必須用 1 至 2 句給一個最小、具體且能看出觀念如何套用的例子；優先使用 source_evidence 原有例子。來源沒有例子時，只能把 source_evidence 已有的定義或公式代入最簡單的數值、符號或情境，例如替既有變數選小整數後展示公式結果；不得加入新定理、新名詞、新成立條件、新題型或不同解法，也不能只重複 core_summary。example_problem、example_method 與 reasoning_steps 維持原本內容，其中兩個 example 欄位必須留空。"
+                    "來源只有最終結果而沒有方法時，不可發明新解法；可把來源明示的直接代入、列式、比較或計算寫成最小方法。"
+                    "逐題重新檢查題設前提、函數或映射輸入、維度、正負號、上下標、代入、算術、等號與結論。若用反例否定性質，必須先確認測試值滿足該性質要求的關係；例如檢查齊次性 f(-u)=-f(u) 時，左側輸入必須真的是 -u。"
+                    "內容與公式已由前一階段校正；本次只整理 simple_example、example_problem、example_method 三欄，不可重寫其他卡片內容。"
+                    "不得加入來源沒有的定理、術語、公式、數值或另一套解法。數學式使用 KaTeX LaTeX，行內用 \\( ... \\)，獨立式用 \\[ ... \\]。"
+                    "每個指定 concept_index 必須恰好輸出一次。example 卡的 example_problem 與 example_method 必須非空；concept 卡的 simple_example 必須非空。只輸出 schema JSON。\n\n"
+                    f"allow_corrections={str(allow_corrections).lower()}\n"
+                    + json.dumps(example_catalog, ensure_ascii=False, separators=(",", ":"))
+                )
+                prepared_examples: Dict[int, Dict[str, Any]] = {}
+                for example_attempt in range(2):
+                    try:
+                        example_result = _call_openai_json(
+                            name="study_recall_card_examples",
+                            schema=example_schema,
+                            content=[{"type": "input_text", "text": example_prompt}],
+                            timeout=240,
+                            max_output_tokens=12000,
+                        )
+                    except (requests.RequestException, ValueError, TypeError) as exc:
+                        app.logger.warning(
+                            "Study-note example presentation pass failed; preserving usable card content: %s",
+                            exc,
+                        )
+                        if example_attempt == 0:
+                            continue
+                        break
+                    for item in example_result.get("cards") or []:
+                        if not isinstance(item, dict):
+                            continue
+                        concept_index = int(item.get("concept_index", -1))
+                        if concept_index not in card_indices or concept_index in prepared_examples:
+                            continue
+                        expected_type = "example" if concept_index in example_indices else "concept"
+                        if item.get("card_type") != expected_type:
+                            continue
+                        problem = str(item.get("example_problem") or "").strip()
+                        method = str(item.get("example_method") or "").strip()
+                        simple_example = str(item.get("simple_example") or "").strip()
+                        if (
+                            (expected_type == "example" and (not problem or not method or simple_example))
+                            or (expected_type == "concept" and (not simple_example or problem or method))
+                            or (_study_text_quality_issue(problem, max_length=420) if problem else None)
+                            or (_study_text_quality_issue(method, max_length=340) if method else None)
+                            or (_study_text_quality_issue(simple_example, max_length=420) if simple_example else None)
+                        ):
+                            continue
+                        prepared_examples[concept_index] = {
+                            "simple_example": simple_example if expected_type == "concept" else "",
+                            "example_problem": problem,
+                            "example_method": method,
+                        }
+                    if set(prepared_examples) == set(card_indices):
+                        break
+                    missing_examples = sorted(set(card_indices) - set(prepared_examples))
+                    example_prompt += (
+                        f"\n\n前一次缺少或格式不合格的 concept_index={missing_examples}。"
+                        "下一次仍輸出完整 cards 陣列，並確保 example 卡的具體題目與方法、concept 卡的簡單例子都非空且公式格式完整。"
+                    )
+                if set(prepared_examples) != set(card_indices):
+                    missing_examples = sorted(set(card_indices) - set(prepared_examples))
+                    app.logger.warning(
+                        "Study-note example presentation remained incomplete; preserving existing valid card sections: %s",
+                        missing_examples,
+                    )
+                    for index in missing_examples:
+                        current_card = audited["key_concepts"][index]
+                        if index in example_indices and not (
+                            str(current_card.get("example_problem") or "").strip()
+                            and str(current_card.get("example_method") or "").strip()
+                        ):
+                            current_card["card_type"] = "concept"
+                            current_card["example_problem"] = ""
+                            current_card["example_method"] = ""
+                for index, prepared_example in prepared_examples.items():
+                    audited["key_concepts"][index].update(prepared_example)
+            latex_schema = {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["summary", "cards"],
+                "properties": {
+                    "summary": {"type": "string", "maxLength": 900},
+                    "cards": {
+                        "type": "array",
+                        "minItems": len(audited.get("key_concepts") or []),
+                        "maxItems": len(audited.get("key_concepts") or []),
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["concept_index", "concept", "topic", "card_type", "recall_cue", "core_summary", "explanation", "simple_example", "example_problem", "example_method", "reasoning_steps", "common_confusion", "memory_hint", "correction_applied", "correction_original", "correction_reason"],
+                            "properties": {
+                                "concept_index": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": max(0, len(audited.get("key_concepts") or []) - 1),
+                                },
+                                "concept": {"type": "string", "maxLength": 80},
+                                "topic": {"type": "string", "maxLength": 48},
+                                "card_type": {"type": "string", "enum": ["concept", "example"]},
+                                "recall_cue": {"type": "string", "maxLength": 160},
+                                "core_summary": {"type": "string", "maxLength": 280},
+                                "explanation": {"type": "string", "maxLength": 620},
+                                "simple_example": {"type": "string", "maxLength": 360},
+                                "example_problem": {"type": "string", "maxLength": 360},
+                                "example_method": {"type": "string", "maxLength": 280},
+                                "reasoning_steps": {
+                                    "type": "array",
+                                    "maxItems": 4,
+                                    "items": {"type": "string", "maxLength": 180},
+                                },
+                                "common_confusion": {"type": "string", "maxLength": 180},
+                                "memory_hint": {"type": "string", "maxLength": 120},
+                                "correction_applied": {"type": "boolean"},
+                                "correction_original": {"type": "string", "maxLength": 240},
+                                "correction_reason": {"type": "string", "maxLength": 300},
+                            },
+                        },
+                    },
+                },
+            }
+            audited_cards = audited.get("key_concepts") if isinstance(audited, dict) else None
+            if not isinstance(audited_cards, list) or not audited_cards:
+                raise ValueError("Missing audited cards")
+            latex_input = {
+                "summary": audited.get("summary") or "",
+                "cards": [
+                    {
+                        "concept_index": index,
+                        "concept": item.get("concept") or "",
+                        "topic": item.get("topic") or "",
+                        "card_type": item.get("card_type") or "concept",
+                        "recall_cue": item.get("recall_cue") or "",
+                        "core_summary": item.get("core_summary") or "",
+                        "explanation": item.get("explanation") or "",
+                        "simple_example": item.get("simple_example") or "",
+                        "example_problem": item.get("example_problem") or "",
+                        "example_method": item.get("example_method") or "",
+                        "reasoning_steps": item.get("reasoning_steps") or [],
+                        "common_confusion": item.get("common_confusion") or "",
+                        "memory_hint": item.get("memory_hint") or "",
+                        "source_evidence": [
+                            ref.get("evidence") or ""
+                            for ref in item.get("source_refs") or []
+                            if isinstance(ref, dict)
+                        ],
+                    }
+                    for index, item in enumerate(audited_cards)
+                    if isinstance(item, dict)
+                ],
+            }
+            latex_prompt = (
+                "你是最後的筆記呈現校對器。先根據每張卡的 source_evidence 判斷它是一般知識還是例題。一般知識卡必須刪除 source_evidence 不支持的補充、證明與術語，只保留來源內容並修正 LaTeX；除下述高信心錯誤校正及 simple_example 的最小代入示範外，不可改變知識內容。例題卡必須同時保留可直接作答的具體題目示例與可重用解題方法：example_problem 保留必要數值、給定式、條件和明確要求，只刪不影響作答的背景敘述及最終答案；example_method 與 reasoning_steps 保留來源實際展示的關鍵判斷與必要操作。"
+                "例題方法不得加入 source_evidence 沒有使用的定理、術語或步驟，也不得替來源中的操作命名新的理論、演算法、資料結構、空間分類或證明方式。每張卡完成後逐一比對名詞：來源只有公式或操作時就直接保留公式或操作，不得補上課本分類名稱；例如來源只有 rank(A)=n 或 rank(A)=m，就不可額外稱為滿列秩、滿行秩或滿柱秩。其他科目也使用相同規則。只有最小反例卡可保留否定性質必需的數值。若任何卡片的前提、定義、計算、矩陣維度、等號或結論錯誤，但可由 source_evidence 中已有的定義、公式或直接計算明確判定，allow_corrections=true 時必須做最小必要修正、輸出正確卡片，不得刪除。"
+                "修正時 correction_applied=true，correction_original 逐字放入來源中最小的錯誤片段，correction_reason 簡述可直接驗證的原因；未修正時 correction_applied=false 且兩個字串留空。OCR 誤讀、上下文補字、漏字、標點、用詞潤飾與 LaTeX 排版修復不算筆記內容錯誤，correction_applied 必須是 false。不得為修正補入來源沒有使用的新觀念、定理或另一套解法。已由前後文唯一補全且有高／中信心紀錄的文字必須正常保留；只有仍含〔無法推定〕的片段才維持略過結果。"
+                "summary 可重新整理成最後保留卡片的核心總結，但不得列出例題的具體答案，也不得加入新知識。concept 改成不含公式、變數、題號或題目數值的簡短純中文名稱，忠實描述原卡核心；topic 可重新整理成科目內精確的細分觀念。recall_cue 只保留來源已有的 2 至 4 個提示關鍵詞，不可使用問號或直接揭露 core_summary。core_summary、explanation、example_problem、example_method、reasoning_steps、common_confusion 與 memory_hint 都只能修正排版，不能補入 source_evidence 沒有的知識；沒有直接來源支持的欄位必須留空。例題維持 card_type=example，將具體可作答的必要題設、可重用解法、操作步驟分欄，simple_example 留空；example_method 只能用 1 至 2 句寫策略，不得包含 1)、2)、『步驟』等逐項內容，也不得重複 reasoning_steps。一般卡維持 concept，example_problem 與 example_method 留空；simple_example 必須保留前一階段的簡短具體示例，並把其中公式修成 LaTeX。若來源沒有原例子，simple_example 只可對 source_evidence 已有定義或公式做最小數值／符號代入，不得加入新知識。"
+                "每個數學、離散數學、演算法或計算機科學符號表達都必須使用可由 KaTeX 渲染的 LaTeX：行內一律用 \\( ... \\)，獨立式一律用 \\[ ... \\]。矩陣與向量的每個分量必須分格，欄用 &、列用 \\\\，禁止把兩個分量或兩列直接相連。"
+                "包括變數與函數式、集合與邏輯式、上下標、向量、矩陣、映射、等式、不等式、複雜度、機率、求和、遞迴式及所有含運算符的式子。普通中文必須留在 LaTeX 定界符外；禁止輸出 \\(T為線性\\) 這類把中文直接放進數學模式的格式，應寫成 \\(T\\) 為線性。禁止在一組 \\( ... \\) 或 \\[ ... \\] 內再嵌套另一組定界符。"
+                "禁止使用 $ 或 $$；禁止留下像 T(a,b)=...、R^2、x_i、rank(A) 這種沒有分隔符的裸露公式。"
+                "topic 必須依全部卡片自然整理成 3 至 8 個單一觀念群組；不得等於任何六科科目名稱、整份筆記標題、其他、綜合重點或課堂筆記，也不得用斜線、頓號或『與』把無直接從屬關係的分類硬併在一起。相同知識脈絡共用 topic，明顯不同的定義、方法或章節分開。"
+                "cards 的數量、順序與 concept_index 必須完全不變。不要在 explanation 或 summary 中提及修正過程，也不要重複 source_evidence。輸出文字禁止出現『筆記給出』『筆記註明』『筆記記載』『根據筆記』『保留來源內容』『如來源所列』或任何描述整理過程與引用來源的套話，直接陳述觀念。只輸出 schema 指定的 JSON。\n\n待整理內容：\n"
+                f"allow_corrections={str(allow_corrections).lower()}。allow_corrections=false 時 correction_applied 必須全部為 false。\n"
+                + json.dumps(latex_input, ensure_ascii=False, separators=(",", ":"))
+            )
+            if progress_callback:
+                progress_callback(80, "內容審核完成，正在統一所有公式的 LaTeX 格式。")
+            try:
+                latex_result = _call_openai_json(
+                    name="study_recall_latex_formatted",
+                    schema=latex_schema,
+                    content=[{"type": "input_text", "text": latex_prompt}],
+                    timeout=300,
+                    max_output_tokens=16000,
+                )
+            except (requests.RequestException, ValueError, TypeError) as exc:
+                app.logger.warning(
+                    "Study-note LaTeX presentation pass failed; using validated card content: %s",
+                    exc,
+                )
+                latex_result = {"summary": audited.get("summary") or "", "cards": []}
+            formatted_cards = {
+                int(item.get("concept_index")): item
+                for item in latex_result.get("cards") or []
+                if isinstance(item, dict)
+            }
+            for index, card in enumerate(audited_cards):
+                formatted_cards.setdefault(index, {"concept_index": index, **card})
+
+            def safe_formatted_text(
+                primary: Any,
+                fallback: Any,
+                *,
+                max_length: int,
+                allow_empty: bool = False,
+                normalize_math: bool = True,
+            ) -> str:
+                for candidate in (primary, fallback):
+                    raw = str(candidate or "").strip()
+                    if not raw:
+                        continue
+                    raw_issue = _study_text_quality_issue(raw, max_length=max_length)
+                    if raw_issue:
+                        continue
+                    if not normalize_math:
+                        return raw
+                    prepared = _normalize_study_math_markup(raw)
+                    prepared_issue = _study_text_quality_issue(prepared, max_length=max_length)
+                    if not prepared_issue:
+                        return prepared
+                    # The audited fallback has already passed the strict text and
+                    # LaTeX validator. Normalization is a presentation enhancement;
+                    # never let a non-idempotent edge case invalidate that content.
+                    app.logger.warning(
+                        "Study-card math normalization was rejected; preserving validated text "
+                        "(raw_length=%s, prepared_length=%s, issue=%s)",
+                        len(raw),
+                        len(prepared),
+                        prepared_issue,
+                    )
+                    return raw
+                if allow_empty:
+                    return ""
+                raise ValueError("Corrupted study-card text")
+
+            for index, card in enumerate(audited_cards):
+                formatted = formatted_cards[index]
+                card["topic"] = safe_formatted_text(
+                    formatted.get("topic"), card.get("topic"), max_length=80, normalize_math=False
+                )
+                card["topic"] = _normalize_study_concept_title(
+                    card["topic"], audited.get("detected_topic") or "細分觀念"
+                )
+                card["concept"] = _normalize_study_concept_title(
+                    safe_formatted_text(
+                        formatted.get("concept"), card.get("concept"), max_length=120, normalize_math=False
+                    ),
+                    card["topic"],
+                )
+                card["recall_cue"] = safe_formatted_text(
+                    formatted.get("recall_cue"),
+                    card.get("recall_cue"),
+                    max_length=180,
+                    allow_empty=True,
+                )
+                if not card["recall_cue"]:
+                    card["recall_cue"] = f"先回想「{card['concept']}」的條件、核心關係與結論。"
+                card["core_summary"] = safe_formatted_text(
+                    formatted.get("core_summary"),
+                    card.get("core_summary"),
+                    max_length=320,
+                    allow_empty=True,
+                )
+                if not card["core_summary"]:
+                    card["core_summary"] = card["concept"]
+                card["explanation"] = safe_formatted_text(
+                    formatted.get("explanation"), card.get("explanation"), max_length=900
+                )
+                card["card_type"] = (
+                    "example"
+                    if formatted.get("card_type") == "example" or card.get("card_type") == "example"
+                    else "concept"
+                )
+                card["example_problem"] = safe_formatted_text(
+                    formatted.get("example_problem"),
+                    card.get("example_problem"),
+                    max_length=420,
+                    allow_empty=True,
+                )
+                card["example_method"] = safe_formatted_text(
+                    formatted.get("example_method"),
+                    card.get("example_method"),
+                    max_length=340,
+                    allow_empty=True,
+                )
+                card["simple_example"] = safe_formatted_text(
+                    formatted.get("simple_example"),
+                    card.get("simple_example"),
+                    max_length=420,
+                    allow_empty=True,
+                )
+                if card["card_type"] != "example":
+                    card["example_problem"] = ""
+                    card["example_method"] = ""
+                elif not card["example_problem"] or not card["example_method"]:
+                    # Keep older/fallback model outputs usable while ensuring
+                    # new strict-schema responses always produce both sections.
+                    card["card_type"] = "concept"
+                    card["example_problem"] = ""
+                    card["example_method"] = ""
+                else:
+                    card["simple_example"] = ""
+                formatted_steps = formatted.get("reasoning_steps")
+                fallback_steps = card.get("reasoning_steps")
+                primary_steps = formatted_steps if isinstance(formatted_steps, list) else []
+                original_steps = fallback_steps if isinstance(fallback_steps, list) else []
+                card["reasoning_steps"] = []
+                for step_index in range(min(4, max(len(primary_steps), len(original_steps)))):
+                    primary_step = primary_steps[step_index] if step_index < len(primary_steps) else ""
+                    original_step = original_steps[step_index] if step_index < len(original_steps) else ""
+                    prepared_step = safe_formatted_text(
+                        primary_step,
+                        original_step,
+                        max_length=220,
+                        allow_empty=True,
+                    )
+                    if prepared_step:
+                        card["reasoning_steps"].append(prepared_step)
+                card["common_confusion"] = safe_formatted_text(
+                    formatted.get("common_confusion"),
+                    card.get("common_confusion"),
+                    max_length=240,
+                    allow_empty=True,
+                )
+                card["memory_hint"] = safe_formatted_text(
+                    formatted.get("memory_hint"),
+                    card.get("memory_hint"),
+                    max_length=240,
+                    allow_empty=True,
+                )
+                if bool(formatted.get("correction_applied")):
+                    card["correction"] = {
+                        "applied": True,
+                        "original": str(formatted.get("correction_original") or ""),
+                        "corrected": card["explanation"],
+                        "reason": str(formatted.get("correction_reason") or ""),
+                    }
+            audited["summary"] = safe_formatted_text(
+                latex_result.get("summary"), audited.get("summary"), max_length=1200
+            )
+
+            card_count = len(audited_cards)
+            desired_topic_count = min(8, max(3, round(math.sqrt(card_count)) + 1, card_count // 4))
+            desired_topic_count = min(card_count, desired_topic_count)
+            current_topics = {
+                str(card.get("topic") or "").strip()
+                for card in audited_cards
+                if str(card.get("topic") or "").strip()
+            }
+            if card_count >= 3 and len(current_topics) != desired_topic_count:
+                topic_schema = {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["assignments"],
+                    "properties": {
+                        "assignments": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["concept_index", "topic"],
+                                "properties": {
+                                    "concept_index": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": max(0, card_count - 1),
+                                    },
+                                    "topic": {"type": "string", "maxLength": 36},
+                                },
+                            },
+                        }
+                    },
+                }
+                topic_catalog = [
+                    {
+                        "concept_index": index,
+                        "concept": card.get("concept") or "",
+                        "current_topic": card.get("topic") or "",
+                        "core_summary": card.get("core_summary") or "",
+                    }
+                    for index, card in enumerate(audited_cards)
+                ]
+                topic_prompt = (
+                    "你是筆記章節編輯。請只重新分組下列重點卡，不可改寫卡片內容。"
+                    f"必須把 {card_count} 張卡完整分成恰好 {desired_topic_count} 個不重複的細分觀念主題；"
+                    "同一概念脈絡、定義與應用、方法與例題應共用主題，不可讓每張卡各自成為一個主題。"
+                    "主題名稱用 4 至 14 個繁體中文字直接描述共同觀念，不可含公式、變數、題號、破折號、未閉合括號，"
+                    "不可等於線性代數、離散數學、資料結構、演算法、作業系統、計算機組織等科目名稱，也不可使用其他、綜合重點或課堂筆記。"
+                    "每個 concept_index 必須恰好出現一次；相同群組的 topic 字串必須逐字完全相同。只輸出 schema 指定的 JSON。\n\n"
+                    + json.dumps(topic_catalog, ensure_ascii=False, separators=(",", ":"))
+                )
+                grouped_topics: Optional[Dict[int, str]] = None
+                for topic_attempt in range(1):
+                    try:
+                        topic_result = _call_openai_json(
+                            name="study_recall_topic_groups",
+                            schema=topic_schema,
+                            content=[{"type": "input_text", "text": topic_prompt}],
+                            timeout=180,
+                            max_output_tokens=5000,
+                        )
+                    except (requests.RequestException, ValueError, TypeError) as exc:
+                        app.logger.warning(
+                            "Study-note topic regrouping failed; preserving existing detailed topics: %s",
+                            exc,
+                        )
+                        break
+                    assignments = topic_result.get("assignments") or []
+                    candidate_topics: Dict[int, str] = {}
+                    for assignment in assignments:
+                        if not isinstance(assignment, dict):
+                            continue
+                        concept_index = int(assignment.get("concept_index", -1))
+                        if concept_index in candidate_topics or not 0 <= concept_index < card_count:
+                            candidate_topics = {}
+                            break
+                        topic = _normalize_study_concept_title(assignment.get("topic"), "")
+                        if (
+                            not topic
+                            or topic in STUDY_PLAN_SUBJECTS
+                            or _study_text_quality_issue(topic, max_length=36)
+                            or any(character in topic for character in ("—", "–", "/", "／"))
+                            or topic.count("（") != topic.count("）")
+                            or topic.count("(") != topic.count(")")
+                        ):
+                            candidate_topics = {}
+                            break
+                        candidate_topics[concept_index] = topic
+                    distinct_topics = set(candidate_topics.values())
+                    if (
+                        len(candidate_topics) == card_count
+                        and len(distinct_topics) == desired_topic_count
+                    ):
+                        grouped_topics = candidate_topics
+                        break
+                    topic_prompt += (
+                        f"\n\n前一次分組不合格。這次必須輸出 {card_count} 筆唯一 concept_index，"
+                        f"且 topic 去重後必須恰好是 {desired_topic_count} 個。"
+                    )
+                if not grouped_topics:
+                    app.logger.warning(
+                        "Study-note topic regrouping was incomplete; preserving existing detailed topics"
+                    )
+                else:
+                    for index, card in enumerate(audited_cards):
+                        card["topic"] = grouped_topics[index]
+
+            def card_integrity_text(card: Dict[str, Any]) -> str:
+                return " ".join(
+                    str(value or "")
+                    for value in (
+                        card.get("core_summary"),
+                        card.get("explanation"),
+                        card.get("simple_example"),
+                        card.get("example_problem"),
+                        card.get("example_method"),
+                        *(card.get("reasoning_steps") or []),
+                    )
+                )
+
+            invalid_claim_indices = [
+                index
+                for index, card in enumerate(audited_cards)
+                if isinstance(card, dict)
+                and _study_has_invalid_negation_counterexample(card_integrity_text(card))
+            ]
+            if invalid_claim_indices:
+                integrity_schema = {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["cards"],
+                    "properties": {
+                        "cards": {
+                            "type": "array",
+                            "minItems": len(invalid_claim_indices),
+                            "maxItems": len(invalid_claim_indices),
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": [
+                                    "concept_index",
+                                    "repairable",
+                                    "core_summary",
+                                    "explanation",
+                                    "simple_example",
+                                    "example_problem",
+                                    "example_method",
+                                    "reasoning_steps",
+                                    "correction_original",
+                                    "correction_reason",
+                                ],
+                                "properties": {
+                                    "concept_index": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": max(0, len(audited_cards) - 1),
+                                    },
+                                    "repairable": {"type": "boolean"},
+                                    "core_summary": {"type": "string", "maxLength": 280},
+                                    "explanation": {"type": "string", "maxLength": 620},
+                                    "simple_example": {"type": "string", "maxLength": 360},
+                                    "example_problem": {"type": "string", "maxLength": 360},
+                                    "example_method": {"type": "string", "maxLength": 280},
+                                    "reasoning_steps": {
+                                        "type": "array",
+                                        "maxItems": 4,
+                                        "items": {"type": "string", "maxLength": 180},
+                                    },
+                                    "correction_original": {"type": "string", "maxLength": 240},
+                                    "correction_reason": {"type": "string", "maxLength": 300},
+                                },
+                            },
+                        }
+                    },
+                }
+                integrity_catalog = [
+                    {
+                        "concept_index": index,
+                        "concept": audited_cards[index].get("concept") or "",
+                        "current_content": {
+                            key: audited_cards[index].get(key) or ([] if key == "reasoning_steps" else "")
+                            for key in (
+                                "core_summary",
+                                "explanation",
+                                "simple_example",
+                                "example_problem",
+                                "example_method",
+                                "reasoning_steps",
+                            )
+                        },
+                        "source_evidence": [
+                            source_ref.get("evidence") or ""
+                            for source_ref in audited_cards[index].get("source_refs") or []
+                            if isinstance(source_ref, dict)
+                        ],
+                    }
+                    for index in invalid_claim_indices
+                ]
+                integrity_prompt = (
+                    "你是錯誤反例修正員。程式已確認下列卡片使用 f(v) != -f(u) 否定齊次性，但 v 並不是 -u，因此該反例前提無效。"
+                    "請根據 source_evidence 中的函數或映射定義重新計算，不得沿用原筆記錯誤結論，也不得刪除卡片。"
+                    "source_evidence 有足夠的函數或映射定義可直接重算時 repairable=true 並完成修正；若來源完全沒有定義、條件或足以重算的公式，repairable=false 且其餘文字欄位與 correction 字串全部留空，不可猜測。"
+                    "先以一般輸入直接驗證加法與齊次性；映射若實際為線性，就明確改成『為線性』並移除所有『不是線性／非線性』結論；若確實非線性，必須換成符合欲檢查性質前提且可由來源定義直接算出的有效反例。"
+                    "同步修正 core_summary、explanation、simple_example、題目、方法與步驟，保留 card_type=example 所需的可讀分欄；例題卡的 simple_example 留空。"
+                    "correction_original 放原來源中最小錯誤比較，correction_reason 說明輸入不符合測試關係及重新計算後的正確結論。"
+                    "不得加入來源沒有的術語或另一套進階解法。公式使用 KaTeX LaTeX。每個 concept_index 恰好輸出一次，只輸出 schema JSON。\n\n"
+                    + json.dumps(integrity_catalog, ensure_ascii=False, separators=(",", ":"))
+                )
+                corrected_claims: Optional[Dict[int, Dict[str, Any]]] = None
+                for integrity_attempt in range(1):
+                    try:
+                        integrity_result = _call_openai_json(
+                            name="study_recall_invalid_claim_repair",
+                            schema=integrity_schema,
+                            content=[{"type": "input_text", "text": integrity_prompt}],
+                            timeout=240,
+                            reasoning_effort="medium",
+                            max_output_tokens=8000,
+                        )
+                    except (requests.RequestException, ValueError, TypeError) as exc:
+                        app.logger.warning(
+                            "Study-note invalid-claim repair failed; the final validator will discard only affected cards: %s",
+                            exc,
+                        )
+                        break
+                    candidate_claims: Dict[int, Dict[str, Any]] = {}
+                    unrepairable_indices: Set[int] = set()
+                    for item in integrity_result.get("cards") or []:
+                        if not isinstance(item, dict):
+                            continue
+                        concept_index = int(item.get("concept_index", -1))
+                        if concept_index not in invalid_claim_indices or concept_index in candidate_claims:
+                            candidate_claims = {}
+                            break
+                        if not bool(item.get("repairable")):
+                            unrepairable_indices.add(concept_index)
+                            continue
+                        prepared_claim = {
+                            "core_summary": _normalize_study_math_markup(item.get("core_summary")),
+                            "explanation": _normalize_study_math_markup(item.get("explanation")),
+                            "simple_example": _normalize_study_math_markup(item.get("simple_example")),
+                            "example_problem": _normalize_study_math_markup(item.get("example_problem")),
+                            "example_method": _normalize_study_math_markup(item.get("example_method")),
+                            "reasoning_steps": [
+                                _normalize_study_math_markup(step)
+                                for step in (item.get("reasoning_steps") or [])[:4]
+                                if str(step or "").strip()
+                            ],
+                        }
+                        correction_original = str(item.get("correction_original") or "").strip()
+                        correction_reason = str(item.get("correction_reason") or "").strip()
+                        if (
+                            not all(prepared_claim[key] for key in ("core_summary", "explanation", "example_problem", "example_method"))
+                            or not correction_original
+                            or not correction_reason
+                            or any(
+                                _study_text_quality_issue(prepared_claim[key], max_length=900)
+                                for key in ("core_summary", "explanation", "example_problem", "example_method")
+                            )
+                            or _study_has_invalid_negation_counterexample(card_integrity_text(prepared_claim))
+                        ):
+                            candidate_claims = {}
+                            break
+                        prepared_claim["correction"] = {
+                            "applied": True,
+                            "original": correction_original,
+                            "corrected": prepared_claim["explanation"],
+                            "reason": correction_reason,
+                        }
+                        candidate_claims[concept_index] = prepared_claim
+                    if set(candidate_claims) | unrepairable_indices == set(invalid_claim_indices):
+                        corrected_claims = candidate_claims
+                        break
+                    integrity_prompt += "\n\n前一次仍保留無效的負向量比較或欄位不完整。請重新計算後輸出完整正確卡片。"
+                if corrected_claims is None:
+                    app.logger.warning(
+                        "Study-note invalid-claim repair remained incomplete; preserving unaffected cards"
+                    )
+                else:
+                    for index, corrected_claim in corrected_claims.items():
+                        audited_cards[index].update(corrected_claim)
+        except json.JSONDecodeError:
+            app.logger.exception("Faithful study-note JSON output remained incomplete after retry")
+            return None, "AI 回傳格式不完整，系統已自動重試仍未成功；請稍後重新上傳，不需要更換圖片。"
+        except requests.Timeout:
+            app.logger.exception("Faithful study-note model request timed out after retry")
+            return None, "AI 服務處理逾時，系統已自動重試仍未完成；請稍後重新上傳，不需要更換圖片。"
+        except requests.HTTPError as exc:
+            status_code = getattr(exc.response, "status_code", None)
+            error_code = str(getattr(exc, "openai_error_code", "") or "")
+            error_type = str(getattr(exc, "openai_error_type", "") or "")
+            error_message = str(getattr(exc, "openai_error_message", "") or "")
+            if not (error_code or error_type or error_message):
+                error_code, error_type, error_message = _openai_error_details(exc.response)
+            app.logger.exception("Faithful study-note model request failed with HTTP %s", status_code)
+            if status_code == 429 and _is_openai_quota_error(error_code, error_type, error_message):
+                return None, (
+                    "OpenAI API 額度不足或已達每月使用上限。請管理員至 OpenAI 計費設定補充額度"
+                    "或提高使用上限後再上傳；系統已停止無效重試。"
+                )
+            if status_code == 429:
+                return None, "AI 服務目前使用量過高，系統已自動退避重試仍受限；請稍後再試，不是圖片內容有問題。"
+            return None, f"AI 服務暫時無法處理（HTTP {status_code or '錯誤'}），請稍後再試。"
         except (requests.RequestException, ValueError, TypeError):
-            return None, "筆記分析暫時失敗，請確認 API 金鑰、模型設定與網路後重試。"
-        validated = _validate_recall_output(parsed)
+            app.logger.exception("Faithful study-note analysis failed")
+            return None, "筆記忠實整理暫時失敗，請確認圖片清晰度、API 金鑰、模型設定與網路後重試。"
+        validated = _validate_recall_output(audited, source_pages)
         if not validated:
             return None, "筆記內容不足以產生可靠的重點卡，請上傳更清晰或更多頁筆記。"
+        _enrich_study_card_coverage_ids(validated, source_pages)
+        remaining_example_items = (
+            _study_recall_coverage_gaps(validated, source_pages).get("example_items") or []
+        )
+        if remaining_example_items:
+            app.logger.warning(
+                "Final example coverage validation failed; refusing an incomplete note: %s",
+                [item.get("id") for item in remaining_example_items],
+            )
+            return None, (
+                f"仍有 {len(remaining_example_items)} 個例題未能可靠建立卡片，"
+                "系統已保留原筆記，請稍後重試。"
+            )
+        validated["source_transcription"] = source_pages
+        validated["uncertain_fragments"] = [
+            {"image_index": page["image_index"], "text": fragment}
+            for page in source_pages
+            for fragment in page.get("uncertain_fragments") or []
+        ]
+        if progress_callback:
+            progress_callback(82, "重點卡已驗證，正在建立頁面文字索引並複核來源裁切。")
+        _raise_if_study_upload_cancelled()
+        try:
+            _localize_study_card_sources(
+                images,
+                validated["key_concepts"],
+                validated["source_transcription"],
+            )
+            retry_concepts: List[Dict[str, Any]] = []
+            source_groups = 0
+            located_groups = 0
+            for concept in validated["key_concepts"]:
+                if not isinstance(concept, dict):
+                    continue
+                refs_by_page: Dict[int, List[Dict[str, Any]]] = {}
+                for source_ref in concept.get("source_refs") or []:
+                    if not isinstance(source_ref, dict):
+                        continue
+                    try:
+                        image_index = int(source_ref.get("image_index") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if (
+                        1 <= image_index <= len(images)
+                        and _literal_study_source_evidence(source_ref.get("evidence"))
+                    ):
+                        refs_by_page.setdefault(image_index, []).append(source_ref)
+                missing_refs: List[Dict[str, Any]] = []
+                for image_index, page_refs in refs_by_page.items():
+                    source_groups += 1
+                    if any(
+                        _validated_study_source_bbox(
+                            source_ref.get("bbox"),
+                            require_text_verified=True,
+                            expected_image_index=image_index,
+                        )
+                        is not None
+                        for source_ref in page_refs
+                    ):
+                        located_groups += 1
+                    else:
+                        # One reliable source box per card and page is sufficient.
+                        missing_refs.append(
+                            max(
+                                page_refs,
+                                key=lambda source_ref: len(
+                                    _literal_study_source_evidence(
+                                        source_ref.get("evidence")
+                                    )
+                                ),
+                            )
+                        )
+                if missing_refs:
+                    retry_concept = {
+                        field: copy.deepcopy(concept.get(field))
+                        for field in (
+                            "concept",
+                            "topic",
+                            "core_summary",
+                            "explanation",
+                            "example_problem",
+                            "example_method",
+                            "simple_example",
+                        )
+                    }
+                    # Keep references shared so successful retry boxes are written
+                    # directly back to the validated card set.
+                    retry_concept["source_refs"] = missing_refs
+                    retry_concepts.append(retry_concept)
+            if (
+                retry_concepts
+                and source_groups
+                and located_groups / source_groups < 0.90
+            ):
+                if progress_callback:
+                    progress_callback(
+                        88,
+                        f"首次定位完成 {located_groups}/{source_groups} 個來源區塊，"
+                        "正在只重試未定位區塊。",
+                    )
+                _raise_if_study_upload_cancelled()
+                _localize_study_card_sources(
+                    images,
+                    retry_concepts,
+                    validated["source_transcription"],
+                )
+        except (requests.RequestException, ValueError, TypeError):
+            app.logger.exception("Study-note source localization failed")
+        if progress_callback:
+            progress_callback(100, "來源區塊定位完成，本批筆記已完成整理。")
+        validated["organization_mode"] = "faithful"
         return validated, None
 
+    def _consolidate_study_note_batch_cards(
+        cards: List[Dict[str, Any]],
+        *,
+        subject: str,
+    ) -> List[Dict[str, Any]]:
+        if len(cards) < 2:
+            return cards
+
+        window_size = 100
+        window_step = 80
+        windows: List[List[int]] = []
+        if len(cards) <= window_size:
+            windows.append(list(range(len(cards))))
+        else:
+            for start in range(0, len(cards), window_step):
+                window = list(range(start, min(len(cards), start + window_size)))
+                if len(window) >= 2:
+                    windows.append(window)
+                if window and window[-1] == len(cards) - 1:
+                    break
+
+            topic_groups: Dict[str, List[int]] = {}
+            for index, card in enumerate(cards):
+                topic_key = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", str(card.get("topic") or "").lower())
+                if topic_key:
+                    topic_groups.setdefault(topic_key, []).append(index)
+            for group in topic_groups.values():
+                if len(group) < 2:
+                    continue
+                for start in range(0, len(group), window_step):
+                    window = group[start : start + window_size]
+                    if len(window) >= 2:
+                        windows.append(window)
+
+        merge_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["duplicate_groups"],
+            "properties": {
+                "duplicate_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["concept_indexes", "keep_index"],
+                        "properties": {
+                            "concept_indexes": {
+                                "type": "array",
+                                "minItems": 2,
+                                "items": {"type": "integer", "minimum": 0, "maximum": len(cards) - 1},
+                            },
+                            "keep_index": {"type": "integer", "minimum": 0, "maximum": len(cards) - 1},
+                        },
+                    },
+                }
+            },
+        }
+        proposed_groups: List[Tuple[List[int], int]] = []
+        seen_windows: Set[Tuple[int, ...]] = set()
+        for window in windows:
+            window_key = tuple(window)
+            if window_key in seen_windows:
+                continue
+            seen_windows.add(window_key)
+            catalog = [
+                {
+                    "concept_index": index,
+                    "topic": cards[index].get("topic") or "",
+                    "concept": cards[index].get("concept") or "",
+                    "card_type": cards[index].get("card_type") or "concept",
+                    "core_summary": cards[index].get("core_summary") or "",
+                    "explanation": cards[index].get("explanation") or "",
+                    "source_pages": sorted(
+                        {
+                            int(source_ref.get("image_index") or 0)
+                            for source_ref in cards[index].get("source_refs") or []
+                            if isinstance(source_ref, dict)
+                        }
+                    ),
+                }
+                for index in window
+            ]
+            prompt = (
+                f"你是「{subject}」筆記卡片的跨頁去重編輯。判斷下列卡片中哪些其實是同一個知識點、同一個公式或同一個複習目標，只有真正重複時才能合併。"
+                "彼此相關、前後承接、同章節但可分別複習的卡片不是重複，必須保留。例題與一般觀念卡不得互相合併；題目條件或解法不同的例題也不得合併。"
+                "每組 concept_indexes 放所有應合併的索引，keep_index 選內容最完整、最清楚且公式無缺漏的一張。沒有重要重複就輸出空陣列。不要因卡片很多而刪除任何不重複重點。只輸出 schema JSON。\n\n"
+                + json.dumps(catalog, ensure_ascii=False, separators=(",", ":"))
+            )
+            try:
+                merge_result = _call_openai_json(
+                    name="study_note_cross_batch_merge",
+                    schema=merge_schema,
+                    content=[{"type": "input_text", "text": prompt}],
+                    timeout=180,
+                    reasoning_effort="medium",
+                    max_output_tokens=5000,
+                )
+            except (requests.RequestException, ValueError, TypeError):
+                app.logger.exception("Study-note cross-batch merge planning failed; preserving every card")
+                continue
+            allowed = set(window)
+            for item in merge_result.get("duplicate_groups") or []:
+                if not isinstance(item, dict):
+                    continue
+                indexes = sorted(
+                    {
+                        int(index)
+                        for index in item.get("concept_indexes") or []
+                        if isinstance(index, int) and index in allowed
+                    }
+                )
+                keep_index = int(item.get("keep_index", -1))
+                if len(indexes) >= 2 and keep_index in indexes:
+                    proposed_groups.append((indexes, keep_index))
+
+        removed: Set[int] = set()
+        for indexes, requested_keep_index in proposed_groups:
+            active_indexes = [index for index in indexes if index not in removed]
+            if len(active_indexes) < 2:
+                continue
+            keep_index = requested_keep_index if requested_keep_index in active_indexes else max(
+                active_indexes,
+                key=lambda index: len(str(cards[index].get("explanation") or "")),
+            )
+            keep_card = cards[keep_index]
+            for duplicate_index in active_indexes:
+                if duplicate_index == keep_index:
+                    continue
+                duplicate = cards[duplicate_index]
+                combined_refs: List[Dict[str, Any]] = []
+                seen_refs: Set[Tuple[int, str]] = set()
+                for source_ref in (keep_card.get("source_refs") or []) + (duplicate.get("source_refs") or []):
+                    if not isinstance(source_ref, dict):
+                        continue
+                    key = (
+                        int(source_ref.get("image_index") or 0),
+                        " ".join(str(source_ref.get("evidence") or "").split()),
+                    )
+                    if key in seen_refs:
+                        continue
+                    seen_refs.add(key)
+                    combined_refs.append(source_ref)
+                keep_card["source_refs"] = combined_refs
+                keep_card["coverage_ids"] = list(
+                    dict.fromkeys((keep_card.get("coverage_ids") or []) + (duplicate.get("coverage_ids") or []))
+                )
+                if not bool((keep_card.get("correction") or {}).get("applied")) and bool(
+                    (duplicate.get("correction") or {}).get("applied")
+                ):
+                    keep_card["correction"] = duplicate["correction"]
+                removed.add(duplicate_index)
+        return [card for index, card in enumerate(cards) if index not in removed]
+
+    def _analyze_study_note_images(
+        images: List[Tuple[str, Any, str]],
+        *,
+        subject: str,
+        allow_corrections: bool,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        def materialize(selected_images: List[Tuple[str, Any, str]]) -> List[Tuple[str, bytes, str]]:
+            prepared: List[Tuple[str, bytes, str]] = []
+            for filename, source, mime_type in selected_images:
+                if isinstance(source, Path):
+                    image_bytes = source.read_bytes()
+                elif isinstance(source, bytes):
+                    image_bytes = source
+                else:
+                    raise ValueError("Unsupported study-note image source")
+                if not image_bytes or len(image_bytes) > STUDY_NOTE_MAX_IMAGE_BYTES:
+                    raise ValueError(f"筆記圖片 {filename} 大小不正確。")
+                prepared.append((filename, image_bytes, mime_type))
+            return prepared
+
+        batch_count = math.ceil(len(images) / STUDY_NOTE_AI_BATCH_SIZE)
+        analyses: List[Dict[str, Any]] = []
+        for batch_index, batch_start in enumerate(range(0, len(images), STUDY_NOTE_AI_BATCH_SIZE)):
+            _raise_if_study_upload_cancelled()
+            batch_images = images[batch_start : batch_start + STUDY_NOTE_AI_BATCH_SIZE]
+
+            def report_batch_progress(progress: int, message: str, *, current_batch: int = batch_index) -> None:
+                if not progress_callback:
+                    return
+                combined_progress = _study_upload_time_weighted_progress(
+                    progress,
+                    batch_index=current_batch,
+                    batch_count=batch_count,
+                )
+                progress_callback(
+                    combined_progress,
+                    f"第 {current_batch + 1}/{batch_count} 批：{message}",
+                )
+
+            analysis, error = _analyze_study_note_image_batch(
+                materialize(batch_images),
+                subject=subject,
+                allow_corrections=allow_corrections,
+                progress_callback=report_batch_progress,
+            )
+            if error or not analysis:
+                return None, f"第 {batch_index + 1}/{batch_count} 批處理失敗：{error or '筆記分析失敗。'}"
+            _offset_study_note_batch_analysis(analysis, batch_start)
+            analyses.append(analysis)
+
+        _raise_if_study_upload_cancelled()
+        if batch_count == 1:
+            if progress_callback:
+                progress_callback(96, "所有頁面與來源定位均已完成，正在準備儲存。")
+            return analyses[0], None
+        if progress_callback:
+            progress_callback(95, "所有批次已完成，正在由 AI 判斷跨批次卡片的合併與去重。")
+        combined_cards = [
+            card
+            for analysis in analyses
+            for card in analysis.get("key_concepts") or []
+            if isinstance(card, dict)
+        ]
+        combined_cards = _consolidate_study_note_batch_cards(combined_cards, subject=subject)
+        summaries: List[str] = []
+        for analysis in analyses:
+            summary = str(analysis.get("summary") or "").strip()
+            if summary and summary not in summaries:
+                summaries.append(summary)
+        combined_summary = "\n".join(summaries)
+        if len(combined_summary) > 900:
+            combined_summary = combined_summary[:897].rstrip() + "..."
+        topics = list(
+            dict.fromkeys(
+                str(analysis.get("detected_topic") or "").strip()
+                for analysis in analyses
+                if str(analysis.get("detected_topic") or "").strip()
+            )
+        )
+        combined_topic = "、".join(topics)
+        if len(combined_topic) > 80:
+            combined_topic = topics[0][:80] if topics else subject
+        combined_analysis = {
+            "detected_topic": combined_topic or subject,
+            "summary": combined_summary,
+            "key_concepts": combined_cards,
+            "source_transcription": [
+                page for analysis in analyses for page in analysis.get("source_transcription") or []
+            ],
+            "uncertain_fragments": [
+                fragment for analysis in analyses for fragment in analysis.get("uncertain_fragments") or []
+            ],
+            "correction_records": [
+                record for analysis in analyses for record in analysis.get("correction_records") or []
+            ],
+            "organization_mode": "faithful",
+        }
+        if progress_callback:
+            progress_callback(96, "跨批次卡片合併完成，正在準備儲存。")
+        return combined_analysis, None
+
     def _rebuild_all_study_recall_relations() -> Optional[str]:
+        _raise_if_study_upload_cancelled()
         sessions = storage.list_study_recall_sessions(limit=None)
         concepts_by_session: Dict[int, List[Dict[str, Any]]] = {}
         card_catalog: List[Dict[str, Any]] = []
         cards_by_id: Dict[str, Dict[str, Any]] = {}
         for recall_session in sessions:
+            _raise_if_study_upload_cancelled()
             session_id = int(recall_session["id"])
             concepts = recall_session.get("key_concepts") or []
             concepts_by_session[session_id] = concepts
@@ -2605,6 +10191,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 for concept in concepts:
                     if isinstance(concept, dict):
                         concept["relations"] = []
+            _raise_if_study_upload_cancelled()
             storage.replace_study_recall_concepts_bulk(concepts_by_session)
             return None
 
@@ -2622,7 +10209,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "properties": {
                             "source_id": {"type": "string"},
                             "target_id": {"type": "string"},
-                            "association": {"type": "string", "maxLength": 180},
+                            "association": {"type": "string", "maxLength": 160},
                         },
                     },
                 }
@@ -2635,6 +10222,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "relations 必須依關聯的重要性由高到低輸出；沒有強關聯的卡片可不輸出。每組配對只輸出一次。association 請用精確、好記的繁體中文說明兩件事："
             "它們的觀念關聯在哪，以及複習時可以如何從一張聯想到另一張。說明必須從任一張卡閱讀都成立，形成雙向記憶橋接；"
             "請直接說明具體知識，不可使用『兩者相關』等空泛句子，也不要使用『前者／後者』等依賴輸出順序的代稱。"
+            "每一組配對的 association 必須是該配對獨有的內容，不可重複使用同一句或只替換卡片名稱的套版句；若無法說出具體橋接關係，就不要輸出該配對。"
+            "association 中若出現數學、統計、離散數學、演算法或計算機科學符號，必須使用可由 KaTeX 渲染的 LaTeX：行內一律用 \\( ... \\)，獨立公式用 \\[ ... \\]；不要輸出裸露的 Unicode 或純文字公式。"
+            "每個 association 最多 120 個中文字，用 1 至 2 個完整短句寫完，最後必須以『。』『！』或『？』收尾；不可在公式、名詞或句子中途結束。"
             "source_id 與 target_id 只使用清單提供的 id，不得改寫；association 只能使用卡片標題或觀念名稱，絕對不可出現 s6:c6 這類內部 id。\n\n重點卡清單：\n"
             + json.dumps(card_catalog, ensure_ascii=False, separators=(",", ":"))
         )
@@ -2642,6 +10232,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "model": openai_model,
             "store": False,
             "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+            "reasoning": {
+                "effort": normalize_openai_reasoning_effort(openai_model, "low")
+            },
             "text": {
                 "format": {
                     "type": "json_schema",
@@ -2652,6 +10245,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             },
         }
         try:
+            _raise_if_study_upload_cancelled()
             response = requests.post(
                 "https://api.openai.com/v1/responses",
                 headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
@@ -2659,6 +10253,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 timeout=120,
             )
             response.raise_for_status()
+            _raise_if_study_upload_cancelled()
             parsed = json.loads(_extract_openai_text(response.json()))
         except (requests.RequestException, ValueError, TypeError):
             return "AI 關聯分析暫時失敗，原有關聯已保留。"
@@ -2677,31 +10272,52 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             for card_id, card in cards_by_id.items()
         }
         seen_pairs = set()
+        seen_association_signatures = set()
         for relation in raw_relations:
+            _raise_if_study_upload_cancelled()
             if not isinstance(relation, dict):
                 continue
             source_id = str(relation.get("source_id") or "").strip()
             target_id = str(relation.get("target_id") or "").strip()
-            association = " ".join(str(relation.get("association") or "").split())
+            association = _normalize_study_math_markup(
+                " ".join(str(relation.get("association") or "").split())
+            )
             association = re.sub(
                 r"\bs\d+\s*:\s*c\d+\b",
                 lambda match: card_titles_by_id.get(re.sub(r"\s+", "", match.group(0)).casefold(), ""),
                 association,
                 flags=re.IGNORECASE,
             )
-            association = re.sub(r"\s+([，。；：、！？])", r"\1", association).strip(" \t:：,，;；-")[:180]
+            association = re.sub(r"\s+([，。；：、！？])", r"\1", association).strip(" \t:：,，;；-")
             pair = tuple(sorted((source_id, target_id)))
+            source = cards_by_id.get(source_id)
+            target = cards_by_id.get(target_id)
+            association_issue = _study_relation_association_issue(
+                association,
+                source_title=(source or {}).get("title"),
+                target_title=(target or {}).get("title"),
+            )
+            association_signature = _study_relation_association_signature(
+                association,
+                source_title=(source or {}).get("title"),
+                target_title=(target or {}).get("title"),
+            )
             if (
                 source_id not in cards_by_id
                 or target_id not in cards_by_id
                 or source_id == target_id
                 or pair in seen_pairs
                 or not association
+                or len(association) > 180
+                or not association.endswith(("。", "！", "？"))
+                or association_issue
+                or association_signature in seen_association_signatures
                 or relation_counts[source_id] >= 2
                 or relation_counts[target_id] >= 2
             ):
                 continue
             seen_pairs.add(pair)
+            seen_association_signatures.add(association_signature)
             relation_counts[source_id] += 1
             relation_counts[target_id] += 1
             source = cards_by_id[source_id]
@@ -2724,6 +10340,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "association": association,
                 }
             )
+        _raise_if_study_upload_cancelled()
         storage.replace_study_recall_concepts_bulk(concepts_by_session)
         return None
 
@@ -2751,11 +10368,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not canonical_host:
             return
         forwarded_host = request.headers.get("X-Forwarded-Host")
-        host = forwarded_host or request.host
-        normalized_host = host.lower()
-        if normalized_host.startswith("www."):
-            normalized_host = normalized_host[4:]
-        desired_host = canonical_host.lower()
+        host = (forwarded_host or request.host).split(",", 1)[0].strip()
+        normalized_host = host.lower().rstrip(".")
+        desired_host = canonical_host.lower().strip().rstrip("./")
+        if "://" in desired_host:
+            desired_host = (urlsplit(desired_host).netloc or desired_host).rstrip(".")
         proto = request.headers.get("X-Forwarded-Proto", request.scheme)
         needs_host_redirect = normalized_host != desired_host
         needs_proto_redirect = proto != "https"
@@ -3326,10 +10943,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @app.get("/study-progress")
     def public_study_progress():
         user = current_user()
-        videos = storage.list_study_plan_videos_with_records()
-        week_rows, current_week, summary = _study_plan_week_rows(videos)
-        context = _build_study_home_context(videos, week_rows, current_week, summary)
-        record_ui_event("public_study_progress_view", meta={"completion": round(float(summary.get("completion") or 0), 1)})
+        context = _load_study_progress_context()
         return render_template_string(
             PUBLIC_STUDY_TEMPLATE,
             **context,
@@ -3346,9 +10960,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @admin_required
     def admin_study_home():
         user = current_user()
-        videos = storage.list_study_plan_videos_with_records()
-        week_rows, current_week, summary = _study_plan_week_rows(videos)
-        home_context = _build_study_home_context(videos, week_rows, current_week, summary)
+        home_context = _load_study_progress_context()
         return render_template_string(
             STUDY_HOME_TEMPLATE,
             admin_user=user,
@@ -3371,15 +10983,45 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             review["curve_points"] = " ".join(curve_points)
             review["history_label"] = " → ".join(str(entry.get("rating")) for entry in history) or "尚未自評"
             review["latest_curve_y"] = 36 - max(0, min(int(history[-1].get("rating") or 1) - 1, 4)) * 7 if history else 36
+            fsrs_state = concept.get("fsrs_card") if isinstance(concept.get("fsrs_card"), dict) else {}
+            try:
+                stability_days = max(0.0, float(fsrs_state.get("stability")))
+            except (TypeError, ValueError):
+                stability_days = 0.0
+            review["stability_label"] = (
+                f"記憶穩定約 {stability_days:.1f} 天" if stability_days > 0 else ""
+            )
+            if len(history) >= 2:
+                change = int(history[-1].get("rating") or 0) - int(history[-2].get("rating") or 0)
+                review["trend_label"] = (
+                    f"比上次 +{change}" if change > 0 else (f"比上次 {change}" if change < 0 else "與上次相同")
+                )
+            else:
+                review["trend_label"] = ""
             concept["review"] = review
 
         def organize_session_concepts(session: Dict[str, Any], *, replace_concepts: bool) -> Dict[int, Dict[str, Any]]:
             raw_concepts = session.get("key_concepts") or []
+            session["summary"] = _strip_study_process_narration(session.get("summary"))
+            for page in session.get("source_transcription") or []:
+                if isinstance(page, dict):
+                    page["transcription"] = _normalize_study_math_markup(page.get("transcription"))
+            image_urls = session.get("image_urls") or [
+                url_for("admin_study_recall_image", session_id=session["id"], filename=filename)
+                for filename in session.get("image_filenames") or []
+            ]
             indexed_concepts = {
                 index: concept
                 for index, concept in enumerate(raw_concepts)
                 if _is_recall_concept_eligible(concept)
             }
+            for concept in indexed_concepts.values():
+                concept["topic"] = _normalize_study_concept_title(
+                    concept.get("topic"), session.get("title") or "細分觀念"
+                )
+                concept["concept"] = _normalize_study_concept_title(
+                    concept.get("concept"), concept.get("topic") or session.get("title")
+                )
             title_indexes = {
                 str(concept.get("concept") or "").strip().casefold(): index
                 for index, concept in indexed_concepts.items()
@@ -3402,7 +11044,50 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             topic_groups: Dict[str, List[Dict[str, Any]]] = {}
             for index, concept in indexed_concepts.items():
                 concept["display_index"] = index
+                concept["recall_cue"] = _normalize_study_math_markup(
+                    concept.get("recall_cue")
+                    or f"先回想「{concept.get('concept') or '這個觀念'}」的條件、核心關係與結論。"
+                )
+                concept["core_summary"] = _normalize_study_math_markup(concept.get("core_summary"))
+                concept["explanation"] = _normalize_study_math_markup(concept.get("explanation"))
+                concept["card_type"] = "example" if concept.get("card_type") == "example" else "concept"
+                concept["example_problem"] = _normalize_study_math_markup(concept.get("example_problem"))
+                concept["example_method"] = _normalize_study_math_markup(concept.get("example_method"))
+                concept["simple_example"] = _normalize_study_math_markup(concept.get("simple_example"))
+                concept["reasoning_steps"] = [
+                    _normalize_study_math_markup(step)
+                    for step in (concept.get("reasoning_steps") or [])[:4]
+                    if str(step or "").strip()
+                ]
+                concept["common_confusion"] = _normalize_study_math_markup(concept.get("common_confusion"))
+                concept["memory_hint"] = _normalize_study_math_markup(concept.get("memory_hint"))
                 concept["topic"] = str(concept.get("topic") or note_topic).strip() or note_topic
+                visible_source_refs = []
+                for source_ref in concept.get("source_refs") or []:
+                    if not isinstance(source_ref, dict):
+                        continue
+                    try:
+                        image_index = int(source_ref.get("image_index") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    evidence = " ".join(str(source_ref.get("evidence") or "").split()).strip()
+                    if not (1 <= image_index <= len(image_urls)) or not evidence:
+                        continue
+                    locatable_evidence = _literal_study_source_evidence(evidence)
+                    visible_source_refs.append(
+                        {
+                            "image_index": image_index,
+                            "evidence": _normalize_study_math_markup(evidence),
+                            "image_url": image_urls[image_index - 1],
+                            "locatable": bool(locatable_evidence),
+                            "bbox": _validated_study_source_bbox(
+                                source_ref.get("bbox"),
+                                require_text_verified=True,
+                                expected_image_index=image_index,
+                            ),
+                        }
+                    )
+                concept["source_refs"] = collapse_source_refs_by_image(visible_source_refs)
                 related_cards = []
                 stored_relations = concept.get("relations")
                 if isinstance(stored_relations, list):
@@ -3414,8 +11099,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                             related_index = int(relation.get("concept_index"))
                         except (TypeError, ValueError):
                             continue
-                        related_title = str(relation.get("title") or "").strip()
-                        association = " ".join(str(relation.get("association") or "").split())
+                        related_title = _normalize_study_math_markup(relation.get("title"))
+                        association = _normalize_study_math_markup(
+                            " ".join(str(relation.get("association") or "").split())
+                        )
                         visible_card_titles = {
                             f"s{int(session['id'])}:c{index}".casefold(): str(concept.get("concept") or "").strip(),
                             f"s{related_session_id}:c{related_index}".casefold(): related_title,
@@ -3430,7 +11117,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                             flags=re.IGNORECASE,
                         )
                         association = re.sub(r"\s+([，。；：、！？])", r"\1", association).strip(" \t:：,，;；-")
-                        if related_session_id <= 0 or related_index < 0 or not related_title or not association:
+                        if (
+                            related_session_id <= 0
+                            or related_index < 0
+                            or not related_title
+                            or not association
+                            or _study_relation_association_issue(
+                                association,
+                                source_title=concept.get("concept"),
+                                target_title=related_title,
+                            )
+                        ):
                             continue
                         related_cards.append(
                             {
@@ -3438,20 +11135,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                                 "title": related_title,
                                 "index": related_index,
                                 "association": association,
-                            }
-                        )
-                else:
-                    for related_title in concept.get("related_concepts") or []:
-                        related_index = title_indexes.get(str(related_title or "").strip().casefold())
-                        if related_index is None or related_index == index:
-                            continue
-                        related_concept = indexed_concepts.get(related_index) or {}
-                        related_cards.append(
-                            {
-                                "session_id": int(session["id"]),
-                                "title": str(related_concept.get("concept") or related_title),
-                                "index": related_index,
-                                "association": "這兩張卡屬於同一份筆記中的直接相關觀念；可一起對照複習。",
                             }
                         )
                 concept["related_cards"] = related_cards[:2]
@@ -3470,7 +11153,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             selected_id = int(request.args.get("session_id") or 0)
         except (TypeError, ValueError):
             selected_id = 0
-        sessions = storage.list_study_recall_sessions(limit=36)
+        sessions = sorted(
+            storage.list_study_recall_sessions(limit=36),
+            key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)),
+        )
         session_groups_by_topic: Dict[str, List[Dict[str, Any]]] = {}
         for recall_session in sessions:
             concepts = recall_session.get("key_concepts") or []
@@ -3493,17 +11179,64 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             session_groups_by_topic.setdefault(topic_label, []).append(recall_session)
         session_groups = [
             {"topic": topic, "sessions": grouped_sessions}
-            for topic, grouped_sessions in sorted(session_groups_by_topic.items(), key=lambda item: item[0].casefold())
+            for topic, grouped_sessions in session_groups_by_topic.items()
         ]
         selected_session = storage.get_study_recall_session(selected_id) if selected_id else None
         if selected_session is None and sessions:
-            selected_session = storage.get_study_recall_session(int(sessions[0]["id"]))
+            selected_session = storage.get_study_recall_session(int(sessions[-1]["id"]))
         if selected_session:
             selected_session["image_urls"] = [
                 url_for("admin_study_recall_image", session_id=selected_session["id"], filename=filename)
                 for filename in selected_session.get("image_filenames") or []
             ]
+            for page in selected_session.get("source_transcription") or []:
+                if not isinstance(page, dict):
+                    continue
+                try:
+                    image_index = int(page.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                page["image_url"] = (
+                    selected_session["image_urls"][image_index - 1]
+                    if 1 <= image_index <= len(selected_session["image_urls"])
+                    else ""
+                )
+            for collection_name in ("uncertain_fragments", "correction_records"):
+                for record in selected_session.get(collection_name) or []:
+                    if not isinstance(record, dict):
+                        continue
+                    try:
+                        image_index = int(record.get("image_index") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    record["image_url"] = (
+                        selected_session["image_urls"][image_index - 1]
+                        if 1 <= image_index <= len(selected_session["image_urls"])
+                        else ""
+                    )
             organize_session_concepts(selected_session, replace_concepts=True)
+            selected_session["source_location_total"] = sum(
+                sum(
+                    1
+                    for source_ref in concept.get("source_refs") or []
+                    if source_ref.get("locatable")
+                )
+                for concept in selected_session["key_concepts"]
+            )
+            selected_session["source_location_count"] = sum(
+                1
+                for concept in selected_session["key_concepts"]
+                for source_ref in concept.get("source_refs") or []
+                if source_ref.get("locatable") and source_ref.get("bbox")
+            )
+            selected_session["source_location_refined_count"] = sum(
+                1
+                for concept in selected_session["key_concepts"]
+                for source_ref in concept.get("source_refs") or []
+                if source_ref.get("locatable")
+                and source_ref.get("bbox")
+                and int(source_ref["bbox"].get("version") or 1) >= SOURCE_BBOX_VERSION
+            )
             for concept in selected_session["key_concepts"]:
                 decorate_review_curve(concept)
         today = _study_plan_business_date().isoformat()
@@ -3513,6 +11246,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         )
         review_cards: List[Dict[str, Any]] = []
         review_sessions: Dict[int, Dict[str, Any]] = {}
+        review_concept_indexes: Dict[int, Dict[int, Dict[str, Any]]] = {}
         for due_card in due_cards:
             session_id = int(due_card["session_id"])
             review_session = review_sessions.get(session_id)
@@ -3520,7 +11254,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 review_session = storage.get_study_recall_session(session_id) or {}
                 review_sessions[session_id] = review_session
             concept_index = int(due_card["concept_index"])
-            concepts_by_index = organize_session_concepts(review_session, replace_concepts=False)
+            concepts_by_index = review_concept_indexes.get(session_id)
+            if concepts_by_index is None:
+                concepts_by_index = organize_session_concepts(review_session, replace_concepts=False)
+                review_concept_indexes[session_id] = concepts_by_index
             concept = concepts_by_index.get(concept_index)
             if concept is None:
                 continue
@@ -3545,6 +11282,85 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             nav_active="recall",
         )
 
+    @app.get("/admin/study-recall/search")
+    @admin_required
+    def admin_study_recall_search():
+        search_query = " ".join(str(request.args.get("q") or "").split()).strip()[:160]
+        subject_filter = str(request.args.get("subject") or "").strip()
+        content_type = str(request.args.get("type") or "all").strip().lower()
+        sort_mode = str(request.args.get("sort") or "relevance").strip().lower()
+        try:
+            session_filter = max(0, int(request.args.get("session_id") or 0))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "筆記篩選條件無效。"}, 400
+        if subject_filter and subject_filter not in STUDY_PLAN_SUBJECTS:
+            return {"ok": False, "error": "搜尋科目無效。"}, 400
+        if content_type not in {"all", "source", "formula", "example", "concept"}:
+            return {"ok": False, "error": "內容類型篩選無效。"}, 400
+        if sort_mode not in {"relevance", "recent"}:
+            return {"ok": False, "error": "排序方式無效。"}, 400
+        if not search_query:
+            return {"ok": False, "error": "請輸入要查詢的內容。"}, 400
+        started_at = time.perf_counter()
+        raw_results = storage.search_study_recall_pages(
+            query=search_query,
+            subject=subject_filter or None,
+            session_id=session_filter or None,
+            content_type=content_type,
+            sort=sort_mode,
+            limit=16,
+        )
+        search_results: List[Dict[str, Any]] = []
+        for result in raw_results:
+            session_id = int(result["session_id"])
+            image_index = int(result["image_index"])
+            concept_index = result.get("concept_index")
+            note_url = url_for("admin_study_recall", session_id=session_id)
+            note_url = f"{note_url}#concept-{int(concept_index)}" if concept_index is not None else f"{note_url}#note-review"
+            search_results.append(
+                {
+                    "session_id": session_id,
+                    "study_date": result["study_date"],
+                    "subject": result["subject"],
+                    "title": result["title"],
+                    "image_index": image_index,
+                    "image_url": url_for(
+                        "admin_study_recall_image",
+                        session_id=session_id,
+                        filename=result["image_filename"],
+                    ),
+                    "note_url": note_url,
+                    "concept_title": _normalize_study_math_markup(result.get("concept_title")),
+                    "topic": _normalize_study_math_markup(result.get("topic")),
+                    "card_type": result.get("card_type") or "",
+                    "has_formula": bool(result.get("has_formula")),
+                    "excerpt": _normalize_study_math_markup(result.get("excerpt")),
+                    "evidence": _normalize_study_math_markup(result.get("evidence")),
+                    "match_reason": result.get("match_reason") or "相關內容",
+                    "bbox": _validated_study_source_bbox(
+                        result.get("bbox"),
+                        expected_image_index=image_index,
+                    ),
+                }
+            )
+        record_ui_event(
+            "study_recall_library_search",
+            meta={
+                "query_length": len(search_query),
+                "subject": subject_filter or "all",
+                "content_type": content_type,
+                "session_id": session_filter,
+                "result_count": len(search_results),
+            },
+        )
+        return {
+            "ok": True,
+            "query": search_query,
+            "result_count": len(search_results),
+            "elapsed_ms": max(1, round((time.perf_counter() - started_at) * 1000)),
+            "results": search_results,
+        }
+
     @app.get("/admin/study-recall/<int:session_id>/image/<filename>")
     @admin_required
     def admin_study_recall_image(session_id: int, filename: str):
@@ -3556,6 +11372,270 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not image_path.is_file():
             return Response("Not Found", status=404, mimetype="text/plain")
         return send_file(image_path, conditional=True, max_age=0)
+
+    @app.post("/admin/study-recall/<int:session_id>/localize-sources")
+    @admin_required
+    def admin_study_recall_localize_sources(session_id: int):
+        if not openai_api_key:
+            return {"ok": False, "error": "來源定位尚未啟用，請先設定 OPENAI_API_KEY。"}, 503
+        recall_session = storage.get_study_recall_session(session_id)
+        if recall_session is None:
+            return {"ok": False, "error": "找不到這份筆記。"}, 404
+        concepts = recall_session.get("key_concepts") or []
+        source_pages = recall_session.get("source_transcription") or []
+        source_refs = [
+            source_ref
+            for concept in concepts
+            if isinstance(concept, dict)
+            for source_ref in concept.get("source_refs") or []
+            if isinstance(source_ref, dict)
+            and _literal_study_source_evidence(source_ref.get("evidence"))
+        ]
+        total_count = len(source_refs)
+        if total_count == 0:
+            return {"ok": False, "error": "這份筆記沒有可定位的來源片段。"}, 400
+
+        images: List[Tuple[str, Any, str]] = []
+        for filename in recall_session.get("image_filenames") or []:
+            image_path = study_upload_root / str(session_id) / filename
+            mime_type = _NOTE_IMAGE_MIME_TYPES.get(image_path.suffix.lower())
+            if not mime_type or not image_path.is_file():
+                return {"ok": False, "error": "找不到完整的原始筆記圖片，無法建立來源定位。"}, 404
+            images.append((filename, image_path.read_bytes(), mime_type))
+        if not images:
+            return {"ok": False, "error": "找不到原始筆記圖片，無法建立來源定位。"}, 404
+
+        user = current_user() or {}
+        username = str(user.get("username") or "")
+        now = time.time()
+        with study_source_jobs_lock:
+            expired_job_ids = [
+                job_id
+                for job_id, job in study_source_jobs.items()
+                if float(job.get("updated_at") or 0) < now - STUDY_NOTE_STAGING_TTL_SECONDS
+            ]
+            for expired_job_id in expired_job_ids:
+                study_source_jobs.pop(expired_job_id, None)
+            active_job = next(
+                (
+                    (job_id, job)
+                    for job_id, job in study_source_jobs.items()
+                    if job.get("username") == username
+                    and int(job.get("session_id") or 0) == session_id
+                    and job.get("status") == "running"
+                ),
+                None,
+            )
+            if active_job is not None:
+                active_job_id, active_job_data = active_job
+                return {
+                    "ok": True,
+                    "background": True,
+                    "job_id": active_job_id,
+                    "status_url": url_for(
+                        "admin_study_recall_localization_job",
+                        job_id=active_job_id,
+                    ),
+                    "message": str(active_job_data.get("message") or "來源重新定位仍在進行。"),
+                }, 202
+
+            job_id = secrets.token_urlsafe(18)
+            study_source_jobs[job_id] = {
+                "username": username,
+                "session_id": session_id,
+                "status": "running",
+                "progress": 12,
+                "message": "已開始背景重新定位，可繼續使用其他頁面。",
+                "created_at": now,
+                "updated_at": now,
+            }
+
+        def _run_source_localization() -> None:
+            try:
+                _set_study_source_job(
+                    job_id,
+                    progress=24,
+                    message="正在逐張比對重點卡與原始筆記。",
+                )
+                located_count, localized_total = _localize_study_card_sources(
+                    images,
+                    concepts,
+                    source_pages,
+                )
+                _set_study_source_job(
+                    job_id,
+                    progress=92,
+                    message="定位完成，正在安全寫回筆記。",
+                )
+                latest_session = storage.get_study_recall_session(session_id)
+                if latest_session is None:
+                    raise ValueError("這份筆記已不存在。")
+                latest_concepts = latest_session.get("key_concepts") or []
+                localized_sources: Dict[
+                    Tuple[int, str], Tuple[int, Dict[str, Any]]
+                ] = {}
+                for concept_index, localized_concept in enumerate(concepts):
+                    if not isinstance(localized_concept, dict):
+                        continue
+                    for localized_ref in localized_concept.get("source_refs") or []:
+                        if not isinstance(localized_ref, dict):
+                            continue
+                        try:
+                            image_index = int(localized_ref.get("image_index") or 0)
+                        except (TypeError, ValueError):
+                            continue
+                        evidence_key = _canonical_study_source_match_text(
+                            localized_ref.get("evidence")
+                        )
+                        bbox = _validated_study_source_bbox(
+                            localized_ref.get("bbox"),
+                            require_text_verified=True,
+                            expected_image_index=image_index,
+                        )
+                        if image_index > 0 and evidence_key and bbox:
+                            localized_sources[(concept_index, evidence_key)] = (
+                                image_index,
+                                bbox,
+                            )
+                for concept_index, latest_concept in enumerate(latest_concepts):
+                    if not isinstance(latest_concept, dict):
+                        continue
+                    for latest_ref in latest_concept.get("source_refs") or []:
+                        if not isinstance(latest_ref, dict):
+                            continue
+                        latest_ref.pop("bbox", None)
+                        try:
+                            image_index = int(latest_ref.get("image_index") or 0)
+                        except (TypeError, ValueError):
+                            continue
+                        evidence_key = _canonical_study_source_match_text(
+                            latest_ref.get("evidence")
+                        )
+                        localized_source = localized_sources.get(
+                            (concept_index, evidence_key)
+                        )
+                        if localized_source:
+                            resolved_image_index, bbox = localized_source
+                            latest_ref["image_index"] = resolved_image_index
+                            latest_ref["bbox"] = bbox
+                localized_indexes = {
+                    int(page.get("image_index") or 0): page.get("localization_index")
+                    for page in source_pages
+                    if isinstance(page, dict) and isinstance(page.get("localization_index"), dict)
+                }
+                latest_source_pages = latest_session.get("source_transcription") or []
+                for latest_page in latest_source_pages:
+                    if not isinstance(latest_page, dict):
+                        continue
+                    try:
+                        latest_image_index = int(latest_page.get("image_index") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    localization_index = localized_indexes.get(latest_image_index)
+                    if localization_index:
+                        latest_page["localization_index"] = localization_index
+                storage.replace_study_recall_localization(
+                    session_id,
+                    key_concepts=latest_concepts,
+                    source_transcription=latest_source_pages,
+                )
+                _set_study_source_job(
+                    job_id,
+                    status="success",
+                    progress=100,
+                    message=f"重新定位完成，已保留 {located_count} 個精確來源。",
+                    located_count=located_count,
+                    total_count=localized_total,
+                )
+                record_ui_event(
+                    "study_recall_sources_relocalized",
+                    meta={
+                        "username": username,
+                        "session_id": session_id,
+                        "located_count": located_count,
+                        "total_count": localized_total,
+                    },
+                )
+            except Exception as exc:  # pragma: no cover - background integration path
+                app.logger.exception("Study-note source localization backfill failed")
+                message = str(exc).strip() or "AI 暫時無法完成來源定位，請稍後再試。"
+                _set_study_source_job(
+                    job_id,
+                    status="error",
+                    message=message[:240],
+                )
+
+        threading.Thread(target=_run_source_localization, daemon=True).start()
+        return {
+            "ok": True,
+            "background": True,
+            "job_id": job_id,
+            "status_url": url_for(
+                "admin_study_recall_localization_job",
+                job_id=job_id,
+            ),
+            "message": "已開始背景重新定位，可繼續使用其他頁面。",
+        }, 202
+
+    @app.get("/admin/study-recall/localization-jobs/<job_id>")
+    @admin_required
+    def admin_study_recall_localization_job(job_id: str):
+        user = current_user() or {}
+        with study_source_jobs_lock:
+            stored_job = study_source_jobs.get(job_id)
+            job = dict(stored_job) if stored_job else None
+        if not job or job.get("username") != user.get("username"):
+            return {"ok": False, "error": "找不到這次重新定位工作。"}, 404
+        payload = {
+            "ok": True,
+            "status": str(job.get("status") or "running"),
+            "progress": int(job.get("progress") or 0),
+            "message": str(job.get("message") or "正在重新定位來源。"),
+        }
+        if job.get("status") == "success":
+            payload.update(
+                located_count=int(job.get("located_count") or 0),
+                total_count=int(job.get("total_count") or 0),
+                reload_url=url_for(
+                    "admin_study_recall",
+                    session_id=int(job.get("session_id") or 0),
+                ),
+            )
+        return payload
+
+    @app.get("/admin/study-recall/<int:session_id>/cards/<int:concept_index>")
+    @admin_required
+    def admin_study_recall_card_detail(session_id: int, concept_index: int):
+        recall_session = storage.get_study_recall_session(session_id)
+        concepts = (recall_session or {}).get("key_concepts") or []
+        if (
+            concept_index < 0
+            or concept_index >= len(concepts)
+            or not isinstance(concepts[concept_index], dict)
+            or not _is_recall_concept_eligible(concepts[concept_index])
+        ):
+            return {"ok": False, "error": "找不到這張關聯重點卡。"}, 404
+        concept = concepts[concept_index]
+        return {
+            "ok": True,
+            "card": {
+                "title": _normalize_study_math_markup(concept.get("concept")),
+                "topic": _normalize_study_math_markup(concept.get("topic")),
+                "card_type": "example" if concept.get("card_type") == "example" else "concept",
+                "core_summary": _normalize_study_math_markup(concept.get("core_summary")),
+                "explanation": _normalize_study_math_markup(concept.get("explanation")),
+                "simple_example": _normalize_study_math_markup(concept.get("simple_example")),
+                "example_problem": _normalize_study_math_markup(concept.get("example_problem")),
+                "example_method": _normalize_study_math_markup(concept.get("example_method")),
+                "reasoning_steps": [
+                    _normalize_study_math_markup(step)
+                    for step in (concept.get("reasoning_steps") or [])[:6]
+                    if str(step or "").strip()
+                ],
+                "common_confusion": _normalize_study_math_markup(concept.get("common_confusion")),
+                "memory_hint": _normalize_study_math_markup(concept.get("memory_hint")),
+            },
+        }
 
     @app.post("/admin/study-recall/<int:session_id>/cards/<int:concept_index>/ask")
     @admin_required
@@ -3611,7 +11691,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             supporting_cards.append(
                 {
                     "concept": str(other.get("concept") or "")[:80],
+                    "core_summary": str(other.get("core_summary") or "")[:320],
                     "explanation": str(other.get("explanation") or "")[:600],
+                    "simple_example": str(other.get("simple_example") or "")[:420],
                     "memory_hint": str(other.get("memory_hint") or "")[:120],
                 }
             )
@@ -3621,7 +11703,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "subject": str((recall_session or {}).get("subject") or "")[:48],
             "topic": concept_topic[:48],
             "concept": str(concept.get("concept") or "")[:80],
+            "card_type": str(concept.get("card_type") or "concept")[:16],
+            "core_summary": str(concept.get("core_summary") or "")[:320],
             "explanation": str(concept.get("explanation") or "")[:1200],
+            "simple_example": str(concept.get("simple_example") or "")[:420],
+            "example_problem": str(concept.get("example_problem") or "")[:420],
+            "example_method": str(concept.get("example_method") or "")[:340],
             "memory_hint": str(concept.get("memory_hint") or "")[:160],
             "relations": relations,
             "supporting_cards": supporting_cards,
@@ -3649,6 +11736,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "model": openai_model,
                     "store": False,
                     "input": [{"role": "user", "content": [{"type": "input_text", "text": request_prompt}]}],
+                    "reasoning": {
+                        "effort": normalize_openai_reasoning_effort(openai_model, "low")
+                    },
                     "max_output_tokens": 3200,
                 },
                 timeout=90,
@@ -3666,6 +11756,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "將完整答案壓縮在 1000 個繁體中文字內，並以完整句子收尾。"
                 )
             answer = re.sub(r"\bs\d+\s*:\s*c\d+\b", "", answer, flags=re.IGNORECASE).strip()
+        except requests.HTTPError as exc:
+            error_code, error_type, error_message = _openai_error_details(exc.response)
+            if _is_openai_quota_error(error_code, error_type, error_message):
+                return {"ok": False, "error": "OpenAI API 額度不足，請管理員補充額度後再使用 AI 助教。"}, 503
+            return {"ok": False, "error": "AI 助教暫時無法回答，請稍後再試。"}, 502
         except (requests.RequestException, ValueError, TypeError):
             return {"ok": False, "error": "AI 助教暫時無法回答，請稍後再試。"}, 502
         if incomplete:
@@ -3699,6 +11794,106 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         flash("已刪除筆記、所屬重點卡、複習紀錄與原始圖片。", "success")
         return redirect(url_for("admin_study_recall"))
 
+    @app.post("/admin/study-recall/<int:session_id>/rename")
+    @admin_required
+    def admin_study_recall_rename(session_id: int):
+        recall_session = storage.get_study_recall_session(session_id)
+        if not recall_session:
+            flash("找不到這份筆記紀錄。", "error")
+            return redirect(url_for("admin_study_recall"))
+        title = " ".join(str(request.form.get("title") or "").split()).strip()
+        if not title:
+            flash("筆記名稱不能留空。", "error")
+            return redirect(url_for("admin_study_recall", session_id=session_id))
+        if len(title) > 120:
+            flash("筆記名稱最多 120 個字。", "error")
+            return redirect(url_for("admin_study_recall", session_id=session_id))
+        if not storage.rename_study_recall_session(session_id, title):
+            flash("筆記名稱修改失敗，請再試一次。", "error")
+            return redirect(url_for("admin_study_recall", session_id=session_id))
+        record_ui_event(
+            "study_recall_note_renamed",
+            meta={"session_id": session_id, "subject": recall_session.get("subject")},
+        )
+        flash("筆記名稱已更新。", "success")
+        return redirect(url_for("admin_study_recall", session_id=session_id))
+
+    @app.post("/admin/study-recall/upload-staging")
+    @admin_required
+    def admin_study_recall_upload_staging():
+        user = current_user() or {}
+        username = str(user.get("username") or "")
+        if _active_study_upload_job(username):
+            return _study_upload_error("已有一份筆記正在背景整理，請完成或取消後再上傳下一份。", 409)
+        _cleanup_expired_study_upload_staging()
+        try:
+            image_index = int(request.form.get("image_index") or 0)
+            total_images = int(request.form.get("total_images") or 0)
+        except (TypeError, ValueError):
+            return _study_upload_error("圖片上傳順序資料不正確。")
+        if total_images < 1 or image_index < 1 or image_index > total_images:
+            return _study_upload_error("圖片上傳順序資料不正確。")
+        item = request.files.get("note_image")
+        if not item or not item.filename:
+            return _study_upload_error("找不到要上傳的筆記照片。")
+        filename = secure_filename(item.filename) or "note-image"
+        extension = Path(filename).suffix.lower()
+        mime_type = _NOTE_IMAGE_MIME_TYPES.get(extension)
+        if not mime_type:
+            return _study_upload_error("筆記僅支援 JPG、PNG、WEBP 或 GIF 圖片。")
+        image_bytes = item.stream.read(STUDY_NOTE_MAX_IMAGE_BYTES + 1)
+        if not image_bytes or len(image_bytes) > STUDY_NOTE_MAX_IMAGE_BYTES:
+            return _study_upload_error("每張筆記照片壓縮後必須小於 2MB。")
+
+        upload_id = str(request.form.get("upload_id") or "").strip()
+        manifest: Optional[Dict[str, Any]] = None
+        directory: Optional[Path] = None
+        if upload_id:
+            manifest, directory = _read_study_upload_manifest(upload_id, username)
+            if manifest is None or directory is None:
+                return _study_upload_error("這次暫存上傳已失效，請重新選擇照片。", 404)
+            if int(manifest.get("expected_count") or 0) != total_images:
+                return _study_upload_error("圖片總數與這次暫存上傳不一致。")
+        else:
+            upload_id = secrets.token_urlsafe(24)
+            directory = _study_upload_staging_directory(upload_id)
+            if directory is None:
+                return _study_upload_error("無法建立圖片暫存空間。", 500)
+            _ensure_private_dir(directory)
+            manifest = {
+                "username": username,
+                "expected_count": total_images,
+                "files": {},
+                "created_at": time.time(),
+            }
+        assert manifest is not None and directory is not None
+        stored_name = f"{image_index:06d}{extension}"
+        (directory / stored_name).write_bytes(image_bytes)
+        files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+        files[str(image_index)] = {
+            "stored_name": stored_name,
+            "original_name": filename,
+            "mime_type": mime_type,
+            "size": len(image_bytes),
+        }
+        manifest["files"] = files
+        manifest["updated_at"] = time.time()
+        _write_study_upload_manifest(directory, manifest)
+        return {
+            "ok": True,
+            "upload_id": upload_id,
+            "uploaded_count": len(files),
+            "total_images": total_images,
+        }
+
+    @app.post("/admin/study-recall/upload-staging/<upload_id>/cancel")
+    @admin_required
+    def admin_study_recall_cancel_upload_staging(upload_id: str):
+        user = current_user() or {}
+        username = str(user.get("username") or "")
+        removed = _remove_study_upload_staging(upload_id, username)
+        return {"ok": True, "removed": removed}
+
     @app.post("/admin/study-recall/upload")
     @admin_required
     def admin_study_recall_upload():
@@ -3724,32 +11919,64 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if subject not in STUDY_PLAN_SUBJECTS:
             return _study_upload_error("請選擇科目。")
         requested_title = (request.form.get("title") or "").strip()[:120]
-        incoming_files = [item for item in request.files.getlist("note_images") if item and item.filename]
-        if not incoming_files or len(incoming_files) > 8:
-            return _study_upload_error("請上傳 1 至 8 張筆記照片。")
+        allow_corrections = str(request.form.get("allow_corrections") or "").strip().lower() in {"1", "true", "yes", "on"}
+        skip_relation_rebuild = (
+            request.headers.get("X-E3-Study-Reprocess") == "1"
+            and request.headers.get("X-E3-Skip-Relation-Rebuild") == "1"
+        )
         images: List[Tuple[str, bytes, str]] = []
-        total_image_bytes = 0
-        for item in incoming_files:
-            filename = secure_filename(item.filename) or "note-image"
-            extension = Path(filename).suffix.lower()
-            mime_type = _NOTE_IMAGE_MIME_TYPES.get(extension)
-            if not mime_type:
-                return _study_upload_error("筆記僅支援 JPG、PNG、WEBP 或 GIF 圖片。")
-            image_bytes = item.read()
-            if not image_bytes or len(image_bytes) > STUDY_NOTE_MAX_IMAGE_BYTES:
-                return _study_upload_error("每張筆記照片壓縮後必須小於 3MB。")
-            total_image_bytes += len(image_bytes)
-            if total_image_bytes > STUDY_NOTE_MAX_TOTAL_BYTES:
-                return _study_upload_error("筆記照片壓縮後合計必須小於 24MB。")
-            images.append((filename, image_bytes, mime_type))
+        staging_directory: Optional[Path] = None
+        staging_upload_id = str(request.form.get("upload_id") or "").strip()
+        if staging_upload_id:
+            manifest, staging_directory = _read_study_upload_manifest(staging_upload_id, username)
+            if manifest is None or staging_directory is None:
+                return _study_upload_error("這次暫存上傳已失效，請重新選擇照片。", 404)
+            expected_count = int(manifest.get("expected_count") or 0)
+            files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+            if expected_count < 1 or len(files) != expected_count:
+                return _study_upload_error(f"照片尚未傳完（{len(files)}/{expected_count} 張），請稍後再試。")
+            for image_index in range(1, expected_count + 1):
+                metadata = files.get(str(image_index))
+                if not isinstance(metadata, dict):
+                    return _study_upload_error(f"第 {image_index} 張照片尚未完成上傳。")
+                stored_name = secure_filename(str(metadata.get("stored_name") or ""))
+                image_path = (staging_directory / stored_name).resolve()
+                if image_path.parent != staging_directory.resolve() or not image_path.is_file():
+                    return _study_upload_error(f"第 {image_index} 張暫存照片已遺失，請重新上傳。")
+                image_size = image_path.stat().st_size
+                if image_size < 1 or image_size > STUDY_NOTE_MAX_IMAGE_BYTES:
+                    return _study_upload_error(f"第 {image_index} 張照片大小不正確，請重新上傳。")
+                images.append(
+                    (
+                        secure_filename(str(metadata.get("original_name") or "")) or f"note-{image_index}",
+                        image_path,
+                        str(metadata.get("mime_type") or "image/jpeg"),
+                    )
+                )
+        else:
+            incoming_files = [item for item in request.files.getlist("note_images") if item and item.filename]
+            if not incoming_files:
+                return _study_upload_error("請至少上傳 1 張筆記照片。")
+            for item in incoming_files:
+                filename = secure_filename(item.filename) or "note-image"
+                extension = Path(filename).suffix.lower()
+                mime_type = _NOTE_IMAGE_MIME_TYPES.get(extension)
+                if not mime_type:
+                    return _study_upload_error("筆記僅支援 JPG、PNG、WEBP 或 GIF 圖片。")
+                image_bytes = item.stream.read(STUDY_NOTE_MAX_IMAGE_BYTES + 1)
+                if not image_bytes or len(image_bytes) > STUDY_NOTE_MAX_IMAGE_BYTES:
+                    return _study_upload_error("每張筆記照片壓縮後必須小於 2MB。")
+                images.append((filename, image_bytes, mime_type))
         job_id = secrets.token_urlsafe(18)
         now = time.time()
+        cancel_event = threading.Event()
         with study_upload_jobs_lock:
             study_upload_jobs[job_id] = {
                 "username": username,
                 "status": "running",
                 "progress": 10,
                 "message": "照片已接收，等待 AI 開始整理。",
+                "cancel_event": cancel_event,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -3757,17 +11984,39 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         def _run_study_upload() -> None:
             recall_id: Optional[int] = None
             destination: Optional[Path] = None
+            study_upload_context.cancel_event = cancel_event
+            study_upload_context.job_id = job_id
+
+            def report_progress(progress: int, message: str) -> None:
+                _raise_if_study_upload_cancelled()
+                _set_study_upload_job(job_id, progress=progress, message=message)
+
+            def cleanup_partial_upload() -> None:
+                if recall_id is not None:
+                    storage.delete_study_recall_session(recall_id)
+                if destination is not None and destination.is_dir():
+                    try:
+                        shutil.rmtree(destination)
+                    except OSError:
+                        pass
+
             try:
-                _set_study_upload_job(job_id, progress=25, message="AI 正在閱讀原始筆記並建立重點卡。")
-                analysis, error = _analyze_study_note_images(images)
+                _raise_if_study_upload_cancelled()
+                analysis, error = _analyze_study_note_images(
+                    images,
+                    subject=subject,
+                    allow_corrections=allow_corrections,
+                    progress_callback=report_progress,
+                )
                 if error or not analysis:
                     raise RuntimeError(error or "筆記分析失敗。")
-                _set_study_upload_job(job_id, progress=62, message="重點卡已產生，正在儲存原始圖片與卡片。")
+                report_progress(98, "來源驗證與原圖定位完成，正在儲存原始圖片與卡片。")
                 stored_names = [
                     f"{index + 1:02d}-{secrets.token_hex(5)}{Path(name).suffix.lower()}"
                     for index, (name, _bytes, _mime) in enumerate(images)
                 ]
                 title = requested_title or str(analysis.get("detected_topic") or "").strip()[:120] or f"{subject}筆記"
+                _raise_if_study_upload_cancelled()
                 recall_id = storage.create_study_recall_session(
                     study_date=study_date,
                     subject=subject,
@@ -3775,18 +12024,35 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     image_filenames=stored_names,
                     summary=analysis["summary"],
                     key_concepts=analysis["key_concepts"],
+                    source_transcription=analysis.get("source_transcription") or [],
+                    uncertain_fragments=analysis.get("uncertain_fragments") or [],
+                    correction_records=analysis.get("correction_records") or [],
+                    organization_mode=str(analysis.get("organization_mode") or "faithful"),
                 )
+                _raise_if_study_upload_cancelled()
                 destination = _ensure_private_dir(study_upload_root / str(recall_id))
-                for stored_name, (_original_name, image_bytes, _mime_type) in zip(stored_names, images):
-                    (destination / stored_name).write_bytes(image_bytes)
-                _set_study_upload_job(job_id, progress=78, message="正在重新分析所有新舊重點卡的關聯與聯想。")
-                with study_relation_rebuild_lock:
-                    relation_error = _rebuild_all_study_recall_relations()
-                final_message = (
-                    f"重點卡已完成；{relation_error}"
-                    if relation_error
-                    else "重點卡已完成，所有新舊卡片的關聯與聯想也已更新。"
-                )
+                for stored_name, (_original_name, image_source, _mime_type) in zip(stored_names, images):
+                    _raise_if_study_upload_cancelled()
+                    target = destination / stored_name
+                    if isinstance(image_source, Path):
+                        shutil.copyfile(image_source, target)
+                    else:
+                        target.write_bytes(image_source)
+                if skip_relation_rebuild:
+                    relation_error = None
+                    final_message = "重點卡已完成；批次結束時會統一更新關聯與聯想。"
+                else:
+                    report_progress(99, "正在重新分析所有新舊重點卡的關聯與聯想。")
+                    _raise_if_study_upload_cancelled()
+                    with study_relation_rebuild_lock:
+                        _raise_if_study_upload_cancelled()
+                        relation_error = _rebuild_all_study_recall_relations()
+                    _raise_if_study_upload_cancelled()
+                    final_message = (
+                        f"重點卡已完成；{relation_error}"
+                        if relation_error
+                        else "重點卡已完成，所有新舊卡片的關聯與聯想也已更新。"
+                    )
                 _set_study_upload_job(
                     job_id,
                     status="success",
@@ -3798,17 +12064,29 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "study_recall_note_analyzed",
                     meta={"username": username, "session_id": recall_id, "subject": subject, "image_count": len(images)},
                 )
+            except _StudyUploadCancelled:
+                cleanup_partial_upload()
+                _set_study_upload_job(
+                    job_id,
+                    status="cancelled",
+                    message="已取消這次筆記處理，可以立即上傳下一份筆記。",
+                )
+                record_ui_event("study_recall_note_analyzed", "cancelled", {"username": username})
             except Exception as exc:  # pragma: no cover - guarded by route-level integration tests
-                if recall_id is not None:
-                    storage.delete_study_recall_session(recall_id)
-                if destination is not None and destination.is_dir():
-                    try:
-                        shutil.rmtree(destination)
-                    except OSError:
-                        pass
+                cleanup_partial_upload()
                 message = str(exc).strip() or "筆記背景處理失敗，請稍後重試。"
                 _set_study_upload_job(job_id, status="error", message=message[:240])
                 record_ui_event("study_recall_note_analyzed", "error", {"username": username, "reason": message[:160]})
+            finally:
+                if staging_directory is not None and staging_directory.is_dir():
+                    try:
+                        shutil.rmtree(staging_directory)
+                    except OSError:
+                        pass
+                if hasattr(study_upload_context, "cancel_event"):
+                    del study_upload_context.cancel_event
+                if hasattr(study_upload_context, "job_id"):
+                    del study_upload_context.job_id
 
         threading.Thread(target=_run_study_upload, daemon=True).start()
         if _is_study_upload_request():
@@ -3837,7 +12115,36 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "message": str(job.get("message") or "正在處理筆記。"),
         }
         if job.get("status") == "success" and job.get("session_id"):
+            payload["session_id"] = int(job["session_id"])
             payload["redirect_url"] = url_for("admin_study_recall", session_id=int(job["session_id"]))
+        return payload
+
+    @app.post("/admin/study-recall/upload-jobs/<job_id>/cancel")
+    @admin_required
+    def admin_study_recall_cancel_upload_job(job_id: str):
+        user = current_user() or {}
+        with study_upload_jobs_lock:
+            job = study_upload_jobs.get(job_id)
+            if not job or job.get("username") != user.get("username"):
+                return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
+            status = str(job.get("status") or "running")
+            if status == "success":
+                return {"ok": False, "error": "筆記已完成，無法取消。", "status": status}, 409
+            if status == "running":
+                cancel_event = job.get("cancel_event")
+                if isinstance(cancel_event, threading.Event):
+                    cancel_event.set()
+                job.update(
+                    status="cancelled",
+                    message="已取消這次筆記處理，可以立即上傳下一份筆記。",
+                    updated_at=time.time(),
+                )
+            payload = {
+                "ok": True,
+                "status": "cancelled" if status in {"running", "cancelled"} else status,
+                "progress": int(job.get("progress") or 0),
+                "message": str(job.get("message") or "已取消這次筆記處理。"),
+            }
         return payload
 
     @app.post("/admin/study-recall/<int:session_id>/rate-cards")
@@ -3894,6 +12201,49 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             flash("印象分暫時無法儲存，請再試一次。", "error")
         return recall_redirect()
 
+    @app.route("/admin/study-settings", methods=["GET", "POST"])
+    @admin_required
+    def admin_study_settings():
+        user = current_user()
+        selected_subject = (request.args.get("subject") or request.form.get("subject") or "").strip()
+        if selected_subject not in STUDY_PLAN_SUBJECTS:
+            selected_subject = ""
+        if request.method == "POST":
+            try:
+                video_id = int(request.form.get("video_id") or 0)
+            except (TypeError, ValueError):
+                video_id = 0
+            parsed = _parse_youtube_url("") if request.form.get("clear") else _parse_youtube_url(request.form.get("youtube_url"))
+            if not video_id:
+                flash("找不到要設定的影片。", "error")
+            elif parsed is None:
+                flash("請輸入有效的 YouTube 影片連結，例如 https://www.youtube.com/watch?v=xxxxxxxxxxx。", "error")
+            elif storage.update_study_plan_video_youtube(
+                video_id=video_id,
+                youtube_video_id=parsed["video_id"],
+                youtube_playlist_id=parsed["playlist_id"],
+                youtube_url=parsed["url"],
+            ):
+                record_ui_event(
+                    "study_plan_video_youtube_updated",
+                    meta={"video_id": video_id, "youtube_video_id": parsed["video_id"]},
+                )
+                flash("影片 YouTube 連結已更新。", "success")
+            else:
+                flash("找不到要設定的影片。", "error")
+            return redirect(url_for("admin_study_settings", subject=selected_subject) if selected_subject else url_for("admin_study_settings"))
+
+        videos = storage.list_study_plan_videos_with_records()
+        if selected_subject:
+            videos = [video for video in videos if video["subject"] == selected_subject]
+        return render_template_string(
+            STUDY_SETTINGS_TEMPLATE,
+            admin_user=user,
+            subjects=STUDY_PLAN_SUBJECTS,
+            selected_subject=selected_subject,
+            videos=videos,
+        )
+
     @app.route("/admin/study-plan", methods=["GET", "POST"])
     @admin_required
     def admin_study_plan():
@@ -3909,6 +12259,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 video_id = 0
             if action == "delete_video":
                 if video_id and storage.delete_study_plan_video_record(video_id):
+                    _invalidate_study_progress_context()
                     record_ui_event("study_plan_video_record_deleted", meta={"video_id": video_id})
             else:
                 watched_minutes = _study_plan_minutes(request.form.get("watched_minutes"))
@@ -3918,6 +12269,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     watched_seconds=watched_minutes * 60,
                     notes=notes,
                 ):
+                    _invalidate_study_progress_context()
                     record_ui_event(
                         "study_plan_video_record_saved",
                         meta={"video_id": video_id, "watched_minutes": watched_minutes},
@@ -3926,9 +12278,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
         videos = storage.list_study_plan_videos_with_records()
         week_rows, current_week, summary = _study_plan_week_rows(videos)
-        selected_subject = (request.args.get("subject") or current_week["subject"]).strip()
+        current_subjects = current_week.get("subjects") or [current_week.get("subject")]
+        default_subject = next(
+            (subject for subject in current_subjects if subject in STUDY_PLAN_SUBJECTS),
+            STUDY_PLAN_SUBJECTS[0],
+        )
+        selected_subject = (request.args.get("subject") or default_subject).strip()
         if selected_subject not in STUDY_PLAN_SUBJECTS:
-            selected_subject = current_week["subject"]
+            selected_subject = default_subject
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
         for video in videos:
             video["duration_minutes"] = round(float(video["duration_seconds"]) / 60, 1)
@@ -3962,21 +12319,33 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         try:
             video_id = int(payload.get("video_id") or 0)
             watched_seconds = float(payload.get("watched_seconds") or 0)
+            expected_version = int(payload.get("expected_version"))
         except (TypeError, ValueError):
             return {"ok": False, "error": "invalid_payload"}, 400
-        if video_id <= 0:
+        if video_id <= 0 or expected_version < 0:
             return {"ok": False, "error": "missing_video"}, 400
         if not math.isfinite(watched_seconds):
             return {"ok": False, "error": "invalid_progress"}, 400
-        result = storage.update_study_plan_video_progress(video_id=video_id, watched_seconds=watched_seconds)
+        result = storage.update_study_plan_video_progress(
+            video_id=video_id,
+            watched_seconds=watched_seconds,
+            expected_version=expected_version,
+        )
         if not result:
             return {"ok": False, "error": "video_not_found"}, 404
+        result["completion"] = _study_plan_video_completion(
+            result.get("duration_seconds"),
+            result.get("watched_seconds"),
+        )
+        if not result.get("stale"):
+            _invalidate_study_progress_context()
         videos = storage.list_study_plan_videos_with_records()
         _week_rows, current_week, summary = _study_plan_week_rows(videos)
-        record_ui_event(
-            "study_plan_youtube_progress_saved",
-            meta={"video_id": video_id, "watched_seconds": round(float(result["watched_seconds"]), 1)},
-        )
+        if not result.get("stale"):
+            record_ui_event(
+                "study_plan_youtube_progress_saved",
+                meta={"video_id": video_id, "watched_seconds": round(float(result["watched_seconds"]), 1)},
+            )
         return {
             "ok": True,
             **result,
@@ -3985,9 +12354,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "completion": round(float(summary["completion"]), 1),
                 "completed_videos": int(summary["completed_videos"]),
                 "total_videos": int(summary["total_videos"]),
+                "video_completion": round(float(summary["video_completion"]), 1),
             },
             "current_week": {
+                "start": current_week["start"],
                 "watched_minutes": round(float(current_week["watched_minutes"]), 1),
+                "watched_hours": round(float(current_week["watched_seconds"]) / 3600, 2),
+                "remaining_hours": round(float(current_week["remaining_hours"]), 1),
                 "completion": round(float(current_week["completion"]), 1),
                 "state": current_week["state"],
                 "state_label": current_week["state_label"],

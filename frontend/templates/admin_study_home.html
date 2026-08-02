@@ -79,7 +79,9 @@
         .admin-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
         .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); }
         .brand { display:flex; align-items:center; gap:10px; color:var(--ink); font-size:14px; font-weight:900; white-space:nowrap; }.mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }.nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }.nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }.nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }.admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
-        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { min-width:0; padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { overflow-wrap:anywhere; font-size:13px; font-weight:850; }.recall-card-note { min-width:0; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; width:1px; height:1px; margin:0; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-rate:disabled { opacity:.6; cursor:wait; }.recall-rate-status { min-height:16px; margin:0; color:var(--red); font-size:11px; }.recall-card.is-completing { opacity:0; transform:scale(.98); transition:opacity .18s ease,transform .18s ease; }.recall-empty { padding:18px; color:var(--muted); text-align:center; font-size:13px; }
+        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket-head,.recall-pocket > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; list-style:none; }.recall-pocket > summary { cursor:pointer; }.recall-pocket > summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { min-width:0; padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { overflow-wrap:anywhere; font-size:13px; font-weight:850; }.recall-card-note { min-width:0; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; width:1px; height:1px; margin:0; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-rate:disabled { opacity:.6; cursor:wait; }.recall-rate-status { min-height:16px; margin:0; color:var(--red); font-size:11px; }.recall-card.is-completing { opacity:0; transform:scale(.98); transition:opacity .18s ease,transform .18s ease; }.recall-empty { padding:4px 16px 16px; color:var(--muted); font-size:13px; }
+        .recall-cue { margin-top:9px; padding:9px 10px; color:#40536c; border-left:3px solid var(--blue); background:#f3f7fc; font-size:12px; font-weight:700; line-height:1.55; }.recall-reveal { width:100%; min-height:34px; margin-top:9px; color:var(--blue); border:1px solid #b9d0ed; border-radius:4px; background:#fff; font-size:11px; font-weight:900; cursor:pointer; }.recall-reveal:hover { background:var(--blue-soft); }.recall-answer { margin-top:9px; }.recall-answer[hidden] { display:none; }.recall-core { margin-bottom:7px; padding:8px 9px; color:var(--ink); border-left:3px solid var(--green); background:#edf8f1; font-size:12px; font-weight:750; line-height:1.55; }.recall-example-badge { display:inline-block; margin-left:6px; padding:2px 5px; color:#815000; border:1px solid #e3bd78; border-radius:3px; background:#fff4de; font-size:9px; }.recall-example { margin-bottom:7px; padding:8px 9px; color:#40536c; border-left:3px solid var(--blue); background:#f4f8fd; font-size:12px; line-height:1.55; }.recall-example.method { border-left-color:var(--teal); background:var(--teal-soft); }.recall-example.simple { border-left-color:var(--amber); background:var(--amber-soft); }.recall-example strong { margin-bottom:3px; color:var(--ink); font-size:10px; }
+        .recall-empty { display:none; }
         [data-math-content] { min-width:0; max-width:100%; overflow-wrap:anywhere; } [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; } [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:thin; } [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0 auto; overflow:visible; text-align:left; }
 
         .content {
@@ -102,19 +104,34 @@
         }
         .subtitle { margin: 9px 0 0; color: var(--muted); font-size: 15px; line-height: 1.55; }
         .head-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+        .continue-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 40px;
+            padding: 9px 13px;
+            border-radius: 8px;
+            color: #fff;
+            background: var(--blue);
+            box-shadow: 0 8px 18px rgba(20,99,217,.18);
+            font-size: 13px;
+            font-weight: 900;
+        }
+        .continue-button:hover { background: #0c53b9; }
+        .continue-button svg { width: 17px; height: 17px; flex: 0 0 auto; }
 
         .metric-strip {
             display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 14px;
-            margin-bottom: 18px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
         }
         .metric-card {
             min-width: 0;
-            min-height: 132px;
-            padding: 18px;
+            min-height: 104px;
+            padding: 15px 16px;
             border: 1px solid rgba(219, 230, 242, .94);
-            border-radius: 24px;
+            border-radius: 8px;
             background: rgba(255, 255, 255, .92);
             box-shadow: var(--shadow-soft);
             display: grid;
@@ -124,13 +141,7 @@
             overflow: hidden;
         }
         .metric-card::after {
-            content: "";
-            position: absolute;
-            inset: auto -38px -54px auto;
-            width: 130px;
-            height: 130px;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(20, 99, 217, .13), transparent 67%);
+            display: none;
         }
         .metric-card.green::after { background: radial-gradient(circle, rgba(37, 137, 87, .14), transparent 67%); }
         .metric-card.purple::after { background: radial-gradient(circle, rgba(109, 75, 215, .14), transparent 67%); }
@@ -161,7 +172,7 @@
             gap: 6px;
             min-width: 0;
             color: var(--ink);
-            font-size: clamp(26px, 2.6vw, 38px);
+            font-size: clamp(25px, 2.4vw, 34px);
             font-weight: 900;
             letter-spacing: -.06em;
             white-space: nowrap;
@@ -186,13 +197,46 @@
         .pace-number { color: var(--ink); font-size: clamp(42px, 5vw, 60px); line-height: .9; font-weight: 950; letter-spacing: -.075em; font-variant-numeric: tabular-nums; }
         .pace-unit { color: var(--ink-2); font-size: 16px; font-weight: 900; }
         .pace-message { margin-top: 11px; color: var(--muted); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
-        .pace-meter { position: relative; height: 44px; margin-top: 17px; }
-        .pace-track { position: absolute; left: 0; right: 0; top: 17px; height: 12px; border-radius: 999px; background: linear-gradient(90deg, var(--amber) 0%, #e7edf4 48%, #e7edf4 52%, var(--teal) 100%); }
-        .pace-zero { position: absolute; top: 8px; bottom: 6px; left: 50%; width: 2px; border-radius: 999px; background: rgba(16, 42, 67, .34); }
-        .pace-pin { position: absolute; top: 3px; left: var(--pace-position); width: 34px; height: 34px; border-radius: 50%; transform: translateX(-50%); background: #fff; border: 6px solid var(--blue); box-shadow: 0 12px 24px rgba(16, 42, 67, .18); }
-        .pace-panel.behind .pace-pin { border-color: var(--amber); }
-        .pace-panel.early .pace-pin { border-color: var(--teal); }
-        .pace-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-weight: 850; margin-top: 3px; }
+        .race-course { position: relative; margin-top: 24px; padding: 44px 8px 42px; }
+        .race-lane { position: relative; height: 68px; border: 2px solid #aebfd0; border-radius: 10px; background: repeating-linear-gradient(to bottom, transparent 0 20px, rgba(255,255,255,.94) 20px 22px), linear-gradient(90deg, #eef4fa, #e5edf5); box-shadow: inset 0 3px 10px rgba(61,83,107,.10), 0 8px 20px rgba(61,83,107,.08); overflow: visible; }
+        .race-lane::before { content: ""; position: absolute; z-index: 1; inset: 0; border-radius: 8px; background: linear-gradient(90deg, rgba(20,99,217,.15), rgba(20,99,217,.07)); width: var(--actual-progress); }
+        .race-lane::after { content: ""; position: absolute; z-index: 6; top: -2px; right: 8px; bottom: -2px; width: 10px; border: 1px solid rgba(16,42,67,.28); background: conic-gradient(#fff 25%, #29435e 0 50%, #fff 0 75%, #29435e 0) 0 0 / 8px 8px; box-shadow: 2px 0 0 rgba(255,255,255,.72); }
+        .pace-panel.early .race-lane::before { background: linear-gradient(90deg, rgba(20,99,217,.12), rgba(15,143,143,.16)); }
+        .race-progress { position: absolute; z-index: 2; left: 0; top: 22px; width: var(--actual-progress); height: 22px; border-radius: 0 999px 999px 0; background: linear-gradient(90deg, rgba(20,99,217,.48), rgba(20,99,217,.72)); box-shadow: inset 0 1px 0 rgba(255,255,255,.45); }
+        .pace-panel.early .race-progress { background: linear-gradient(90deg, rgba(20,99,217,.48), rgba(15,143,143,.78)); }
+        .race-milestones { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
+        .race-milestones span { position: absolute; top: 0; bottom: 0; left: var(--milestone); border-left: 1px dashed rgba(75,96,119,.34); }
+        .race-milestones span::after { content: attr(data-label); position: absolute; top: 4px; left: 5px; color: rgba(63,82,103,.62); font-size: 8px; font-weight: 900; }
+        .race-start-line { position: absolute; z-index: 3; top: -2px; bottom: -2px; left: 8px; width: 3px; background: #7f94aa; box-shadow: 4px 0 0 rgba(255,255,255,.82); }
+        .race-delta-segment { position: absolute; z-index: 3; left: var(--gap-start); top: 22px; width: var(--gap-width); height: 22px; border-top: 2px solid rgba(20,99,217,.58); border-bottom: 2px solid rgba(20,99,217,.58); background: rgba(20,99,217,.18); }
+        .pace-panel.behind .race-delta-segment { border-color: rgba(196,125,8,.72); background: repeating-linear-gradient(135deg, rgba(220,150,18,.50) 0 7px, rgba(255,223,160,.46) 7px 14px); }
+        .pace-panel.early .race-delta-segment { border-color: rgba(8,121,121,.72); background: repeating-linear-gradient(135deg, rgba(15,143,143,.52) 0 7px, rgba(182,238,231,.48) 7px 14px); }
+        .race-plan-marker { position: absolute; z-index: 5; top: -18px; bottom: -14px; left: var(--plan-position); width: 2px; transform: translateX(-50%); border-left: 2px dashed #8195aa; }
+        .pace-panel.behind .race-plan-marker { border-left-color: var(--amber); }
+        .race-plan-label, .race-actual-label { position: absolute; z-index: 8; transform: translateX(-50%); padding: 4px 7px; border: 1px solid #cbd7e3; border-radius: 6px; color: #52677d; background: #f4f7fa; box-shadow: 0 4px 10px rgba(61,83,107,.10); font-size: 10px; font-weight: 900; white-space: nowrap; }
+        .race-plan-label { top: -43px; left: clamp(64px, var(--plan-position), calc(100% - 64px)); }
+        .race-actual-label { top: 82px; left: clamp(64px, var(--runner-position), calc(100% - 64px)); border-color: #b9d2f3; color: #0c53b9; background: #edf5ff; box-shadow: 0 4px 10px rgba(20,99,217,.10); }
+        .pace-panel.behind .race-plan-label { border-color: #edcf93; color: #8f5d04; background: #fff8e7; }
+        .pace-panel.early .race-actual-label { border-color: #9bdcdd; color: #087979; background: #ecfbf9; }
+        .race-runner { position: absolute; z-index: 7; top: 8px; left: clamp(24px, var(--runner-position), calc(100% - 24px)); width: 48px; height: 48px; transform: translateX(-50%); text-align: center; }
+        .runner-person { position: relative; z-index: 2; display: block; width: 44px; height: 44px; border: 2px solid var(--blue); border-radius: 50%; background: rgba(255,255,255,.96); box-shadow: 0 7px 16px rgba(16,42,67,.20); font-size: 29px; line-height: 40px; animation: runner-stride .72s ease-in-out infinite; }
+        .pace-panel.behind .runner-person { border-color: var(--amber); }
+        .pace-panel.early .runner-person { border-color: var(--teal); }
+        .runner-person > span { display: block; transform: scaleX(-1); }
+        .runner-shadow { position: absolute; z-index: 1; left: 50%; bottom: -3px; width: 30px; height: 7px; transform: translateX(-50%); border-radius: 50%; background: rgba(16,42,67,.18); animation: runner-shadow .72s ease-in-out infinite; }
+        .race-actual-marker { position: absolute; z-index: 5; top: 54px; left: clamp(24px, var(--runner-position), calc(100% - 24px)); height: 40px; transform: translateX(-50%); border-left: 2px solid var(--blue); }
+        .pace-panel.early .race-actual-marker { border-left-color: var(--teal); }
+        .race-scale { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 30px; color: var(--muted); font-size: 10px; font-weight: 850; }
+        .progress-compare { display: grid; gap: 13px; margin-top: 14px; }
+        .compare-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--ink-2); font-size: 13px; font-weight: 900; }
+        .compare-head strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+        .compare-track { height: 13px; margin-top: 7px; border-radius: 999px; background: #e5edf5; overflow: hidden; }
+        .compare-fill { height: 100%; width: var(--progress); border-radius: inherit; background: linear-gradient(90deg, var(--blue), var(--teal)); }
+        .pace-panel.early .compare-row.actual .compare-fill { background: linear-gradient(90deg, var(--blue), var(--teal)); }
+        .pace-panel.behind .compare-row.actual .compare-fill { background: linear-gradient(90deg, #2877df, #e0a12d); }
+        .compare-row.target .compare-fill { background: #91a4b8; }
+        @keyframes runner-stride { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
+        @keyframes runner-shadow { 0%,100% { opacity: .2; transform: translateX(-50%) scaleX(1); } 50% { opacity: .1; transform: translateX(-50%) scaleX(.72); } }
         .pace-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
         .pace-stat { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); }
         .pace-stat-label { color: var(--muted); font-size: 11px; font-weight: 850; }
@@ -218,6 +262,59 @@
         .makeup-track { grid-column: 1 / -1; height: 9px; border-radius: 999px; background: linear-gradient(90deg, #e7eef5 0 var(--before), #2b72dd var(--before) var(--after), #e7eef5 var(--after) 100%); overflow: hidden; }
         .makeup-foot { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; font-weight: 760; }
         .makeup-foot strong { color: var(--blue); }
+
+        .today-action-panel {
+            margin-bottom: 14px;
+            padding: 18px 20px;
+            border: 1px solid rgba(201,216,233,.96);
+            border-radius: 8px;
+            background: rgba(255,255,255,.96);
+            box-shadow: var(--shadow-soft);
+        }
+        .today-action-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+        .today-action-head h2 { margin: 0; font-size: 19px; }
+        .today-action-head .caption { margin-top: 4px; }
+        .today-task-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); margin-top: 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+        .today-task-stat { min-width: 0; padding: 13px 15px; }
+        .today-task-stat + .today-task-stat { border-left: 1px solid var(--line); }
+        .today-task-label { color: var(--muted); font-size: 11px; font-weight: 850; }
+        .today-task-value { margin-top: 5px; color: var(--ink); font-size: 23px; font-weight: 950; font-variant-numeric: tabular-nums; }
+        .today-action-panel .video-list { margin-top: 14px; }
+        .today-action-panel .video-item { border-radius: 8px; background: #fff; }
+        .today-action-panel .video-item:hover { border-color: #9fc1ee; background: #f5f9ff; }
+        .today-history, .analysis-pocket {
+            margin-bottom: 14px;
+            border: 1px solid rgba(201,216,233,.96);
+            border-radius: 8px;
+            background: rgba(255,255,255,.96);
+            box-shadow: var(--shadow-soft);
+            overflow: hidden;
+        }
+        .today-history > summary, .analysis-pocket > summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            min-height: 58px;
+            padding: 13px 18px;
+            cursor: pointer;
+            list-style: none;
+        }
+        .today-history > summary::-webkit-details-marker, .analysis-pocket > summary::-webkit-details-marker { display: none; }
+        .today-history > summary::after, .analysis-pocket > summary::after { content: "+"; color: var(--muted); font-size: 22px; font-weight: 500; }
+        .today-history[open] > summary::after, .analysis-pocket[open] > summary::after { content: "−"; }
+        .summary-title { display: block; color: var(--ink); font-size: 15px; font-weight: 900; }
+        .summary-meta { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 760; }
+        .today-history-body { padding: 0 18px 18px; border-top: 1px solid var(--line); }
+        .today-history-section { padding-top: 16px; }
+        .today-history-section + .today-history-section { margin-top: 14px; border-top: 1px solid var(--line); }
+        .today-history-section h3 { margin: 0; font-size: 14px; }
+        .analysis-summary-copy { min-width: 0; }
+        .analysis-summary-value { margin-left: auto; color: var(--blue); font-size: 14px; font-weight: 950; white-space: nowrap; }
+        .analysis-content { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+        .analysis-content .lower-grid { margin-top: 14px; }
+        .analysis-content .panel { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+        .analysis-content .panel + .panel { border-left: 1px solid var(--line); }
 
         .dashboard-grid {
             display: grid;
@@ -558,14 +655,16 @@
             .page-head { display: block; }
             .head-tools { justify-content: flex-start; margin-top: 14px; }
             .metric-strip { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .metric-card:first-child { grid-column: 1 / -1; }
             .pace-message { max-width: 30ch; }
+            .race-course { padding-left: 0; padding-right: 0; }
             .pace-stats { grid-template-columns: 1fr; }
             .today-log-grid { grid-template-columns: 1fr; }
             .makeup-item { grid-template-columns: 1fr; }
             .makeup-minutes { grid-row: 2; }
             .makeup-track, .makeup-foot { grid-column: 1; }
             .makeup-foot { align-items: flex-start; flex-direction: column; gap: 2px; }
-            .metric-card { min-height: 120px; padding: 15px; border-radius: 20px; }
+            .metric-card { min-height: 104px; padding: 15px; border-radius: 8px; }
             .metric-value { font-size: 28px; }
             .panel { border-radius: 22px; }
             .journey-stage { min-height: 540px; margin: 8px 12px 0; }
@@ -580,16 +679,20 @@
             .momentum-layout { grid-template-columns: 1fr; }
             .momentum-score { width: 84px; height: 84px; }
             .subject-table th:nth-child(3),
-            .subject-table td:nth-child(3),
-            .subject-table th:nth-child(5),
-            .subject-table td:nth-child(5) { display: none; }
+            .subject-table td:nth-child(3) { display: none; }
             .subject-table th, .subject-table td { padding-left: 8px; padding-right: 8px; font-size: 12px; }
+            .analysis-content .panel + .panel { border-left: 0; border-top: 1px solid var(--line); }
         }
         @media (max-width: 620px) { .study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; }.recall-items { grid-template-columns:1fr; } }
         @media (max-width: 620px) { .recall-concepts { grid-template-columns:1fr; padding:14px; } }
         @media (max-width: 470px) {
-            .metric-strip { grid-template-columns: 1fr; }
+            .metric-strip { grid-template-columns: 1fr 1fr; }
             .date-pill { white-space: normal; }
+            .today-action-panel { padding: 16px 14px; }
+            .today-task-stat { padding: 12px 7px; }
+            .today-task-value { font-size: 18px; }
+            .today-history > summary, .analysis-pocket > summary { padding-left: 14px; padding-right: 14px; }
+            .analysis-summary-value { font-size: 12px; }
             .journey-stage { min-height: 500px; }
             .planet { width: 180px; }
             .topic-0 { left: 50%; top: 13%; }
@@ -599,6 +702,9 @@
             .topic-4 { left: 23.2%; top: 68.5%; }
             .topic-5 { left: 23.2%; top: 31.5%; }
         }
+        @media (prefers-reduced-motion: reduce) {
+            .runner-person, .runner-shadow { animation: none; }
+        }
     </style>
 </head>
 <body>
@@ -606,20 +712,24 @@
         <header class="study-nav" aria-label="學習中心導覽">
             <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
             <nav class="nav-links">
-                <a href="{{ url_for('public_study_progress') }}">公開頁面</a><a class="active" href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">回想迴圈</a><a href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
+                <a href="{{ url_for('public_study_progress') }}">公開頁面</a><a class="active" href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">筆記彙整</a><a href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
                 <span class="admin">{{ admin_user.username }}・管理員</span>
             </nav>
         </header>
 
         <main class="content">
+            {% set continue_video = next_videos|first %}
             <section class="page-head" aria-label="學習首頁標題">
                 <div>
                     <h1>學習首頁</h1>
-                    <p class="subtitle">加油！持續學習讓你更接近目標 ✦</p>
+                    <p class="subtitle">先完成今天安排，再處理待複習重點。</p>
                 </div>
                 <div class="head-tools">
-                    <div class="date-pill">{{ plan_start }} → {{ plan_end }}</div>
                     <div class="date-pill">第 {{ current_week.number }} 週・{{ current_week.subject }}</div>
+                    <a class="continue-button" href="{% if continue_video %}{{ url_for('admin_study_plan', subject=continue_video.subject, video_id=continue_video.id) }}#youtube-player-section{% else %}{{ url_for('admin_study_plan') }}{% endif %}">
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5L8 5.5Z"/></svg>
+                        {% if continue_video %}繼續 {{ continue_video.subject }}{% else %}查看影片{% endif %}
+                    </a>
                 </div>
             </section>
 
@@ -647,193 +757,87 @@
                 {% endfor %}
             </section>
 
-            <section class="pace-panel {{ pace_insight.state }}" style="--pace-position: {{ pace_insight.meter_position }}%" aria-label="學習節奏差">
+            <section class="pace-panel {{ progress_race.state }}" style="--runner-position:{{ progress_race.runner_position }}%;--plan-position:{{ progress_race.plan_position }}%;--actual-progress:{{ progress_race.actual_percent }}%;--gap-start:{{ progress_race.gap_start }}%;--gap-width:{{ progress_race.gap_width }}%;" aria-label="目前已看時間與截至今天應看時間比較">
                 <div class="pace-layout">
                     <div>
-                        <div class="pace-kicker">PACE DELTA</div>
-                        <div class="pace-headline">
-                            <span class="pace-number">{{ pace_insight.primary_value }}</span>
-                            <span class="pace-unit">{{ pace_insight.primary_unit }}</span>
-                        </div>
-                        <div class="pace-message">{{ pace_insight.message }} {{ pace_insight.action }}</div>
-                        <div class="pace-meter" aria-hidden="true">
-                            <div class="pace-track"></div>
-                            <div class="pace-zero"></div>
-                            <div class="pace-pin"></div>
-                        </div>
-                        <div class="pace-scale"><span>追趕區</span><span>計畫線</span><span>領先區</span></div>
-                        <div class="pace-stats">
-                            <div class="pace-stat"><div class="pace-stat-label">今日應達</div><div class="pace-stat-value">{{ pace_insight.target_today_hours }}h</div></div>
-                            <div class="pace-stat"><div class="pace-stat-label">目前已看</div><div class="pace-stat-value">{{ pace_insight.watched_hours }}h</div></div>
-                            <div class="pace-stat"><div class="pace-stat-label">緩衝天數</div><div class="pace-stat-value">{{ pace_insight.buffer_days }} 天</div></div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="today-log-panel" aria-label="今日學習紀錄">
-                <div class="panel-head" style="padding:0;">
-                    <div>
-                        <h2 class="panel-title">今日學習紀錄</h2>
-                        <div class="caption">以早上 8:00 作為每日切割點，計算每支影片相較前一日增加的觀看進度。</div>
-                    </div>
-                </div>
-                <div class="today-log-grid">
-                    <div class="today-log-stat"><div class="today-log-label">今日進度變動</div><div class="today-log-value">{{ today_study.hours }}h</div></div>
-                    <div class="today-log-stat"><div class="today-log-label">今日推進</div><div class="today-log-value">{{ today_study.progress_delta }}%</div></div>
-                    <div class="today-log-stat"><div class="today-log-label">自動紀錄影片</div><div class="today-log-value">{{ today_study.videos|length }} 支</div></div>
-                </div>
-
-                <div class="panel-head" style="padding:18px 0 0;">
-                    <div>
-                        <h2 class="panel-title">今天補到的計畫日</h2>
-                    </div>
-                </div>
-                <div class="makeup-list">
-                    {% if today_study.makeup_days %}
-                        {% for item in today_study.makeup_days %}
-                        <div class="makeup-item">
+                        <div class="pace-topline">
                             <div>
-                                <div class="makeup-title">第 {{ item.week_number }} 週・{{ item.subject }}・{{ item.label }}</div>
-                                <div class="makeup-meta">{{ item.date }}・每日目標 {{ item.day_target_minutes }} 分</div>
-                            </div>
-                            <div class="makeup-minutes">+{{ item.minutes }} 分</div>
-                            <div class="makeup-track" style="--before:{{ item.before_completion }}%; --after:{{ item.after_completion }}%;" aria-label="{{ item.label }} 完成度由 {{ item.before_completion }}% 提升至 {{ item.after_completion }}%"></div>
-                            <div class="makeup-foot"><span>當日完成度 {{ item.before_completion }}% → <strong>{{ item.after_completion }}%</strong></span><span>本週 {{ item.week_before_completion }}% → {{ item.week_after_completion }}%</span></div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="empty">今天尚未補到任何計畫日。</div>
-                    {% endif %}
-                </div>
-
-                <div class="panel-head" style="padding:18px 0 0;">
-                    <div>
-                        <h2 class="panel-title">今天看的影片</h2>
-                    </div>
-                </div>
-                <div class="today-video-list">
-                    {% if today_study.videos %}
-                        {% for video in today_study.videos %}
-                        <div class="today-video-item">
-                            <div class="today-video-title">{{ '%03d'|format(video.sequence) }}・{{ video.title }}</div>
-                            <div class="today-video-meta">{{ video.subject }}・{% if video.is_correction %}回退校正 {{ video.minutes }} 分{% else %}今天增加 {{ video.minutes }} 分{% endif %}・目前 {{ video.completion }}%</div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="empty">今天尚未有影片進度變動紀錄。</div>
-                    {% endif %}
-                </div>
-            </section>
-
-            {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_home"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div></details>{% endif %}
-            <section class="dashboard-grid">
-                <article class="panel journey-card">
-                    <div class="panel-head">
-                        <div>
-                            <h2 class="panel-title">學習旅程地圖</h2>
-                            <div class="caption">{{ plan_total_weeks }} 週進度・中央星球代表總完成率</div>
-                        </div>
-                        <span class="status {{ pace_state }}">{{ pace_label }}</span>
-                    </div>
-                    <div class="journey-stage" aria-label="各科學習星球">
-                        <div class="orbit-line"></div>
-                        <span class="star s1"></span><span class="star s2"></span><span class="star s3"></span><span class="star s4"></span>
-                        <div class="planet">
-                            <div class="planet-core">
-                                <div class="planet-value">{{ summary.completion|round(1) }}%</div>
-                                <div class="planet-label">累積完成率</div>
-                            </div>
-                        </div>
-                        {% for subject in subject_rows %}
-                        <div class="topic topic-{{ loop.index0 }}">
-                            <div class="topic-orb">{{ subject.completion|round(0)|int }}%</div>
-                            <div class="topic-label">{{ subject.name }}</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    <div class="map-legend">
-                        <div class="legend-item"><div class="legend-label">時間進度</div><div class="legend-value">{{ elapsed_percent }}%</div></div>
-                        <div class="legend-item"><div class="legend-label">剩餘片長</div><div class="legend-value">{{ remaining_hours }}h</div></div>
-                        <div class="legend-item"><div class="legend-label">本週已看</div><div class="legend-value">{{ current_week.watched_minutes }}m</div></div>
-                        <div class="legend-item"><div class="legend-label">學習動能</div><div class="legend-value">{{ momentum_score }}/100</div></div>
-                    </div>
-                </article>
-
-                <aside class="side-stack">
-                    <section class="panel side-panel">
-                        <div class="panel-head">
-                            <div>
-                                <h2 class="panel-title">今日焦點</h2>
-                                <div class="caption">{{ today_row.label }}・{{ today_row.short_date }}</div>
-                            </div>
-                            <span class="status {{ today_row.state }}">{{ today_row.state_label }}</span>
-                        </div>
-                        <div class="today-card">
-                            <div class="caption">今天建議觀看</div>
-                            <div class="today-row">
-                                <div class="today-hours">{{ today_row.hours }}h</div>
-                                <div class="today-state">{{ current_week.subject }}</div>
-                            </div>
-                            <div class="caption">完成度 {{ today_row.completion }}%，以「{{ today_row.focus }}」為主。</div>
-                        </div>
-                        <div class="video-list">
-                            {% if next_videos %}
-                {% for video in next_videos %}
-                                <a class="video-item" href="{{ url_for('admin_study_plan', subject=video.subject, video_id=video.id) }}#youtube-player-section">
-                                    <div class="video-seq">{{ '%03d'|format(video.sequence) }}</div>
-                                    <div>
-                                        <div class="video-title">{{ video.title }}</div>
-                                        <div class="video-meta">剩餘 {{ video.remaining_minutes }} 分・目前 {{ video.completion }}%</div>
-                                    </div>
-                                    <span class="status active">下一步</span>
-                                </a>
-                                {% endfor %}
-                            {% else %}
-                                <div class="empty">目前週次的影片已沒有待補項目。</div>
-                            {% endif %}
-                        </div>
-                    </section>
-
-                    <section class="panel side-panel">
-                        <div class="panel-head">
-                            <div>
-                                <h2 class="panel-title">學習動能</h2>
-                                <div class="caption">近 7 天有 {{ active_recent_days }} 天留下觀看紀錄</div>
-                            </div>
-                        </div>
-                        <div class="momentum-layout">
-                            <div class="momentum-score"><span>{{ momentum_score }}</span></div>
-                            <div>
-                                <div class="momentum-orbs">
-                                    {% for day in momentum_days %}
-                                    <div class="orb {% if day.active %}active{% endif %}">{{ day.label }}</div>
-                                    {% endfor %}
+                                <div class="pace-kicker">進度追趕賽・PACE DELTA</div>
+                                <div class="pace-headline">
+                                    <span class="pace-number">{{ progress_race.headline_value }}</span>
+                                    <span class="pace-unit">{{ progress_race.headline_unit }}</span>
                                 </div>
-                                <div class="caption" style="margin-top:10px;">最後更新：{{ last_updated_label }}</div>
+                                <div class="pace-message">{{ progress_race.headline_message }}{{ pace_insight.action }}</div>
                             </div>
                         </div>
-                    </section>
-
-                    <section class="panel side-panel">
-                        <div class="panel-head">
-                            <div>
-                                <h2 class="panel-title">需要補強</h2>
-                                <div class="caption">優先處理完成率較低的科目</div>
+                        <div class="race-course" role="img" aria-label="目前已看 {{ progress_race.watched_hours }} 小時，截至今天應看 {{ progress_race.target_hours }} 小時">
+                            <div class="race-lane">
+                                <div class="race-progress"></div>
+                                <div class="race-milestones" aria-hidden="true">
+                                    <span style="--milestone:25%" data-label="25%"></span>
+                                    <span style="--milestone:50%" data-label="50%"></span>
+                                    <span style="--milestone:75%" data-label="75%"></span>
+                                </div>
+                                <div class="race-start-line" aria-hidden="true"></div>
+                                <div class="race-delta-segment"></div>
+                                <div class="race-plan-marker"></div>
+                                <div class="race-plan-label">今日目標 {{ progress_race.target_hours }}h</div>
+                                <div class="race-actual-marker"></div>
+                                <div class="race-actual-label">我的進度 {{ progress_race.watched_hours }}h</div>
+                                <div class="race-runner" aria-hidden="true"><span class="runner-person"><span>🏃</span></span><span class="runner-shadow"></span></div>
                             </div>
+                            <div class="race-scale"><span>開始</span><span>完成</span></div>
                         </div>
-                        <div class="weak-list">
-                            {% for item in weak_subjects %}
-                            <div class="weak-item">
-                                <div class="weak-top"><span>{{ item.name }}</span><span>{{ item.completion }}%</span></div>
-                                <div class="track"><div class="fill" style="--value: {{ item.completion }}%"></div></div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </section>
-                </aside>
+                    </div>
+                </div>
             </section>
 
+            <section class="today-action-panel" id="today-focus" aria-label="今日任務">
+                <div class="today-action-head">
+                    <div>
+                        <h2>今日任務</h2>
+                        <div class="caption">{{ today_row.label }}・{{ today_study.day }}・{{ current_week.subject }}</div>
+                    </div>
+                    <span class="status {{ today_study.task_state }}">{{ today_study.task_label }}</span>
+                </div>
+                <div class="today-task-grid">
+                    <div class="today-task-stat"><div class="today-task-label">今日安排</div><div class="today-task-value">{{ today_study.target_hours }}h</div></div>
+                    <div class="today-task-stat"><div class="today-task-label">今日已看</div><div class="today-task-value">{{ today_study.hours }}h</div></div>
+                    <div class="today-task-stat"><div class="today-task-label">尚需完成</div><div class="today-task-value">{% if today_study.target_hours <= 0 %}無排程{% elif today_study.remaining_hours <= 0 %}已完成{% else %}{{ today_study.remaining_hours }}h{% endif %}</div></div>
+                </div>
+                <div class="video-list">
+                    {% for video in next_videos %}
+                    <a class="video-item" href="{{ url_for('admin_study_plan', subject=video.subject, video_id=video.id) }}#youtube-player-section">
+                        <div class="video-seq">{{ '%03d'|format(video.sequence) }}</div>
+                        <div>
+                            <div class="video-title">{{ video.title }}</div>
+                            <div class="video-meta">{{ video.subject }}・剩餘 {{ video.remaining_minutes }} 分・目前 {{ video.completion }}%</div>
+                        </div>
+                        <span class="status active">播放</span>
+                    </a>
+                    {% else %}
+                    <div class="empty">目前排定科目沒有待完成影片。</div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            {% if recall_widget %}{% if recall_widget.due_count > 4 %}<details class="recall-pocket" id="recall-today"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary>{% else %}<section class="recall-pocket" id="recall-today"><div class="recall-pocket-head"><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></div>{% endif %}<div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}{% if concept.card_type == 'example' %}<span class="recall-example-badge">例題</span>{% endif %}</div><div class="recall-cue" data-math-content>{{ concept.recall_cue }}</div><button class="recall-reveal" type="button" data-recall-reveal aria-expanded="false">揭示重點</button><div class="recall-answer" data-recall-answer hidden>{% if concept.card_type == 'example' and concept.example_problem %}<div class="recall-example"><strong>具體題目示例</strong><div data-math-content>{{ concept.example_problem }}</div></div>{% endif %}{% if concept.card_type == 'example' and concept.example_method %}<div class="recall-example method"><strong>解題方法</strong><div data-math-content>{{ concept.example_method }}</div></div>{% endif %}{% if concept.card_type != 'example' and concept.simple_example %}<div class="recall-example simple"><strong>簡單例子</strong><div data-math-content>{{ concept.simple_example }}</div></div>{% endif %}{% if concept.core_summary %}<div class="recall-core" data-math-content>{{ concept.core_summary }}</div>{% endif %}<div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_home"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></div></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div>{% if recall_widget.due_count > 4 %}</details>{% else %}</section>{% endif %}{% endif %}
+
+            {% if today_study.progress_days or today_study.videos %}
+            <details class="today-history">
+                <summary><span><span class="summary-title">今日詳細紀錄</span><span class="summary-meta">{% if today_study.progress_days %}讀書進度 {{ today_study.progress_days|length }} 項・{% endif %}觀看變動 {{ today_study.videos|length }} 支影片</span></span></summary>
+                <div class="today-history-body">
+                    {% if today_study.progress_days %}<section class="today-history-section"><h3>今天讀的進度</h3><div class="makeup-list">{% for item in today_study.progress_days %}<div class="makeup-item"><div><div class="makeup-title">第 {{ item.week_number }} 週・{{ item.subject }}・{{ item.label }}</div><div class="makeup-meta">{{ item.date }}・每日目標 {{ item.day_target_minutes }} 分</div></div><div class="makeup-minutes">+{{ item.minutes }} 分</div><div class="makeup-track" style="--before:{{ item.before_completion }}%; --after:{{ item.after_completion }}%;" aria-label="{{ item.label }} 完成度由 {{ item.before_completion }}% 提升至 {{ item.after_completion }}%"></div><div class="makeup-foot"><span>當日 {{ item.before_completion }}% → <strong>{{ item.after_completion }}%</strong></span><span>本週 {{ item.week_before_completion }}% → {{ item.week_after_completion }}%</span></div></div>{% endfor %}</div></section>{% endif %}
+                    {% if today_study.videos %}<section class="today-history-section"><h3>觀看變動</h3><div class="today-video-list">{% for video in today_study.videos %}<div class="today-video-item"><div class="today-video-title">{{ '%03d'|format(video.sequence) }}・{{ video.title }}</div><div class="today-video-meta">{{ video.subject }}・{% if video.is_correction %}回退 {{ video.minutes }} 分{% else %}增加 {{ video.minutes }} 分{% endif %}・目前 {{ video.completion }}%</div></div>{% endfor %}</div></section>{% endif %}
+                </div>
+            </details>
+            {% endif %}
+            <details class="analysis-pocket" id="progress-insights">
+                <summary>
+                    <span class="analysis-summary-copy"><span class="summary-title">進度分析</span><span class="summary-meta">各科進度與本週觀看軌跡</span></span>
+                    <span class="analysis-summary-value">整體 {{ summary.completion|round(1) }}%</span>
+                </summary>
+                <div class="analysis-content">
             <section class="lower-grid">
                 <article class="panel table-card">
                     <div class="panel-head">
@@ -846,12 +850,10 @@
                         <table class="subject-table">
                             <thead>
                                 <tr>
-                                    <th style="width: 20%;">科目</th>
-                                    <th style="width: 26%;">完成率</th>
-                                    <th style="width: 16%;">已看</th>
+                                    <th style="width: 22%;">科目</th>
+                                    <th style="width: 46%;">進度</th>
                                     <th style="width: 16%;">影片</th>
-                                    <th style="width: 14%;">狀態</th>
-                                    <th style="width: 8%;">%</th>
+                                    <th style="width: 16%;">狀態</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -861,13 +863,11 @@
                                     <td>
                                         <div class="progress-cell">
                                             <div class="table-track"><div class="table-fill" style="--value: {{ subject.completion }}%"></div></div>
-                                            <span class="caption">{{ subject.watched_hours }}h / {{ subject.target_hours }}h</span>
+                                            <span class="caption">{{ subject.watched_hours }}h / {{ subject.target_hours }}h・{{ subject.completion }}%</span>
                                         </div>
                                     </td>
-                                    <td>{{ subject.watched_hours }}h</td>
                                     <td>{{ subject.completed_videos }} / {{ subject.total_videos }}</td>
                                     <td><span class="status {{ subject.state }}">{{ subject.state_label }}</span></td>
-                                    <td>{{ subject.completion }}%</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -915,23 +915,64 @@
                     </div>
                 </article>
             </section>
+                </div>
+            </details>
         </main>
     </div>
     <script>
-        window.renderStudyMath = () => {
+        window.renderStudyMath = (root = document) => {
             if (!window.renderMathInElement) return;
-            document.querySelectorAll('[data-math-content]').forEach((element) => {
+            const queryAll = (selector) => [
+                ...(root.matches?.(selector) ? [root] : []),
+                ...root.querySelectorAll(selector),
+            ];
+            const isDeferred = (element) => {
+                if (element.closest('[hidden]')) return true;
+                let ancestor = element.parentElement;
+                while (ancestor) {
+                    if (ancestor.tagName === 'DETAILS' && !ancestor.open) {
+                        const summary = Array.from(ancestor.children).find((child) => child.tagName === 'SUMMARY');
+                        if (!summary?.contains(element)) return true;
+                    }
+                    ancestor = ancestor.parentElement;
+                }
+                return false;
+            };
+            queryAll('.recall-card-title').forEach((element) => { element.dataset.mathContent = ''; });
+            queryAll('[data-math-content]').forEach((element) => {
                 if (element.dataset.mathRendered === 'true') return;
+                if (isDeferred(element)) return;
                 window.renderMathInElement(element, {
                     delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '$', right: '$', display: false },
                         { left: '\\[', right: '\\]', display: true },
                         { left: '\\(', right: '\\)', display: false },
                     ],
                     throwOnError: false,
+                    strict: 'ignore',
                 });
                 element.dataset.mathRendered = 'true';
             });
         };
+        document.addEventListener('toggle', (event) => {
+            const detail = event.target;
+            if (detail instanceof HTMLDetailsElement && detail.open) window.renderStudyMath(detail);
+        }, true);
+        (() => {
+            document.querySelectorAll('[data-recall-card]').forEach((card) => {
+                const reveal = card.querySelector('[data-recall-reveal]');
+                const answer = card.querySelector('[data-recall-answer]');
+                if (!reveal || !answer) return;
+                reveal.addEventListener('click', () => {
+                    const shouldReveal = answer.hidden;
+                    answer.hidden = !shouldReveal;
+                    reveal.textContent = shouldReveal ? '收起重點' : '揭示重點';
+                    reveal.setAttribute('aria-expanded', shouldReveal ? 'true' : 'false');
+                    if (shouldReveal) window.renderStudyMath();
+                });
+            });
+        })();
         (() => {
             const updateDueCounts = (count) => {
                 document.querySelectorAll('[data-recall-due-count]').forEach((node) => {
