@@ -43,10 +43,14 @@
         .identity-dot { width: 9px; height: 9px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 4px var(--green-soft); }
         .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); }
         .brand { display:flex; align-items:center; gap:10px; color:var(--ink); font-size:14px; font-weight:900; white-space:nowrap; }.mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }.nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }.nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }.nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }.admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
-        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }.recall-pocket summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { min-width:0; padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { overflow-wrap:anywhere; font-size:13px; font-weight:850; }.recall-card-note { min-width:0; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; width:1px; height:1px; margin:0; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-rate:disabled { opacity:.6; cursor:wait; }.recall-rate-status { min-height:16px; margin:0; color:var(--red); font-size:11px; }.recall-card.is-completing { opacity:0; transform:scale(.98); transition:opacity .18s ease,transform .18s ease; }.recall-empty { padding:18px; color:var(--muted); text-align:center; font-size:13px; }
+        .recall-pocket { margin:18px 0; border:1px solid var(--line); border-radius:7px; background:#fff; }.recall-pocket-head,.recall-pocket > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; list-style:none; }.recall-pocket > summary { cursor:pointer; }.recall-pocket > summary::-webkit-details-marker { display:none; }.recall-pocket strong { display:block; font-size:14px; }.recall-count { color:var(--teal); font-size:12px; font-weight:850; }.recall-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; border-top:1px solid var(--line); }.recall-card { min-width:0; padding:13px; border:1px solid var(--line); border-radius:5px; background:#fbfdff; }.recall-card-title { overflow-wrap:anywhere; font-size:13px; font-weight:850; }.recall-card-note { min-width:0; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.recall-card form { display:grid; gap:8px; margin-top:12px; }.recall-rating { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }.recall-rating label { cursor:pointer; }.recall-rating input { position:absolute; width:1px; height:1px; margin:0; opacity:0; }.recall-rating span { display:grid; min-height:30px; place-items:center; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; }.recall-rating input:checked + span { color:#fff; border-color:var(--blue); background:var(--blue); }.recall-rate { min-height:34px; border:0; border-radius:4px; color:#fff; background:var(--blue); font-size:12px; font-weight:850; cursor:pointer; }.recall-rate:disabled { opacity:.6; cursor:wait; }.recall-rate-status { min-height:16px; margin:0; color:var(--red); font-size:11px; }.recall-card.is-completing { opacity:0; transform:scale(.98); transition:opacity .18s ease,transform .18s ease; }.recall-empty { padding:4px 16px 16px; color:var(--muted); font-size:13px; }
+        .recall-cue { margin-top:9px; padding:9px 10px; color:#40536c; border-left:3px solid var(--blue); background:#f3f7fc; font-size:12px; font-weight:700; line-height:1.55; }.recall-reveal { width:100%; min-height:34px; margin-top:9px; color:var(--blue); border:1px solid #b9d0ed; border-radius:4px; background:#fff; font-size:11px; font-weight:900; cursor:pointer; }.recall-reveal:hover { background:var(--blue-soft); }.recall-answer { margin-top:9px; }.recall-answer[hidden] { display:none; }.recall-core { margin-bottom:7px; padding:8px 9px; color:var(--ink); border-left:3px solid var(--green); background:#edf8f1; font-size:12px; font-weight:750; line-height:1.55; }.recall-example-badge { display:inline-block; margin-left:6px; padding:2px 5px; color:#815000; border:1px solid #e3bd78; border-radius:3px; background:#fff4de; font-size:9px; }.recall-example { margin-bottom:7px; padding:8px 9px; color:#40536c; border-left:3px solid var(--blue); background:#f4f8fd; font-size:12px; line-height:1.55; }.recall-example.method { border-left-color:var(--teal); background:var(--teal-soft); }.recall-example.simple { border-left-color:var(--amber); background:var(--amber-soft); }.recall-example strong { margin-bottom:3px; color:var(--ink); font-size:10px; }
+        .recall-empty { display:none; }
         [data-math-content] { min-width:0; max-width:100%; overflow-wrap:anywhere; } [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; } [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:thin; } [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0 auto; overflow:visible; text-align:left; }
         .content { width: 100%; max-width: none; padding: 34px; }
         .title-row { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 24px; }
+        .settings-link { display:inline-block; margin-top:8px; color:var(--blue); font-size:13px; font-weight:800; }
+        .settings-link:hover { text-decoration:underline; }
         h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); line-height: 1.12; letter-spacing: -.035em; }
         .subtitle { margin: 9px 0 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
         .date-range { color: var(--muted); font-size: 14px; white-space: nowrap; }
@@ -85,7 +89,7 @@
         .legend-dot.partial { background: var(--purple); }
         .legend-dot.active { background: var(--blue); }
         .legend-dot.behind { background: var(--amber); }
-        .daily-plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 7px; margin-top: 9px; }
+        .daily-plan { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
         .day-chip { position: relative; min-width: 0; padding: 8px 8px; border: 1px solid var(--line); border-radius: 10px; background: #fbfdff; overflow: hidden; }
         .day-chip.complete { border-color: #b9e0c6; background: linear-gradient(180deg, #f4fbf6 0%, #ffffff 100%); }
         .day-chip.early { border-color: #9bdcdd; background: linear-gradient(180deg, #effefe 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(15, 139, 141, .07); }
@@ -98,6 +102,13 @@
         .day-date { display: block; color: #8aa0b6; font-size: 10px; font-weight: 650; }
         .day-hours { display: block; margin-top: 5px; color: var(--ink); font-size: 17px; font-weight: 800; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
         .day-focus { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+        .day-subject-list { display:grid; width:100%; min-width:0; gap:7px; margin-top:8px; padding-top:7px; border-top:1px solid var(--line); }
+        .day-subject-row, .day-subject-head { width:100%; min-width:0; }
+        .day-subject-head { display:flex; align-items:baseline; justify-content:space-between; gap:5px; color:var(--muted); font-size:9px; font-weight:760; }
+        .day-subject-head strong { min-width:0; overflow:hidden; color:var(--ink-2); text-overflow:ellipsis; white-space:nowrap; }
+        .day-subject-value { flex:0 0 auto; font-variant-numeric:tabular-nums; white-space:nowrap; }
+        .day-subject-track { width:100%; max-width:100%; height:5px; margin-top:3px; overflow:hidden; border-radius:99px; background:#e6edf4; }
+        .day-subject-fill { height:100%; width:min(100%,var(--subject-progress)); border-radius:inherit; background:var(--blue); }
         .day-status { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding: 2px 5px; border-radius: 999px; background: #eef3f8; color: var(--muted); font-size: 10px; font-weight: 760; }
         .day-chip.complete .day-status { background: var(--green-soft); color: var(--green); }
         .day-chip.early .day-status { background: var(--teal-soft); color: var(--teal); }
@@ -124,14 +135,21 @@
         .week-meta { color: var(--muted); font-size: 12px; line-height: 1.45; }
         .week-target { color: var(--ink-2); font-size: 12px; line-height: 1.45; }
         .week-target strong { display: block; color: var(--blue); font-size: 13px; font-weight: 820; }
-        .week-load { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: 11px; }
-        .week-load strong { color: var(--ink-2); }
-        .week-daily { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 5px; }
-        .week-daily .day-chip { padding: 5px 6px; border-radius: 6px; }
+        .week-summary { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-width: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+        .week-stat { min-width: 0; padding: 7px 8px; border-right: 1px solid var(--line); }
+        .week-stat:first-child { padding-left: 0; }
+        .week-stat:last-child { padding-right: 0; border-right: 0; }
+        .week-stat span { display: block; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+        .week-stat strong { display: block; margin-top: 2px; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .week-stat.progress strong { color: var(--blue); }
+        .week-row.complete .week-stat.progress strong { color: var(--green); }
+        .week-row.behind .week-stat.remaining strong { color: var(--amber); }
+        .week-daily { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; min-width: 0; }
+        .week-daily .day-chip { padding: 6px; border-radius: 6px; }
         .week-daily .day-hours { font-size: 13px; }
-        .week-daily .day-focus { display: none; }
-        .week-daily .day-date, .week-daily .day-status { display: none; }
-        .week-daily .day-completion { margin-top: 4px; }
+        .week-daily .day-focus, .week-daily .day-date, .week-daily .day-status { display: none; }
+        .week-daily .day-completion { justify-content: flex-end; margin-top: 4px; }
+        .week-daily .day-completion span { display: none; }
         .week-daily .day-progress { height: 4px; }
         .state { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font-size: 11px; font-weight: 720; }
         .state.complete { color: var(--green); background: var(--green-soft); border-color: #b9e0c6; }
@@ -197,10 +215,12 @@
         .flash-stack { display: grid; gap: 8px; margin-bottom: 16px; }
         .flash { border-left: 3px solid var(--blue); background: var(--blue-soft); padding: 10px 12px; color: var(--ink-2); font-size: 14px; }
         @media (min-width: 1121px) and (max-width: 1500px) { .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } .youtube-player { grid-template-columns: 1fr; } }
+        @media (min-width: 1121px) and (max-width: 1300px) { .daily-plan { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
         @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } .timeline { max-height: 420px; } .youtube-player { grid-template-columns: 1fr; } .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } .save-button { grid-column: span 2; } }
         @media (max-width: 820px) { .video-summary-toggle { align-items: flex-start; } .video-summary-meta { white-space: normal; justify-content: flex-end; text-align: right; } .table-wrap { padding: 12px; max-height: 520px; } .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; } .table-wrap table { table-layout: auto; } .table-wrap thead { display: none; } .table-wrap tbody { display: grid; gap: 12px; } .table-wrap tr { padding: 4px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; } .table-wrap td { display: grid; grid-template-columns: minmax(88px, .8fr) minmax(0, 1.4fr); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); } .table-wrap td:last-child { border-bottom: 0; } .table-wrap td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 740; } .table-wrap td.record-action:not(.has-record) { display: none; } .table-wrap .log-numbers { white-space: normal; } .table-wrap .mini-track { width: 100%; max-width: 160px; } .table-wrap .delete-form { justify-self: start; } }
         @media (max-width: 900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; } }
-        @media (max-width: 760px) { .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .youtube-player { padding: 16px; } .player-frame, .player-frame iframe, #youtube-player { min-height: 210px; } .player-title { font-size: 19px; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } .week-row { padding: 13px 14px; } }
+        @media (max-width: 760px) { .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .youtube-player { padding: 16px; } .player-frame, .player-frame iframe, #youtube-player { min-height: 210px; } .player-title { font-size: 19px; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } .week-row { padding: 13px 14px; } .week-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .week-stat:nth-child(2) { border-right: 0; } .week-stat:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .week-stat:nth-child(3) { padding-left: 0; } .week-daily { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        @media (max-width: 480px) { .daily-plan, .week-daily { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 620px) { .study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; } }
         @media (max-width: 620px) { .recall-items { grid-template-columns:1fr; } }
     </style>
@@ -210,22 +230,22 @@
         <main class="main">
             <header class="study-nav" aria-label="學習中心導覽">
                 <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
-                <nav class="nav-links"><a href="{{ url_for('public_study_progress') }}">公開頁面</a><a href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">回想迴圈</a><a class="active" href="{{ url_for('admin_study_plan') }}">影片紀錄</a><span class="admin">{{ admin_user.username }}・管理員</span></nav>
+                <nav class="nav-links"><a href="{{ url_for('public_study_progress') }}">公開頁面</a><a href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">筆記彙整</a><a class="active" href="{{ url_for('admin_study_plan') }}">影片紀錄</a><span class="admin">{{ admin_user.username }}・管理員</span></nav>
             </header>
             <div class="content">
                 <div class="title-row">
-                    <div><h1>研究所讀書計畫</h1></div>
+                    <div><h1>影片與讀書計畫</h1><a class="settings-link" href="{{ url_for('admin_study_settings') }}">影片連結設定</a></div>
                     <div class="date-range">{{ plan_start }} 至 {{ plan_end }}・{{ plan_total_weeks }} 週</div>
                 </div>
 
                 <section class="metric-row" aria-label="讀書計畫摘要">
                     <div class="metric"><div class="metric-label">影片總片長</div><div class="metric-value">{{ (summary.total_target / 60)|round(1) }}<small>小時</small></div></div>
                     <div class="metric"><div class="metric-label">已觀看片長</div><div class="metric-value"><span id="summary-watched-hours">{{ (summary.total_watched / 60)|round(1) }}</span><small>小時</small></div></div>
-                    <div class="metric"><div class="metric-label">累積完成率</div><div class="metric-value"><span id="summary-completion">{{ summary.completion|round(1) }}</span><small>%</small></div></div>
+                    <div class="metric" title="所有影片最後觀看位置合計 ÷ 所有影片總片長"><div class="metric-label">片長加權完成率</div><div class="metric-value"><span id="summary-completion">{{ summary.completion|round(1) }}</span><small>%</small></div></div>
                     <div class="metric"><div class="metric-label">已完成影片</div><div class="metric-value"><span id="summary-completed-videos">{{ summary.completed_videos }}</span><small>/ <span id="summary-total-videos">{{ summary.total_videos }}</span> 支</small></div></div>
                 </section>
 
-                {% if recall_widget %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary><div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}</div><div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_plan"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div></details>{% endif %}
+                {% if recall_widget %}{% if recall_widget.due_count > 4 %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary>{% else %}<section class="recall-pocket"><div class="recall-pocket-head"><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></div>{% endif %}<div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}{% if concept.card_type == 'example' %}<span class="recall-example-badge">例題</span>{% endif %}</div><div class="recall-cue" data-math-content>{{ concept.recall_cue }}</div><button class="recall-reveal" type="button" data-recall-reveal aria-expanded="false">揭示重點</button><div class="recall-answer" data-recall-answer hidden>{% if concept.card_type == 'example' and concept.example_problem %}<div class="recall-example"><strong>具體題目示例</strong><div data-math-content>{{ concept.example_problem }}</div></div>{% endif %}{% if concept.card_type == 'example' and concept.example_method %}<div class="recall-example method"><strong>解題方法</strong><div data-math-content>{{ concept.example_method }}</div></div>{% endif %}{% if concept.card_type != 'example' and concept.simple_example %}<div class="recall-example simple"><strong>簡單例子</strong><div data-math-content>{{ concept.simple_example }}</div></div>{% endif %}{% if concept.core_summary %}<div class="recall-core" data-math-content>{{ concept.core_summary }}</div>{% endif %}<div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_plan"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></div></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div>{% if recall_widget.due_count > 4 %}</details>{% else %}</section>{% endif %}{% endif %}
                 <div class="workspace">
                     <div class="column">
                         <section class="panel">
@@ -234,34 +254,23 @@
                                 <div class="focus-caption">第 {{ current_week.number }} 週・{{ current_week.start }} 至 {{ current_week.end }}</div>
                                 <div class="focus-subject">{{ current_week.subject }}</div>
                                 <div class="focus-grid">
-                                    <div class="focus-item"><span>本週影片總片長</span><strong>{{ current_week.target_minutes|round(1) }} 分鐘</strong></div>
-                                    <div class="focus-item"><span>本週看影片時數</span><strong>{{ current_week.suggested_weekly_hours }} 小時</strong></div>
-                                    <div class="focus-item"><span>本週影片數</span><strong>{{ current_week.video_count }} 支</strong></div>
-                                    <div class="focus-item"><span>影片里程碑</span><strong>至第 {{ '%03d'|format(current_week.lesson_target) }} 支</strong></div>
-                                    <div class="focus-item"><span>本週實際觀看</span><strong><span id="current-week-watched">{{ current_week.watched_minutes }}</span> 分鐘</strong></div>
-                                    <div class="focus-item"><span>每日平均影片</span><strong>{{ (current_week.suggested_weekly_hours / 7)|round(1) }} 小時</strong></div>
+                                    <div class="focus-item"><span>本週目標</span><strong>{{ current_week.video_hours }} 小時</strong></div>
+                                    <div class="focus-item"><span>本週已看</span><strong><span id="current-week-watched">{{ current_week.watched_hours }}</span> 小時</strong></div>
+                                    <div class="focus-item"><span>本週科目配置</span><strong>{% for mix in current_week.subject_mix %}{{ mix.short }} {{ mix.target_hours }}h{% if not loop.last %}・{% endif %}{% endfor %}</strong></div>
+                                    <div class="focus-item"><span>本週剩餘</span><strong><span id="current-week-remaining">{{ current_week.remaining_hours }}</span> 小時</strong></div>
                                 </div>
                                 <div class="progress-line"><span>本週進度</span><strong><span id="current-week-completion">{{ current_week.completion|round(1) }}</span>%</strong></div>
                                 <div class="track"><div id="current-week-fill" class="fill" style="--progress:{{ current_week.completion }}%"></div></div>
                                 <div class="daily-plan-head">
                                     <div class="daily-plan-title">本週每日看影片建議與完成度</div>
-                                    <div class="daily-legend" aria-label="每日狀態圖例">
-                                        <span class="legend-item"><span class="legend-dot complete"></span>完成</span>
-                                        <span class="legend-item"><span class="legend-dot early"></span>提早完成</span>
-                                        <span class="legend-item"><span class="legend-dot partial"></span>部分</span>
-                                        <span class="legend-item"><span class="legend-dot active"></span>今天</span>
-                                        <span class="legend-item"><span class="legend-dot behind"></span>待補</span>
-                                        <span class="legend-item"><span class="legend-dot"></span>未開始</span>
-                                    </div>
                                 </div>
                                 <div class="daily-plan" aria-label="本週每日建議與完成度">
                                     {% for day in current_week.daily_recommendations %}
-                                    <div class="day-chip {{ day.state }}" data-focus-day-index="{{ loop.index0 }}" style="--day-progress:{{ day.completion }}%">
+                                    <div class="day-chip {{ day.state }}" data-focus-day-index="{{ loop.index0 }}" data-has-target="{{ 'true' if day.has_target else 'false' }}" style="--day-progress:{{ day.completion }}%">
                                         <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-status">{{ day.state_label }}</span></div>
-                                        <span class="day-hours">{{ day.hours }}h</span>
+                                        <span class="day-hours">{{ (day.hours ~ 'h') if day.has_target else '—' }}</span>
                                         <span class="day-focus">{{ day.focus }}</span>
-                                        <div class="day-completion"><span>完成度</span><strong>{{ day.completion|round(0) }}%</strong></div>
-                                        <div class="day-progress"><div class="day-progress-fill"></div></div>
+                                        {% if day.subject_progress %}<div class="day-subject-list">{% for subject_progress in day.subject_progress %}<div class="day-subject-row" data-day-subject="{{ subject_progress.name }}"><div class="day-subject-head"><strong>{{ subject_progress.short }} {{ subject_progress.target_hours }}h</strong><span class="day-subject-value">{{ subject_progress.completion|round(0) }}%</span></div><div class="day-subject-track"><div class="day-subject-fill" style="--subject-progress:{{ subject_progress.completion }}%"></div></div></div>{% endfor %}</div>{% else %}<div class="day-completion"><span>完成度</span><strong>—</strong></div>{% endif %}
                                     </div>
                                     {% endfor %}
                                 </div>
@@ -269,25 +278,25 @@
                         </section>
 
                         <section class="panel">
-                            <div class="panel-header"><h2 class="panel-title">{{ plan_total_weeks }} 週單科時間軸</h2><span class="focus-caption">依影片原始片長</span></div>
+                            <div class="panel-header"><h2 class="panel-title">{{ plan_total_weeks }} 週交錯時間軸</h2><span class="focus-caption">每日總時數與進度</span></div>
                             <div class="timeline">
                                 {% for week in week_rows %}
-                                <div class="week-row {{ week.state }}">
+                                <div class="week-row {{ week.state }}" data-timeline-week-start="{{ week.start }}">
                                     <div class="week-index">{{ week.number }}</div>
-                                    <div><div class="week-subject">{{ week.subject }}</div><div class="week-meta">{{ week.start }} — {{ week.end }}・{{ week.video_count }} 支，至第 {{ '%03d'|format(week.lesson_target) }} 支</div></div>
+                                    <div><div class="week-subject">{{ week.subject }}</div><div class="week-meta">{{ week.start }} — {{ week.end }}</div></div>
                                     <div><span class="state {{ week.state }}">{{ week.state_label }}</span></div>
-                                    <div class="week-load">
-                                        <span>影片 {{ week.video_hours }}h</span>
-                                        <strong>影片 {{ week.suggested_weekly_hours }}h / 週</strong>
-                                        <span>日均 {{ (week.suggested_weekly_hours / 7)|round(1) }}h</span>
-                                        <span>已看 {{ week.watched_hours }}h</span>
+                                    <div class="week-summary" aria-label="第 {{ week.number }} 週進度摘要">
+                                        <div class="week-stat"><span>本週目標</span><strong>{{ week.video_hours }}h</strong></div>
+                                        <div class="week-stat"><span>已完成</span><strong data-week-watched>{{ week.watched_hours|round(1) }}h</strong></div>
+                                        <div class="week-stat remaining"><span>尚需完成</span><strong data-week-remaining>{{ week.remaining_hours }}h</strong></div>
+                                        <div class="week-stat progress"><span>週完成率</span><strong data-week-completion>{{ week.completion|round(1) }}%</strong></div>
                                     </div>
-                                    <div class="week-daily" aria-label="第 {{ week.number }} 週每日建議讀書時數">
+                                    <div class="week-daily" aria-label="第 {{ week.number }} 週每日總時數與進度">
                                         {% for day in week.daily_recommendations %}
-                                        <div class="day-chip {{ day.state }}" style="--day-progress:{{ day.completion }}%">
+                                        <div class="day-chip {{ day.state }}" data-timeline-day-date="{{ day.date }}" style="--day-progress:{{ day.completion }}%">
                                             <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-status">{{ day.state_label }}</span></div>
-                                            <span class="day-hours">{{ day.hours }}h</span>
-                                            <div class="day-completion"><span>完成度</span><strong>{{ day.completion|round(0) }}%</strong></div>
+                                            <span class="day-hours">{{ (day.hours ~ 'h') if day.has_target else '—' }}</span>
+                                            <div class="day-completion"><span>總進度</span><strong>{{ (day.completion|round(0) ~ '%') if day.has_target else '—' }}</strong></div>
                                             <div class="day-progress"><div class="day-progress-fill"></div></div>
                                         </div>
                                         {% endfor %}
@@ -326,7 +335,7 @@
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
-                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required><option value="" selected disabled data-sequence="" data-title="" data-duration="0" data-duration-seconds="0" data-watched-seconds="0" data-playback-seconds="0" data-youtube-video-id="" data-youtube-url="">請選擇影片</option>{% for video in videos %}{% set option_label %}第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}{% endset %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-playback-seconds="{{ video.playback_seconds }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}" data-complete="{{ 'true' if video.completion >= 100 else 'false' }}" data-option-label="{{ option_label|trim }}">{% if video.completion >= 100 %}✓ 已完成・{% endif %}{{ option_label|trim }}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">請先選擇影片</span></div>
+                            <div class="field"><label for="video_id">影片</label><select id="video_id" name="video_id" required><option value="" selected disabled data-sequence="" data-title="" data-duration="0" data-duration-seconds="0" data-watched-seconds="0" data-playback-seconds="0" data-progress-version="0" data-youtube-video-id="" data-youtube-url="">請選擇影片</option>{% for video in videos %}{% set option_label %}第 {{ '%03d'|format(video.sequence) }} 支・{{ video.title }}{% if video.youtube_url %}・YouTube 已對應{% endif %}{% endset %}<option value="{{ video.id }}" data-sequence="{{ video.sequence }}" data-title="{{ video.title }}" data-duration="{{ video.duration_minutes }}" data-duration-seconds="{{ video.duration_seconds }}" data-watched-seconds="{{ video.watched_seconds }}" data-playback-seconds="{{ video.playback_seconds }}" data-progress-version="{{ video.progress_version }}" data-youtube-video-id="{{ video.youtube_video_id }}" data-youtube-url="{{ video.youtube_url }}" data-complete="{{ 'true' if video.completion >= 100 else 'false' }}" data-option-label="{{ option_label|trim }}">{% if video.completion >= 100 %}✓ 已完成・{% endif %}{{ option_label|trim }}</option>{% endfor %}</select><span id="duration-hint" class="duration-hint">請先選擇影片</span></div>
                             <div class="field"><label for="watched_minutes">實際觀看分鐘</label><input id="watched_minutes" name="watched_minutes" type="number" min="0" max="1440" step="0.1" value="0" required></div>
                             <div class="field notes"><label for="notes">筆記／卡關點</label><textarea id="notes" name="notes" rows="1" maxlength="2000" placeholder="例：複習矩陣分解的推導。"></textarea></div>
                             <button class="save-button" type="submit">儲存影片紀錄</button>
@@ -374,20 +383,59 @@
         </main>
     </div>
     <script>
-        window.renderStudyMath = () => {
+        window.renderStudyMath = (root = document) => {
             if (!window.renderMathInElement) return;
-            document.querySelectorAll('[data-math-content]').forEach((element) => {
+            const queryAll = (selector) => [
+                ...(root.matches?.(selector) ? [root] : []),
+                ...root.querySelectorAll(selector),
+            ];
+            const isDeferred = (element) => {
+                if (element.closest('[hidden]')) return true;
+                let ancestor = element.parentElement;
+                while (ancestor) {
+                    if (ancestor.tagName === 'DETAILS' && !ancestor.open) {
+                        const summary = Array.from(ancestor.children).find((child) => child.tagName === 'SUMMARY');
+                        if (!summary?.contains(element)) return true;
+                    }
+                    ancestor = ancestor.parentElement;
+                }
+                return false;
+            };
+            queryAll('.recall-card-title').forEach((element) => { element.dataset.mathContent = ''; });
+            queryAll('[data-math-content]').forEach((element) => {
                 if (element.dataset.mathRendered === 'true') return;
+                if (isDeferred(element)) return;
                 window.renderMathInElement(element, {
                     delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '$', right: '$', display: false },
                         { left: '\\[', right: '\\]', display: true },
                         { left: '\\(', right: '\\)', display: false },
                     ],
                     throwOnError: false,
+                    strict: 'ignore',
                 });
                 element.dataset.mathRendered = 'true';
             });
         };
+        document.addEventListener('toggle', (event) => {
+            const detail = event.target;
+            if (detail instanceof HTMLDetailsElement && detail.open) window.renderStudyMath(detail);
+        }, true);
+        (() => {
+            document.querySelectorAll('[data-recall-card]').forEach((card) => {
+                const reveal = card.querySelector('[data-recall-reveal]');
+                const answer = card.querySelector('[data-recall-answer]');
+                if (!reveal || !answer) return;
+                reveal.addEventListener('click', () => {
+                    const shouldReveal = answer.hidden;
+                    answer.hidden = !shouldReveal;
+                    reveal.textContent = shouldReveal ? '收起重點' : '揭示重點';
+                    reveal.setAttribute('aria-expanded', shouldReveal ? 'true' : 'false');
+                    if (shouldReveal) window.renderStudyMath();
+                });
+            });
+        })();
         (() => {
             const updateDueCounts = (count) => {
                 document.querySelectorAll('[data-recall-due-count]').forEach((node) => {
@@ -463,7 +511,8 @@
             let activeRecordId = '';
             let saveTimer = null;
             let playbackTimer = null;
-            let pendingSave = false;
+            let queuedSaveCount = 0;
+            let saveQueue = Promise.resolve();
             const initialParams = new URLSearchParams(window.location.search);
             const requestedVideoId = initialParams.get('video_id') || '';
             const shouldFocusRequestedVideo = Boolean(requestedVideoId || window.location.hash === '#youtube-player-section');
@@ -517,6 +566,18 @@
                 return Array.prototype.find.call(videoSelect.options, function (option) {
                     return option.value === String(value);
                 }) || null;
+            };
+            const sortVideoOptions = function () {
+                const selectedValue = videoSelect.value;
+                const options = Array.prototype.slice.call(videoSelect.options, 1);
+                options.sort(function (left, right) {
+                    const leftComplete = left.dataset.complete === 'true' ? 1 : 0;
+                    const rightComplete = right.dataset.complete === 'true' ? 1 : 0;
+                    if (leftComplete !== rightComplete) return leftComplete - rightComplete;
+                    return Number(left.dataset.sequence || 0) - Number(right.dataset.sequence || 0);
+                });
+                options.forEach(function (option) { videoSelect.appendChild(option); });
+                if (selectedValue) videoSelect.value = selectedValue;
             };
             const focusVideoArea = function () {
                 if (!shouldFocusRequestedVideo) return;
@@ -595,9 +656,13 @@
                 const watchedSeconds = Number(result.watched_seconds || 0);
                 const playbackSeconds = Number(result.playback_seconds || 0);
                 const durationSeconds = Number(result.duration_seconds || option.dataset.durationSeconds || 0);
+                const resultVersion = Math.max(0, Number(result.progress_version || 0));
+                const knownVersion = Math.max(0, Number(option.dataset.progressVersion || 0));
+                if (resultVersion < knownVersion) return false;
                 option.dataset.watchedSeconds = String(watchedSeconds);
                 option.dataset.playbackSeconds = String(playbackSeconds);
                 option.dataset.durationSeconds = String(durationSeconds);
+                option.dataset.progressVersion = String(resultVersion);
                 const isSelectedVideo = String(videoSelect.value) === String(result.video_id);
                 if (isSelectedVideo) {
                     if (watchedInput) watchedInput.value = formatMinutes(watchedSeconds);
@@ -619,6 +684,7 @@
                 if (option.dataset.optionLabel) {
                     option.textContent = (isComplete ? '✓ 已完成・' : '') + option.dataset.optionLabel;
                 }
+                sortVideoOptions();
                 if (result.summary) {
                     const summaryWatched = document.getElementById('summary-watched-hours');
                     const summaryCompletion = document.getElementById('summary-completion');
@@ -631,15 +697,40 @@
                 }
                 if (result.current_week) {
                     const weekWatched = document.getElementById('current-week-watched');
+                    const weekRemaining = document.getElementById('current-week-remaining');
                     const weekCompletion = document.getElementById('current-week-completion');
                     const weekFill = document.getElementById('current-week-fill');
                     const weekState = document.getElementById('current-week-state');
-                    if (weekWatched) weekWatched.textContent = result.current_week.watched_minutes;
+                    if (weekWatched) weekWatched.textContent = result.current_week.watched_hours;
+                    if (weekRemaining) weekRemaining.textContent = result.current_week.remaining_hours;
                     if (weekCompletion) weekCompletion.textContent = result.current_week.completion;
                     if (weekFill) weekFill.style.setProperty('--progress', result.current_week.completion + '%');
                     if (weekState && result.current_week.state) {
                         weekState.className = 'state ' + result.current_week.state;
                         weekState.textContent = result.current_week.state_label || '';
+                    }
+                    const timelineWeek = document.querySelector(
+                        '[data-timeline-week-start="' + result.current_week.start + '"]'
+                    );
+                    if (timelineWeek) {
+                        timelineWeek.className = 'week-row ' + result.current_week.state;
+                        const timelineState = timelineWeek.querySelector('.state');
+                        const timelineWatched = timelineWeek.querySelector('[data-week-watched]');
+                        const timelineRemaining = timelineWeek.querySelector('[data-week-remaining]');
+                        const timelineCompletion = timelineWeek.querySelector('[data-week-completion]');
+                        if (timelineState) {
+                            timelineState.className = 'state ' + result.current_week.state;
+                            timelineState.textContent = result.current_week.state_label || '';
+                        }
+                        if (timelineWatched) {
+                            timelineWatched.textContent = Number(result.current_week.watched_hours || 0).toFixed(1) + 'h';
+                        }
+                        if (timelineRemaining) {
+                            timelineRemaining.textContent = Number(result.current_week.remaining_hours || 0).toFixed(1) + 'h';
+                        }
+                        if (timelineCompletion) {
+                            timelineCompletion.textContent = Number(result.current_week.completion || 0).toFixed(1) + '%';
+                        }
                     }
                     (result.current_week.daily_recommendations || []).forEach(function (day, index) {
                         const card = document.querySelector('[data-focus-day-index="' + index + '"]');
@@ -649,7 +740,30 @@
                         const status = card.querySelector('.day-status');
                         const completion = card.querySelector('.day-completion strong');
                         if (status) status.textContent = day.state_label;
-                        if (completion) completion.textContent = Math.round(Number(day.completion || 0)) + '%';
+                        if (completion) completion.textContent = day.has_target ? Math.round(Number(day.completion || 0)) + '%' : '—';
+                        (day.subject_progress || []).forEach(function (subjectProgress) {
+                            const subjectRow = Array.from(card.querySelectorAll('[data-day-subject]')).find(function (row) {
+                                return row.dataset.daySubject === subjectProgress.name;
+                            });
+                            if (!subjectRow) return;
+                            const value = subjectRow.querySelector('.day-subject-value');
+                            const fill = subjectRow.querySelector('.day-subject-fill');
+                            if (value) value.textContent = Math.round(Number(subjectProgress.completion || 0)) + '%';
+                            if (fill) fill.style.setProperty('--subject-progress', Number(subjectProgress.completion || 0) + '%');
+                        });
+                        const timelineCard = document.querySelector('[data-timeline-day-date="' + day.date + '"]');
+                        if (timelineCard) {
+                            timelineCard.className = 'day-chip ' + day.state;
+                            timelineCard.style.setProperty('--day-progress', Number(day.completion || 0) + '%');
+                            const timelineStatus = timelineCard.querySelector('.day-status');
+                            const timelineCompletion = timelineCard.querySelector('.day-completion strong');
+                            if (timelineStatus) timelineStatus.textContent = day.state_label || '';
+                            if (timelineCompletion) {
+                                timelineCompletion.textContent = day.has_target
+                                    ? Math.round(Number(day.completion || 0)) + '%'
+                                    : '—';
+                            }
+                        }
                     });
                 }
                 return isSelectedVideo;
@@ -658,31 +772,48 @@
                 const option = explicitOption || optionByValue(activeRecordId) || selectedOption();
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 if (!option || !youtubeId || !player || typeof player.getCurrentTime !== 'function') return Promise.resolve();
-                if (pendingSave && reason === 'interval') return Promise.resolve();
+                if (queuedSaveCount && reason === 'interval') return Promise.resolve();
                 const playerSeconds = Math.max(0, Number(player.getCurrentTime() || 0));
                 if (String(videoSelect.value) === String(option.value)) {
                     setPlayerPosition(playerSeconds, Number(option.dataset.durationSeconds || 0));
                 }
                 const durationSeconds = Number(option.dataset.durationSeconds || 0);
                 const currentSeconds = reason === 'ended' && durationSeconds > 0 ? durationSeconds : playerSeconds;
-                pendingSave = true;
+                const videoId = Number(option.value);
+                queuedSaveCount += 1;
                 playerSyncState.textContent = '儲存中…';
-                return fetch('{{ url_for("admin_study_plan_video_progress") }}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ video_id: Number(option.value), watched_seconds: currentSeconds }),
-                    keepalive: Boolean(useKeepalive)
-                }).then(function (response) {
-                    if (!response.ok) throw new Error('save_failed');
-                    return response.json();
-                }).then(function (data) {
-                    if (!applyProgressResult(data)) return;
-                    playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-                    playerSyncState.textContent = reason === 'ended' ? '已完成並儲存' : '已自動儲存';
-                }).catch(function () {
+                const performRequest = function () {
+                    const expectedVersion = Math.max(0, Number(option.dataset.progressVersion || 0));
+                    return fetch('{{ url_for("admin_study_plan_video_progress") }}', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            video_id: videoId,
+                            watched_seconds: currentSeconds,
+                            expected_version: expectedVersion
+                        }),
+                        keepalive: Boolean(useKeepalive)
+                    }).then(function (response) {
+                        if (!response.ok) throw new Error('save_failed');
+                        return response.json();
+                    }).then(function (data) {
+                        if (!applyProgressResult(data)) return;
+                        playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+                        playerSyncState.textContent = data.stale
+                            ? '偵測到較新的紀錄，已保留最新進度'
+                            : reason === 'ended' ? '已完成並儲存' : '已自動儲存';
+                    });
+                };
+                // A keepalive request must start during beforeunload. Normal saves stay
+                // serialized so an older player position cannot overwrite a newer one.
+                const queuedRequest = useKeepalive
+                    ? performRequest()
+                    : saveQueue.catch(function () {}).then(performRequest);
+                if (!useKeepalive) saveQueue = queuedRequest.catch(function () {});
+                return queuedRequest.catch(function () {
                     playerSyncState.textContent = '儲存失敗，稍後重試';
                 }).finally(function () {
-                    pendingSave = false;
+                    queuedSaveCount = Math.max(0, queuedSaveCount - 1);
                 });
             };
             const startSaveTimer = function () {
@@ -788,6 +919,7 @@
                 const requestedOption = optionByValue(requestedVideoId);
                 if (requestedOption) videoSelect.value = requestedOption.value;
             }
+            sortVideoOptions();
             updateDuration();
             focusVideoArea();
         }());

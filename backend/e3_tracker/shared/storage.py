@@ -1,11 +1,17 @@
 import json
 import math
 import os
+import re
 import threading
+import unicodedata
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from fsrs import Card as FSRSCard
+from fsrs import Rating as FSRSRating
+from fsrs import Scheduler as FSRSScheduler
 from sqlalchemy import (
     Column,
     Float,
@@ -28,8 +34,180 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
+from .source_localization import canonicalize_source_text, literal_source_evidence
+
 
 metadata = MetaData()
+
+RECALL_DAILY_CAPACITY = 18
+RECALL_FSRS_SCHEDULER = FSRSScheduler(
+    desired_retention=0.88,
+    learning_steps=(),
+    relearning_steps=(),
+    maximum_interval=180,
+    enable_fuzzing=False,
+)
+
+_RECALL_SEARCH_QUESTION_PHRASES = (
+    "請問",
+    "我想找",
+    "我想查",
+    "幫我找",
+    "告訴我",
+    "是什麼",
+    "為什麼",
+    "怎麼算",
+    "怎麼做",
+    "怎麼用",
+    "怎麼",
+    "什麼意思",
+    "什麼",
+    "如何",
+    "哪一頁",
+    "哪裡",
+    "相關內容",
+)
+
+
+def _recall_search_compact(value: Any) -> str:
+    normalized = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"[^0-9a-z\u3400-\u9fff]+", "", normalized)
+
+
+def _recall_search_query_core(value: Any) -> str:
+    compact = _recall_search_compact(value)
+    for phrase in _RECALL_SEARCH_QUESTION_PHRASES:
+        compact = compact.replace(_recall_search_compact(phrase), "")
+    return compact or _recall_search_compact(value)
+
+
+def _recall_search_bigrams(value: str) -> set[str]:
+    if len(value) <= 1:
+        return {value} if value else set()
+    return {value[index:index + 2] for index in range(len(value) - 1)}
+
+
+def _recall_search_similarity(query: str, value: Any) -> float:
+    query_core = _recall_search_query_core(query)
+    candidate = _recall_search_compact(value)
+    if not query_core or not candidate:
+        return 0.0
+    score = 0.0
+    if query_core in candidate:
+        score += 125.0 + min(30.0, len(query_core) * 2.0)
+    query_bigrams = _recall_search_bigrams(query_core)
+    if query_bigrams:
+        candidate_bigrams = _recall_search_bigrams(candidate)
+        coverage = len(query_bigrams & candidate_bigrams) / len(query_bigrams)
+        score += coverage * 74.0
+    normalized_query = unicodedata.normalize("NFKC", str(query or "")).casefold()
+    terms = re.findall(r"[a-z0-9]{2,}|[\u3400-\u9fff]{2,}", normalized_query)
+    for term in terms:
+        compact_term = _recall_search_compact(term)
+        if compact_term and compact_term in candidate:
+            score += min(24.0, 8.0 + len(compact_term) * 2.0)
+    if len(query_core) >= 3:
+        segments = [
+            _recall_search_compact(segment)
+            for segment in re.split(r"[\n\r，。；：、！？,.!?;:]+", str(value or ""))
+        ]
+        ratios = [
+            SequenceMatcher(None, query_core, segment[:max(24, len(query_core) * 4)]).ratio()
+            for segment in segments
+            if segment
+        ]
+        if ratios:
+            score += max(ratios) * 34.0
+    return score
+
+
+def _recall_search_formula_signature(value: Any) -> str:
+    normalized = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    normalized = (
+        normalized.replace("−", "-")
+        .replace("×", "*")
+        .replace("÷", "/")
+        .replace("→", "->")
+        .replace("⇒", "=>")
+        .replace("≤", "<=")
+        .replace("≥", ">=")
+        .replace("≠", "!=")
+    )
+    normalized = re.sub(
+        r"\\(?:operatorname|mathrm|mathbf|mathbb|mathcal)\s*\{([^{}]+)\}",
+        r"\1",
+        normalized,
+    )
+    normalized = re.sub(r"\^\{([^{}]+)\}", r"^\1", normalized)
+    normalized = re.sub(r"_\{([^{}]+)\}", r"_\1", normalized)
+    normalized = re.sub(r"\\(?:left|right|quad|qquad|[,;!])", "", normalized)
+    normalized = normalized.replace("{", "").replace("}", "")
+    return re.sub(r"[^0-9a-z\u3400-\u9fff+\-*/=<>!^_()\[\]|.]+", "", normalized)
+
+
+def _recall_search_formula_similarity(query: Any, value: Any) -> float:
+    query_signature = _recall_search_formula_signature(query)
+    candidate_signature = _recall_search_formula_signature(value)
+    if len(query_signature) < 2 or len(candidate_signature) < 2:
+        return 0.0
+    score = 0.0
+    if query_signature in candidate_signature:
+        score += 95.0 + min(28.0, len(query_signature) * 1.5)
+    query_bigrams = _recall_search_bigrams(query_signature)
+    if query_bigrams:
+        candidate_bigrams = _recall_search_bigrams(candidate_signature)
+        score += len(query_bigrams & candidate_bigrams) / len(query_bigrams) * 56.0
+    return score
+
+
+def _recall_search_contains_formula(value: Any) -> bool:
+    text_value = str(value or "")
+    return bool(
+        re.search(r"\$[^$]+\$|\\[\[(].+?\\[\])]", text_value, flags=re.DOTALL)
+        or re.search(r"[A-Za-z0-9)\]}]\s*(?:=|≠|≤|≥|<|>|\^|_)\s*[A-Za-z0-9({\[]", text_value)
+        or re.search(r"\\(?:frac|sum|prod|int|sqrt|det|ker|rank|dim|lambda|alpha|beta)\b", text_value)
+    )
+
+
+def _recall_search_excerpt(value: Any, query: str, *, limit: int = 210) -> str:
+    text_value = " ".join(str(value or "").split()).strip()
+    if len(text_value) <= limit:
+        return text_value
+    normalized_query = unicodedata.normalize("NFKC", str(query or "")).casefold()
+    terms = sorted(
+        re.findall(r"[a-z0-9]{2,}|[\u3400-\u9fff]{2,}", normalized_query),
+        key=len,
+        reverse=True,
+    )
+    folded_text = unicodedata.normalize("NFKC", text_value).casefold()
+    match_index = -1
+    for term in terms:
+        match_index = folded_text.find(term)
+        if match_index >= 0:
+            break
+    if match_index < 0:
+        match_index = 0
+    start = max(0, match_index - limit // 3)
+    end = min(len(text_value), start + limit)
+    start = max(0, end - limit)
+    return f"{'…' if start else ''}{text_value[start:end].strip()}{'…' if end < len(text_value) else ''}"
+
+
+def _recall_search_resolved_page(
+    evidence: Any,
+    canonical_pages: Dict[int, str],
+    preferred_image_index: int,
+) -> int:
+    """Correct an obviously stale page id without request-time fuzzy localization."""
+    canonical_evidence = canonicalize_source_text(literal_source_evidence(evidence))
+    if len(canonical_evidence) < 3:
+        return preferred_image_index
+    exact_matches = [
+        image_index
+        for image_index, canonical_page in canonical_pages.items()
+        if canonical_evidence in canonical_page
+    ]
+    return exact_matches[0] if len(exact_matches) == 1 else preferred_image_index
 
 users_table = Table(
     "users",
@@ -231,12 +409,23 @@ study_plan_videos_table = Table(
 )
 Index("ix_study_plan_videos_subject_sequence", study_plan_videos_table.c.subject, study_plan_videos_table.c.sequence)
 
+study_plan_video_overrides_table = Table(
+    "study_plan_video_overrides",
+    metadata,
+    Column("video_id", Integer, primary_key=True),
+    Column("youtube_video_id", String(64)),
+    Column("youtube_playlist_id", String(128)),
+    Column("youtube_url", Text),
+    Column("updated_at", String(64), nullable=False),
+)
+
 study_plan_video_records_table = Table(
     "study_plan_video_records",
     metadata,
     Column("video_id", Integer, primary_key=True),
     Column("watched_seconds", Float, nullable=False, default=0),
     Column("playback_seconds", Float, nullable=False, default=0),
+    Column("progress_version", Integer, nullable=False, default=0),
     Column("notes", Text),
     Column("updated_at", String(64), nullable=False),
 )
@@ -275,6 +464,10 @@ study_recall_sessions_table = Table(
     Column("image_filenames", Text, nullable=False),
     Column("summary", Text, nullable=False),
     Column("key_concepts", Text, nullable=False),
+    Column("source_transcription", Text),
+    Column("uncertain_fragments", Text),
+    Column("correction_records", Text),
+    Column("organization_mode", String(32)),
     Column("quiz_data", Text, nullable=False),
     Column("last_score_percent", Float),
     Column("last_self_rating", Integer),
@@ -326,6 +519,9 @@ class PersistentStorage:
             pool_pre_ping=True,
         )
         self._lock = threading.Lock()
+        self._recall_search_cache_lock = threading.Lock()
+        self._recall_search_cache_signature: tuple[tuple[int, str], ...] = ()
+        self._recall_search_cache_documents: List[Dict[str, Any]] = []
         metadata.create_all(self._engine)
         self._ensure_schema()
 
@@ -367,11 +563,34 @@ class PersistentStorage:
                             "WHERE playback_seconds IS NULL"
                         )
                     )
+            if "progress_version" not in video_record_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE study_plan_video_records "
+                            "ADD COLUMN progress_version INTEGER NOT NULL DEFAULT 0"
+                        )
+                    )
         if inspector.has_table("study_recall_card_reviews"):
             card_review_columns = {col["name"] for col in inspector.get_columns("study_recall_card_reviews")}
             if "ideal_review_at" not in card_review_columns:
                 with self._lock, self._engine.begin() as conn:
                     conn.execute(text("ALTER TABLE study_recall_card_reviews ADD COLUMN ideal_review_at VARCHAR(10)"))
+        if inspector.has_table("study_recall_sessions"):
+            recall_columns = {col["name"] for col in inspector.get_columns("study_recall_sessions")}
+            missing_recall_columns = []
+            if "source_transcription" not in recall_columns:
+                missing_recall_columns.append(("source_transcription", "TEXT"))
+            if "uncertain_fragments" not in recall_columns:
+                missing_recall_columns.append(("uncertain_fragments", "TEXT"))
+            if "correction_records" not in recall_columns:
+                missing_recall_columns.append(("correction_records", "TEXT"))
+            if "organization_mode" not in recall_columns:
+                missing_recall_columns.append(("organization_mode", "VARCHAR(32)"))
+            if missing_recall_columns:
+                with self._lock, self._engine.begin() as conn:
+                    for column_name, column_type in missing_recall_columns:
+                        conn.execute(text(f"ALTER TABLE study_recall_sessions ADD COLUMN {column_name} {column_type}"))
         if inspector.has_table("study_plan_videos"):
             study_video_columns = {col["name"] for col in inspector.get_columns("study_plan_videos")}
             missing_study_video_columns = []
@@ -712,13 +931,21 @@ class PersistentStorage:
                     study_plan_videos_table.c.youtube_url,
                     study_plan_video_records_table.c.watched_seconds,
                     study_plan_video_records_table.c.playback_seconds,
+                    study_plan_video_records_table.c.progress_version,
                     study_plan_video_records_table.c.notes,
                     study_plan_video_records_table.c.updated_at,
+                    study_plan_video_overrides_table.c.video_id.label("override_video_id"),
+                    study_plan_video_overrides_table.c.youtube_video_id.label("override_youtube_video_id"),
+                    study_plan_video_overrides_table.c.youtube_playlist_id.label("override_youtube_playlist_id"),
+                    study_plan_video_overrides_table.c.youtube_url.label("override_youtube_url"),
                 )
                 .select_from(
                     study_plan_videos_table.outerjoin(
                         study_plan_video_records_table,
                         study_plan_videos_table.c.id == study_plan_video_records_table.c.video_id,
+                    ).outerjoin(
+                        study_plan_video_overrides_table,
+                        study_plan_videos_table.c.id == study_plan_video_overrides_table.c.video_id,
                     )
                 )
                 .order_by(study_plan_videos_table.c.subject, study_plan_videos_table.c.sequence)
@@ -739,14 +966,27 @@ class PersistentStorage:
                 "sequence": int(row.sequence),
                 "title": row.title,
                 "duration_seconds": float(row.duration_seconds or 0),
-                "youtube_video_id": row.youtube_video_id or "",
-                "youtube_playlist_id": row.youtube_playlist_id or "",
-                "youtube_url": row.youtube_url or "",
+                "youtube_video_id": (
+                    (row.override_youtube_video_id or "")
+                    if row.override_video_id is not None
+                    else (row.youtube_video_id or "")
+                ),
+                "youtube_playlist_id": (
+                    (row.override_youtube_playlist_id or "")
+                    if row.override_video_id is not None
+                    else (row.youtube_playlist_id or "")
+                ),
+                "youtube_url": (
+                    (row.override_youtube_url or "")
+                    if row.override_video_id is not None
+                    else (row.youtube_url or "")
+                ),
                 "watched_seconds": max(0.0, float(row.watched_seconds or 0)),
                 "playback_seconds": min(
                     max(0.0, float(row.playback_seconds or 0)),
                     max(0.0, float(row.duration_seconds or 0)),
                 ),
+                "progress_version": max(0, int(row.progress_version or 0)),
                 "notes": row.notes or "",
                 "updated_at": _to_taipei(row.updated_at),
                 "updated_at_iso": row.updated_at or "",
@@ -778,14 +1018,17 @@ class PersistentStorage:
                 select(
                     study_plan_video_records_table.c.video_id,
                     study_plan_video_records_table.c.watched_seconds,
+                    study_plan_video_records_table.c.progress_version,
                 ).where(
                     study_plan_video_records_table.c.video_id == video_id
                 )
             ).fetchone()
             previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
+            progress_version = max(0, int(existing.progress_version or 0)) + 1 if existing else 1
             values = {
                 "watched_seconds": normalized_seconds,
                 "playback_seconds": normalized_seconds,
+                "progress_version": progress_version,
                 "notes": notes,
                 "updated_at": now,
             }
@@ -809,7 +1052,13 @@ class PersistentStorage:
             self._record_study_plan_daily_snapshot_locked(conn, now=now)
         return True
 
-    def update_study_plan_video_progress(self, *, video_id: int, watched_seconds: float) -> Optional[Dict[str, Any]]:
+    def update_study_plan_video_progress(
+        self,
+        *,
+        video_id: int,
+        watched_seconds: float,
+        expected_version: int,
+    ) -> Optional[Dict[str, Any]]:
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
             video = conn.execute(
@@ -824,6 +1073,8 @@ class PersistentStorage:
             existing = conn.execute(
                 select(
                     study_plan_video_records_table.c.watched_seconds,
+                    study_plan_video_records_table.c.playback_seconds,
+                    study_plan_video_records_table.c.progress_version,
                     study_plan_video_records_table.c.notes,
                 ).where(study_plan_video_records_table.c.video_id == video_id)
             ).fetchone()
@@ -834,21 +1085,56 @@ class PersistentStorage:
             current_seconds = max(0.0, min(raw_seconds, duration_seconds))
             notes = existing.notes if existing else ""
             previous_watched_seconds = float(existing.watched_seconds or 0) if existing else 0.0
+            previous_playback_seconds = float(existing.playback_seconds or 0) if existing else 0.0
+            current_version = max(0, int(existing.progress_version or 0)) if existing else 0
+
+            def _progress_result(
+                saved_seconds: float,
+                playback_seconds: float,
+                progress_version: int,
+                *,
+                stale: bool,
+            ) -> Dict[str, Any]:
+                return {
+                    "video_id": int(video.id),
+                    "duration_seconds": duration_seconds,
+                    "watched_seconds": saved_seconds,
+                    "playback_seconds": playback_seconds,
+                    "progress_version": progress_version,
+                    "stale": stale,
+                    "completion": min(
+                        100.0,
+                        (saved_seconds / duration_seconds * 100) if duration_seconds else 0.0,
+                    ),
+                    "youtube_video_id": video.youtube_video_id or "",
+                }
+
+            # Reject delayed requests and stale tabs instead of letting them replace the
+            # latest saved position. The caller adopts this authoritative version.
+            if max(0, int(expected_version)) != current_version:
+                return _progress_result(
+                    previous_watched_seconds,
+                    previous_playback_seconds,
+                    current_version,
+                    stale=True,
+                )
+
             # Progress follows the last saved player position. Seeking backward is a
             # correction, not a replay event that should preserve a historical maximum.
             normalized_seconds = current_seconds
             if existing and abs(normalized_seconds - previous_watched_seconds) < 0.01:
-                return {
-                    "video_id": int(video.id),
-                    "duration_seconds": duration_seconds,
-                    "watched_seconds": previous_watched_seconds,
-                    "playback_seconds": current_seconds,
-                    "completion": min(100.0, (previous_watched_seconds / duration_seconds * 100) if duration_seconds else 0.0),
-                    "youtube_video_id": video.youtube_video_id or "",
-                }
+                return _progress_result(
+                    previous_watched_seconds,
+                    current_seconds,
+                    current_version,
+                    stale=False,
+                )
+
+            next_version = current_version + 1
             values = {
                 "watched_seconds": normalized_seconds,
                 "playback_seconds": current_seconds,
+                "progress_version": next_version,
                 "notes": notes or "",
                 "updated_at": now,
             }
@@ -868,14 +1154,12 @@ class PersistentStorage:
                 now=now,
             )
             self._record_study_plan_daily_snapshot_locked(conn, now=now)
-            return {
-                "video_id": int(video.id),
-                "duration_seconds": duration_seconds,
-                "watched_seconds": normalized_seconds,
-                "playback_seconds": current_seconds,
-                "completion": min(100.0, (normalized_seconds / duration_seconds * 100) if duration_seconds else 0.0),
-                "youtube_video_id": video.youtube_video_id or "",
-            }
+            return _progress_result(
+                normalized_seconds,
+                current_seconds,
+                next_version,
+                stale=False,
+            )
 
     def delete_study_plan_video_record(self, video_id: int) -> bool:
         now = self._now_iso()
@@ -926,6 +1210,45 @@ class PersistentStorage:
             for row in rows
         ]
 
+    def update_study_plan_video_youtube(
+        self,
+        *,
+        video_id: int,
+        youtube_video_id: str,
+        youtube_playlist_id: str,
+        youtube_url: str,
+    ) -> bool:
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            exists = conn.execute(
+                select(study_plan_videos_table.c.id)
+                .where(study_plan_videos_table.c.id == int(video_id))
+            ).fetchone()
+            if not exists:
+                return False
+            values = {
+                "youtube_video_id": str(youtube_video_id or "").strip() or None,
+                "youtube_playlist_id": str(youtube_playlist_id or "").strip() or None,
+                "youtube_url": str(youtube_url or "").strip() or None,
+                "updated_at": now,
+            }
+            conn.execute(
+                update(study_plan_video_overrides_table)
+                .where(study_plan_video_overrides_table.c.video_id == int(video_id))
+                .values(**values)
+            )
+            if not conn.execute(
+                select(study_plan_video_overrides_table.c.video_id)
+                .where(study_plan_video_overrides_table.c.video_id == int(video_id))
+            ).fetchone():
+                conn.execute(
+                    insert(study_plan_video_overrides_table).values(
+                        video_id=int(video_id),
+                        **values,
+                    )
+                )
+            return True
+
     def list_study_plan_activity_events(
         self,
         *,
@@ -959,14 +1282,14 @@ class PersistentStorage:
             )
         )
         if start_day:
-            stmt = stmt.where(study_plan_activity_events_table.c.updated_at >= f"{start_day}T00:00:00")
+            stmt = stmt.where(study_plan_activity_events_table.c.day >= start_day)
         if end_day:
-            try:
-                end_exclusive = (datetime.strptime(end_day, "%Y-%m-%d") + timedelta(days=1)).date().isoformat()
-            except ValueError:
-                end_exclusive = end_day
-            stmt = stmt.where(study_plan_activity_events_table.c.updated_at < f"{end_exclusive}T00:00:00")
-        stmt = stmt.order_by(study_plan_activity_events_table.c.updated_at, study_plan_activity_events_table.c.id)
+            stmt = stmt.where(study_plan_activity_events_table.c.day <= end_day)
+        stmt = stmt.order_by(
+            study_plan_activity_events_table.c.day,
+            study_plan_activity_events_table.c.updated_at,
+            study_plan_activity_events_table.c.id,
+        )
         with self._lock, self._engine.connect() as conn:
             rows = conn.execute(stmt).fetchall()
 
@@ -1023,7 +1346,7 @@ class PersistentStorage:
 
     @staticmethod
     def _recall_interval_days(rating: int, previous_rating: Optional[int], previous_interval: int) -> int:
-        """A confidence-based spaced-repetition interval with a short reset for weak recall."""
+        """Legacy fallback used only when an older FSRS state cannot be reconstructed."""
         rating = max(1, min(int(rating), 5))
         if rating == 1:
             return 1
@@ -1035,6 +1358,88 @@ class PersistentStorage:
         minimum = {3: 3, 4: 5, 5: 7}[rating]
         return min(120, max(minimum, int(round(max(1, previous_interval) * multiplier))))
 
+    @staticmethod
+    def _recall_fsrs_rating(rating: int) -> FSRSRating:
+        normalized = max(1, min(int(rating), 5))
+        return {
+            1: FSRSRating.Again,
+            2: FSRSRating.Again,
+            3: FSRSRating.Hard,
+            4: FSRSRating.Good,
+            5: FSRSRating.Easy,
+        }[normalized]
+
+    @classmethod
+    def _recall_fsrs_card(
+        cls,
+        *,
+        session_id: int,
+        concept_index: int,
+        concept: Dict[str, Any],
+        history: List[Any],
+    ) -> FSRSCard:
+        stored_state = concept.get("fsrs_card") if isinstance(concept, dict) else None
+        if stored_state:
+            try:
+                serialized = stored_state if isinstance(stored_state, str) else json.dumps(stored_state)
+                return FSRSCard.from_json(serialized)
+            except (TypeError, ValueError, KeyError):
+                pass
+        card = FSRSCard(card_id=max(1, session_id * 1000 + concept_index + 1))
+        for row in sorted(history, key=lambda item: (str(item.created_at), int(item.id))):
+            try:
+                reviewed_at = datetime.fromisoformat(str(row.created_at).replace("Z", "+00:00"))
+                if reviewed_at.tzinfo is None:
+                    reviewed_at = reviewed_at.replace(tzinfo=timezone.utc)
+                else:
+                    reviewed_at = reviewed_at.astimezone(timezone.utc)
+                card, _review_log = RECALL_FSRS_SCHEDULER.review_card(
+                    card,
+                    cls._recall_fsrs_rating(int(row.rating)),
+                    reviewed_at,
+                )
+            except (TypeError, ValueError):
+                continue
+        return card
+
+    @staticmethod
+    def _balanced_recall_date(
+        *,
+        review_day,
+        ideal_day,
+        interval_days: int,
+        rating: int,
+        scheduled_loads: Dict[str, int],
+        daily_capacity: int = RECALL_DAILY_CAPACITY,
+    ):
+        if rating <= 1 or interval_days <= 1:
+            candidates = [ideal_day]
+        else:
+            flexibility = min(12, max(1, int(round(interval_days * (0.08 if rating <= 3 else 0.15)))))
+            offsets = [0]
+            for distance in range(1, flexibility + 1):
+                offsets.extend((distance, -distance))
+            candidates = [
+                ideal_day + timedelta(days=offset)
+                for offset in offsets
+                if ideal_day + timedelta(days=offset) > review_day
+            ]
+        available = [
+            candidate
+            for candidate in candidates
+            if scheduled_loads.get(candidate.isoformat(), 0) < daily_capacity
+        ]
+        pool = available or candidates
+        return min(
+            pool,
+            key=lambda candidate: (
+                scheduled_loads.get(candidate.isoformat(), 0),
+                abs((candidate - ideal_day).days),
+                1 if candidate < ideal_day else 0,
+                candidate,
+            ),
+        )
+
     def create_study_recall_session(
         self,
         *,
@@ -1044,6 +1449,10 @@ class PersistentStorage:
         image_filenames: List[str],
         summary: str,
         key_concepts: List[Dict[str, Any]],
+        source_transcription: Optional[List[Dict[str, Any]]] = None,
+        uncertain_fragments: Optional[List[Dict[str, Any]]] = None,
+        correction_records: Optional[List[Dict[str, Any]]] = None,
+        organization_mode: str = "faithful",
     ) -> int:
         now = self._now_iso()
         values = {
@@ -1053,6 +1462,10 @@ class PersistentStorage:
             "image_filenames": json.dumps(image_filenames, ensure_ascii=False),
             "summary": summary,
             "key_concepts": json.dumps(key_concepts, ensure_ascii=False),
+            "source_transcription": json.dumps(source_transcription or [], ensure_ascii=False),
+            "uncertain_fragments": json.dumps(uncertain_fragments or [], ensure_ascii=False),
+            "correction_records": json.dumps(correction_records or [], ensure_ascii=False),
+            "organization_mode": str(organization_mode or "faithful")[:32],
             "quiz_data": "[]",
             "review_count": 0,
             "created_at": now,
@@ -1104,6 +1517,18 @@ class PersistentStorage:
             conn.execute(delete(study_recall_sessions_table).where(study_recall_sessions_table.c.id == session_id))
         return True
 
+    def rename_study_recall_session(self, session_id: int, title: str) -> bool:
+        prepared_title = " ".join(str(title or "").split()).strip()[:120]
+        if not prepared_title:
+            return False
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                update(study_recall_sessions_table)
+                .where(study_recall_sessions_table.c.id == int(session_id))
+                .values(title=prepared_title, updated_at=self._now_iso())
+            )
+            return int(result.rowcount or 0) > 0
+
     def replace_study_recall_concepts_bulk(self, concepts_by_session: Dict[int, List[Dict[str, Any]]]) -> int:
         if not concepts_by_session:
             return 0
@@ -1121,6 +1546,27 @@ class PersistentStorage:
                 )
                 updated += int(result.rowcount or 0)
         return updated
+
+    def replace_study_recall_localization(
+        self,
+        session_id: int,
+        *,
+        key_concepts: List[Dict[str, Any]],
+        source_transcription: List[Dict[str, Any]],
+    ) -> bool:
+        """Atomically persist bbox results and their reusable page OCR index."""
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                update(study_recall_sessions_table)
+                .where(study_recall_sessions_table.c.id == int(session_id))
+                .values(
+                    key_concepts=json.dumps(key_concepts, ensure_ascii=False),
+                    source_transcription=json.dumps(source_transcription, ensure_ascii=False),
+                    updated_at=now,
+                )
+            )
+        return bool(result.rowcount)
 
     def get_study_recall_session(self, session_id: int) -> Optional[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
@@ -1142,6 +1588,10 @@ class PersistentStorage:
         item = dict(row._mapping)
         item["image_filenames"] = self._decode_json_list(item.get("image_filenames"))
         item["key_concepts"] = self._decode_json_list(item.get("key_concepts"))
+        item["source_transcription"] = self._decode_json_list(item.get("source_transcription"))
+        item["uncertain_fragments"] = self._decode_json_list(item.get("uncertain_fragments"))
+        item["correction_records"] = self._decode_json_list(item.get("correction_records"))
+        item["organization_mode"] = str(item.get("organization_mode") or "legacy")
         item["questions"] = self._decode_json_list(item.get("quiz_data"))
         card_history: Dict[int, List[Dict[str, Any]]] = {}
         for review in card_review_rows:
@@ -1178,6 +1628,410 @@ class PersistentStorage:
         ]
         return item
 
+    def _study_recall_search_documents(self) -> List[Dict[str, Any]]:
+        with self._lock, self._engine.connect() as conn:
+            signature_rows = conn.execute(
+                select(
+                    study_recall_sessions_table.c.id,
+                    study_recall_sessions_table.c.updated_at,
+                ).order_by(study_recall_sessions_table.c.id)
+            ).fetchall()
+        signature = tuple(
+            (int(row.id), str(row.updated_at or ""))
+            for row in signature_rows
+        )
+        with self._recall_search_cache_lock:
+            if signature == self._recall_search_cache_signature:
+                return self._recall_search_cache_documents
+
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    study_recall_sessions_table.c.id,
+                    study_recall_sessions_table.c.study_date,
+                    study_recall_sessions_table.c.subject,
+                    study_recall_sessions_table.c.title,
+                    study_recall_sessions_table.c.summary,
+                    study_recall_sessions_table.c.image_filenames,
+                    study_recall_sessions_table.c.source_transcription,
+                    study_recall_sessions_table.c.key_concepts,
+                    study_recall_sessions_table.c.created_at,
+                    study_recall_sessions_table.c.updated_at,
+                ).order_by(study_recall_sessions_table.c.created_at.desc())
+            ).fetchall()
+
+        documents: List[Dict[str, Any]] = []
+        concept_fields = (
+            "concept",
+            "topic",
+            "note_topic",
+            "recall_cue",
+            "core_summary",
+            "explanation",
+            "simple_example",
+            "example_problem",
+            "example_method",
+            "common_confusion",
+            "memory_hint",
+        )
+        for row in rows:
+            image_filenames = [
+                str(filename)
+                for filename in self._decode_json_list(row.image_filenames)
+                if str(filename or "").strip()
+            ]
+            if not image_filenames:
+                continue
+            source_pages = self._decode_json_list(row.source_transcription)
+            transcriptions: Dict[int, str] = {}
+            for page in source_pages:
+                if not isinstance(page, dict):
+                    continue
+                try:
+                    image_index = int(page.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= image_index <= len(image_filenames):
+                    indexed_texts = [
+                        str(line.get("text") or "").strip()
+                        for line in (
+                            (page.get("localization_index") or {}).get("lines") or []
+                        )
+                        if isinstance(line, dict)
+                        and str(line.get("text") or "").strip()
+                    ]
+                    transcription = (
+                        "\n\n".join(indexed_texts)
+                        if indexed_texts
+                        else str(page.get("transcription") or "").strip()
+                    )
+                    transcriptions[image_index] = transcription
+            canonical_pages = {
+                image_index: canonicalize_source_text(transcription)
+                for image_index, transcription in transcriptions.items()
+                if transcription
+            }
+
+            cards_by_page: Dict[int, List[Dict[str, Any]]] = {}
+            for concept_index, concept in enumerate(self._decode_json_list(row.key_concepts)):
+                if not isinstance(concept, dict):
+                    continue
+                concept_title = str(concept.get("concept") or "").strip()
+                topic = str(concept.get("topic") or concept.get("note_topic") or "").strip()
+                card_type = "example" if concept.get("card_type") == "example" else "concept"
+                detail_parts = [str(concept.get(field) or "") for field in concept_fields]
+                search_keywords = concept.get("search_keywords")
+                keyword_text = ""
+                if isinstance(search_keywords, list):
+                    keyword_text = " ".join(str(keyword or "") for keyword in search_keywords)
+                    detail_parts.append(keyword_text)
+                reasoning_steps = concept.get("reasoning_steps")
+                if isinstance(reasoning_steps, list):
+                    detail_parts.extend(str(step or "") for step in reasoning_steps)
+                card_text = " ".join(detail_parts)
+                preview_text = next(
+                    (
+                        str(concept.get(field) or "").strip()
+                        for field in (
+                            "core_summary",
+                            "example_method",
+                            "explanation",
+                            "simple_example",
+                            "example_problem",
+                            "recall_cue",
+                        )
+                        if str(concept.get(field) or "").strip()
+                    ),
+                    concept_title,
+                )
+                linked_to_page = False
+                for source_ref in concept.get("source_refs") or []:
+                    if not isinstance(source_ref, dict):
+                        continue
+                    try:
+                        image_index = int(source_ref.get("image_index") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if not (1 <= image_index <= len(image_filenames)):
+                        continue
+                    linked_to_page = True
+                    evidence = " ".join(str(source_ref.get("evidence") or "").split()).strip()
+                    if evidence and canonical_pages:
+                        image_index = _recall_search_resolved_page(
+                            evidence,
+                            canonical_pages,
+                            image_index,
+                        )
+                    bbox = source_ref.get("bbox")
+                    if isinstance(bbox, dict):
+                        try:
+                            bbox_image_index = int(bbox.get("source_image_index") or 0)
+                        except (TypeError, ValueError):
+                            bbox_image_index = 0
+                        if bbox_image_index and bbox_image_index != image_index:
+                            bbox = None
+                    cards_by_page.setdefault(image_index, []).append(
+                        {
+                            "concept_index": concept_index,
+                            "concept_title": concept_title,
+                            "topic": topic,
+                            "card_type": card_type,
+                            "card_text": card_text,
+                            "preview_text": preview_text,
+                            "keyword_text": keyword_text,
+                            "evidence": evidence,
+                            "bbox": bbox,
+                            "has_formula": _recall_search_contains_formula(
+                                " ".join((card_text, evidence))
+                            ),
+                        }
+                    )
+                if not linked_to_page:
+                    if transcriptions:
+                        page_index = max(
+                            transcriptions,
+                            key=lambda candidate_index: _recall_search_similarity(
+                                concept_title or card_text,
+                                transcriptions[candidate_index],
+                            ),
+                        )
+                        fallback_evidence = transcriptions.get(page_index, "")
+                    else:
+                        page_index = 1
+                        fallback_evidence = ""
+                    cards_by_page.setdefault(page_index, []).append(
+                        {
+                            "concept_index": concept_index,
+                            "concept_title": concept_title,
+                            "topic": topic,
+                            "card_type": card_type,
+                            "card_text": card_text,
+                            "preview_text": preview_text,
+                            "keyword_text": keyword_text,
+                            "evidence": fallback_evidence,
+                            "bbox": None,
+                            "has_formula": _recall_search_contains_formula(card_text),
+                        }
+                    )
+
+            metadata_text = " ".join(
+                str(value or "")
+                for value in (row.title, row.subject, row.summary)
+            )
+            page_indexes = sorted(set(transcriptions) | set(cards_by_page))
+            if not page_indexes:
+                page_indexes = [1]
+            for image_index in page_indexes:
+                if not (1 <= image_index <= len(image_filenames)):
+                    continue
+                transcription = str(transcriptions.get(image_index, ""))
+                linked_cards = list(cards_by_page.get(image_index, []))
+                documents.append(
+                    {
+                        "session_id": int(row.id),
+                        "study_date": str(row.study_date or ""),
+                        "subject": str(row.subject or ""),
+                        "title": str(row.title or ""),
+                        "summary": str(row.summary or ""),
+                        "metadata_text": metadata_text,
+                        "image_index": image_index,
+                        "image_filename": image_filenames[image_index - 1],
+                        "transcription": transcription,
+                        "cards": linked_cards,
+                        "has_formula": _recall_search_contains_formula(transcription)
+                        or any(bool(card.get("has_formula")) for card in linked_cards),
+                        "created_at": str(row.created_at or ""),
+                        "updated_at": str(row.updated_at or ""),
+                    }
+                )
+
+        with self._recall_search_cache_lock:
+            self._recall_search_cache_signature = signature
+            self._recall_search_cache_documents = documents
+        return documents
+
+    def search_study_recall_pages(
+        self,
+        *,
+        query: str,
+        subject: Optional[str] = None,
+        session_id: Optional[int] = None,
+        content_type: str = "all",
+        sort: str = "relevance",
+        limit: int = 16,
+    ) -> List[Dict[str, Any]]:
+        search_query = " ".join(str(query or "").split()).strip()[:160]
+        subject_filter = str(subject or "").strip()
+        try:
+            session_filter = max(0, int(session_id or 0))
+        except (TypeError, ValueError):
+            session_filter = 0
+        type_filter = str(content_type or "all").strip().lower()
+        if type_filter not in {"all", "source", "formula", "example", "concept"}:
+            type_filter = "all"
+        sort_mode = "recent" if str(sort or "").strip().lower() == "recent" else "relevance"
+        if not search_query:
+            return []
+
+        results: List[Dict[str, Any]] = []
+        for document in self._study_recall_search_documents():
+            if subject_filter and document["subject"] != subject_filter:
+                continue
+            if session_filter and int(document["session_id"]) != session_filter:
+                continue
+            if type_filter == "formula" and not document["has_formula"]:
+                continue
+
+            transcription = str(document["transcription"] or "")
+            transcription_score = _recall_search_similarity(search_query, transcription)
+            transcription_formula_score = (
+                _recall_search_formula_similarity(search_query, transcription)
+                if document["has_formula"]
+                else 0.0
+            )
+            card_candidates: List[Dict[str, Any]] = []
+            for card in document["cards"]:
+                if type_filter in {"example", "concept"} and card.get("card_type") != type_filter:
+                    continue
+                if type_filter == "formula" and not card.get("has_formula"):
+                    continue
+                title_score = _recall_search_similarity(search_query, card.get("concept_title"))
+                topic_score = _recall_search_similarity(search_query, card.get("topic"))
+                body_score = _recall_search_similarity(search_query, card.get("card_text"))
+                keyword_score = _recall_search_similarity(search_query, card.get("keyword_text"))
+                evidence_score = _recall_search_similarity(search_query, card.get("evidence"))
+                formula_score = (
+                    _recall_search_formula_similarity(
+                        search_query,
+                        " ".join((str(card.get("card_text") or ""), str(card.get("evidence") or ""))),
+                    )
+                    if card.get("has_formula")
+                    else 0.0
+                )
+                card_score = max(
+                    title_score * 1.35,
+                    topic_score * 1.12,
+                    body_score,
+                    keyword_score * 1.18,
+                    evidence_score * 1.08,
+                    formula_score * 1.12,
+                )
+                card_candidates.append(
+                    {
+                        **card,
+                        "card_score": card_score,
+                        "evidence_score": evidence_score,
+                        "formula_score": formula_score,
+                    }
+                )
+
+            best_card = max(
+                card_candidates,
+                key=lambda item: (
+                    float(item["card_score"]),
+                    float(item["evidence_score"]),
+                ),
+                default=None,
+            )
+            card_score = float(best_card["card_score"]) if best_card else 0.0
+            metadata_score = _recall_search_similarity(search_query, document["metadata_text"])
+            if type_filter == "source":
+                direct_score = max(transcription_score, transcription_formula_score)
+            elif type_filter in {"example", "concept"}:
+                direct_score = card_score
+            else:
+                direct_score = max(
+                    transcription_score,
+                    transcription_formula_score,
+                    card_score,
+                )
+            if direct_score < 24.0:
+                if (
+                    type_filter != "all"
+                    or metadata_score < 24.0
+                    or int(document["image_index"]) != 1
+                ):
+                    continue
+                direct_score = metadata_score * 0.72
+            rank_score = direct_score + min(metadata_score * 0.18, 34.0)
+
+            best_bbox = best_card.get("bbox") if best_card else None
+            if best_card and not best_bbox:
+                best_bbox = next(
+                    (
+                        candidate.get("bbox")
+                        for candidate in card_candidates
+                        if candidate.get("bbox")
+                        and candidate.get("concept_index") == best_card.get("concept_index")
+                    ),
+                    None,
+                )
+            if (
+                transcription_formula_score >= max(70.0, card_score * 1.05)
+                or (best_card and float(best_card.get("formula_score") or 0) >= 75.0)
+            ):
+                match_reason = "公式與符號相符"
+            elif transcription_score >= max(70.0, card_score * 1.08):
+                match_reason = "原始筆記文字相符"
+            elif best_card and float(best_card["evidence_score"]) >= 55.0:
+                match_reason = "重點卡與原文相符"
+            elif best_card and best_card.get("card_type") == "example":
+                match_reason = "相關例題與解法"
+            elif best_card:
+                match_reason = "相關重點卡"
+            else:
+                match_reason = "筆記主題相符"
+            excerpt_source = transcription
+            if best_card and (
+                not excerpt_source
+                or float(best_card["card_score"]) >= transcription_score * 0.82
+            ):
+                excerpt_source = (
+                    best_card.get("preview_text")
+                    or best_card.get("evidence")
+                    or best_card.get("card_text")
+                    or best_card.get("concept_title")
+                    or excerpt_source
+                )
+            results.append(
+                {
+                    "session_id": int(document["session_id"]),
+                    "study_date": document["study_date"],
+                    "subject": document["subject"],
+                    "title": document["title"],
+                    "image_index": int(document["image_index"]),
+                    "image_filename": document["image_filename"],
+                    "concept_index": int(best_card["concept_index"]) if best_card else None,
+                    "concept_title": str(best_card.get("concept_title") or "") if best_card else "",
+                    "topic": str(best_card.get("topic") or "") if best_card else "",
+                    "card_type": str(best_card.get("card_type") or "") if best_card else "",
+                    "evidence": str(best_card.get("evidence") or "") if best_card else "",
+                    "bbox": best_bbox,
+                    "excerpt": _recall_search_excerpt(excerpt_source, search_query),
+                    "match_reason": match_reason,
+                    "has_formula": bool(document["has_formula"]),
+                    "rank_score": round(rank_score, 4),
+                    "created_at": document["created_at"],
+                }
+            )
+        if sort_mode == "recent":
+            results.sort(
+                key=lambda item: (
+                    str(item["created_at"]),
+                    float(item["rank_score"]),
+                ),
+                reverse=True,
+            )
+        else:
+            results.sort(
+                key=lambda item: (
+                    float(item["rank_score"]),
+                    str(item["created_at"]),
+                ),
+                reverse=True,
+            )
+        return results[:max(1, min(int(limit), 24))]
+
     def list_due_study_recall_cards(
         self,
         *,
@@ -1186,10 +2040,25 @@ class PersistentStorage:
         concept_filter: Optional[Callable[[Any], bool]] = None,
     ) -> List[Dict[str, Any]]:
         due_cards: List[Dict[str, Any]] = []
+        reviewed_today: set[tuple[int, int]] = set()
+        full_sessions: List[Dict[str, Any]] = []
         for session in self.list_study_recall_sessions(limit=None):
             full_session = self.get_study_recall_session(int(session["id"]))
             if not full_session or str(full_session.get("study_date") or "") > today:
                 continue
+            full_sessions.append(full_session)
+            for index, concept in enumerate(full_session.get("key_concepts") or []):
+                if not isinstance(concept, dict):
+                    continue
+                if any(
+                    self._study_plan_business_day_from_timestamp(str(entry.get("created_at") or "")) == today
+                    for entry in (concept.get("review") or {}).get("history") or []
+                ):
+                    reviewed_today.add((int(full_session["id"]), index))
+        daily_limit = max(0, min(max(1, int(limit)), RECALL_DAILY_CAPACITY) - len(reviewed_today))
+        if daily_limit <= 0:
+            return []
+        for full_session in full_sessions:
             for index, concept in enumerate(full_session.get("key_concepts") or []):
                 if not isinstance(concept, dict):
                     continue
@@ -1211,7 +2080,7 @@ class PersistentStorage:
                     }
                 )
         due_cards.sort(key=lambda item: (item["next_review_at"] or "0000-00-00", item["session_title"], item["concept_index"]))
-        return due_cards[: max(1, min(int(limit), 60))]
+        return due_cards[:daily_limit]
 
     def list_study_recall_schedule(
         self,
@@ -1240,6 +2109,14 @@ class PersistentStorage:
             latest_by_card.setdefault((int(row.session_id), int(row.concept_index)), row)
         first_schedule_day = schedule_days[0].isoformat()
         last_schedule_day = schedule_days[-1].isoformat()
+        completed_today = len(
+            {
+                (int(row.session_id), int(row.concept_index))
+                for row in rows
+                if self._study_plan_business_day_from_timestamp(str(row.created_at or "")) == first_schedule_day
+            }
+        )
+        due_items: List[str] = []
         for session_row in session_rows:
             study_date = str(session_row.study_date or first_schedule_day)
             for concept_index, concept in enumerate(self._decode_json_list(session_row.key_concepts)):
@@ -1252,7 +2129,22 @@ class PersistentStorage:
                 if due_date < first_schedule_day:
                     due_date = first_schedule_day
                 if due_date <= last_schedule_day:
-                    loads[due_date] += 1
+                    due_items.append(due_date)
+        capacities = {
+            day.isoformat(): max(
+                0,
+                int(daily_capacity) - (completed_today if day == schedule_days[0] else 0),
+            )
+            for day in schedule_days
+        }
+        for due_date in sorted(due_items):
+            candidate = datetime.fromisoformat(due_date).date()
+            while candidate.isoformat() <= last_schedule_day:
+                candidate_key = candidate.isoformat()
+                if loads[candidate_key] < capacities[candidate_key]:
+                    loads[candidate_key] += 1
+                    break
+                candidate += timedelta(days=1)
         return [
             {
                 "date": day.isoformat(),
@@ -1265,6 +2157,15 @@ class PersistentStorage:
 
     def record_study_recall_card_ratings(self, *, session_id: int, ratings: Dict[int, int], review_date: str) -> bool:
         now = self._now_iso()
+        review_day = datetime.fromisoformat(review_date).date()
+        review_datetime = datetime(
+            review_day.year,
+            review_day.month,
+            review_day.day,
+            12,
+            tzinfo=timezone.utc,
+        )
+        review_recorded_at = review_datetime.isoformat()
         with self._lock, self._engine.begin() as conn:
             session_row = conn.execute(
                 select(
@@ -1283,9 +2184,11 @@ class PersistentStorage:
                 select(study_recall_card_reviews_table).order_by(study_recall_card_reviews_table.c.id.desc())
             ).fetchall()
             latest_by_index: Dict[int, Any] = {}
+            history_by_card: Dict[tuple[int, int], List[Any]] = {}
             scheduled_loads: Dict[str, int] = {}
             for row in previous_rows:
                 card_key = (int(row.session_id), int(row.concept_index))
+                history_by_card.setdefault(card_key, []).append(row)
                 if card_key in latest_by_index:
                     continue
                 latest_by_index[card_key] = row
@@ -1293,30 +2196,53 @@ class PersistentStorage:
                     scheduled_loads[row.next_review_at] = scheduled_loads.get(row.next_review_at, 0) + 1
             next_dates: List[str] = []
             normalized_ratings: List[int] = []
-            review_day = datetime.fromisoformat(review_date).date()
             ordered_indexes = sorted(ratings, key=lambda index: (int(ratings[index]), index))
-            assignments: Dict[int, tuple[int, str, str]] = {}
+            assignments: Dict[int, tuple[int, str, str, Dict[str, Any]]] = {}
             for index in ordered_indexes:
                 rating = max(1, min(int(ratings[index]), 5))
                 previous = latest_by_index.get((session_id, index))
-                interval_days = self._recall_interval_days(
-                    rating,
-                    int(previous.rating) if previous else None,
-                    int(previous.interval_days) if previous else 0,
-                )
+                try:
+                    fsrs_card = self._recall_fsrs_card(
+                        session_id=session_id,
+                        concept_index=index,
+                        concept=concepts[index],
+                        history=history_by_card.get((session_id, index), []),
+                    )
+                    fsrs_card, _review_log = RECALL_FSRS_SCHEDULER.review_card(
+                        fsrs_card,
+                        self._recall_fsrs_rating(rating),
+                        review_datetime,
+                    )
+                    calculated_interval = max(
+                        1,
+                        int(math.ceil((fsrs_card.due - review_datetime).total_seconds() / 86400)),
+                    )
+                    interval_days = max({1: 1, 2: 2, 3: 3, 4: 4, 5: 7}[rating], calculated_interval)
+                    fsrs_state = json.loads(fsrs_card.to_json())
+                except (TypeError, ValueError, KeyError, OverflowError):
+                    interval_days = self._recall_interval_days(
+                        rating,
+                        int(previous.rating) if previous else None,
+                        int(previous.interval_days) if previous else 0,
+                    )
+                    fsrs_state = {}
                 ideal_review_at = (review_day + timedelta(days=interval_days)).isoformat()
-                candidate_day = datetime.fromisoformat(ideal_review_at).date()
-                for _offset in range(61):
-                    candidate = candidate_day.isoformat()
-                    if scheduled_loads.get(candidate, 0) < 18:
-                        break
-                    candidate_day += timedelta(days=1)
+                ideal_day = datetime.fromisoformat(ideal_review_at).date()
+                candidate_day = self._balanced_recall_date(
+                    review_day=review_day,
+                    ideal_day=ideal_day,
+                    interval_days=interval_days,
+                    rating=rating,
+                    scheduled_loads=scheduled_loads,
+                )
                 next_review_at = candidate_day.isoformat()
                 scheduled_loads[next_review_at] = scheduled_loads.get(next_review_at, 0) + 1
-                assignments[index] = (interval_days, ideal_review_at, next_review_at)
+                assignments[index] = (interval_days, ideal_review_at, next_review_at, fsrs_state)
             for index in ordered_indexes:
                 rating = max(1, min(int(ratings[index]), 5))
-                interval_days, ideal_review_at, next_review_at = assignments[index]
+                interval_days, ideal_review_at, next_review_at, fsrs_state = assignments[index]
+                if fsrs_state:
+                    concepts[index]["fsrs_card"] = fsrs_state
                 conn.execute(
                     insert(study_recall_card_reviews_table).values(
                         session_id=session_id,
@@ -1325,7 +2251,7 @@ class PersistentStorage:
                         interval_days=interval_days,
                         ideal_review_at=ideal_review_at,
                         next_review_at=next_review_at,
-                        created_at=now,
+                        created_at=review_recorded_at,
                     )
                 )
                 next_dates.append(next_review_at)
@@ -1344,6 +2270,7 @@ class PersistentStorage:
                     last_self_rating=int(round(sum(normalized_ratings) / len(normalized_ratings))),
                     next_review_at=min(next_dates),
                     review_count=int(session_row.review_count or 0) + 1,
+                    key_concepts=json.dumps(concepts, ensure_ascii=False),
                     updated_at=now,
                 )
             )
@@ -1363,6 +2290,7 @@ class PersistentStorage:
                 "title": row.title,
                 "summary": row.summary,
                 "key_concepts": self._decode_json_list(row.key_concepts),
+                "organization_mode": str(row.organization_mode or "legacy"),
                 "last_score_percent": round(float(row.last_score_percent or 0), 1) if row.last_score_percent is not None else None,
                 "last_self_rating": int(row.last_self_rating or 0) if row.last_self_rating is not None else None,
                 "next_review_at": row.next_review_at,
@@ -2037,8 +2965,13 @@ class PersistentStorage:
         data = json.dumps(payload, ensure_ascii=False)
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
-            conn.execute(delete(traffic_state_table).where(traffic_state_table.c.id == 1))
-            conn.execute(traffic_state_table.insert().values(id=1, payload=data, updated_at=now))
+            result = conn.execute(
+                update(traffic_state_table)
+                .where(traffic_state_table.c.id == 1)
+                .values(payload=data, updated_at=now)
+            )
+            if not result.rowcount:
+                conn.execute(traffic_state_table.insert().values(id=1, payload=data, updated_at=now))
 
     def append_traffic_event(self, event: Dict[str, Any], max_events: int) -> None:
         record = dict(event)
@@ -2048,7 +2981,7 @@ class PersistentStorage:
         is_guest = meta.get("is_guest") if isinstance(meta, dict) else None
         is_admin = meta.get("is_admin") if isinstance(meta, dict) else None
         with self._lock, self._engine.begin() as conn:
-            conn.execute(
+            result = conn.execute(
                 traffic_events_table.insert().values(
                     ts=record.get("ts"),
                     ip=record.get("ip"),
@@ -2060,14 +2993,13 @@ class PersistentStorage:
                     meta=meta_json,
                 )
             )
-            ids = conn.execute(
-                select(traffic_events_table.c.id)
-                .order_by(traffic_events_table.c.id.desc())
-                .limit(max_events)
-            ).scalars().all()
-            if ids:
-                min_keep = ids[-1]
-                conn.execute(delete(traffic_events_table).where(traffic_events_table.c.id < min_keep))
+            event_id = result.inserted_primary_key[0] if result.inserted_primary_key else None
+            if event_id is not None:
+                conn.execute(
+                    delete(traffic_events_table).where(
+                        traffic_events_table.c.id <= max(0, int(event_id) - max(1, int(max_events)))
+                    )
+                )
 
     def recent_traffic_events(self, limit: int) -> List[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
