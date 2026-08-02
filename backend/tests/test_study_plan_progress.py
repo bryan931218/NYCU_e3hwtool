@@ -14,7 +14,6 @@ from e3_tracker.api.web import (
     _study_plan_progress_summary,
     _study_plan_progress_week,
     _study_plan_schedule_definitions,
-    _study_plan_subject_is_complete,
     _study_plan_subject_status,
     _study_plan_video_completion,
 )
@@ -22,11 +21,6 @@ from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
-    def test_subject_is_complete_only_at_exactly_one_hundred_percent(self):
-        self.assertFalse(_study_plan_subject_is_complete(1000, 995))
-        self.assertFalse(_study_plan_subject_is_complete(1000, 999.9))
-        self.assertTrue(_study_plan_subject_is_complete(1000, 1000))
-
     def test_home_subject_table_does_not_show_achieved_at_ninety_nine_point_five_percent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(
@@ -74,6 +68,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIsNotNone(subject_row)
             self.assertIn("99.5%", subject_row.group(1))
             self.assertNotIn("已達標", subject_row.group(1))
+            self.assertIn("進行中", subject_row.group(1))
             storage._engine.dispose()
 
     def test_progress_week_follows_actual_completion_instead_of_calendar(self):
@@ -434,18 +429,37 @@ class StudyPlanProgressTests(unittest.TestCase):
                 },
             ],
             date(2026, 7, 27),
-            subject_is_complete=False,
+            completion=94.9,
+            watched_seconds=0,
         )
 
         self.assertEqual((state, label), ("behind", "待補"))
 
-    def test_only_a_complete_subject_can_show_achieved(self):
+    def test_subject_status_uses_its_own_displayed_progress(self):
+        mixed_week = [
+            {
+                "start": "2026-07-27",
+                "end": "2026-08-02",
+                "completion": 100,
+                "state": "complete",
+                "state_label": "已達標",
+            }
+        ]
+
+        active_state = _study_plan_subject_status(
+            mixed_week,
+            date(2026, 8, 2),
+            completion=13.9,
+            watched_seconds=11 * 3600,
+        )
         state, label = _study_plan_subject_status(
             [],
             date(2026, 7, 27),
-            subject_is_complete=True,
+            completion=100.0,
+            watched_seconds=100,
         )
 
+        self.assertEqual(active_state, ("active", "進行中"))
         self.assertEqual((state, label), ("complete", "已達標"))
 
     def test_summary_is_weighted_by_video_duration(self):

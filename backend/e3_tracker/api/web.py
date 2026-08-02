@@ -369,48 +369,29 @@ def _study_plan_progress_week(week_rows: Iterable[Dict[str, Any]]) -> Dict[str, 
     return scheduled_rows[-1] if scheduled_rows else rows[-1]
 
 
-def _study_plan_subject_is_complete(target_seconds: Any, watched_seconds: Any) -> bool:
-    """Subject progress is complete only after every target second is watched."""
-    target = _study_plan_nonnegative_number(target_seconds)
-    watched = _study_plan_nonnegative_number(watched_seconds)
-    return target > 0 and watched >= target
-
-
 def _study_plan_subject_status(
     subject_weeks: Iterable[Dict[str, Any]],
     today: date,
     *,
-    subject_is_complete: bool,
+    completion: Any,
+    watched_seconds: Any,
 ) -> Tuple[str, str]:
-    if subject_is_complete:
+    displayed_completion = _study_plan_nonnegative_number(completion)
+    watched = _study_plan_nonnegative_number(watched_seconds)
+    if displayed_completion >= 100:
         return "complete", "已達標"
+    if watched > 0:
+        return "active", "進行中"
 
     weeks = list(subject_weeks)
     today_key = today.isoformat()
-    overdue_incomplete = [
-        row
+    if any(
+        str(row.get("start") or "")
+        and str(row.get("start") or "") <= today_key
         for row in weeks
-        if str(row.get("end") or "")
-        and str(row.get("end") or "") < today_key
-        and float(row.get("completion") or 0) < 100
-    ]
-    if overdue_incomplete:
+    ):
         return "behind", "待補"
-
-    active_week = next(
-        (
-            row
-            for row in weeks
-            if str(row.get("start") or "") <= today_key <= str(row.get("end") or "")
-        ),
-        None,
-    )
-    if active_week:
-        return str(active_week.get("state") or "active"), str(active_week.get("state_label") or "進行中")
-
-    if any(str(row.get("start") or "") > today_key for row in weeks):
-        return "upcoming", "未開始"
-    return "behind", "待補"
+    return "upcoming", "未開始"
 
 
 def _study_plan_progress_race(
@@ -2886,21 +2867,24 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             target_seconds = float(subject_progress["total_target_seconds"])
             watched_seconds = float(subject_progress["total_watched_seconds"])
             completed_count = int(subject_progress["completed_videos"])
-            subject_is_complete = _study_plan_subject_is_complete(target_seconds, watched_seconds)
+            subject_completion = round(
+                min(
+                    100.0,
+                    (watched_seconds / target_seconds * 100) if target_seconds else 0.0,
+                ),
+                1,
+            )
             subject_weeks = [row for row in week_rows if subject in row.get("subjects", [row.get("subject")])]
             subject_state, subject_state_label = _study_plan_subject_status(
                 subject_weeks,
                 today,
-                subject_is_complete=subject_is_complete,
-            )
-            subject_completion = min(
-                100.0,
-                (watched_seconds / target_seconds * 100) if target_seconds else 0.0,
+                completion=subject_completion,
+                watched_seconds=watched_seconds,
             )
             subject_rows.append(
                 {
                     "name": subject,
-                    "completion": round(subject_completion, 1),
+                    "completion": subject_completion,
                     "target_hours": round(target_seconds / 3600, 1),
                     "watched_hours": round(watched_seconds / 3600, 1),
                     "completed_videos": completed_count,
