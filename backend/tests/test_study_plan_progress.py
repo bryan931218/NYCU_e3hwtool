@@ -607,6 +607,11 @@ class StudyPlanProgressTests(unittest.TestCase):
             marker_html = marker_page.get_data(as_text=True)
             self.assertIn("影片關鍵點", marker_html)
             self.assertIn("video-markers-data", marker_html)
+            self.assertIn('id="focus-mode-toggle"', marker_html)
+            self.assertIn('id="focus-marker-save"', marker_html)
+            self.assertIn("requestFullscreen", marker_html)
+            self.assertIn("fs: 0", marker_html)
+            self.assertIn("playsinline: 1", marker_html)
             marker_match = re.search(
                 r'<script type="application/json" id="video-markers-data">(.*?)</script>',
                 marker_html,

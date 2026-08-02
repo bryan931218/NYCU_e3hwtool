@@ -164,6 +164,33 @@
         .player-frame { position: relative; min-height: 250px; border: 1px solid #cdd9e6; border-radius: 12px; background: #0d1724; overflow: hidden; box-shadow: 0 12px 28px rgba(16, 42, 67, .10); }
         .player-frame iframe, #youtube-player { width: 100%; height: 100%; min-height: 250px; border: 0; }
         .player-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9c7d8; text-align: center; line-height: 1.65; }
+        .focus-launch { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 0 14px; border: 1px solid #b8d1ef; border-radius: 11px; color: #0d56bd; background: linear-gradient(180deg,#fff,#f1f7ff); font-size: 12px; font-weight: 900; cursor: pointer; box-shadow: 0 7px 18px rgba(20,99,217,.09); transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
+        .focus-launch:hover { transform: translateY(-1px); border-color: #72a7e7; box-shadow: 0 10px 24px rgba(20,99,217,.14); }
+        .focus-launch:disabled { opacity: .48; transform: none; cursor: not-allowed; box-shadow: none; }
+        .focus-launch-icon { font-size: 16px; line-height: 1; }
+        .focus-layer { position: absolute; z-index: 5; inset: 0; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .2s ease; }
+        .player-frame.is-focus-mode .focus-layer { opacity: 1; visibility: visible; }
+        .focus-topbar { position: absolute; z-index: 2; top: 0; right: 0; left: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; padding: max(14px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) 14px max(18px, env(safe-area-inset-left)); color: #fff; background: linear-gradient(180deg,rgba(3,9,17,.9),rgba(3,9,17,.5) 58%,transparent); }
+        .focus-now { display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: auto; }
+        .focus-live { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(8,18,30,.56); font-size: 10px; font-weight: 900; letter-spacing: .08em; backdrop-filter: blur(12px); }
+        .focus-live::before { content: ''; width: 6px; height: 6px; border-radius: 999px; background: #5ee5b0; box-shadow: 0 0 0 4px rgba(94,229,176,.14); }
+        .focus-video-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+        .focus-exit { pointer-events: auto; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; color: #fff; background: rgba(7,15,26,.64); font-size: 12px; font-weight: 850; cursor: pointer; backdrop-filter: blur(14px); }
+        .focus-marker { pointer-events: auto; position: absolute; z-index: 3; right: max(22px, env(safe-area-inset-right)); bottom: max(28px, calc(env(safe-area-inset-bottom) + 18px)); display: grid; grid-template-columns: 42px auto; align-items: center; min-width: 174px; min-height: 58px; padding: 7px 15px 7px 8px; border: 1px solid rgba(255,255,255,.28); border-radius: 19px; color: #fff; background: linear-gradient(145deg,rgba(31,119,239,.98),rgba(13,75,171,.98)); box-shadow: 0 16px 44px rgba(0,0,0,.4),0 0 0 5px rgba(255,255,255,.08); cursor: pointer; -webkit-tap-highlight-color: transparent; backdrop-filter: blur(16px); transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease; }
+        .focus-marker:hover { transform: translateY(-2px) scale(1.015); box-shadow: 0 20px 48px rgba(0,0,0,.46),0 0 0 5px rgba(255,255,255,.11); }
+        .focus-marker:active { transform: scale(.97); }
+        .focus-marker:disabled { opacity: .62; cursor: wait; transform: none; }
+        .focus-marker-symbol { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 13px; background: rgba(255,255,255,.16); font-size: 23px; font-weight: 500; }
+        .focus-marker-copy { display: grid; gap: 2px; padding-left: 9px; text-align: left; }
+        .focus-marker-copy strong { font-size: 13px; font-weight: 920; line-height: 1.15; }
+        .focus-marker-copy span { color: rgba(255,255,255,.76); font-size: 10px; font-weight: 750; font-variant-numeric: tabular-nums; }
+        .focus-toast { position: absolute; z-index: 4; left: 50%; bottom: max(30px, calc(env(safe-area-inset-bottom) + 20px)); max-width: min(74vw,420px); padding: 11px 15px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; color: #fff; background: rgba(5,15,27,.88); box-shadow: 0 14px 40px rgba(0,0,0,.35); font-size: 12px; font-weight: 800; text-align: center; opacity: 0; transform: translate(-50%,12px); transition: opacity .2s ease,transform .2s ease; backdrop-filter: blur(16px); }
+        .focus-toast.is-visible { opacity: 1; transform: translate(-50%,0); }
+        .focus-toast.is-error { color: #ffe2e4; border-color: rgba(255,153,162,.4); background: rgba(89,20,28,.92); }
+        .player-frame:fullscreen, .player-frame:-webkit-full-screen, .player-frame.is-theater { width: 100vw; height: 100vh; height: 100dvh; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; background: #000; box-shadow: none; }
+        .player-frame:fullscreen iframe, .player-frame:fullscreen #youtube-player, .player-frame:-webkit-full-screen iframe, .player-frame:-webkit-full-screen #youtube-player, .player-frame.is-theater iframe, .player-frame.is-theater #youtube-player { width: 100%; height: 100%; min-height: 100%; }
+        .player-frame.is-theater { position: fixed; z-index: 10000; inset: 0; }
+        body.has-focus-theater { overflow: hidden; overscroll-behavior: none; touch-action: none; }
         .player-copy { display: grid; align-content: start; gap: 12px; min-width: 0; }
         .player-kicker { color: #c4302b; font-size: 12px; font-weight: 820; letter-spacing: .04em; text-transform: uppercase; }
         .player-title { margin: 0; color: var(--ink); font-size: 22px; line-height: 1.25; letter-spacing: -.035em; }
@@ -417,6 +444,21 @@
             .replan-body { padding: 16px; }
             .replan-badge { display: none; }
             .marker-compose { grid-template-columns: 1fr; }
+            .focus-launch { width: 100%; }
+            .focus-topbar { min-height: 62px; padding-bottom: 10px; }
+            .focus-exit { width: 42px; min-height: 42px; padding: 0; }
+            .focus-exit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+            .focus-marker { right: max(14px, env(safe-area-inset-right)); bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px)); min-width: 156px; min-height: 56px; border-radius: 18px; }
+            .focus-toast { bottom: max(84px, calc(env(safe-area-inset-bottom) + 76px)); max-width: calc(100vw - 28px); white-space: normal; }
+        }
+        @media (orientation: landscape) and (max-height: 520px) {
+            .focus-topbar { min-height: 54px; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: 8px; }
+            .focus-marker { right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); min-width: 58px; width: 58px; padding: 7px; border-radius: 18px; }
+            .focus-marker-copy { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+            .focus-toast { bottom: max(18px, env(safe-area-inset-bottom)); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .focus-layer, .focus-launch, .focus-marker, .focus-toast { transition: none; }
         }
     </style>
 </head>
@@ -529,9 +571,20 @@
                             <noscript><button class="save-button" type="submit">切換科目</button></noscript>
                         </form>
                         <div class="youtube-player is-hidden" id="youtube-player-section" aria-label="YouTube 播放模式" tabindex="-1">
-                            <div class="player-frame">
+                            <div class="player-frame" id="focus-player-frame">
                                 <div id="youtube-player"></div>
                                 <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
+                                <div class="focus-layer" id="focus-layer" aria-hidden="true" inert>
+                                    <div class="focus-topbar">
+                                        <div class="focus-now"><span class="focus-live">專注中</span><span class="focus-video-title" id="focus-video-title">目前影片</span></div>
+                                        <button class="focus-exit" id="focus-exit" type="button" aria-label="離開專注全螢幕"><span aria-hidden="true">✕</span><span class="focus-exit-label">離開專注模式</span></button>
+                                    </div>
+                                    <button class="focus-marker" id="focus-marker-save" type="button" aria-label="標記目前影片時間">
+                                        <span class="focus-marker-symbol" aria-hidden="true">＋</span>
+                                        <span class="focus-marker-copy"><strong>標記關鍵點</strong><span id="focus-marker-time">目前 0:00</span></span>
+                                    </button>
+                                    <div class="focus-toast" id="focus-toast" role="status" aria-live="polite"></div>
+                                </div>
                             </div>
                             <div class="player-copy">
                                 <h3 id="player-title" class="player-title">尚未載入影片</h3>
@@ -540,6 +593,7 @@
                                     <span class="player-pill" id="player-watched">已看 —</span>
                                     <span class="player-pill" id="player-sync-state">等待選擇影片</span>
                                 </div>
+                                <button class="focus-launch" id="focus-mode-toggle" type="button" disabled aria-pressed="false"><span class="focus-launch-icon" aria-hidden="true">⛶</span><span>專注全螢幕</span></button>
                                 <div class="player-status">
                                     <div class="player-status-line"><span>播放位置</span><strong id="player-current-time">0:00</strong></div>
                                     <div class="track"><div id="player-progress-fill" class="fill" style="--progress:0%"></div></div>
@@ -731,6 +785,14 @@
             const markerStatus = document.getElementById('marker-status');
             const markerList = document.getElementById('marker-list');
             const markerCount = document.getElementById('marker-count');
+            const focusPlayerFrame = document.getElementById('focus-player-frame');
+            const focusLayer = document.getElementById('focus-layer');
+            const focusModeToggle = document.getElementById('focus-mode-toggle');
+            const focusExit = document.getElementById('focus-exit');
+            const focusMarkerSave = document.getElementById('focus-marker-save');
+            const focusMarkerTime = document.getElementById('focus-marker-time');
+            const focusVideoTitle = document.getElementById('focus-video-title');
+            const focusToast = document.getElementById('focus-toast');
             const videoSummary = document.querySelector('[data-video-summary]');
             const videoSummaryToggle = document.getElementById('video-summary-toggle');
             const videoSummaryBody = document.getElementById('video-summary-body');
@@ -742,6 +804,9 @@
             let queuedSaveCount = 0;
             let saveQueue = Promise.resolve();
             let videoMarkers = [];
+            let markerSaving = false;
+            let focusToastTimer = null;
+            let theaterScrollY = 0;
             try {
                 videoMarkers = JSON.parse(markerData ? markerData.textContent || '[]' : '[]');
                 if (!Array.isArray(videoMarkers)) videoMarkers = [];
@@ -791,6 +856,7 @@
                     '--progress',
                     safeDuration ? Math.min(100, safeSeconds / safeDuration * 100) + '%' : '0%'
                 );
+                if (focusMarkerTime) focusMarkerTime.textContent = '目前 ' + formatClock(safeSeconds);
             };
             const selectedOption = function () {
                 const option = videoSelect.options[videoSelect.selectedIndex] || null;
@@ -864,16 +930,32 @@
                     markerList.appendChild(row);
                 });
             };
+            const showFocusToast = function (message, isError) {
+                if (!focusToast) return;
+                if (focusToastTimer) window.clearTimeout(focusToastTimer);
+                focusToast.textContent = message;
+                focusToast.classList.toggle('is-error', Boolean(isError));
+                focusToast.classList.add('is-visible');
+                focusToastTimer = window.setTimeout(function () {
+                    focusToast.classList.remove('is-visible');
+                }, isError ? 3600 : 2400);
+            };
+            const setMarkerSaving = function (isSaving) {
+                markerSaving = Boolean(isSaving);
+                if (markerSave) markerSave.disabled = markerSaving;
+                if (focusMarkerSave) focusMarkerSave.disabled = markerSaving;
+            };
             const saveMarker = function () {
                 const option = selectedOption();
-                if (!option || !markerSave) return;
+                if (!option || markerSaving) return Promise.resolve(false);
                 let seconds = Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0);
                 if (player && typeof player.getCurrentTime === 'function') {
                     seconds = Math.max(0, Number(player.getCurrentTime() || 0));
                 }
-                markerSave.disabled = true;
+                setMarkerSaving(true);
                 markerStatus.textContent = '正在標記 ' + formatClock(seconds) + '…';
-                fetch('{{ url_for("admin_study_plan_video_markers") }}', {
+                showFocusToast('正在標記 ' + formatClock(seconds) + '…', false);
+                return fetch('{{ url_for("admin_study_plan_video_markers") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -889,11 +971,16 @@
                     videoMarkers.push(data.marker);
                     if (markerNote) markerNote.value = '';
                     renderMarkers();
-                    markerStatus.textContent = '已標記 ' + formatClock(data.marker.playback_seconds) + '，點時間即可跳回。';
+                    const successMessage = '已標記 ' + formatClock(data.marker.playback_seconds) + '，點時間即可跳回。';
+                    markerStatus.textContent = successMessage;
+                    showFocusToast('✓ 已標記 ' + formatClock(data.marker.playback_seconds), false);
+                    return true;
                 }).catch(function () {
                     markerStatus.textContent = '標記失敗，請再試一次。';
+                    showFocusToast('標記失敗，請檢查網路後重試', true);
+                    return false;
                 }).finally(function () {
-                    markerSave.disabled = false;
+                    setMarkerSaving(false);
                 });
             };
             const sortVideoOptions = function () {
@@ -959,6 +1046,7 @@
                     setPlayerPosition(0, 0);
                     playerSyncState.textContent = '等待選擇影片';
                     playerEmpty.style.display = 'grid';
+                    if (focusModeToggle) focusModeToggle.disabled = true;
                     if (player && typeof player.stopVideo === 'function') player.stopVideo();
                     return;
                 }
@@ -971,11 +1059,13 @@
                 const playbackSeconds = option ? Number(option.dataset.playbackSeconds || watchedSeconds) : 0;
                 if (youtubePlayerPanel) youtubePlayerPanel.classList.toggle('is-hidden', !youtubeId);
                 playerTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '尚未載入影片';
+                if (focusVideoTitle) focusVideoTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '目前影片';
                 playerDuration.textContent = '片長 ' + formatMinutes(durationSeconds) + ' 分';
                 playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
                 setPlayerPosition(playbackSeconds, durationSeconds);
                 playerSyncState.textContent = youtubeId ? '可播放並自動儲存' : '這支影片尚未對應 YouTube';
                 playerEmpty.style.display = youtubeId ? 'none' : 'grid';
+                if (focusModeToggle) focusModeToggle.disabled = !youtubeId;
                 if (!youtubeId) {
                     stopPlaybackTimer();
                     if (player && typeof player.stopVideo === 'function') player.stopVideo();
@@ -1175,7 +1265,7 @@
                 if (!player) {
                     player = new YT.Player('youtube-player', {
                         videoId: youtubeId,
-                        playerVars: { rel: 0, modestbranding: 1, start: startSeconds > 5 ? startSeconds : 0 },
+                        playerVars: { rel: 0, fs: 0, playsinline: 1, origin: window.location.origin, start: startSeconds > 5 ? startSeconds : 0 },
                         events: {
                             onReady: function () {
                                 playerSyncState.textContent = '播放器已就緒';
@@ -1232,6 +1322,81 @@
                 loadNextVideo();
             });
             if (markerSave) markerSave.addEventListener('click', saveMarker);
+            const fullscreenElement = function () {
+                return document.fullscreenElement || document.webkitFullscreenElement || null;
+            };
+            const isFocusMode = function () {
+                return Boolean(focusPlayerFrame && (fullscreenElement() === focusPlayerFrame || focusPlayerFrame.classList.contains('is-theater')));
+            };
+            const updateFocusMode = function () {
+                if (!focusPlayerFrame) return;
+                const active = isFocusMode();
+                focusPlayerFrame.classList.toggle('is-focus-mode', active);
+                if (focusLayer) {
+                    focusLayer.setAttribute('aria-hidden', active ? 'false' : 'true');
+                    focusLayer.toggleAttribute('inert', !active);
+                }
+                if (focusModeToggle) {
+                    focusModeToggle.setAttribute('aria-pressed', active ? 'true' : 'false');
+                    const label = focusModeToggle.querySelector('span:last-child');
+                    if (label) label.textContent = active ? '離開專注模式' : '專注全螢幕';
+                }
+            };
+            const activateTheaterMode = function () {
+                if (!focusPlayerFrame || focusPlayerFrame.classList.contains('is-theater')) return;
+                theaterScrollY = window.scrollY || window.pageYOffset || 0;
+                focusPlayerFrame.classList.add('is-theater');
+                document.body.classList.add('has-focus-theater');
+                updateFocusMode();
+                showFocusToast('已進入專注模式', false);
+            };
+            const enterFocusMode = function () {
+                const option = selectedOption();
+                if (!focusPlayerFrame || !option || !option.dataset.youtubeVideoId) {
+                    showFocusToast('請先選擇可播放的影片', true);
+                    return;
+                }
+                if (isFocusMode()) return;
+                const requestFullscreen = focusPlayerFrame.requestFullscreen
+                    || focusPlayerFrame.webkitRequestFullscreen;
+                if (!requestFullscreen) {
+                    activateTheaterMode();
+                    return;
+                }
+                try {
+                    const result = requestFullscreen.call(focusPlayerFrame);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(function () { activateTheaterMode(); });
+                    }
+                } catch (error) {
+                    activateTheaterMode();
+                }
+            };
+            const exitFocusMode = function () {
+                if (!focusPlayerFrame) return;
+                if (focusPlayerFrame.classList.contains('is-theater')) {
+                    focusPlayerFrame.classList.remove('is-theater');
+                    document.body.classList.remove('has-focus-theater');
+                    updateFocusMode();
+                    window.scrollTo(0, theaterScrollY);
+                    return;
+                }
+                const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+                if (fullscreenElement() && exitFullscreen) {
+                    try {
+                        const result = exitFullscreen.call(document);
+                        if (result && typeof result.catch === 'function') result.catch(function () {});
+                    } catch (error) {}
+                }
+            };
+            if (focusModeToggle) focusModeToggle.addEventListener('click', function () {
+                if (isFocusMode()) exitFocusMode();
+                else enterFocusMode();
+            });
+            if (focusExit) focusExit.addEventListener('click', exitFocusMode);
+            if (focusMarkerSave) focusMarkerSave.addEventListener('click', saveMarker);
+            document.addEventListener('fullscreenchange', updateFocusMode);
+            document.addEventListener('webkitfullscreenchange', updateFocusMode);
             if (markerNote) markerNote.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter') {
                     event.preventDefault();
@@ -1246,6 +1411,10 @@
                     if (!option || !option.dataset.youtubeVideoId) return;
                     event.preventDefault();
                     saveMarker();
+                }
+                if (!isTyping && event.key === 'Escape' && focusPlayerFrame && focusPlayerFrame.classList.contains('is-theater')) {
+                    event.preventDefault();
+                    exitFocusMode();
                 }
             });
             document.querySelectorAll('[data-select-video]').forEach(function (button) {
