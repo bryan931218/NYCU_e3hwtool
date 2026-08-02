@@ -164,39 +164,27 @@
         .player-frame { position: relative; min-height: 250px; border: 1px solid #cdd9e6; border-radius: 12px; background: #0d1724; overflow: hidden; box-shadow: 0 12px 28px rgba(16, 42, 67, .10); }
         .player-frame iframe, #youtube-player { width: 100%; height: 100%; min-height: 250px; border: 0; }
         .player-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9c7d8; text-align: center; line-height: 1.65; }
-        .focus-launch { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; align-items: center; gap: 11px; min-height: 62px; padding: 8px 11px; border: 1px solid #b8d1ef; border-radius: 15px; color: #0d56bd; background: radial-gradient(circle at 92% 5%,rgba(173,213,255,.55),transparent 38%),linear-gradient(135deg,#fff,#eef6ff); cursor: pointer; box-shadow: 0 9px 24px rgba(20,99,217,.10); text-align: left; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
-        .focus-launch:hover { transform: translateY(-2px); border-color: #72a7e7; box-shadow: 0 14px 30px rgba(20,99,217,.16); }
-        .focus-launch:active { transform: translateY(0) scale(.995); }
+        .focus-launch { width: fit-content; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 1px solid #c4d5e8; border-radius: 11px; color: #315b88; background: #f8fbff; font-size: 11px; font-weight: 850; cursor: pointer; transition: color .16s ease,border-color .16s ease,background .16s ease; }
+        .focus-launch:hover { color: #0d56bd; border-color: #8fb5e3; background: #eef6ff; }
+        .focus-launch:active { background: #e5f0fc; }
         .focus-launch:focus-visible, .focus-exit:focus-visible, .focus-marker:focus-visible { outline: 3px solid rgba(98,174,255,.7); outline-offset: 3px; }
         .focus-launch:disabled { opacity: .48; transform: none; cursor: not-allowed; box-shadow: none; }
-        .focus-launch-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: #fff; background: linear-gradient(145deg,#287de8,#0b55b8); box-shadow: 0 8px 18px rgba(20,99,217,.25); font-size: 19px; line-height: 1; }
-        .focus-launch-copy { display: grid; gap: 3px; min-width: 0; }
-        .focus-launch-copy strong { font-size: 13px; font-weight: 920; line-height: 1.2; }
-        .focus-launch-copy small { overflow: hidden; color: #647d98; font-size: 10px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
-        .focus-launch-badge { padding: 5px 8px; border: 1px solid #c3d9f3; border-radius: 999px; color: #416b9b; background: rgba(255,255,255,.72); font-size: 9px; font-weight: 850; white-space: nowrap; }
+        .focus-launch-icon { font-size: 15px; line-height: 1; }
         .focus-layer { position: absolute; z-index: 5; inset: 0; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .2s ease; }
         .player-frame.is-focus-mode .focus-layer { opacity: 1; visibility: visible; }
-        .focus-topbar { position: absolute; z-index: 2; top: 0; right: 0; left: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; padding: max(14px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) 14px max(18px, env(safe-area-inset-left)); color: #fff; background: linear-gradient(180deg,rgba(3,9,17,.9),rgba(3,9,17,.5) 58%,transparent); }
-        .focus-now { display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: auto; }
-        .focus-live { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: rgba(8,18,30,.58); font-size: 10px; font-weight: 900; letter-spacing: .06em; backdrop-filter: blur(12px); }
-        .focus-live::before { content: ''; width: 6px; height: 6px; border-radius: 999px; background: #5ee5b0; box-shadow: 0 0 0 4px rgba(94,229,176,.14); }
         .focus-video-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-        .focus-exit { pointer-events: auto; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; color: #fff; background: rgba(7,15,26,.64); font-size: 12px; font-weight: 850; cursor: pointer; backdrop-filter: blur(14px); transition: background .16s ease,border-color .16s ease,transform .16s ease; }
+        .focus-exit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+        .focus-exit { pointer-events: auto; position: absolute; z-index: 3; top: calc(50% - 50px); right: max(14px, env(safe-area-inset-right)); width: 42px; height: 42px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.22); border-radius: 13px; color: #fff; background: rgba(7,15,26,.72); font-size: 13px; font-weight: 850; cursor: pointer; backdrop-filter: blur(14px); transition: background .16s ease,border-color .16s ease,transform .16s ease; }
         .focus-exit:hover { border-color: rgba(255,255,255,.45); background: rgba(20,31,45,.86); transform: translateY(-1px); }
-        .focus-marker { pointer-events: auto; position: absolute; z-index: 3; right: max(22px, env(safe-area-inset-right)); bottom: max(74px, calc(env(safe-area-inset-bottom) + 64px)); display: grid; grid-template-columns: 42px auto; align-items: center; min-width: 184px; min-height: 60px; padding: 8px 16px 8px 9px; border: 1px solid rgba(255,255,255,.3); border-radius: 20px; color: #fff; background: linear-gradient(145deg,rgba(38,128,246,.98),rgba(12,72,166,.98)); box-shadow: 0 18px 48px rgba(0,0,0,.42),0 0 0 5px rgba(255,255,255,.08); cursor: pointer; -webkit-tap-highlight-color: transparent; backdrop-filter: blur(16px); transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease, background .2s ease; }
-        .focus-marker:hover { transform: translateY(-2px) scale(1.015); box-shadow: 0 20px 48px rgba(0,0,0,.46),0 0 0 5px rgba(255,255,255,.11); }
+        .focus-marker { pointer-events: auto; position: absolute; z-index: 3; top: calc(50% + 4px); right: max(14px, env(safe-area-inset-right)); width: 42px; min-width: 42px; height: 42px; min-height: 42px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.24); border-radius: 13px; color: #fff; background: rgba(9,19,32,.78); box-shadow: 0 10px 28px rgba(0,0,0,.28); cursor: pointer; -webkit-tap-highlight-color: transparent; backdrop-filter: blur(14px); transition: transform .16s ease,background .2s ease,border-color .16s ease; }
+        .focus-marker:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.45); background: rgba(16,32,53,.92); }
         .focus-marker:active { transform: scale(.97); }
-        .focus-marker:disabled { opacity: .62; cursor: wait; transform: none; }
-        .focus-marker-symbol { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 13px; background: rgba(255,255,255,.16); font-size: 23px; font-weight: 500; }
-        .focus-marker-copy { display: grid; gap: 2px; padding-left: 9px; text-align: left; }
-        .focus-marker-copy strong { font-size: 13px; font-weight: 920; line-height: 1.15; }
-        .focus-marker-copy span { color: rgba(255,255,255,.76); font-size: 10px; font-weight: 750; font-variant-numeric: tabular-nums; }
-        .focus-marker.is-saved { background: linear-gradient(145deg,rgba(26,166,111,.98),rgba(8,113,72,.98)); animation: focus-marker-pop .42s ease-out; }
-        .focus-marker.is-saved .focus-marker-symbol { background: rgba(255,255,255,.23); }
-        .focus-guide { position: absolute; z-index: 3; right: max(25px, env(safe-area-inset-right)); bottom: max(145px, calc(env(safe-area-inset-bottom) + 135px)); padding: 8px 11px; border: 1px solid rgba(255,255,255,.18); border-radius: 11px; color: rgba(255,255,255,.9); background: rgba(5,14,25,.76); box-shadow: 0 10px 28px rgba(0,0,0,.26); font-size: 10px; font-weight: 780; opacity: 0; transform: translateY(8px); backdrop-filter: blur(14px); transition: opacity .2s ease,transform .2s ease; }
-        .focus-layer.show-guide .focus-guide { opacity: 1; transform: translateY(0); }
-        .focus-toast { position: absolute; z-index: 4; right: max(218px, calc(env(safe-area-inset-right) + 208px)); bottom: max(84px, calc(env(safe-area-inset-bottom) + 74px)); max-width: min(48vw,420px); padding: 11px 15px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; color: #fff; background: rgba(5,15,27,.88); box-shadow: 0 14px 40px rgba(0,0,0,.35); font-size: 12px; font-weight: 800; text-align: center; opacity: 0; transform: translateY(12px); transition: opacity .2s ease,transform .2s ease; backdrop-filter: blur(16px); }
-        .focus-toast.is-visible { opacity: 1; transform: translateY(0); }
+        .focus-marker:disabled { opacity: .55; cursor: wait; transform: none; }
+        .focus-marker-symbol { font-size: 16px; font-weight: 650; line-height: 1; }
+        .focus-marker-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+        .focus-marker.is-saved { color: #d7ffeb; border-color: rgba(100,226,165,.42); background: rgba(12,83,58,.9); animation: focus-marker-pop .34s ease-out; }
+        .focus-toast { position: absolute; z-index: 4; top: 50%; right: max(66px, calc(env(safe-area-inset-right) + 56px)); max-width: min(48vw,320px); padding: 9px 12px; border: 1px solid rgba(255,255,255,.18); border-radius: 10px; color: #fff; background: rgba(5,15,27,.86); box-shadow: 0 10px 30px rgba(0,0,0,.28); font-size: 11px; font-weight: 780; text-align: center; opacity: 0; transform: translate(8px,-50%); transition: opacity .18s ease,transform .18s ease; backdrop-filter: blur(14px); }
+        .focus-toast.is-visible { opacity: 1; transform: translate(0,-50%); }
         .focus-toast.is-error { color: #ffe2e4; border-color: rgba(255,153,162,.4); background: rgba(89,20,28,.92); }
         .player-frame:fullscreen, .player-frame:-webkit-full-screen, .player-frame.is-theater { width: 100vw; height: 100vh; height: 100dvh; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; background: #000; box-shadow: none; }
         .player-frame:fullscreen iframe, .player-frame:fullscreen #youtube-player, .player-frame:-webkit-full-screen iframe, .player-frame:-webkit-full-screen #youtube-player, .player-frame.is-theater iframe, .player-frame.is-theater #youtube-player { width: 100%; height: 100%; min-height: 100%; }
@@ -418,15 +406,25 @@
         .marker-shortcut { color: var(--muted); font-size: 10px; font-weight: 780; }
         .marker-compose { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
         .marker-compose input { min-width: 0; min-height: 40px; padding: 9px 11px; border: 1px solid #c9d9ea; border-radius: 10px; background: #fff; }
-        .marker-save { min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; color: #fff; background: var(--blue); font-size: 12px; font-weight: 900; cursor: pointer; box-shadow: 0 7px 16px rgba(20,99,217,.17); }
+        .marker-save { min-height: 40px; padding: 0 13px; border: 1px solid #27384b; border-radius: 10px; color: #fff; background: #1e2d3d; font-size: 11px; font-weight: 850; cursor: pointer; }
+        .marker-save:hover { background: #142333; }
         .marker-save:disabled { opacity: .55; cursor: wait; }
         .marker-status { min-height: 16px; margin: -2px 0 0; color: var(--muted); font-size: 10px; }
+        .marker-status:empty { display: none; }
         .marker-list { display: grid; gap: 7px; max-height: 180px; overflow-y: auto; }
-        .marker-item { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid #d8e5f1; border-radius: 11px; background: rgba(255,255,255,.94); }
+        .marker-item { display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; gap: 5px; align-items: center; padding: 7px; border: 1px solid #d8e5f1; border-radius: 11px; background: rgba(255,255,255,.94); }
+        .marker-item.is-editing { grid-template-columns: auto minmax(0,1fr) auto; }
         .marker-seek { padding: 5px 7px; border: 0; border-radius: 8px; color: #0d56bd; background: var(--blue-soft); font-size: 11px; font-weight: 920; cursor: pointer; font-variant-numeric: tabular-nums; }
-        .marker-note { min-width: 0; overflow: hidden; color: var(--ink-2); font-size: 11px; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
-        .marker-delete { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #92a3b5; background: transparent; cursor: pointer; }
+        .marker-note { min-width: 0; overflow: hidden; padding: 5px 7px; border: 0; border-radius: 7px; color: var(--ink-2); background: transparent; font-size: 11px; font-weight: 760; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+        .marker-note:hover { background: #f3f7fb; }
+        .marker-edit, .marker-delete { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #92a3b5; background: transparent; cursor: pointer; }
+        .marker-edit:hover { color: var(--blue); background: var(--blue-soft); }
         .marker-delete:hover { color: var(--red); background: #fff1f2; }
+        .marker-time { color: #0d56bd; font-size: 11px; font-weight: 920; font-variant-numeric: tabular-nums; }
+        .marker-edit-input { min-width: 0; min-height: 34px; padding: 6px 8px; border: 1px solid #8eb5e3; border-radius: 8px; font-size: 11px; box-shadow: 0 0 0 3px rgba(20,99,217,.08); }
+        .marker-edit-actions { display: flex; gap: 4px; }
+        .marker-edit-actions button { min-height: 30px; padding: 0 8px; border: 1px solid #ccd9e6; border-radius: 7px; color: var(--muted); background: #fff; font-size: 10px; font-weight: 820; cursor: pointer; }
+        .marker-edit-actions .marker-edit-save { color: #fff; border-color: var(--blue); background: var(--blue); }
         .marker-empty { padding: 8px; color: var(--muted); border: 1px dashed #cad9e8; border-radius: 10px; font-size: 11px; line-height: 1.5; text-align: center; }
         @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } }
         @media (max-width: 900px) {
@@ -457,20 +455,12 @@
             .replan-badge { display: none; }
             .marker-compose { grid-template-columns: 1fr; }
             .focus-launch { width: 100%; }
-            .focus-launch-badge { display: none; }
-            .focus-topbar { min-height: 62px; padding-bottom: 10px; }
-            .focus-exit { width: 42px; min-height: 42px; padding: 0; }
-            .focus-exit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-            .focus-marker { right: max(14px, env(safe-area-inset-right)); bottom: max(70px, calc(env(safe-area-inset-bottom) + 60px)); min-width: 162px; min-height: 58px; border-radius: 19px; }
-            .focus-guide { right: max(16px, env(safe-area-inset-right)); bottom: max(140px, calc(env(safe-area-inset-bottom) + 130px)); }
-            .focus-toast { right: max(14px, env(safe-area-inset-right)); bottom: max(140px, calc(env(safe-area-inset-bottom) + 130px)); max-width: calc(100vw - 28px); white-space: normal; }
+            .focus-exit { width: 42px; height: 42px; padding: 0; }
+            .focus-toast { max-width: calc(100vw - 86px); white-space: normal; }
         }
         @media (orientation: landscape) and (max-height: 520px) {
-            .focus-topbar { min-height: 54px; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: 8px; }
-            .focus-marker { right: max(14px, env(safe-area-inset-right)); bottom: max(56px, calc(env(safe-area-inset-bottom) + 46px)); min-width: 58px; width: 58px; padding: 7px; border-radius: 18px; }
-            .focus-marker-copy { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-            .focus-guide { display: none; }
-            .focus-toast { right: max(84px, calc(env(safe-area-inset-right) + 74px)); bottom: max(62px, calc(env(safe-area-inset-bottom) + 52px)); }
+            .focus-exit { top: calc(50% - 47px); width: 40px; height: 40px; }
+            .focus-marker { top: calc(50% + 3px); width: 40px; min-width: 40px; height: 40px; min-height: 40px; border-radius: 12px; }
         }
         @media (prefers-reduced-motion: reduce) {
             .focus-layer, .focus-launch, .focus-marker, .focus-toast { transition: none; }
@@ -486,7 +476,7 @@
             </header>
             <div class="content">
                 <div class="title-row">
-                    <div><p class="page-kicker">STUDY PLAN &amp; VIDEO LOG</p><h1>影片與讀書計畫</h1><p class="title-description">把每週目標、每日觀看建議與影片進度放在同一個工作區，快速掌握今天最值得推進的內容。</p><a class="settings-link" href="{{ url_for('admin_study_settings') }}">管理影片連結</a></div>
+                    <div><p class="page-kicker">STUDY PLAN &amp; VIDEO LOG</p><h1>影片與讀書計畫</h1><a class="settings-link" href="{{ url_for('admin_study_settings') }}">管理影片連結</a></div>
                     <div class="date-range">{{ plan_start }} 至 {{ plan_end }}・{{ plan_total_weeks }} 週</div>
                 </div>
 
@@ -590,15 +580,12 @@
                                 <div id="youtube-player"></div>
                                 <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
                                 <div class="focus-layer" id="focus-layer" aria-hidden="true" inert>
-                                    <div class="focus-topbar">
-                                        <div class="focus-now"><span class="focus-live">專注模式</span><span class="focus-video-title" id="focus-video-title">目前影片</span></div>
-                                        <button class="focus-exit" id="focus-exit" type="button" aria-label="離開專注全螢幕"><span aria-hidden="true">✕</span><span class="focus-exit-label">離開專注模式</span></button>
-                                    </div>
+                                    <span class="focus-video-title" id="focus-video-title">目前影片</span>
+                                    <button class="focus-exit" id="focus-exit" type="button" aria-label="離開專注全螢幕"><span aria-hidden="true">✕</span><span class="focus-exit-label">離開專注模式</span></button>
                                     <button class="focus-marker" id="focus-marker-save" type="button" aria-label="標記目前影片時間">
                                         <span class="focus-marker-symbol" id="focus-marker-symbol" aria-hidden="true">＋</span>
-                                        <span class="focus-marker-copy"><strong>標記關鍵點</strong><span id="focus-marker-time">目前 0:00</span></span>
+                                        <span class="focus-marker-label" id="focus-marker-time">記下 0:00</span>
                                     </button>
-                                    <div class="focus-guide" id="focus-guide" aria-hidden="true">看到重點時，點這裡記住這一秒 ↘</div>
                                     <div class="focus-toast" id="focus-toast" role="status" aria-live="polite"></div>
                                 </div>
                             </div>
@@ -609,16 +596,16 @@
                                     <span class="player-pill" id="player-watched">已看 —</span>
                                     <span class="player-pill" id="player-sync-state">等待選擇影片</span>
                                 </div>
-                                <button class="focus-launch" id="focus-mode-toggle" type="button" disabled aria-pressed="false" aria-label="進入專注全螢幕"><span class="focus-launch-icon" aria-hidden="true">⛶</span><span class="focus-launch-copy"><strong data-focus-label>專注全螢幕</strong><small>全螢幕也能隨手標記，不中斷觀看</small></span><span class="focus-launch-badge" aria-hidden="true">標記不中斷</span></button>
+                                <button class="focus-launch" id="focus-mode-toggle" type="button" disabled aria-pressed="false" aria-label="進入專注全螢幕"><span class="focus-launch-icon" aria-hidden="true">⛶</span><span data-focus-label>專注播放</span></button>
                                 <div class="player-status">
                                     <div class="player-status-line"><span>播放位置</span><strong id="player-current-time">0:00</strong></div>
                                     <div class="track"><div id="player-progress-fill" class="fill" style="--progress:0%"></div></div>
                                     <div class="player-status-line"><span>自動儲存</span><strong id="player-last-saved">尚未儲存</strong></div>
                                 </div>
                                 <section class="marker-studio" aria-label="影片關鍵點">
-                                    <div class="marker-head"><strong>影片關鍵點 <span id="marker-count">0</span></strong><span class="marker-shortcut">快捷鍵 M</span></div>
-                                    <div class="marker-compose"><input id="marker-note" type="text" maxlength="280" placeholder="可先輸入重點，留空也能快速標記"><button id="marker-save" class="marker-save" type="button">＋ 標記現在</button></div>
-                                    <p id="marker-status" class="marker-status" aria-live="polite">播放到重點時按一下，之後可直接跳回這一秒。</p>
+                                    <div class="marker-head"><strong>關鍵點 <span id="marker-count">0</span></strong><span class="marker-shortcut">M</span></div>
+                                    <div class="marker-compose"><input id="marker-note" type="text" maxlength="280" placeholder="內容（選填）"><button id="marker-save" class="marker-save" type="button">記下此刻</button></div>
+                                    <p id="marker-status" class="marker-status" aria-live="polite"></p>
                                     <div id="marker-list" class="marker-list"></div>
                                 </section>
                             </div>
@@ -634,7 +621,7 @@
                         </form>
                         <div class="video-summary" data-video-summary>
                             <button class="video-summary-toggle" id="video-summary-toggle" type="button" aria-expanded="false" aria-controls="video-summary-body">
-                                <span class="video-summary-title"><strong>影片進度統整</strong><span>展開查看每支影片的片長、已觀看與筆記</span></span>
+                                <span class="video-summary-title"><strong>影片進度統整</strong></span>
                                 <span class="video-summary-meta">{{ videos|length }} 支影片<span class="video-summary-caret" aria-hidden="true">⌄</span></span>
                             </button>
                             <div class="video-summary-body" id="video-summary-body" hidden>
@@ -824,8 +811,6 @@
             let markerSaving = false;
             let markerSavedTimer = null;
             let focusToastTimer = null;
-            let focusGuideTimer = null;
-            let focusGuideShown = false;
             let theaterScrollY = 0;
             try {
                 videoMarkers = JSON.parse(markerData ? markerData.textContent || '[]' : '[]');
@@ -876,7 +861,7 @@
                     '--progress',
                     safeDuration ? Math.min(100, safeSeconds / safeDuration * 100) + '%' : '0%'
                 );
-                if (focusMarkerTime) focusMarkerTime.textContent = '目前 ' + formatClock(safeSeconds);
+                if (focusMarkerTime) focusMarkerTime.textContent = '記下 ' + formatClock(safeSeconds);
             };
             const selectedOption = function () {
                 const option = videoSelect.options[videoSelect.selectedIndex] || null;
@@ -903,7 +888,7 @@
                 if (!items.length) {
                     const empty = document.createElement('div');
                     empty.className = 'marker-empty';
-                    empty.textContent = videoId ? '這支影片還沒有關鍵點。' : '選擇影片後即可開始標記。';
+                    empty.textContent = videoId ? '尚無關鍵點' : '請先選擇影片';
                     markerList.appendChild(empty);
                     return;
                 }
@@ -923,10 +908,19 @@
                             markerStatus.textContent = '已跳到 ' + formatClock(marker.playback_seconds) + '・' + marker.note;
                         }
                     });
-                    const note = document.createElement('span');
+                    const note = document.createElement('button');
+                    note.type = 'button';
                     note.className = 'marker-note';
                     note.textContent = marker.note || '關鍵片段';
                     note.title = marker.note || '關鍵片段';
+                    note.setAttribute('aria-label', '編輯關鍵點內容：' + (marker.note || '關鍵片段'));
+                    note.addEventListener('click', function () { startMarkerEdit(row, marker); });
+                    const edit = document.createElement('button');
+                    edit.type = 'button';
+                    edit.className = 'marker-edit';
+                    edit.textContent = '✎';
+                    edit.setAttribute('aria-label', '編輯 ' + formatClock(marker.playback_seconds) + ' 關鍵點');
+                    edit.addEventListener('click', function () { startMarkerEdit(row, marker); });
                     const remove = document.createElement('button');
                     remove.type = 'button';
                     remove.className = 'marker-delete';
@@ -946,9 +940,70 @@
                             remove.disabled = false;
                         });
                     });
-                    row.append(seek, note, remove);
+                    row.append(seek, note, edit, remove);
                     markerList.appendChild(row);
                 });
+            };
+            const startMarkerEdit = function (row, marker) {
+                if (!row || !marker) return;
+                row.className = 'marker-item is-editing';
+                const time = document.createElement('span');
+                time.className = 'marker-time';
+                time.textContent = formatClock(marker.playback_seconds);
+                const input = document.createElement('input');
+                input.className = 'marker-edit-input';
+                input.type = 'text';
+                input.maxLength = 280;
+                input.value = marker.note || '';
+                input.setAttribute('aria-label', '關鍵點內容');
+                const actions = document.createElement('div');
+                actions.className = 'marker-edit-actions';
+                const save = document.createElement('button');
+                save.type = 'button';
+                save.className = 'marker-edit-save';
+                save.textContent = '儲存';
+                const cancel = document.createElement('button');
+                cancel.type = 'button';
+                cancel.textContent = '取消';
+                const submit = function () {
+                    if (save.disabled) return;
+                    save.disabled = true;
+                    cancel.disabled = true;
+                    fetch('{{ url_for("admin_study_plan_video_marker_update", marker_id=0) }}'.replace(/0$/, String(marker.id)), {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ note: input.value.trim() })
+                    }).then(function (response) {
+                        if (!response.ok) throw new Error('update_failed');
+                        return response.json();
+                    }).then(function (data) {
+                        if (!data.ok || !data.marker) throw new Error('update_failed');
+                        videoMarkers = videoMarkers.map(function (item) {
+                            return Number(item.id) === Number(data.marker.id) ? data.marker : item;
+                        });
+                        renderMarkers();
+                        markerStatus.textContent = '已更新。';
+                    }).catch(function () {
+                        markerStatus.textContent = '更新失敗，請再試一次。';
+                        save.disabled = false;
+                        cancel.disabled = false;
+                    });
+                };
+                save.addEventListener('click', submit);
+                cancel.addEventListener('click', renderMarkers);
+                input.addEventListener('keydown', function (event) {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        submit();
+                    } else if (event.key === 'Escape') {
+                        event.preventDefault();
+                        renderMarkers();
+                    }
+                });
+                actions.append(save, cancel);
+                row.replaceChildren(time, input, actions);
+                input.focus();
+                input.select();
             };
             const showFocusToast = function (message, isError) {
                 if (!focusToast) return;
@@ -1001,9 +1056,9 @@
                     videoMarkers.push(data.marker);
                     if (markerNote) markerNote.value = '';
                     renderMarkers();
-                    const successMessage = '已標記 ' + formatClock(data.marker.playback_seconds) + '，點時間即可跳回。';
+                    const successMessage = '已記下 ' + formatClock(data.marker.playback_seconds) + '。';
                     markerStatus.textContent = successMessage;
-                    showFocusToast('✓ 已標記 ' + formatClock(data.marker.playback_seconds), false);
+                    showFocusToast('✓ ' + formatClock(data.marker.playback_seconds), false);
                     flashMarkerSuccess();
                     return true;
                 }).catch(function () {
@@ -1371,17 +1426,7 @@
                     focusModeToggle.setAttribute('aria-pressed', active ? 'true' : 'false');
                     focusModeToggle.setAttribute('aria-label', active ? '離開專注模式' : '進入專注全螢幕');
                     const label = focusModeToggle.querySelector('[data-focus-label]');
-                    if (label) label.textContent = active ? '離開專注模式' : '專注全螢幕';
-                }
-                if (focusLayer && active && !focusGuideShown) {
-                    focusGuideShown = true;
-                    focusLayer.classList.add('show-guide');
-                    focusGuideTimer = window.setTimeout(function () {
-                        focusLayer.classList.remove('show-guide');
-                    }, 3400);
-                } else if (focusLayer && !active) {
-                    focusLayer.classList.remove('show-guide');
-                    if (focusGuideTimer) window.clearTimeout(focusGuideTimer);
+                    if (label) label.textContent = active ? '離開專注模式' : '專注播放';
                 }
             };
             const activateTheaterMode = function () {
@@ -1390,7 +1435,6 @@
                 focusPlayerFrame.classList.add('is-theater');
                 document.body.classList.add('has-focus-theater');
                 updateFocusMode();
-                showFocusToast('已進入專注模式', false);
             };
             const enterFocusMode = function () {
                 const option = selectedOption();

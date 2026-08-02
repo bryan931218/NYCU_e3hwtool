@@ -601,6 +601,20 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertEqual(marker["note"], "特徵值推導")
             self.assertAlmostEqual(marker["playback_seconds"], 123.4)
 
+            edit_response = client.patch(
+                f"/admin/study-plan/video-markers/{marker['id']}",
+                json={"note": "特徵向量與基底轉換"},
+            )
+            self.assertEqual(edit_response.status_code, 200)
+            marker = edit_response.get_json()["marker"]
+            self.assertEqual(marker["note"], "特徵向量與基底轉換")
+
+            missing_edit = client.patch(
+                "/admin/study-plan/video-markers/999999",
+                json={"note": "不存在"},
+            )
+            self.assertEqual(missing_edit.status_code, 404)
+
             marker_page = client.get(
                 f"/admin/study-plan?subject={first_video['subject']}&video_id={first_video['id']}"
             )
@@ -609,8 +623,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("video-markers-data", marker_html)
             self.assertIn('id="focus-mode-toggle"', marker_html)
             self.assertIn('id="focus-marker-save"', marker_html)
-            self.assertIn("全螢幕也能隨手標記", marker_html)
-            self.assertIn('id="focus-guide"', marker_html)
+            self.assertIn("startMarkerEdit", marker_html)
             self.assertIn("flashMarkerSuccess", marker_html)
             self.assertIn("requestFullscreen", marker_html)
             self.assertIn("fs: 0", marker_html)
@@ -622,7 +635,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             )
             self.assertIsNotNone(marker_match)
             rendered_markers = json.loads(marker_match.group(1))
-            self.assertEqual(rendered_markers[0]["note"], "特徵值推導")
+            self.assertEqual(rendered_markers[0]["note"], "特徵向量與基底轉換")
 
             delete_response = client.delete(f"/admin/study-plan/video-markers/{marker['id']}")
             self.assertEqual(delete_response.status_code, 200)

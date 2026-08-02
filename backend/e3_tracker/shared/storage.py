@@ -2817,6 +2817,38 @@ class PersistentStorage:
             )
         return bool(result.rowcount)
 
+    def update_study_plan_video_marker(self, marker_id: int, *, note: str) -> Optional[Dict[str, Any]]:
+        normalized_note = str(note or "").strip()[:280] or "關鍵片段"
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                update(study_plan_video_markers_table)
+                .where(study_plan_video_markers_table.c.id == int(marker_id))
+                .values(note=normalized_note, updated_at=now)
+            )
+            if not result.rowcount:
+                return None
+            row = conn.execute(
+                select(
+                    study_plan_video_markers_table.c.id,
+                    study_plan_video_markers_table.c.video_id,
+                    study_plan_video_markers_table.c.playback_seconds,
+                    study_plan_video_markers_table.c.note,
+                    study_plan_video_markers_table.c.created_at,
+                    study_plan_video_markers_table.c.updated_at,
+                ).where(study_plan_video_markers_table.c.id == int(marker_id))
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": int(row.id),
+            "video_id": int(row.video_id),
+            "playback_seconds": max(0.0, float(row.playback_seconds or 0)),
+            "note": str(row.note or ""),
+            "created_at": str(row.created_at or ""),
+            "updated_at": str(row.updated_at or ""),
+        }
+
     def get_study_plan_replan_settings(self) -> Optional[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
             row = conn.execute(

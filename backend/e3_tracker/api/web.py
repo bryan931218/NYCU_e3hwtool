@@ -12688,6 +12688,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         )
         return {"ok": True, "marker": marker}
 
+    @app.patch("/admin/study-plan/video-markers/<int:marker_id>")
+    @admin_required
+    def admin_study_plan_video_marker_update(marker_id: int):
+        payload = request.get_json(silent=True) or {}
+        marker = storage.update_study_plan_video_marker(marker_id, note=str(payload.get("note") or ""))
+        if not marker:
+            return {"ok": False, "error": "marker_not_found"}, 404
+        record_ui_event("study_plan_video_marker_updated", meta={"marker_id": marker_id})
+        return {"ok": True, "marker": marker}
+
     @app.delete("/admin/study-plan/video-markers/<int:marker_id>")
     @admin_required
     def admin_study_plan_video_marker_delete(marker_id: int):
