@@ -79,6 +79,58 @@
         .stat-label { color: var(--muted); font-size: 12px; font-weight: 850; }
         .stat-value { margin-top: 8px; font-size: clamp(24px, 3vw, 34px); font-weight: 950; letter-spacing: -.055em; }
         .stat-value small { margin-left: 4px; color: var(--muted); font-size: 13px; font-weight: 780; letter-spacing: 0; }
+        .public-calendar { margin-top: 18px; padding: 22px; border-radius: 12px; }
+        .public-calendar-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+        .public-calendar-kicker { color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .13em; }
+        .public-calendar-title { margin: 5px 0 0; font-size: 22px; letter-spacing: -.035em; }
+        .public-calendar-caption { max-width: 570px; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+        .public-calendar-stats { display: flex; align-items: stretch; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+        .public-calendar-stat { min-width: 102px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: #f8fbff; }
+        .public-calendar-stat span { display: block; color: var(--muted); font-size: 9px; font-weight: 800; }
+        .public-calendar-stat strong { display: block; margin-top: 3px; color: var(--ink-2); font-size: 14px; font-weight: 950; }
+        .public-calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 20px; padding-top: 17px; border-top: 1px solid var(--line); }
+        .public-calendar-month { color: var(--ink-2); font-size: 17px; font-weight: 930; letter-spacing: -.025em; }
+        .public-calendar-nav { display: flex; align-items: center; gap: 6px; }
+        .public-calendar-nav button { min-width: 34px; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); background: #fff; font: inherit; font-size: 12px; font-weight: 900; cursor: pointer; }
+        .public-calendar-nav button:hover:not(:disabled) { color: var(--blue); border-color: #a9c8ef; background: var(--blue-soft); }
+        .public-calendar-nav button:disabled { opacity: .38; cursor: default; }
+        .public-calendar-nav button:focus-visible, .public-calendar-day:focus-visible { outline: 3px solid rgba(20,99,217,.22); outline-offset: 2px; }
+        .public-calendar-weekdays, .public-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; }
+        .public-calendar-weekdays { margin-top: 15px; color: #8094aa; font-size: 10px; font-weight: 900; text-align: center; }
+        .public-calendar-weekdays span { padding: 3px 0; }
+        .public-calendar-grid { margin-top: 6px; }
+        .public-calendar-day { display: flex; min-width: 0; min-height: 64px; padding: 8px; align-items: flex-start; justify-content: space-between; gap: 4px; border: 1px solid transparent; border-radius: 9px; color: var(--ink-2); background: #f1f5f9; font: inherit; text-align: left; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
+        .public-calendar-day:hover { transform: translateY(-2px); box-shadow: 0 7px 16px rgba(16,42,67,.10); }
+        .public-calendar-day.is-outside { opacity: .4; }
+        .public-calendar-day.is-today { border-color: var(--blue); }
+        .public-calendar-day.level-1 { background: #dceafe; }
+        .public-calendar-day.level-2 { background: #a9cdfb; }
+        .public-calendar-day.level-3 { color: #092e5d; background: #62a2f2; }
+        .public-calendar-day.level-4 { color: #fff; background: #1763ca; }
+        .public-calendar-date { font-size: 11px; font-weight: 900; }
+        .public-calendar-duration { align-self: flex-end; overflow: hidden; font-size: 9px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+        .public-calendar-legend { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 12px; color: var(--muted); font-size: 10px; font-weight: 760; }
+        .public-calendar-legend i { width: 15px; height: 15px; border-radius: 4px; }
+        .public-calendar-legend .level-0 { background: #f1f5f9; }.public-calendar-legend .level-1 { background: #dceafe; }.public-calendar-legend .level-2 { background: #a9cdfb; }.public-calendar-legend .level-3 { background: #62a2f2; }.public-calendar-legend .level-4 { background: #1763ca; }
+        body.calendar-modal-open { overflow: hidden; }
+        .calendar-modal { position: fixed; z-index: 1000; inset: 0; display: grid; padding: 18px; place-items: center; background: rgba(8,25,43,.58); backdrop-filter: blur(8px); }
+        .calendar-modal[hidden] { display: none; }
+        .calendar-dialog { width: min(560px, 100%); max-height: min(720px, calc(100vh - 36px)); overflow: hidden; border: 1px solid rgba(219,230,242,.92); border-radius: 18px; background: #fff; box-shadow: 0 28px 80px rgba(8,25,43,.26); animation: calendar-dialog-in .18s ease-out; }
+        .calendar-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 21px 22px 17px; border-bottom: 1px solid var(--line); }
+        .calendar-dialog-kicker { color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .12em; }
+        .calendar-dialog-title { margin: 5px 0 0; font-size: 22px; letter-spacing: -.035em; }
+        .calendar-dialog-summary { margin-top: 6px; color: var(--muted); font-size: 12px; font-weight: 760; }
+        .calendar-dialog-close { display: grid; width: 36px; height: 36px; padding: 0; place-items: center; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: #fff; font-size: 23px; line-height: 1; cursor: pointer; }
+        .calendar-dialog-close:hover { color: var(--blue); border-color: #a9c8ef; background: var(--blue-soft); }
+        .calendar-dialog-body { max-height: calc(100vh - 190px); padding: 16px 22px 22px; overflow-y: auto; }
+        .calendar-activity-list { display: grid; gap: 9px; }
+        .calendar-activity-item { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; gap: 11px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: #fbfdff; }
+        .calendar-activity-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 9px; color: var(--blue); background: var(--blue-soft); }
+        .calendar-activity-icon svg { width: 17px; height: 17px; }.calendar-activity-item.is-correction .calendar-activity-icon { color: var(--amber); background: var(--amber-soft); }
+        .calendar-activity-copy { min-width: 0; }.calendar-activity-title { overflow: hidden; color: var(--ink-2); font-size: 13px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }.calendar-activity-meta { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 750; }
+        .calendar-activity-time { color: var(--blue); font-size: 12px; font-weight: 950; white-space: nowrap; }.calendar-activity-item.is-correction .calendar-activity-time { color: var(--amber); }
+        .calendar-activity-empty { padding: 34px 18px; color: var(--muted); border: 1px dashed #cbd8e5; border-radius: 12px; background: #f8fbfe; font-size: 13px; line-height: 1.65; text-align: center; }
+        @keyframes calendar-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
         .pace-panel { margin-top: 18px; padding: 22px; border-radius: 12px; }
         .pace-panel.behind { border-color: #f0d6a5; background: linear-gradient(135deg, #fffaf0 0%, #ffffff 62%); }
         .pace-panel.early { border-color: #9bdcdd; background: linear-gradient(135deg, #effefe 0%, #ffffff 62%); }
@@ -215,6 +267,8 @@
         @media (max-width: 980px) {
             .hero, .layout { grid-template-columns: 1fr; }
             .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .public-calendar-head { flex-direction: column; }
+            .public-calendar-stats { width: 100%; justify-content: flex-start; }
             .pace-layout { grid-template-columns: 1fr; }
             .daily-plan-head { align-items: flex-start; flex-direction: column; }
             .daily-legend { justify-content: flex-start; }
@@ -226,6 +280,19 @@
             .hero-main { padding: 22px; min-height: auto; }
             .progress-orb { width: 160px; }
             .stat-grid { grid-template-columns: 1fr; }
+            .public-calendar { padding: 18px 10px; }
+            .public-calendar-head { padding: 0 4px; }
+            .public-calendar-stat { flex: 1 1 90px; min-width: 0; }
+            .public-calendar-toolbar { align-items: stretch; padding-left: 4px; padding-right: 4px; flex-direction: column; }
+            .public-calendar-nav { justify-content: space-between; }
+            .public-calendar-nav button:nth-child(2) { flex: 1; }
+            .public-calendar-weekdays, .public-calendar-grid { gap: 3px; }
+            .public-calendar-day { min-height: 48px; padding: 5px; border-radius: 7px; }
+            .public-calendar-duration { max-width: 42px; font-size: 8px; }
+            .calendar-modal { padding: 10px; place-items: end center; }
+            .calendar-dialog { width: 100%; max-height: calc(100vh - 20px); border-radius: 18px 18px 12px 12px; }
+            .calendar-dialog-head { padding: 18px 16px 14px; }.calendar-dialog-body { max-height: calc(100vh - 155px); padding: 13px 16px 18px; }
+            .calendar-activity-item { grid-template-columns: 34px minmax(0,1fr); }.calendar-activity-icon { width: 34px; height: 34px; }.calendar-activity-time { grid-column: 2; }
             .pace-panel { padding: 18px 14px; border-radius: 12px; }
             .pace-message { max-width: 30ch; }
             .pace-topline { flex-direction: column; }
@@ -244,7 +311,7 @@
             .subject-percent { text-align: left; }
         }
         @media (prefers-reduced-motion: reduce) {
-            .runner-person, .runner-shadow { animation: none; }
+            .runner-person, .runner-shadow, .calendar-dialog { animation: none; }
         }
     </style>
 </head>
@@ -273,6 +340,42 @@
             <article class="stat-card"><div class="stat-label">觀看時數</div><div class="stat-value">{{ (summary.total_watched / 60)|round(1) }}<small>/ {{ total_hours }} 小時</small></div></article>
             <article class="stat-card"><div class="stat-label">已完成影片</div><div class="stat-value">{{ summary.completed_videos }}<small>/ {{ summary.total_videos }} 支</small></div></article>
         </section>
+
+        <section class="panel public-calendar" data-public-study-calendar aria-label="每月影片觀看熱度月曆">
+            <div class="public-calendar-head">
+                <div>
+                    <div class="public-calendar-kicker">WATCHING HEATMAP</div>
+                    <h2 class="public-calendar-title">學習月曆</h2>
+                    <div class="public-calendar-caption">每日格子的顏色代表影片觀看進度，顏色越深表示當天投入越多。點選日期可查看當天學習內容。</div>
+                </div>
+                <div class="public-calendar-stats">
+                    <div class="public-calendar-stat"><span>本月累積</span><strong data-public-calendar-total>0h</strong></div>
+                    <div class="public-calendar-stat"><span>活躍天數</span><strong data-public-calendar-active>0 天</strong></div>
+                    <div class="public-calendar-stat"><span>最投入</span><strong data-public-calendar-best>尚無紀錄</strong></div>
+                </div>
+            </div>
+            <div class="public-calendar-toolbar">
+                <div class="public-calendar-month" data-public-calendar-heading></div>
+                <div class="public-calendar-nav" aria-label="切換月份">
+                    <button type="button" data-public-calendar-previous aria-label="上個月">‹</button>
+                    <button type="button" data-public-calendar-today>本月</button>
+                    <button type="button" data-public-calendar-next aria-label="下個月">›</button>
+                </div>
+            </div>
+            <div class="public-calendar-weekdays" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+            <div class="public-calendar-grid" data-public-calendar-grid role="grid" aria-label="每日影片觀看時數"></div>
+            <div class="public-calendar-legend" aria-label="觀看熱度圖例"><span>少</span><i class="level-0"></i><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><i class="level-4"></i><span>多</span></div>
+            <script type="application/json" data-public-calendar-data>{{ study_calendar|tojson }}</script>
+        </section>
+        <div class="calendar-modal" data-public-calendar-modal hidden>
+            <section class="calendar-dialog" role="dialog" aria-modal="true" aria-labelledby="public-calendar-dialog-title">
+                <header class="calendar-dialog-head">
+                    <div><div class="calendar-dialog-kicker">DAILY ACTIVITY</div><h2 class="calendar-dialog-title" id="public-calendar-dialog-title" data-public-calendar-modal-title></h2><div class="calendar-dialog-summary" data-public-calendar-modal-summary></div></div>
+                    <button class="calendar-dialog-close" type="button" data-public-calendar-modal-close aria-label="關閉每日活動視窗">×</button>
+                </header>
+                <div class="calendar-dialog-body"><div class="calendar-activity-list" data-public-calendar-modal-list></div></div>
+            </section>
+        </div>
 
         <section class="panel pace-panel {{ progress_race.state }}" style="--runner-position:{{ progress_race.runner_position }}%;--plan-position:{{ progress_race.plan_position }}%;--actual-progress:{{ progress_race.actual_percent }}%;--gap-start:{{ progress_race.gap_start }}%;--gap-width:{{ progress_race.gap_width }}%;" aria-label="目前已看時間與截至今天應看時間比較">
             <div class="pace-layout">
@@ -450,5 +553,172 @@
             </div>
         </section>
     </main>
+    <script>
+        (() => {
+            const root = document.querySelector('[data-public-study-calendar]');
+            const dataNode = root?.querySelector('[data-public-calendar-data]');
+            if (!root || !dataNode) return;
+            let payload;
+            try { payload = JSON.parse(dataNode.textContent || '{}'); } catch (_) { return; }
+
+            const detailsByDay = new Map((payload.days || []).map((item) => [item.date, item]));
+            const secondsByDay = new Map((payload.days || []).map((item) => [item.date, Number(item.seconds) || 0]));
+            const todayKey = String(payload.today || '');
+            const parseMonth = (value) => {
+                const [year, month] = String(value || '').split('-').map(Number);
+                return new Date(year, Math.max(0, (month || 1) - 1), 1);
+            };
+            const monthNumber = (date) => date.getFullYear() * 12 + date.getMonth();
+            const pad = (value) => String(value).padStart(2, '0');
+            const dateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+            const firstMonth = parseMonth(payload.first_month || payload.initial_month);
+            const presentMonth = parseMonth(payload.initial_month);
+            let visibleMonth = parseMonth(payload.initial_month);
+            let lastFocusedCell = null;
+
+            const grid = root.querySelector('[data-public-calendar-grid]');
+            const heading = root.querySelector('[data-public-calendar-heading]');
+            const previous = root.querySelector('[data-public-calendar-previous]');
+            const next = root.querySelector('[data-public-calendar-next]');
+            const currentButton = root.querySelector('[data-public-calendar-today]');
+            const totalNode = root.querySelector('[data-public-calendar-total]');
+            const activeNode = root.querySelector('[data-public-calendar-active]');
+            const bestNode = root.querySelector('[data-public-calendar-best]');
+            const modal = document.querySelector('[data-public-calendar-modal]');
+            const modalTitle = modal?.querySelector('[data-public-calendar-modal-title]');
+            const modalSummary = modal?.querySelector('[data-public-calendar-modal-summary]');
+            const modalList = modal?.querySelector('[data-public-calendar-modal-list]');
+            const modalClose = modal?.querySelector('[data-public-calendar-modal-close]');
+
+            const heatLevel = (seconds) => seconds >= 7200 ? 4 : seconds >= 3600 ? 3 : seconds >= 1800 ? 2 : seconds > 0 ? 1 : 0;
+            const compactDuration = (seconds) => {
+                if (seconds <= 0) return '';
+                if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}m`;
+                const hours = seconds / 3600;
+                return `${hours >= 10 ? Math.round(hours) : hours.toFixed(1).replace('.0', '')}h`;
+            };
+            const activityDuration = (seconds) => {
+                const minutes = Math.max(1, Math.round((Number(seconds) || 0) / 60));
+                const hours = Math.floor(minutes / 60);
+                const remainder = minutes % 60;
+                if (!hours) return `${minutes} 分鐘`;
+                return `${hours} 小時${remainder ? ` ${remainder} 分鐘` : ''}`;
+            };
+            const summaryDuration = (seconds) => {
+                if (seconds <= 0) return '0h';
+                if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} 分`;
+                return `${(seconds / 3600).toFixed(1).replace('.0', '')}h`;
+            };
+            const spokenDate = (key) => {
+                const [year, month, day] = key.split('-').map(Number);
+                const weekday = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'][new Date(year, month - 1, day).getDay()];
+                return `${month} 月 ${day} 日・${weekday}`;
+            };
+            const fullDuration = (seconds) => seconds > 0 ? `觀看 ${activityDuration(seconds)}` : '尚無影片觀看紀錄';
+            const closeModal = () => {
+                if (!modal || modal.hidden) return;
+                modal.hidden = true;
+                document.body.classList.remove('calendar-modal-open');
+                lastFocusedCell?.focus();
+            };
+            const openModal = (key) => {
+                if (!modal || !modalTitle || !modalSummary || !modalList) return;
+                const detail = detailsByDay.get(key) || { seconds: 0, activities: [] };
+                const activities = Array.isArray(detail.activities) ? detail.activities : [];
+                modalTitle.textContent = spokenDate(key);
+                modalSummary.textContent = `${fullDuration(Number(detail.seconds) || 0)}・${activities.filter((item) => !item.is_correction).length} 支影片有進度`;
+                modalList.replaceChildren();
+                if (!activities.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'calendar-activity-empty';
+                    empty.textContent = '這一天尚未留下影片觀看活動。';
+                    modalList.appendChild(empty);
+                } else {
+                    activities.forEach((activity) => {
+                        const item = document.createElement('article');
+                        item.className = `calendar-activity-item${activity.is_correction ? ' is-correction' : ''}`;
+                        const icon = document.createElement('span');
+                        icon.className = 'calendar-activity-icon';
+                        icon.innerHTML = activity.is_correction
+                            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11a5 5 0 0 1 0 10H9"/><path d="m8 3-4 4 4 4"/></svg>'
+                            : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5L8 5.5Z"/></svg>';
+                        const copy = document.createElement('div');
+                        copy.className = 'calendar-activity-copy';
+                        const title = document.createElement('div');
+                        title.className = 'calendar-activity-title';
+                        title.textContent = `${String(Number(activity.sequence) || 0).padStart(3, '0')}・${activity.title || '未命名影片'}`;
+                        const meta = document.createElement('div');
+                        meta.className = 'calendar-activity-meta';
+                        meta.textContent = `${activity.subject || '未分類'}・${activity.is_correction ? '進度回退校正' : `目前完成 ${Number(activity.completion) || 0}%`}`;
+                        copy.append(title, meta);
+                        const time = document.createElement('strong');
+                        time.className = 'calendar-activity-time';
+                        time.textContent = `${activity.is_correction ? '−' : '+'}${activityDuration(activity.seconds)}`;
+                        item.append(icon, copy, time);
+                        modalList.appendChild(item);
+                    });
+                }
+                lastFocusedCell = grid.querySelector(`[data-date="${key}"]`);
+                modal.hidden = false;
+                document.body.classList.add('calendar-modal-open');
+                modalClose?.focus();
+            };
+            const renderSummary = () => {
+                const prefix = `${visibleMonth.getFullYear()}-${pad(visibleMonth.getMonth() + 1)}-`;
+                const days = [...secondsByDay.entries()].filter(([key, seconds]) => key.startsWith(prefix) && seconds > 0);
+                const total = days.reduce((sum, [, seconds]) => sum + seconds, 0);
+                const best = days.reduce((winner, item) => (!winner || item[1] > winner[1] ? item : winner), null);
+                totalNode.textContent = summaryDuration(total);
+                activeNode.textContent = `${days.length} 天`;
+                bestNode.textContent = best ? `${Number(best[0].slice(5,7))}/${Number(best[0].slice(8,10))}・${summaryDuration(best[1])}` : '尚無紀錄';
+            };
+            const render = () => {
+                const year = visibleMonth.getFullYear();
+                const month = visibleMonth.getMonth();
+                const firstVisible = new Date(year, month, 1 - new Date(year, month, 1).getDay());
+                heading.textContent = `${year} 年 ${month + 1} 月`;
+                grid.replaceChildren();
+                for (let offset = 0; offset < 42; offset += 1) {
+                    const date = new Date(firstVisible);
+                    date.setDate(firstVisible.getDate() + offset);
+                    const key = dateKey(date);
+                    const seconds = secondsByDay.get(key) || 0;
+                    const cell = document.createElement('button');
+                    cell.type = 'button';
+                    cell.className = `public-calendar-day level-${heatLevel(seconds)}`;
+                    cell.dataset.date = key;
+                    cell.setAttribute('role', 'gridcell');
+                    cell.setAttribute('aria-label', `${spokenDate(key)}，${fullDuration(seconds)}`);
+                    if (date.getMonth() !== month) cell.classList.add('is-outside');
+                    if (key === todayKey) cell.classList.add('is-today');
+                    const label = document.createElement('span');
+                    label.className = 'public-calendar-date';
+                    label.textContent = String(date.getDate());
+                    const duration = document.createElement('span');
+                    duration.className = 'public-calendar-duration';
+                    duration.textContent = compactDuration(seconds);
+                    cell.append(label, duration);
+                    cell.addEventListener('click', () => {
+                        if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
+                            visibleMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+                            render();
+                        }
+                        openModal(key);
+                    });
+                    grid.appendChild(cell);
+                }
+                previous.disabled = monthNumber(visibleMonth) <= monthNumber(firstMonth);
+                next.disabled = monthNumber(visibleMonth) >= monthNumber(presentMonth);
+                renderSummary();
+            };
+            previous.addEventListener('click', () => { if (!previous.disabled) { visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1); render(); } });
+            next.addEventListener('click', () => { if (!next.disabled) { visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1); render(); } });
+            currentButton.addEventListener('click', () => { visibleMonth = new Date(presentMonth); render(); });
+            modalClose?.addEventListener('click', closeModal);
+            modal?.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+            document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && modal && !modal.hidden) closeModal(); });
+            render();
+        })();
+    </script>
 </body>
 </html>

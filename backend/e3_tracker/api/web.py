@@ -2875,6 +2875,40 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             day: sum(max(0.0, float(item.get("delta_seconds") or 0)) for item in events)
             for day, events in activity_events_by_day.items()
         }
+        calendar_days: List[Dict[str, Any]] = []
+        for activity_day, events in sorted(activity_events_by_day.items()):
+            calendar_activities: List[Dict[str, Any]] = []
+            for item in events:
+                delta_seconds = float(item.get("delta_seconds") or 0)
+                if abs(delta_seconds) < 0.5:
+                    continue
+                duration_seconds = max(0.0, float(item.get("duration_seconds") or 0))
+                watched_seconds = max(0.0, float(item.get("watched_seconds") or 0))
+                calendar_activities.append(
+                    {
+                        "subject": str(item.get("subject") or ""),
+                        "sequence": int(item.get("sequence") or 0),
+                        "title": str(item.get("title") or ""),
+                        "seconds": int(round(abs(delta_seconds))),
+                        "is_correction": delta_seconds < 0,
+                        "completion": round(
+                            min(100.0, watched_seconds / duration_seconds * 100)
+                            if duration_seconds
+                            else 0.0,
+                            1,
+                        ),
+                    }
+                )
+            calendar_seconds = calendar_seconds_by_day.get(activity_day, 0.0)
+            if calendar_seconds > 0 or calendar_activities:
+                calendar_days.append(
+                    {
+                        "date": activity_day,
+                        "seconds": int(round(calendar_seconds)),
+                        "activities": calendar_activities,
+                    }
+                )
+
         study_calendar = {
             "today": today.isoformat(),
             "initial_month": today.strftime("%Y-%m"),

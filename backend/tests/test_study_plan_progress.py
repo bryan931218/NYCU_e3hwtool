@@ -495,6 +495,10 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("進度追趕賽", home_html)
             self.assertIn("今日任務", home_html)
             self.assertIn("進度分析", home_html)
+            self.assertIn("data-study-calendar", home_html)
+            self.assertIn("data-calendar-modal", home_html)
+            self.assertIn("DAILY ACTIVITY", home_html)
+            self.assertIn(first_video["title"], home_html)
             self.assertNotIn("學習旅程地圖", home_html)
 
             public_page = client.get("/study-progress")
@@ -502,6 +506,10 @@ class StudyPlanProgressTests(unittest.TestCase):
             public_html = public_page.get_data(as_text=True)
             self.assertIn("截至今天應看", public_html)
             self.assertIn("觀看時數", public_html)
+            self.assertIn("data-public-study-calendar", public_html)
+            self.assertIn("data-public-calendar-modal", public_html)
+            self.assertIn("點選日期可查看當天學習內容", public_html)
+            self.assertIn(first_video["title"], public_html)
             self.assertNotIn("目前已看的時間", public_html)
             storage._engine.dispose()
 

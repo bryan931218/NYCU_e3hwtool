@@ -288,6 +288,48 @@
         .calendar-legend-box.level-2 { background: #a9cdfb; }
         .calendar-legend-box.level-3 { background: #62a2f2; }
         .calendar-legend-box.level-4 { background: #1763ca; }
+        body.calendar-modal-open { overflow: hidden; }
+        .calendar-modal {
+            position: fixed;
+            z-index: 1000;
+            inset: 0;
+            display: grid;
+            padding: 18px;
+            place-items: center;
+            background: rgba(8, 25, 43, .58);
+            backdrop-filter: blur(8px);
+        }
+        .calendar-modal[hidden] { display: none; }
+        .calendar-dialog {
+            width: min(560px, 100%);
+            max-height: min(720px, calc(100vh - 36px));
+            overflow: hidden;
+            border: 1px solid rgba(219, 230, 242, .92);
+            border-radius: 18px;
+            background: #fff;
+            box-shadow: 0 28px 80px rgba(8, 25, 43, .26);
+            animation: calendar-dialog-in .18s ease-out;
+        }
+        .calendar-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 21px 22px 17px; border-bottom: 1px solid var(--line); }
+        .calendar-dialog-kicker { color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .12em; }
+        .calendar-dialog-title { margin: 5px 0 0; font-size: 22px; letter-spacing: -.035em; }
+        .calendar-dialog-summary { margin-top: 6px; color: var(--muted); font-size: 12px; font-weight: 760; }
+        .calendar-dialog-close { display: grid; width: 36px; height: 36px; padding: 0; place-items: center; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: #fff; font-size: 23px; line-height: 1; cursor: pointer; }
+        .calendar-dialog-close:hover { color: var(--blue); border-color: #a9c8ef; background: var(--blue-soft); }
+        .calendar-dialog-close:focus-visible { outline: 3px solid rgba(20,99,217,.22); outline-offset: 2px; }
+        .calendar-dialog-body { max-height: calc(100vh - 190px); padding: 16px 22px 22px; overflow-y: auto; }
+        .calendar-activity-list { display: grid; gap: 9px; }
+        .calendar-activity-item { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: #fbfdff; }
+        .calendar-activity-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 9px; color: var(--blue); background: var(--blue-soft); }
+        .calendar-activity-icon svg { width: 17px; height: 17px; }
+        .calendar-activity-item.is-correction .calendar-activity-icon { color: var(--amber); background: var(--amber-soft); }
+        .calendar-activity-copy { min-width: 0; }
+        .calendar-activity-title { overflow: hidden; color: var(--ink-2); font-size: 13px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+        .calendar-activity-meta { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 750; }
+        .calendar-activity-time { color: var(--blue); font-size: 12px; font-weight: 950; white-space: nowrap; }
+        .calendar-activity-item.is-correction .calendar-activity-time { color: var(--amber); }
+        .calendar-activity-empty { padding: 34px 18px; color: var(--muted); border: 1px dashed #cbd8e5; border-radius: 12px; background: #f8fbfe; font-size: 13px; line-height: 1.65; text-align: center; }
+        @keyframes calendar-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
 
         .pace-panel {
             margin-bottom: 18px;
@@ -814,6 +856,13 @@
             .calendar-weekdays, .calendar-grid { gap: 3px; }
             .calendar-day { min-height: 48px; padding: 5px; border-radius: 7px; }
             .calendar-duration { max-width: 42px; font-size: 8px; }
+            .calendar-modal { padding: 10px; place-items: end center; }
+            .calendar-dialog { width: 100%; max-height: calc(100vh - 20px); border-radius: 18px 18px 12px 12px; }
+            .calendar-dialog-head { padding: 18px 16px 14px; }
+            .calendar-dialog-body { max-height: calc(100vh - 155px); padding: 13px 16px 18px; }
+            .calendar-activity-item { grid-template-columns: 34px minmax(0, 1fr); }
+            .calendar-activity-icon { width: 34px; height: 34px; }
+            .calendar-activity-time { grid-column: 2; }
             .journey-stage { min-height: 500px; }
             .planet { width: 180px; }
             .topic-0 { left: 50%; top: 13%; }
@@ -824,7 +873,7 @@
             .topic-5 { left: 23.2%; top: 31.5%; }
         }
         @media (prefers-reduced-motion: reduce) {
-            .runner-person, .runner-shadow { animation: none; }
+            .runner-person, .runner-shadow, .calendar-dialog { animation: none; }
         }
     </style>
 </head>
@@ -916,6 +965,21 @@
                 </div>
                 <script type="application/json" data-calendar-data>{{ study_calendar|tojson }}</script>
             </section>
+            <div class="calendar-modal" data-calendar-modal hidden>
+                <section class="calendar-dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-dialog-title">
+                    <header class="calendar-dialog-head">
+                        <div>
+                            <div class="calendar-dialog-kicker">DAILY ACTIVITY</div>
+                            <h2 class="calendar-dialog-title" id="calendar-dialog-title" data-calendar-modal-title></h2>
+                            <div class="calendar-dialog-summary" data-calendar-modal-summary></div>
+                        </div>
+                        <button class="calendar-dialog-close" type="button" data-calendar-modal-close aria-label="關閉每日活動視窗">×</button>
+                    </header>
+                    <div class="calendar-dialog-body">
+                        <div class="calendar-activity-list" data-calendar-modal-list></div>
+                    </div>
+                </section>
+            </div>
 
             <section class="pace-panel {{ progress_race.state }}" style="--runner-position:{{ progress_race.runner_position }}%;--plan-position:{{ progress_race.plan_position }}%;--actual-progress:{{ progress_race.actual_percent }}%;--gap-start:{{ progress_race.gap_start }}%;--gap-width:{{ progress_race.gap_width }}%;" aria-label="目前已看時間與截至今天應看時間比較">
                 <div class="pace-layout">
@@ -1092,6 +1156,7 @@
                 return;
             }
 
+            const dayDetailsByKey = new Map((payload.days || []).map((item) => [item.date, item]));
             const secondsByDay = new Map((payload.days || []).map((item) => [item.date, Number(item.seconds) || 0]));
             const todayKey = String(payload.today || '');
             const parseMonth = (value) => {
@@ -1117,6 +1182,12 @@
             const bestNode = root.querySelector('[data-calendar-best]');
             const focusDateNode = root.querySelector('[data-calendar-focus-date]');
             const focusDurationNode = root.querySelector('[data-calendar-focus-duration]');
+            const modal = document.querySelector('[data-calendar-modal]');
+            const modalTitle = modal?.querySelector('[data-calendar-modal-title]');
+            const modalSummary = modal?.querySelector('[data-calendar-modal-summary]');
+            const modalList = modal?.querySelector('[data-calendar-modal-list]');
+            const modalClose = modal?.querySelector('[data-calendar-modal-close]');
+            let lastFocusedCell = null;
 
             const heatLevel = (seconds) => {
                 if (seconds >= 7200) return 4;
@@ -1149,6 +1220,62 @@
                 const date = new Date(year, month - 1, day);
                 const weekday = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][date.getDay()];
                 return `${month} 月 ${day} 日・${weekday}`;
+            };
+            const activityDuration = (seconds) => {
+                const minutes = Math.max(1, Math.round((Number(seconds) || 0) / 60));
+                const hours = Math.floor(minutes / 60);
+                const remainder = minutes % 60;
+                if (!hours) return `${minutes} 分鐘`;
+                return `${hours} 小時${remainder ? ` ${remainder} 分鐘` : ''}`;
+            };
+            const closeDayModal = () => {
+                if (!modal || modal.hidden) return;
+                modal.hidden = true;
+                document.body.classList.remove('calendar-modal-open');
+                lastFocusedCell?.focus();
+            };
+            const openDayModal = (key) => {
+                if (!modal || !modalTitle || !modalSummary || !modalList) return;
+                const detail = dayDetailsByKey.get(key) || { date: key, seconds: 0, activities: [] };
+                const activities = Array.isArray(detail.activities) ? detail.activities : [];
+                const watchedActivities = activities.filter((item) => !item.is_correction);
+                modalTitle.textContent = spokenDate(key);
+                modalSummary.textContent = `${fullDuration(Number(detail.seconds) || 0)}・${watchedActivities.length} 支影片有進度`;
+                modalList.replaceChildren();
+                if (!activities.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'calendar-activity-empty';
+                    empty.textContent = '這一天尚未留下影片觀看活動。開始播放並儲存進度後，紀錄就會出現在這裡。';
+                    modalList.appendChild(empty);
+                } else {
+                    activities.forEach((activity) => {
+                        const item = document.createElement('article');
+                        item.className = `calendar-activity-item${activity.is_correction ? ' is-correction' : ''}`;
+                        const icon = document.createElement('span');
+                        icon.className = 'calendar-activity-icon';
+                        icon.innerHTML = activity.is_correction
+                            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11a5 5 0 0 1 0 10H9"/><path d="m8 3-4 4 4 4"/></svg>'
+                            : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5L8 5.5Z"/></svg>';
+                        const copy = document.createElement('div');
+                        copy.className = 'calendar-activity-copy';
+                        const title = document.createElement('div');
+                        title.className = 'calendar-activity-title';
+                        title.textContent = `${String(Number(activity.sequence) || 0).padStart(3, '0')}・${activity.title || '未命名影片'}`;
+                        const meta = document.createElement('div');
+                        meta.className = 'calendar-activity-meta';
+                        meta.textContent = `${activity.subject || '未分類'}・${activity.is_correction ? '進度回退校正' : `目前完成 ${Number(activity.completion) || 0}%`}`;
+                        copy.append(title, meta);
+                        const time = document.createElement('strong');
+                        time.className = 'calendar-activity-time';
+                        time.textContent = `${activity.is_correction ? '−' : '+'}${activityDuration(activity.seconds)}`;
+                        item.append(icon, copy, time);
+                        modalList.appendChild(item);
+                    });
+                }
+                lastFocusedCell = grid.querySelector(`[data-date="${key}"]`);
+                modal.hidden = false;
+                document.body.classList.add('calendar-modal-open');
+                modalClose?.focus();
             };
             const updateFocus = (key) => {
                 selectedKey = key;
@@ -1204,6 +1331,11 @@
                             visibleMonth = new Date(date.getFullYear(), date.getMonth(), 1);
                             selectedKey = key;
                             render();
+                            openDayModal(key);
+                            return;
+                        }
+                        updateFocus(key);
+                        openDayModal(key);
                             return;
                         }
                         updateFocus(key);
@@ -1238,6 +1370,13 @@
                 visibleMonth = new Date(todayMonth);
                 selectedKey = todayKey;
                 render();
+            });
+            modalClose?.addEventListener('click', closeDayModal);
+            modal?.addEventListener('click', (event) => {
+                if (event.target === modal) closeDayModal();
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && modal && !modal.hidden) closeDayModal();
             });
             render();
         })();
