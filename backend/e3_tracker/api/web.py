@@ -348,6 +348,27 @@ def _study_plan_progress_summary(videos: Iterable[Dict[str, Any]]) -> Dict[str, 
     }
 
 
+def _study_plan_progress_week(week_rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return the first scheduled week that the learner has not completed yet."""
+    rows = list(week_rows)
+    if not rows:
+        return {}
+
+    scheduled_rows = [
+        row
+        for row in rows
+        if _study_plan_nonnegative_number(row.get("target_seconds")) > 0
+    ]
+    for row in scheduled_rows:
+        if not _study_plan_total_is_complete(
+            row.get("target_seconds"),
+            row.get("watched_seconds"),
+        ):
+            return row
+
+    return scheduled_rows[-1] if scheduled_rows else rows[-1]
+
+
 def _study_plan_subject_status(
     subject_weeks: Iterable[Dict[str, Any]],
     today: date,
@@ -12541,7 +12562,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return redirect(url_for("admin_study_plan", subject=selected_subject))
 
         videos = storage.list_study_plan_videos_with_records()
-        week_rows, current_week, summary = _study_plan_week_rows(videos)
+        week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
+        current_week = _study_plan_progress_week(week_rows)
         current_subjects = current_week.get("subjects") or [current_week.get("subject")]
         default_subject = next(
             (subject for subject in current_subjects if subject in STUDY_PLAN_SUBJECTS),
@@ -12734,7 +12756,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not result.get("stale"):
             _invalidate_study_progress_context()
         videos = storage.list_study_plan_videos_with_records()
-        _week_rows, current_week, summary = _study_plan_week_rows(videos)
+        week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
+        current_week = _study_plan_progress_week(week_rows)
         if not result.get("stale"):
             record_ui_event(
                 "study_plan_youtube_progress_saved",

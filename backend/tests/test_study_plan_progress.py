@@ -12,6 +12,7 @@ from e3_tracker.api.web import (
     _study_plan_today_progress_days,
     _study_plan_progress_race,
     _study_plan_progress_summary,
+    _study_plan_progress_week,
     _study_plan_schedule_definitions,
     _study_plan_subject_status,
     _study_plan_video_completion,
@@ -20,6 +21,24 @@ from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
+    def test_progress_week_follows_actual_completion_instead_of_calendar(self):
+        week_rows = [
+            {"number": 1, "target_seconds": 100, "watched_seconds": 100},
+            {"number": 2, "target_seconds": 100, "watched_seconds": 35},
+            {"number": 3, "target_seconds": 100, "watched_seconds": 0},
+        ]
+
+        self.assertEqual(_study_plan_progress_week(week_rows)["number"], 2)
+
+    def test_progress_week_skips_flexible_weeks_and_stays_on_last_when_complete(self):
+        week_rows = [
+            {"number": 1, "target_seconds": 100, "watched_seconds": 100},
+            {"number": 2, "target_seconds": 0, "watched_seconds": 0},
+            {"number": 3, "target_seconds": 100, "watched_seconds": 100},
+        ]
+
+        self.assertEqual(_study_plan_progress_week(week_rows)["number"], 3)
+
     def test_today_progress_maps_mixed_subject_progress_by_daily_allocations(self):
         week_rows = [
             {
@@ -460,7 +479,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             current_day_subjects = payload["current_week"]["daily_recommendations"][0]["subject_progress"]
             self.assertEqual(
                 [item["name"] for item in current_day_subjects],
-                ["離散數學", "資料結構"],
+                ["線性代數"],
             )
             self.assertIn("remaining_hours", payload["current_week"])
 
@@ -507,11 +526,10 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("尚需完成", plan_html)
             self.assertIn("週完成率", plan_html)
             self.assertNotIn("日均", plan_html)
-            self.assertIn("2026-07-27 至 2026-08-02", plan_html)
+            self.assertIn("2026-06-29 至 2026-07-05", plan_html)
             self.assertIn("本週剩餘", plan_html)
             self.assertNotIn("每日影片上限", plan_html)
-            self.assertIn('data-day-subject="離散數學"', plan_html)
-            self.assertIn('data-day-subject="資料結構"', plan_html)
+            self.assertIn('data-day-subject="線性代數"', plan_html)
             self.assertNotIn("彈性日", plan_html)
             self.assertIn("2026-12-03", plan_html)
 
