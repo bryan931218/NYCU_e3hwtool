@@ -215,6 +215,18 @@
         .note-fold { border-radius: 13px; }
         .side-stack { position: sticky; top: 88px; }
         .side-stack .panel { box-shadow: 0 12px 34px rgba(16,42,67,.06); }
+        .side-stack .history {
+            max-height: min(520px, calc(100dvh - 112px));
+            overflow-x: hidden;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            scrollbar-color: #a9bfd7 transparent;
+        }
+        .side-stack .history::-webkit-scrollbar { width: 8px; }
+        .side-stack .history::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: #a9bfd7; background-clip: padding-box; }
+        .side-stack .history::-webkit-scrollbar-track { background: transparent; }
         .queue { padding: 12px 18px 18px; }
         .queue-item { border-radius: 11px; }
         .ai-floating-toggle { width: 58px; height: 58px; border-radius: 18px; background: linear-gradient(145deg,#169497,#087879); box-shadow: 0 16px 34px rgba(8,127,128,.28); }
@@ -228,6 +240,7 @@
             .shell { padding: 20px 14px 44px; }
             .layout { grid-template-columns: 1fr; }
             .side-stack { position: static; grid-template-columns: repeat(2,minmax(0,1fr)); }
+            .side-stack .history { max-height: none; overflow: visible; scrollbar-gutter: auto; }
             .recall-shortcuts { top: 132px; }
         }
         @media (max-width: 620px) {

@@ -14,6 +14,7 @@ from e3_tracker.api.web import (
     _study_plan_progress_summary,
     _study_plan_progress_week,
     _study_plan_schedule_definitions,
+    _study_plan_subject_is_complete,
     _study_plan_subject_status,
     _study_plan_video_completion,
 )
@@ -21,6 +22,60 @@ from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
+    def test_subject_is_complete_only_at_exactly_one_hundred_percent(self):
+        self.assertFalse(_study_plan_subject_is_complete(1000, 995))
+        self.assertFalse(_study_plan_subject_is_complete(1000, 999.9))
+        self.assertTrue(_study_plan_subject_is_complete(1000, 1000))
+
+    def test_home_subject_table_does_not_show_achieved_at_ninety_nine_point_five_percent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+
+            storage = app.extensions["e3_storage"]
+            videos = storage.list_study_plan_videos_with_records()
+            subject = videos[0]["subject"]
+            subject_videos = [item for item in videos if item["subject"] == subject]
+            subject_target = sum(float(item["duration_seconds"]) for item in subject_videos)
+            remaining_gap = subject_target * 0.005
+            for index, video in enumerate(subject_videos):
+                watched_seconds = float(video["duration_seconds"])
+                if index == len(subject_videos) - 1:
+                    watched_seconds = max(0.0, watched_seconds - remaining_gap)
+                storage.update_study_plan_video_progress(
+                    video_id=int(video["id"]),
+                    watched_seconds=watched_seconds,
+                    expected_version=int(video["progress_version"]),
+                )
+
+            token = "subject-table-test-session"
+            storage.save_web_session(token, "test-admin")
+            client = app.test_client()
+            with client.session_transaction() as browser_session:
+                browser_session["username"] = "test-admin"
+                browser_session["session_token"] = token
+                browser_session["is_admin"] = True
+
+            response = client.get("/admin/study-home")
+            self.assertEqual(response.status_code, 200)
+            home_html = response.get_data(as_text=True)
+            subject_row = re.search(
+                rf'<tr>\s*<td class="subject-name-cell">{re.escape(subject)}</td>(.*?)</tr>',
+                home_html,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(subject_row)
+            self.assertIn("99.5%", subject_row.group(1))
+            self.assertNotIn("已達標", subject_row.group(1))
+            storage._engine.dispose()
+
     def test_progress_week_follows_actual_completion_instead_of_calendar(self):
         week_rows = [
             {"number": 1, "target_seconds": 100, "watched_seconds": 100},

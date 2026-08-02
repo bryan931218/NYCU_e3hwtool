@@ -369,6 +369,13 @@ def _study_plan_progress_week(week_rows: Iterable[Dict[str, Any]]) -> Dict[str, 
     return scheduled_rows[-1] if scheduled_rows else rows[-1]
 
 
+def _study_plan_subject_is_complete(target_seconds: Any, watched_seconds: Any) -> bool:
+    """Subject progress is complete only after every target second is watched."""
+    target = _study_plan_nonnegative_number(target_seconds)
+    watched = _study_plan_nonnegative_number(watched_seconds)
+    return target > 0 and watched >= target
+
+
 def _study_plan_subject_status(
     subject_weeks: Iterable[Dict[str, Any]],
     today: date,
@@ -2879,20 +2886,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             target_seconds = float(subject_progress["total_target_seconds"])
             watched_seconds = float(subject_progress["total_watched_seconds"])
             completed_count = int(subject_progress["completed_videos"])
-            subject_is_complete = bool(subject_progress["all_videos_complete"]) or _study_plan_total_is_complete(
-                target_seconds,
-                watched_seconds,
-            )
+            subject_is_complete = _study_plan_subject_is_complete(target_seconds, watched_seconds)
             subject_weeks = [row for row in week_rows if subject in row.get("subjects", [row.get("subject")])]
             subject_state, subject_state_label = _study_plan_subject_status(
                 subject_weeks,
                 today,
                 subject_is_complete=subject_is_complete,
             )
-            subject_completion = _study_plan_completion_percent(
-                target_seconds,
-                watched_seconds,
-                complete_override=subject_is_complete,
+            subject_completion = min(
+                100.0,
+                (watched_seconds / target_seconds * 100) if target_seconds else 0.0,
             )
             subject_rows.append(
                 {
