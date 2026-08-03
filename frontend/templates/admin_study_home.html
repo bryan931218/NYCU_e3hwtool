@@ -122,7 +122,7 @@
 
         .metric-strip {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
             margin-bottom: 12px;
         }
@@ -417,7 +417,7 @@
         .today-action-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
         .today-action-head h2 { margin: 0; font-size: 19px; }
         .today-action-head .caption { margin-top: 4px; }
-        .today-task-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); margin-top: 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+        .today-task-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); margin-top: 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
         .today-task-stat { min-width: 0; padding: 13px 15px; }
         .today-task-stat + .today-task-stat { border-left: 1px solid var(--line); }
         .today-task-label { color: var(--muted); font-size: 11px; font-weight: 850; }
@@ -787,7 +787,7 @@
         .key-line.target { background: #a4b3c2; }
 
         @media (max-width: 1180px) {
-            .metric-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .metric-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
             .dashboard-grid, .lower-grid { grid-template-columns: 1fr; }
             .pace-layout { grid-template-columns: 1fr; }
             .journey-card { min-height: auto; }
@@ -837,6 +837,9 @@
             .date-pill { white-space: normal; }
             .today-action-panel { padding: 16px 14px; }
             .today-task-stat { padding: 12px 7px; }
+            .today-task-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .today-task-stat:nth-child(3) { border-left:0; border-top:1px solid var(--line); }
+            .today-task-stat:nth-child(4) { border-top:1px solid var(--line); }
             .today-task-value { font-size: 18px; }
             .today-history > summary, .analysis-pocket > summary { padding-left: 14px; padding-right: 14px; }
             .analysis-summary-value { font-size: 12px; }
@@ -1050,7 +1053,8 @@
                 </div>
                 <div class="today-task-grid">
                     <div class="today-task-stat"><div class="today-task-label">今日安排</div><div class="today-task-value">{{ today_study.target_hours }}h</div></div>
-                    <div class="today-task-stat"><div class="today-task-label">今日已看</div><div class="today-task-value">{{ today_study.hours }}h</div></div>
+                    <div class="today-task-stat"><div class="today-task-label">影片進度</div><div class="today-task-value">{{ today_study.hours }}h</div></div>
+                    <div class="today-task-stat"><div class="today-task-label">實際學習</div><div class="today-task-value">{{ today_study.learning_hours }}h</div></div>
                     <div class="today-task-stat"><div class="today-task-label">尚需完成</div><div class="today-task-value">{% if today_study.target_hours <= 0 %}無排程{% elif today_study.remaining_hours <= 0 %}已完成{% else %}{{ today_study.remaining_hours }}h{% endif %}</div></div>
                 </div>
                 <div class="video-list">

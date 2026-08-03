@@ -259,6 +259,15 @@ def _study_plan_video_is_complete(duration_seconds: Any, watched_seconds: Any) -
     return watched >= duration - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / duration >= STUDY_PLAN_COMPLETE_RATIO
 
 
+def _study_plan_credited_video_seconds(duration_seconds: Any, watched_seconds: Any) -> float:
+    """Credit a completed video at full length so tiny player end gaps do not leak into the schedule."""
+    duration = _study_plan_nonnegative_number(duration_seconds)
+    watched = min(_study_plan_nonnegative_number(watched_seconds), duration)
+    if _study_plan_video_is_complete(duration, watched):
+        return duration
+    return watched
+
+
 def _parse_youtube_url(value: Any) -> Optional[Dict[str, str]]:
     raw = str(value or "").strip()
     if not raw:
@@ -314,9 +323,9 @@ def _study_plan_progress_summary(videos: Iterable[Dict[str, Any]]) -> Dict[str, 
     recorded_videos = 0
     for item in video_rows:
         duration_seconds = _study_plan_nonnegative_number(item.get("duration_seconds"))
-        watched_seconds = min(
-            _study_plan_nonnegative_number(item.get("watched_seconds")),
+        watched_seconds = _study_plan_credited_video_seconds(
             duration_seconds,
+            item.get("watched_seconds"),
         )
         total_target_seconds += duration_seconds
         total_watched_seconds += watched_seconds
@@ -846,9 +855,9 @@ def _study_plan_today_progress_days(
         if not subject:
             continue
         duration_seconds = _study_plan_nonnegative_number(video.get("duration_seconds"))
-        watched_seconds = min(
-            _study_plan_nonnegative_number(video.get("watched_seconds")),
+        watched_seconds = _study_plan_credited_video_seconds(
             duration_seconds,
+            video.get("watched_seconds"),
         )
         watched_after_by_subject[subject] = (
             watched_after_by_subject.get(subject, 0.0) + watched_seconds
@@ -2583,9 +2592,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
         watched_by_subject = {
             subject: sum(
-                min(
-                    _study_plan_nonnegative_number(item.get("watched_seconds")),
-                    _study_plan_nonnegative_number(item.get("duration_seconds")),
+                _study_plan_credited_video_seconds(
+                    item.get("duration_seconds"),
+                    item.get("watched_seconds"),
                 )
                 for item in videos_by_subject.get(subject, [])
             )
@@ -3011,6 +3020,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "delta_stat_value": pace_delta_stat_value,
         }
 
+        study_time_today = storage.get_study_time_summary(day=today.isoformat())
         metric_cards = [
             {
                 "label": "整體完成率",
@@ -3032,6 +3042,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "unit": f"/ {int(summary.get('total_videos') or 0)} 支",
                 "icon": "check",
                 "state": "purple",
+            },
+            {
+                "label": "今日學習時間",
+                "value": f"{float(study_time_today['total_seconds']) / 3600:.1f}",
+                "unit": "h",
+                "icon": "clock",
+                "state": "early",
             },
         ]
 
@@ -3284,6 +3301,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "task_label": today_task_label,
             "progress_days": today_progress_days,
             "videos": today_videos,
+            "learning_seconds": round(float(study_time_today["total_seconds"])),
+            "learning_hours": round(float(study_time_today["total_seconds"]) / 3600, 2),
+            "video_learning_hours": round(float(study_time_today["video_seconds"]) / 3600, 2),
+            "practice_learning_hours": round(float(study_time_today["practice_seconds"]) / 3600, 2),
         }
         return {
             "plan_start": STUDY_PLAN_START,
@@ -12575,6 +12596,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         replan_preview = _study_plan_replan_preview(replan_settings)
         next_week_start = _study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)
         effective_plan_end = str((replan_settings or {}).get("end_date") or STUDY_PLAN_END)
+        study_time_today = storage.get_study_time_summary(
+            day=_study_plan_business_date().isoformat()
+        )
         return render_template_string(
             STUDY_PLAN_TEMPLATE,
             admin_user=user,
@@ -12592,6 +12616,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             video_markers=video_markers,
             replan_settings=replan_settings,
             replan_preview=replan_preview,
+            study_time_today=study_time_today,
             replan_defaults={
                 "start_date": next_week_start.isoformat(),
                 "end_date": effective_plan_end,
@@ -12769,6 +12794,46 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "state": current_week["state"],
                 "state_label": current_week["state_label"],
                 "daily_recommendations": current_week["daily_recommendations"],
+            },
+        }
+
+    @app.post("/admin/study-plan/study-time")
+    @admin_required
+    def admin_study_plan_study_time():
+        payload = request.get_json(silent=True) or {}
+        try:
+            elapsed_seconds = float(payload.get("elapsed_seconds") or 0)
+            video_id = int(payload.get("video_id") or 0) or None
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "invalid_payload"}, 400
+        session_key = str(payload.get("session_id") or "").strip()
+        kind = str(payload.get("kind") or "").strip().lower()
+        if (
+            not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", session_key)
+            or kind not in {"video", "practice"}
+            or not math.isfinite(elapsed_seconds)
+            or elapsed_seconds < 0
+        ):
+            return {"ok": False, "error": "invalid_payload"}, 400
+        summary = storage.record_study_time_session(
+            session_key=session_key,
+            kind=kind,
+            elapsed_seconds=elapsed_seconds,
+            video_id=video_id,
+            label=str(payload.get("label") or ""),
+            completed=bool(payload.get("completed")),
+        )
+        if summary is None:
+            return {"ok": False, "error": "session_not_saved"}, 400
+        _invalidate_study_progress_context()
+        return {
+            "ok": True,
+            "session_id": session_key,
+            "elapsed_seconds": round(elapsed_seconds, 1),
+            "today": {
+                "total_seconds": round(float(summary["total_seconds"]), 1),
+                "video_seconds": round(float(summary["video_seconds"]), 1),
+                "practice_seconds": round(float(summary["practice_seconds"]), 1),
             },
         }
 

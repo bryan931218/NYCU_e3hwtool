@@ -15,12 +15,28 @@ from e3_tracker.api.web import (
     _study_plan_progress_week,
     _study_plan_schedule_definitions,
     _study_plan_subject_status,
+    _study_plan_credited_video_seconds,
     _study_plan_video_completion,
 )
 from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
+    def test_completed_video_credits_full_duration_despite_player_end_gap(self):
+        self.assertEqual(_study_plan_credited_video_seconds(600, 596), 600)
+        self.assertEqual(_study_plan_credited_video_seconds(600, 590), 590)
+
+    def test_progress_summary_does_not_leave_time_behind_for_completed_videos(self):
+        summary = _study_plan_progress_summary(
+            [
+                {"duration_seconds": 600, "watched_seconds": 596},
+                {"duration_seconds": 900, "watched_seconds": 896},
+            ]
+        )
+
+        self.assertEqual(summary["total_watched_seconds"], 1500)
+        self.assertEqual(summary["completion"], 100)
+
     def test_home_subject_table_does_not_show_achieved_at_ninety_nine_point_five_percent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(

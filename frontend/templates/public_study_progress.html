@@ -175,7 +175,7 @@
         @keyframes runner-stride { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
         @keyframes runner-shadow { 0%,100% { opacity: .2; transform: translateX(-50%) scaleX(1); } 50% { opacity: .1; transform: translateX(-50%) scaleX(.72); } }
         .today-log-panel { margin-top: 18px; padding: 22px; border-radius: 12px; }
-        .today-log-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+        .today-log-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
         .today-log-stat { padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: #fbfdff; }
         .today-log-label { color: var(--muted); font-size: 11px; font-weight: 850; }
         .today-log-value { margin-top: 6px; color: var(--ink); font-size: 22px; font-weight: 950; letter-spacing: -.04em; }
@@ -477,6 +477,7 @@
             </div>
             <div class="today-log-grid">
                 <div class="today-log-stat"><div class="today-log-label">今日進度變動</div><div class="today-log-value">{{ today_study.hours }}h</div></div>
+                <div class="today-log-stat"><div class="today-log-label">實際學習時間</div><div class="today-log-value">{{ today_study.learning_hours }}h</div></div>
                 <div class="today-log-stat"><div class="today-log-label">今日推進</div><div class="today-log-value">{{ today_study.progress_delta }}%</div></div>
                 <div class="today-log-stat"><div class="today-log-label">自動紀錄影片</div><div class="today-log-value">{{ today_study.videos|length }} 支</div></div>
             </div>

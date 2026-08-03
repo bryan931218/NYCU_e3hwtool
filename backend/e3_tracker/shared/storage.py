@@ -454,6 +454,22 @@ Index("ix_study_plan_activity_events_day", study_plan_activity_events_table.c.da
 Index("ix_study_plan_activity_events_video_id", study_plan_activity_events_table.c.video_id)
 Index("ix_study_plan_activity_events_updated_at", study_plan_activity_events_table.c.updated_at)
 
+study_time_sessions_table = Table(
+    "study_time_sessions",
+    metadata,
+    Column("session_key", String(80), primary_key=True),
+    Column("day", String(10), nullable=False),
+    Column("kind", String(16), nullable=False),
+    Column("video_id", Integer),
+    Column("label", String(191), nullable=False),
+    Column("elapsed_seconds", Float, nullable=False, default=0),
+    Column("completed", Integer, nullable=False, default=0),
+    Column("started_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+)
+Index("ix_study_time_sessions_day", study_time_sessions_table.c.day)
+Index("ix_study_time_sessions_kind", study_time_sessions_table.c.kind)
+
 study_plan_video_markers_table = Table(
     "study_plan_video_markers",
     metadata,
@@ -580,6 +596,8 @@ class PersistentStorage:
             metadata.tables["study_plan_daily_snapshots"].create(self._engine, checkfirst=True)
         if not inspector.has_table("study_plan_activity_events"):
             metadata.tables["study_plan_activity_events"].create(self._engine, checkfirst=True)
+        if not inspector.has_table("study_time_sessions"):
+            metadata.tables["study_time_sessions"].create(self._engine, checkfirst=True)
         if inspector.has_table("study_plan_video_records"):
             video_record_columns = {col["name"] for col in inspector.get_columns("study_plan_video_records")}
             if "playback_seconds" not in video_record_columns:
@@ -1357,6 +1375,96 @@ class PersistentStorage:
             by_video.values(),
             key=lambda item: (str(item["day"]), str(item["updated_at"]), int(item["sequence"])),
         )
+
+    def record_study_time_session(
+        self,
+        *,
+        session_key: str,
+        kind: str,
+        elapsed_seconds: float,
+        video_id: Optional[int] = None,
+        label: str = "",
+        completed: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        key = str(session_key or "").strip()[:80]
+        session_kind = str(kind or "").strip().lower()
+        elapsed = max(0.0, min(float(elapsed_seconds or 0), 24 * 60 * 60))
+        if not key or session_kind not in {"video", "practice"} or not math.isfinite(elapsed):
+            return None
+        now = self._now_iso()
+        day = self._study_plan_business_day_from_timestamp(now)
+        with self._lock, self._engine.begin() as conn:
+            resolved_video_id: Optional[int] = None
+            resolved_label = str(label or "").strip()[:191]
+            if session_kind == "video":
+                resolved_video_id = int(video_id or 0)
+                video = conn.execute(
+                    select(study_plan_videos_table.c.title).where(
+                        study_plan_videos_table.c.id == resolved_video_id
+                    )
+                ).fetchone()
+                if not video:
+                    return None
+                resolved_label = str(video.title or "影片學習")[:191]
+            elif not resolved_label:
+                resolved_label = "刷題"
+
+            existing = conn.execute(
+                select(
+                    study_time_sessions_table.c.kind,
+                    study_time_sessions_table.c.elapsed_seconds,
+                    study_time_sessions_table.c.completed,
+                ).where(study_time_sessions_table.c.session_key == key)
+            ).fetchone()
+            if existing and str(existing.kind) != session_kind:
+                return None
+            values = {
+                "day": day,
+                "kind": session_kind,
+                "video_id": resolved_video_id,
+                "label": resolved_label,
+                "elapsed_seconds": max(elapsed, float(existing.elapsed_seconds or 0)) if existing else elapsed,
+                "completed": 1 if completed or (existing and existing.completed) else 0,
+                "updated_at": now,
+            }
+            if existing:
+                conn.execute(
+                    update(study_time_sessions_table)
+                    .where(study_time_sessions_table.c.session_key == key)
+                    .values(**values)
+                )
+            else:
+                conn.execute(
+                    insert(study_time_sessions_table).values(
+                        session_key=key,
+                        started_at=now,
+                        **values,
+                    )
+                )
+        return self.get_study_time_summary(day=day)
+
+    def get_study_time_summary(self, *, day: str) -> Dict[str, Any]:
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    study_time_sessions_table.c.kind,
+                    study_time_sessions_table.c.elapsed_seconds,
+                ).where(study_time_sessions_table.c.day == str(day or ""))
+            ).fetchall()
+        video_seconds = sum(
+            max(0.0, float(row.elapsed_seconds or 0)) for row in rows if row.kind == "video"
+        )
+        practice_seconds = sum(
+            max(0.0, float(row.elapsed_seconds or 0)) for row in rows if row.kind == "practice"
+        )
+        total_seconds = video_seconds + practice_seconds
+        return {
+            "day": str(day or ""),
+            "video_seconds": video_seconds,
+            "practice_seconds": practice_seconds,
+            "total_seconds": total_seconds,
+            "session_count": len(rows),
+        }
 
     # -- study recall loop -----------------------------------------------
     @staticmethod

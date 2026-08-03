@@ -201,6 +201,17 @@
         .player-status-line:last-child { grid-column: 2; grid-row: 1; }
         .player-status-line { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; }
         .player-status-line strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+        .study-time-panel { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; align-items:center; margin:14px 16px 0; padding:14px 16px; border:1px solid #cfe0f1; border-radius:14px; background:linear-gradient(135deg,#f7fbff,#eef7ff); }
+        .study-time-heading { display:flex; align-items:baseline; gap:10px; margin-bottom:9px; }
+        .study-time-heading h3 { margin:0; color:var(--ink); font-size:15px; }
+        .study-time-heading span { color:var(--muted); font-size:11px; }
+        .study-time-clock { color:var(--blue); font-size:30px; font-weight:900; font-variant-numeric:tabular-nums; letter-spacing:-.04em; }
+        .study-time-meta { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:4px; color:var(--muted); font-size:11px; font-weight:750; }
+        .study-time-controls { display:flex; align-items:center; gap:8px; }
+        .study-time-label { width:min(210px,32vw); min-height:38px; padding:8px 10px; border:1px solid #c9d8e7; border-radius:9px; background:#fff; color:var(--ink); }
+        .study-time-button { min-height:38px; padding:8px 14px; border:0; border-radius:9px; color:#fff; background:var(--blue); font-weight:850; cursor:pointer; }
+        .study-time-button.secondary { color:var(--muted); border:1px solid #c9d8e7; background:#fff; }
+        .study-time-button:disabled { opacity:.45; cursor:not-allowed; }
         .log-form { padding: 19px 20px; display: grid; grid-template-columns: minmax(220px, 1.25fr) minmax(136px, .72fr) minmax(220px, 1.35fr) auto; gap: 10px; border-bottom: 1px solid var(--line); background: #fbfdff; }
         .field { min-width: 0; }
         .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 740; }
@@ -249,7 +260,7 @@
         @media (max-width: 1120px) { .workspace { grid-template-columns: 1fr; } .timeline { max-height: 420px; } .youtube-player { grid-template-columns: 1fr; } .log-form { grid-template-columns: repeat(2, 1fr); } .log-form .notes { grid-column: span 2; } .save-button { grid-column: span 2; } }
         @media (max-width: 820px) { .video-summary-toggle { align-items: flex-start; } .video-summary-meta { white-space: normal; justify-content: flex-end; text-align: right; } .table-wrap { padding: 12px; max-height: 520px; } .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; } .table-wrap table { table-layout: auto; } .table-wrap thead { display: none; } .table-wrap tbody { display: grid; gap: 12px; } .table-wrap tr { padding: 4px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; } .table-wrap td { display: grid; grid-template-columns: minmax(88px, .8fr) minmax(0, 1.4fr); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); } .table-wrap td:last-child { border-bottom: 0; } .table-wrap td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 740; } .table-wrap td.record-action:not(.has-record) { display: none; } .table-wrap .log-numbers { white-space: normal; } .table-wrap .mini-track { width: 100%; max-width: 160px; } .table-wrap .delete-form { justify-self: start; } }
         @media (max-width: 900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; } }
-        @media (max-width: 760px) { .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .youtube-player { padding: 16px; } .player-title { font-size: 19px; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } .week-row { padding: 13px 14px; } .week-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .week-stat:nth-child(2) { border-right: 0; } .week-stat:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .week-stat:nth-child(3) { padding-left: 0; } .week-daily { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        @media (max-width: 760px) { .content { padding: 22px 16px; } .title-row { display: block; } .date-range { display: block; margin-top: 10px; } .metric-row { grid-template-columns: 1fr 1fr; } .metric:nth-child(2) { border-right: 0; } .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .subject-filter { display: block; } .subject-filter .field { width: 100%; } .study-time-panel { grid-template-columns:1fr; } .study-time-controls { flex-wrap:wrap; } .study-time-label { width:100%; } .youtube-player { padding: 16px; } .player-title { font-size: 19px; } .log-form { grid-template-columns: 1fr; } .field.notes, .save-button { grid-column: auto; } .week-row { padding: 13px 14px; } .week-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .week-stat:nth-child(2) { border-right: 0; } .week-stat:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .week-stat:nth-child(3) { padding-left: 0; } .week-daily { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
         @media (max-width: 480px) { .daily-plan, .week-daily { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 620px) { .study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; } }
         @media (max-width: 620px) { .recall-items { grid-template-columns:1fr; } }
@@ -579,6 +590,22 @@
                             <div class="field"><label for="subject">目前科目</label><select id="subject" name="subject" onchange="this.form.submit()">{% for subject in subjects %}<option value="{{ subject }}" {% if subject == selected_subject %}selected{% endif %}>{{ subject }}</option>{% endfor %}</select></div>
                             <noscript><button class="save-button" type="submit">切換科目</button></noscript>
                         </form>
+                        <section class="study-time-panel" aria-label="刷題計時器">
+                            <div>
+                                <div class="study-time-heading"><h3>刷題計時器</h3><span id="practice-timer-status">尚未開始</span></div>
+                                <div class="study-time-clock" id="practice-timer-clock">00:00:00</div>
+                                <div class="study-time-meta">
+                                    <span>今日學習 <strong id="today-study-time">{{ (study_time_today.total_seconds / 3600)|round(2) }}h</strong></span>
+                                    <span>影片 {{ (study_time_today.video_seconds / 3600)|round(2) }}h</span>
+                                    <span>刷題 <strong id="today-practice-time">{{ (study_time_today.practice_seconds / 3600)|round(2) }}h</strong></span>
+                                </div>
+                            </div>
+                            <div class="study-time-controls">
+                                <input class="study-time-label" id="practice-timer-label" type="text" maxlength="191" placeholder="題目／章節（選填）">
+                                <button class="study-time-button" id="practice-timer-toggle" type="button">開始</button>
+                                <button class="study-time-button secondary" id="practice-timer-finish" type="button" disabled>結束並儲存</button>
+                            </div>
+                        </section>
                         <div class="youtube-player is-hidden" id="youtube-player-section" aria-label="YouTube 播放模式" tabindex="-1">
                             <div class="player-frame" id="focus-player-frame">
                                 <div id="youtube-player"></div>
@@ -601,6 +628,7 @@
                                     <div class="player-status-line"><span>播放位置</span><strong id="player-current-time">0:00</strong></div>
                                     <div class="track"><div id="player-progress-fill" class="fill" style="--progress:0%"></div></div>
                                     <div class="player-status-line"><span>自動儲存</span><strong id="player-last-saved">尚未儲存</strong></div>
+                                    <div class="player-status-line"><span>本次播放時間</span><strong id="player-study-time">0:00</strong></div>
                                 </div>
                                 <section class="marker-studio" aria-label="影片關鍵點">
                                     <div class="marker-head"><strong>關鍵點 <span id="marker-count">0</span></strong><span class="marker-shortcut">M</span></div>
@@ -782,6 +810,14 @@
             const playerCurrentTime = document.getElementById('player-current-time');
             const playerProgressFill = document.getElementById('player-progress-fill');
             const playerLastSaved = document.getElementById('player-last-saved');
+            const playerStudyTime = document.getElementById('player-study-time');
+            const todayStudyTime = document.getElementById('today-study-time');
+            const todayPracticeTime = document.getElementById('today-practice-time');
+            const practiceTimerClock = document.getElementById('practice-timer-clock');
+            const practiceTimerStatus = document.getElementById('practice-timer-status');
+            const practiceTimerLabel = document.getElementById('practice-timer-label');
+            const practiceTimerToggle = document.getElementById('practice-timer-toggle');
+            const practiceTimerFinish = document.getElementById('practice-timer-finish');
             const markerData = document.getElementById('video-markers-data');
             const markerNote = document.getElementById('marker-note');
             const markerSave = document.getElementById('marker-save');
@@ -812,6 +848,9 @@
             let markerSavedTimer = null;
             let focusToastTimer = null;
             let theaterScrollY = 0;
+            let videoStudySession = null;
+            let practiceTimer = null;
+            let studyTimePulseTimer = null;
             try {
                 videoMarkers = JSON.parse(markerData ? markerData.textContent || '[]' : '[]');
                 if (!Array.isArray(videoMarkers)) videoMarkers = [];
@@ -853,6 +892,146 @@
                 const rest = value % 60;
                 return minutes + ':' + String(rest).padStart(2, '0');
             };
+            const formatLongClock = function (seconds) {
+                const value = Math.max(0, Math.floor(Number(seconds) || 0));
+                const hours = Math.floor(value / 3600);
+                const minutes = Math.floor((value % 3600) / 60);
+                const rest = value % 60;
+                return [hours, minutes, rest].map(function (part) {
+                    return String(part).padStart(2, '0');
+                }).join(':');
+            };
+            const makeStudySessionId = function (prefix) {
+                const random = window.crypto && typeof window.crypto.randomUUID === 'function'
+                    ? window.crypto.randomUUID().replace(/-/g, '')
+                    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+                return prefix + '_' + random;
+            };
+            const updateTodayStudyTime = function (today) {
+                if (!today) return;
+                if (todayStudyTime) todayStudyTime.textContent = (Number(today.total_seconds || 0) / 3600).toFixed(2) + 'h';
+                if (todayPracticeTime) todayPracticeTime.textContent = (Number(today.practice_seconds || 0) / 3600).toFixed(2) + 'h';
+            };
+            const postStudyTime = function (session, completed, keepalive) {
+                if (!session || !session.id) return Promise.resolve();
+                const elapsedSeconds = Math.max(0, Number(session.elapsed || 0))
+                    + (session.runningSince ? Math.max(0, (Date.now() - session.runningSince) / 1000) : 0);
+                return fetch('{{ url_for("admin_study_plan_study_time") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: session.id,
+                        kind: session.kind,
+                        video_id: session.videoId || null,
+                        label: session.label || '',
+                        elapsed_seconds: elapsedSeconds,
+                        completed: Boolean(completed)
+                    }),
+                    keepalive: Boolean(keepalive)
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('study_time_not_saved');
+                    return response.json();
+                }).then(function (result) {
+                    updateTodayStudyTime(result.today);
+                    return result;
+                }).catch(function () {});
+            };
+            const currentSessionSeconds = function (session) {
+                if (!session) return 0;
+                return Math.max(0, Number(session.elapsed || 0))
+                    + (session.runningSince ? Math.max(0, (Date.now() - session.runningSince) / 1000) : 0);
+            };
+            const renderStudyTimers = function () {
+                if (playerStudyTime) playerStudyTime.textContent = formatClock(currentSessionSeconds(videoStudySession));
+                if (!practiceTimerClock || !practiceTimerToggle || !practiceTimerFinish) return;
+                practiceTimerClock.textContent = formatLongClock(currentSessionSeconds(practiceTimer));
+                const hasTimer = Boolean(practiceTimer);
+                const running = Boolean(practiceTimer && practiceTimer.runningSince);
+                practiceTimerToggle.textContent = !hasTimer ? '開始' : running ? '暫停' : '繼續';
+                practiceTimerFinish.disabled = !hasTimer;
+                if (practiceTimerLabel) practiceTimerLabel.disabled = hasTimer;
+                if (practiceTimerStatus) practiceTimerStatus.textContent = !hasTimer ? '尚未開始' : running ? '計時中' : '已暫停';
+            };
+            const persistPracticeTimer = function () {
+                try {
+                    if (practiceTimer) window.localStorage.setItem('e3-practice-timer', JSON.stringify(practiceTimer));
+                    else window.localStorage.removeItem('e3-practice-timer');
+                } catch (error) {}
+            };
+            try {
+                const savedPracticeTimer = JSON.parse(window.localStorage.getItem('e3-practice-timer') || 'null');
+                if (savedPracticeTimer && savedPracticeTimer.id && savedPracticeTimer.kind === 'practice') {
+                    practiceTimer = savedPracticeTimer;
+                    if (practiceTimerLabel) practiceTimerLabel.value = practiceTimer.label || '';
+                }
+            } catch (error) {
+                practiceTimer = null;
+            }
+            const pauseSession = function (session) {
+                if (!session || !session.runningSince) return;
+                session.elapsed = currentSessionSeconds(session);
+                session.runningSince = null;
+            };
+            const beginVideoStudyTime = function () {
+                const option = selectedOption();
+                if (!option) return;
+                const videoId = Number(option.value);
+                if (videoStudySession && videoStudySession.videoId !== videoId) {
+                    pauseSession(videoStudySession);
+                    postStudyTime(videoStudySession, true, false);
+                    videoStudySession = null;
+                }
+                if (!videoStudySession) {
+                    videoStudySession = {
+                        id: makeStudySessionId('video'), kind: 'video', videoId: videoId,
+                        label: option.dataset.title || '影片學習', elapsed: 0, runningSince: null
+                    };
+                }
+                if (!videoStudySession.runningSince) videoStudySession.runningSince = Date.now();
+                renderStudyTimers();
+            };
+            const pauseVideoStudyTime = function (completed) {
+                if (!videoStudySession) return;
+                pauseSession(videoStudySession);
+                postStudyTime(videoStudySession, Boolean(completed), false);
+                if (completed) videoStudySession = null;
+                renderStudyTimers();
+            };
+            if (practiceTimerToggle) practiceTimerToggle.addEventListener('click', function () {
+                if (!practiceTimer) {
+                    practiceTimer = {
+                        id: makeStudySessionId('practice'), kind: 'practice', videoId: null,
+                        label: (practiceTimerLabel ? practiceTimerLabel.value : '').trim() || '刷題',
+                        elapsed: 0, runningSince: Date.now()
+                    };
+                } else if (practiceTimer.runningSince) {
+                    pauseSession(practiceTimer);
+                    postStudyTime(practiceTimer, false, false);
+                } else {
+                    practiceTimer.runningSince = Date.now();
+                }
+                persistPracticeTimer();
+                renderStudyTimers();
+            });
+            if (practiceTimerFinish) practiceTimerFinish.addEventListener('click', function () {
+                if (!practiceTimer) return;
+                pauseSession(practiceTimer);
+                const finished = practiceTimer;
+                practiceTimer = null;
+                persistPracticeTimer();
+                postStudyTime(finished, true, false);
+                if (practiceTimerLabel) practiceTimerLabel.value = '';
+                renderStudyTimers();
+            });
+            studyTimePulseTimer = window.setInterval(function () {
+                if (videoStudySession && videoStudySession.runningSince) postStudyTime(videoStudySession, false, false);
+                if (practiceTimer && practiceTimer.runningSince) {
+                    persistPracticeTimer();
+                    postStudyTime(practiceTimer, false, false);
+                }
+            }, 15000);
+            window.setInterval(renderStudyTimers, 1000);
+            renderStudyTimers();
             const setPlayerPosition = function (seconds, durationSeconds) {
                 const safeSeconds = Math.max(0, Number(seconds) || 0);
                 const safeDuration = Math.max(0, Number(durationSeconds) || 0);
@@ -1358,21 +1537,28 @@
                             },
                             onStateChange: function (event) {
                                 if (event.data === YT.PlayerState.PLAYING) {
+                                    beginVideoStudyTime();
                                     startPlaybackTimer();
                                     startSaveTimer();
                                     playerSyncState.textContent = '播放中，自動儲存啟用';
                                 } else if (event.data === YT.PlayerState.PAUSED) {
+                                    pauseVideoStudyTime(false);
                                     stopPlaybackTimer();
                                     stopSaveTimer();
                                     saveProgress('paused', false);
                                 } else if (event.data === YT.PlayerState.ENDED) {
+                                    pauseVideoStudyTime(true);
                                     stopPlaybackTimer();
                                     stopSaveTimer();
                                     saveProgress('ended', false);
                                 } else if (event.data === YT.PlayerState.CUED) {
+                                    pauseVideoStudyTime(false);
                                     syncPlaybackPosition();
+                                } else if (event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.UNSTARTED) {
+                                    pauseVideoStudyTime(false);
                                 }
-                            }
+                            },
+                            onError: function () { pauseVideoStudyTime(false); }
                         }
                     });
                 } else if (typeof player.loadVideoById === 'function') {
@@ -1391,6 +1577,7 @@
 
             videoSelect.addEventListener('change', function () {
                 const previousOption = optionByValue(activeRecordId);
+                pauseVideoStudyTime(true);
                 stopPlaybackTimer();
                 stopSaveTimer();
                 const loadNextVideo = function () {
@@ -1517,7 +1704,14 @@
                     }, 80);
                 });
             });
-            window.addEventListener('beforeunload', function () { saveProgress('leave', true); });
+            window.addEventListener('beforeunload', function () {
+                saveProgress('leave', true);
+                if (videoStudySession) postStudyTime(videoStudySession, false, true);
+                if (practiceTimer) {
+                    persistPracticeTimer();
+                    postStudyTime(practiceTimer, false, true);
+                }
+            });
             if (requestedVideoId) {
                 const requestedOption = optionByValue(requestedVideoId);
                 if (requestedOption) videoSelect.value = requestedOption.value;
