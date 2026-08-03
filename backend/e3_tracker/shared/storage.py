@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fsrs import Card as FSRSCard
 from fsrs import Rating as FSRSRating
@@ -1279,6 +1279,87 @@ class PersistentStorage:
                     )
                 )
             return True
+
+    def sync_study_plan_youtube_links(self, links: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Update playlist-derived links without replacing manual overrides or progress."""
+        normalized: Dict[Tuple[str, int], Dict[str, str]] = {}
+        for item in links:
+            try:
+                subject = str(item.get("subject") or "").strip()
+                sequence = int(item.get("sequence") or 0)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            video_id = str(item.get("youtube_video_id") or "").strip()
+            playlist_id = str(item.get("youtube_playlist_id") or "").strip()
+            youtube_url = str(item.get("youtube_url") or "").strip()
+            if not subject or sequence <= 0 or not video_id or not youtube_url:
+                continue
+            normalized[(subject, sequence)] = {
+                "youtube_video_id": video_id,
+                "youtube_playlist_id": playlist_id,
+                "youtube_url": youtube_url,
+            }
+
+        result = {
+            "matched": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "unmatched": 0,
+            "manual_overrides_preserved": 0,
+        }
+        if not normalized:
+            return result
+
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            rows = conn.execute(
+                select(
+                    study_plan_videos_table.c.id,
+                    study_plan_videos_table.c.subject,
+                    study_plan_videos_table.c.sequence,
+                    study_plan_videos_table.c.youtube_video_id,
+                    study_plan_videos_table.c.youtube_playlist_id,
+                    study_plan_videos_table.c.youtube_url,
+                )
+            ).fetchall()
+            existing = {
+                (str(row.subject), int(row.sequence)): row
+                for row in rows
+            }
+            override_ids = {
+                int(row.video_id)
+                for row in conn.execute(
+                    select(study_plan_video_overrides_table.c.video_id)
+                ).fetchall()
+            }
+            for key, values in normalized.items():
+                row = existing.get(key)
+                if row is None:
+                    result["unmatched"] += 1
+                    continue
+                result["matched"] += 1
+                if int(row.id) in override_ids:
+                    result["manual_overrides_preserved"] += 1
+                before = (
+                    str(row.youtube_video_id or ""),
+                    str(row.youtube_playlist_id or ""),
+                    str(row.youtube_url or ""),
+                )
+                after = (
+                    values["youtube_video_id"],
+                    values["youtube_playlist_id"],
+                    values["youtube_url"],
+                )
+                if before == after:
+                    result["unchanged"] += 1
+                    continue
+                conn.execute(
+                    update(study_plan_videos_table)
+                    .where(study_plan_videos_table.c.id == int(row.id))
+                    .values(**values, updated_at=now)
+                )
+                result["updated"] += 1
+        return result
 
     def list_study_plan_activity_events(
         self,

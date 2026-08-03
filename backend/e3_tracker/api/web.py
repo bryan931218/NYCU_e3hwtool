@@ -39,6 +39,11 @@ from ..services.google_calendar import (
     sync_assignments_to_google_calendar,
 )
 from ..services.http import login_with_password
+from ..services.youtube_playlists import (
+    KNOWN_YOUTUBE_PLAYLISTS,
+    YoutubePlaylistSyncBusyError,
+    sync_known_youtube_playlists,
+)
 from ..shared.config import (
     DEFAULT_OPENAI_MODEL,
     load_env_defaults,
@@ -12514,7 +12519,63 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             subjects=STUDY_PLAN_SUBJECTS,
             selected_subject=selected_subject,
             videos=videos,
+            synced_playlist_subjects=[item["subject"] for item in KNOWN_YOUTUBE_PLAYLISTS],
         )
+
+    @app.post("/admin/study-settings/youtube-sync")
+    @admin_required
+    def admin_study_settings_youtube_sync():
+        wants_json = request.accept_mimetypes.best == "application/json"
+        try:
+            result = sync_known_youtube_playlists(storage)
+        except YoutubePlaylistSyncBusyError as exc:
+            if wants_json:
+                return {"ok": False, "error": str(exc)}, 409
+            flash(str(exc), "error")
+            return redirect(url_for("admin_study_settings"))
+        except Exception:
+            app.logger.exception("YouTube playlist synchronization failed")
+            message = "YouTube 播放清單同步失敗，請稍後再試。"
+            if wants_json:
+                return {"ok": False, "error": message}, 502
+            flash(message, "error")
+            return redirect(url_for("admin_study_settings"))
+
+        if not result.get("ok"):
+            message = "目前無法讀取已設定的 YouTube 播放清單。"
+            if wants_json:
+                return {"ok": False, "error": message, "result": result}, 502
+            flash(message, "error")
+            return redirect(url_for("admin_study_settings"))
+
+        current_videos = storage.list_study_plan_videos_with_records()
+        payload = {
+            "ok": True,
+            "result": result,
+            "videos": [
+                {"id": video["id"], "youtube_url": video["youtube_url"]}
+                for video in current_videos
+            ],
+        }
+        record_ui_event(
+            "study_plan_youtube_playlists_synced",
+            meta={
+                "updated": result["updated"],
+                "matched": result["matched"],
+                "empty_subjects": result["empty_subjects"],
+                "failed_subjects": [item["subject"] for item in result["errors"]],
+            },
+        )
+        if wants_json:
+            return payload
+
+        message = f"YouTube 同步完成：更新 {result['updated']} 支，{result['unchanged']} 支無變更。"
+        if result["errors"]:
+            message += f"另有 {len(result['errors'])} 個播放清單讀取失敗。"
+        if result["empty_subjects"]:
+            message += f"目前空白：{'、'.join(result['empty_subjects'])}。"
+        flash(message, "success")
+        return redirect(url_for("admin_study_settings"))
 
     @app.route("/admin/study-plan", methods=["GET", "POST"])
     @admin_required

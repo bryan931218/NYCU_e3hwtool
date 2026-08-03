@@ -9,8 +9,10 @@
         * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:var(--canvas); } a { color:inherit; text-decoration:none; } button,input,select { font:inherit; }
         .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.96); border-bottom:1px solid var(--line); }.brand { display:flex; align-items:center; gap:10px; font-size:14px; font-weight:900; white-space:nowrap; }.mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }.nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }.nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }.nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }.admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
         .content { width:min(1320px,100%); margin:0 auto; padding:28px; }.page-head { display:flex; align-items:end; justify-content:space-between; gap:18px; margin-bottom:20px; }.eyebrow { margin:0 0 7px; color:var(--teal); font-size:11px; font-weight:900; letter-spacing:.08em; }.page-head h1 { margin:0; font-size:30px; letter-spacing:0; }.intro { max-width:720px; margin:9px 0 0; color:var(--muted); line-height:1.65; font-size:14px; }.panel { background:var(--paper); border:1px solid var(--line); border-radius:7px; box-shadow:0 12px 30px rgba(23,32,51,.07); }.flash { margin-bottom:16px; padding:12px 14px; border:1px solid var(--line); border-left:4px solid var(--blue); background:#fff; border-radius:5px; font-size:14px; }.flash.error { border-left-color:var(--red); background:var(--red-soft); }.flash.success { border-left-color:var(--green); background:var(--green-soft); }
+        .sync-bar { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px 18px; margin-bottom:16px; padding:16px 18px; border:1px solid #c9dcf3; border-radius:7px; background:#f7fbff; }.sync-copy strong { display:block; font-size:14px; }.sync-copy span { display:block; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }.sync-button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:0 14px; border:1px solid var(--blue); border-radius:5px; color:#fff; background:var(--blue); font-size:12px; font-weight:900; cursor:pointer; white-space:nowrap; }.sync-button:hover { background:#0f58ba; }.sync-button:disabled { opacity:.68; cursor:wait; }.sync-icon { display:inline-block; font-size:16px; line-height:1; }.sync-button.is-loading .sync-icon { animation:sync-spin .8s linear infinite; }.sync-status { grid-column:1/-1; min-height:18px; margin:0; color:var(--muted); font-size:12px; font-weight:750; }.sync-status.success { color:var(--green); }.sync-status.error { color:var(--red); }@keyframes sync-spin { to { transform:rotate(360deg); } }
         .toolbar { display:flex; align-items:end; justify-content:space-between; gap:14px; padding:18px 20px; border-bottom:1px solid var(--line); }.field { display:grid; gap:7px; min-width:220px; }.field label { font-size:12px; font-weight:850; }.field input,.field select { width:100%; min-height:40px; padding:8px 10px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#fff; }.field input:focus,.field select:focus { border-color:var(--blue); outline:0; box-shadow:0 0 0 3px rgba(23,105,216,.1); }.hint { margin:0; color:var(--muted); font-size:12px; line-height:1.55; }.table-wrap { overflow:auto; }.video-table { width:100%; border-collapse:collapse; min-width:820px; }.video-table th,.video-table td { padding:12px 14px; text-align:left; vertical-align:middle; border-bottom:1px solid var(--line); }.video-table th { color:var(--muted); background:#fafcff; font-size:11px; font-weight:900; white-space:nowrap; }.video-table td { font-size:13px; }.video-table tr:last-child td { border-bottom:0; }.sequence { color:var(--blue); font-weight:900; white-space:nowrap; }.video-title { min-width:260px; color:var(--ink); font-weight:800; line-height:1.45; }.subject { color:var(--muted); font-size:12px; white-space:nowrap; }.url-input { width:100%; min-width:310px; min-height:38px; padding:7px 9px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#fff; }.url-input:focus { border-color:var(--blue); outline:0; box-shadow:0 0 0 3px rgba(23,105,216,.1); }.actions { display:flex; gap:6px; white-space:nowrap; }.save-button,.clear-button { min-height:36px; padding:0 10px; border-radius:4px; font-size:12px; font-weight:850; cursor:pointer; }.save-button { color:#fff; border:1px solid var(--blue); background:var(--blue); }.save-button:hover { background:#0f58ba; }.clear-button { color:var(--red); border:1px solid #e5bfc3; background:#fff; }.clear-button:hover { color:#fff; border-color:var(--red); background:var(--red); }.current-link { display:block; max-width:320px; margin-top:4px; overflow:hidden; color:var(--teal); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }.empty { padding:38px 20px; color:var(--muted); text-align:center; }
-        @media (max-width:760px) { .study-nav { padding:12px 16px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; }.nav-links a { padding:7px 8px; }.admin { display:none; }.content { padding:22px 16px 36px; }.page-head { align-items:flex-start; flex-direction:column; }.page-head h1 { font-size:26px; }.toolbar { align-items:stretch; flex-direction:column; }.field { min-width:0; }.video-table { min-width:760px; } }
+        @media (max-width:760px) { .study-nav { padding:12px 16px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; }.nav-links a { padding:7px 8px; }.admin { display:none; }.content { padding:22px 16px 36px; }.page-head { align-items:flex-start; flex-direction:column; }.page-head h1 { font-size:26px; }.sync-bar { grid-template-columns:1fr; }.sync-button { width:100%; }.sync-status { grid-column:1; }.toolbar { align-items:stretch; flex-direction:column; }.field { min-width:0; }.video-table { min-width:760px; } }
+        @media (prefers-reduced-motion:reduce) { .sync-button.is-loading .sync-icon { animation:none; } }
     </style>
 </head>
 <body>
@@ -28,13 +30,67 @@
     <main class="content">
         {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash {{ category }}" role="status">{{ message }}</div>{% endfor %}{% endwith %}
         <section class="page-head"><div><p class="eyebrow">VIDEO SETTINGS</p><h1>影片連結設定</h1><p class="intro">依科目與影片編號手動新增或修改 YouTube 連結。設定會保存於資料庫，不會因為網站重新部署或同步影片清單而消失。</p></div></section>
+        <section class="sync-bar" aria-labelledby="youtube-sync-title">
+            <div class="sync-copy"><strong id="youtube-sync-title">自動同步播放清單</strong><span>同步 {{ synced_playlist_subjects|join('、') }}，依科目與影片編號配對；觀看紀錄與手動設定不會被覆蓋。</span></div>
+            <form id="youtube-sync-form" method="post" action="{{ url_for('admin_study_settings_youtube_sync') }}"><button class="sync-button" id="youtube-sync-button" type="submit"><span class="sync-icon" aria-hidden="true">↻</span><span>一鍵同步</span></button></form>
+            <p class="sync-status" id="youtube-sync-status" role="status" aria-live="polite"></p>
+        </section>
         <section class="panel">
             <form class="toolbar" method="get" action="{{ url_for('admin_study_settings') }}">
                 <div class="field"><label for="subject-filter">篩選科目</label><select id="subject-filter" name="subject" onchange="this.form.submit()"><option value="">全部科目</option>{% for subject in subjects %}<option value="{{ subject }}" {% if subject == selected_subject %}selected{% endif %}>{{ subject }}</option>{% endfor %}</select></div>
                 <p class="hint">支援 YouTube watch、youtu.be、embed、shorts 與 live 連結；儲存前會自動檢查影片 ID。</p>
             </form>
-{% if videos %}<div class="table-wrap"><table class="video-table"><thead><tr><th>科目</th><th>影片</th><th>YouTube 連結</th><th>操作</th></tr></thead><tbody>{% for video in videos %}<tr><td class="subject">{{ video.subject }}</td><td><div class="sequence">第 {{ '%03d'|format(video.sequence) }} 支</div><div class="video-title">{{ video.title }}</div></td><td><form id="video-setting-{{ video.id }}" method="post" action="{{ url_for('admin_study_settings') }}{% if selected_subject %}?subject={{ selected_subject|urlencode }}{% endif %}"><input type="hidden" name="video_id" value="{{ video.id }}"><input type="hidden" name="subject" value="{{ selected_subject }}"><input class="url-input" name="youtube_url" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=xxxxxxxxxxx" value="{{ video.youtube_url }}" aria-label="第 {{ video.sequence }} 支 YouTube 連結">{% if video.youtube_url %}<a class="current-link" href="{{ video.youtube_url }}" target="_blank" rel="noopener noreferrer">目前連結：開啟 YouTube</a>{% endif %}</form></td><td><div class="actions"><button class="save-button" type="submit" form="video-setting-{{ video.id }}">儲存</button><button class="clear-button" type="submit" form="video-setting-{{ video.id }}" name="clear" value="1" onclick="return window.confirm('確定清除這支影片的 YouTube 連結？');">清除</button></div></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty">目前沒有符合條件的影片。</div>{% endif %}
+{% if videos %}<div class="table-wrap"><table class="video-table"><thead><tr><th>科目</th><th>影片</th><th>YouTube 連結</th><th>操作</th></tr></thead><tbody>{% for video in videos %}<tr><td class="subject">{{ video.subject }}</td><td><div class="sequence">第 {{ '%03d'|format(video.sequence) }} 支</div><div class="video-title">{{ video.title }}</div></td><td><form id="video-setting-{{ video.id }}" method="post" action="{{ url_for('admin_study_settings') }}{% if selected_subject %}?subject={{ selected_subject|urlencode }}{% endif %}"><input type="hidden" name="video_id" value="{{ video.id }}"><input type="hidden" name="subject" value="{{ selected_subject }}"><input class="url-input" data-youtube-input="{{ video.id }}" name="youtube_url" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=xxxxxxxxxxx" value="{{ video.youtube_url }}" aria-label="第 {{ video.sequence }} 支 YouTube 連結"><a class="current-link" data-youtube-link="{{ video.id }}" href="{{ video.youtube_url or '#' }}" target="_blank" rel="noopener noreferrer" {% if not video.youtube_url %}hidden{% endif %}>目前連結：開啟 YouTube</a></form></td><td><div class="actions"><button class="save-button" type="submit" form="video-setting-{{ video.id }}">儲存</button><button class="clear-button" type="submit" form="video-setting-{{ video.id }}" name="clear" value="1" onclick="return window.confirm('確定清除這支影片的 YouTube 連結？');">清除</button></div></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty">目前沒有符合條件的影片。</div>{% endif %}
         </section>
     </main>
+    <script>
+        (function () {
+            const form = document.getElementById('youtube-sync-form');
+            const button = document.getElementById('youtube-sync-button');
+            const status = document.getElementById('youtube-sync-status');
+            if (!form || !button || !status || !window.fetch) return;
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                if (button.disabled) return;
+                button.disabled = true;
+                button.classList.add('is-loading');
+                status.className = 'sync-status';
+                status.textContent = '正在讀取播放清單並配對影片，請稍候…';
+                fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' } })
+                    .then(function (response) {
+                        return response.json().catch(function () { return {}; }).then(function (data) {
+                            if (!response.ok || !data.ok) throw new Error(data.error || '同步失敗，請稍後再試。');
+                            return data;
+                        });
+                    })
+                    .then(function (data) {
+                        (data.videos || []).forEach(function (video) {
+                            const input = document.querySelector('[data-youtube-input="' + video.id + '"]');
+                            const link = document.querySelector('[data-youtube-link="' + video.id + '"]');
+                            if (input) input.value = video.youtube_url || '';
+                            if (link) {
+                                link.href = video.youtube_url || '#';
+                                link.hidden = !video.youtube_url;
+                            }
+                        });
+                        const result = data.result || {};
+                        const failed = (result.errors || []).length;
+                        const emptySubjects = result.empty_subjects || [];
+                        status.className = 'sync-status success';
+                        status.textContent = '同步完成：更新 ' + (result.updated || 0) + ' 支，' + (result.unchanged || 0) + ' 支無變更'
+                            + (emptySubjects.length ? '；目前空白：' + emptySubjects.join('、') : '')
+                            + (failed ? '；' + failed + ' 個播放清單讀取失敗。' : '。');
+                    })
+                    .catch(function (error) {
+                        status.className = 'sync-status error';
+                        status.textContent = error.message || '同步失敗，請稍後再試。';
+                    })
+                    .finally(function () {
+                        button.disabled = false;
+                        button.classList.remove('is-loading');
+                    });
+            });
+        })();
+    </script>
 </body>
 </html>
