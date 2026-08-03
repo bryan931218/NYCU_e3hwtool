@@ -174,6 +174,9 @@
         .player-frame.is-focus-mode > .focus-launch { opacity: 0; visibility: hidden; pointer-events: none; }
         .focus-layer { position: absolute; z-index: 5; inset: 0; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .2s ease; }
         .player-frame.is-focus-mode .focus-layer { opacity: 1; visibility: visible; }
+        .focus-keyboard-capture { pointer-events:auto; position:absolute; z-index:1; inset:0; border:0; background:transparent; cursor:pointer; outline:none; }
+        .focus-shortcut-hint { position:absolute; z-index:2; left:50%; bottom:max(18px,env(safe-area-inset-bottom)); transform:translateX(-50%); padding:7px 11px; border:1px solid rgba(255,255,255,.18); border-radius:9px; color:rgba(255,255,255,.82); background:rgba(5,15,27,.68); font-size:11px; font-weight:780; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .18s ease; }
+        .player-frame.is-focus-mode .focus-layer:hover .focus-shortcut-hint, .focus-keyboard-capture:focus + .focus-shortcut-hint { opacity:1; }
         .focus-video-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
         .focus-exit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
         .focus-exit { pointer-events: auto; position: absolute; z-index: 3; top: calc(50% - 50px); right: max(14px, env(safe-area-inset-right)); width: 42px; height: 42px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.22); border-radius: 13px; color: #fff; background: rgba(7,15,26,.72); font-size: 13px; font-weight: 850; cursor: pointer; backdrop-filter: blur(14px); transition: background .16s ease,border-color .16s ease,transform .16s ease; }
@@ -212,6 +215,16 @@
         .study-time-button { min-height:38px; padding:8px 14px; border:0; border-radius:9px; color:#fff; background:var(--blue); font-weight:850; cursor:pointer; }
         .study-time-button.secondary { color:var(--muted); border:1px solid #c9d8e7; background:#fff; }
         .study-time-button:disabled { opacity:.45; cursor:not-allowed; }
+        .study-time-history { grid-column:1 / -1; padding-top:12px; border-top:1px solid #d9e7f4; }
+        .study-time-history-head { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; color:var(--muted); font-size:11px; font-weight:800; }
+        .study-time-history-list { display:grid; gap:6px; }
+        .study-time-history-item { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:9px; padding:8px 10px; border:1px solid #dce7f1; border-radius:9px; background:rgba(255,255,255,.78); }
+        .study-time-kind { padding:3px 6px; border-radius:5px; color:var(--blue); background:var(--blue-soft); font-size:10px; font-weight:900; }
+        .study-time-kind.practice { color:var(--teal); background:var(--teal-soft); }
+        .study-time-history-label { overflow:hidden; color:var(--ink); font-size:11px; font-weight:780; text-overflow:ellipsis; white-space:nowrap; }
+        .study-time-history-duration { color:var(--ink); font-size:11px; font-weight:900; font-variant-numeric:tabular-nums; }
+        .study-time-delete { padding:3px 6px; border:0; color:#a33b45; background:transparent; font-size:10px; font-weight:850; cursor:pointer; }
+        .study-time-history-empty { padding:7px 0; color:var(--muted); font-size:11px; }
         .log-form { padding: 19px 20px; display: grid; grid-template-columns: minmax(220px, 1.25fr) minmax(136px, .72fr) minmax(220px, 1.35fr) auto; gap: 10px; border-bottom: 1px solid var(--line); background: #fbfdff; }
         .field { min-width: 0; }
         .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 740; }
@@ -596,7 +609,7 @@
                                 <div class="study-time-clock" id="practice-timer-clock">00:00:00</div>
                                 <div class="study-time-meta">
                                     <span>今日學習 <strong id="today-study-time">{{ (study_time_today.total_seconds / 3600)|round(2) }}h</strong></span>
-                                    <span>影片 {{ (study_time_today.video_seconds / 3600)|round(2) }}h</span>
+                                    <span>影片 <strong id="today-video-time">{{ (study_time_today.video_seconds / 3600)|round(2) }}h</strong></span>
                                     <span>刷題 <strong id="today-practice-time">{{ (study_time_today.practice_seconds / 3600)|round(2) }}h</strong></span>
                                 </div>
                             </div>
@@ -605,13 +618,21 @@
                                 <button class="study-time-button" id="practice-timer-toggle" type="button">開始</button>
                                 <button class="study-time-button secondary" id="practice-timer-finish" type="button" disabled>結束並儲存</button>
                             </div>
+                            <div class="study-time-history">
+                                <div class="study-time-history-head"><span>今日計時紀錄</span><span id="study-time-sync-status" aria-live="polite">已同步</span></div>
+                                <div class="study-time-history-list" id="study-time-history-list"></div>
+                                <div class="study-time-history-empty" id="study-time-history-empty">今天還沒有計時紀錄。</div>
+                            </div>
                         </section>
+                        <script type="application/json" id="study-time-sessions-data">{{ study_time_sessions|tojson }}</script>
                         <div class="youtube-player is-hidden" id="youtube-player-section" aria-label="YouTube 播放模式" tabindex="-1">
                             <div class="player-frame" id="focus-player-frame">
                                 <div id="youtube-player"></div>
                                 <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
                                 <button class="focus-launch" id="focus-mode-toggle" type="button" disabled aria-pressed="false" aria-label="進入專注全螢幕"><span class="focus-launch-icon" aria-hidden="true">⛶</span><span class="focus-launch-label" data-focus-label>專注播放</span></button>
                                 <div class="focus-layer" id="focus-layer" aria-hidden="true" inert>
+                                    <button class="focus-keyboard-capture" id="focus-keyboard-capture" type="button" aria-label="播放器鍵盤控制區；J 後退 10 秒、L 快進 10 秒、按住空白鍵暫時加速"></button>
+                                    <div class="focus-shortcut-hint" aria-hidden="true">J 後退 10 秒　L 快進 10 秒　按住空白鍵 2×</div>
                                     <span class="focus-video-title" id="focus-video-title">目前影片</span>
                                     <button class="focus-exit" id="focus-exit" type="button" aria-label="離開專注全螢幕"><span aria-hidden="true">✕</span><span class="focus-exit-label">離開專注模式</span></button>
                                     <button class="focus-marker" id="focus-marker-save" type="button" aria-label="標記目前影片時間">
@@ -812,7 +833,12 @@
             const playerLastSaved = document.getElementById('player-last-saved');
             const playerStudyTime = document.getElementById('player-study-time');
             const todayStudyTime = document.getElementById('today-study-time');
+            const todayVideoTime = document.getElementById('today-video-time');
             const todayPracticeTime = document.getElementById('today-practice-time');
+            const studyTimeSessionsData = document.getElementById('study-time-sessions-data');
+            const studyTimeHistoryList = document.getElementById('study-time-history-list');
+            const studyTimeHistoryEmpty = document.getElementById('study-time-history-empty');
+            const studyTimeSyncStatus = document.getElementById('study-time-sync-status');
             const practiceTimerClock = document.getElementById('practice-timer-clock');
             const practiceTimerStatus = document.getElementById('practice-timer-status');
             const practiceTimerLabel = document.getElementById('practice-timer-label');
@@ -826,6 +852,7 @@
             const markerCount = document.getElementById('marker-count');
             const focusPlayerFrame = document.getElementById('focus-player-frame');
             const focusLayer = document.getElementById('focus-layer');
+            const focusKeyboardCapture = document.getElementById('focus-keyboard-capture');
             const focusModeToggle = document.getElementById('focus-mode-toggle');
             const focusExit = document.getElementById('focus-exit');
             const focusMarkerSave = document.getElementById('focus-marker-save');
@@ -851,11 +878,20 @@
             let videoStudySession = null;
             let practiceTimer = null;
             let studyTimePulseTimer = null;
+            let spaceBoostActive = false;
+            let spacePreviousRate = 1;
+            let studyTimeSessions = [];
             try {
                 videoMarkers = JSON.parse(markerData ? markerData.textContent || '[]' : '[]');
                 if (!Array.isArray(videoMarkers)) videoMarkers = [];
             } catch (error) {
                 videoMarkers = [];
+            }
+            try {
+                studyTimeSessions = JSON.parse(studyTimeSessionsData ? studyTimeSessionsData.textContent || '[]' : '[]');
+                if (!Array.isArray(studyTimeSessions)) studyTimeSessions = [];
+            } catch (error) {
+                studyTimeSessions = [];
             }
             const initialParams = new URLSearchParams(window.location.search);
             const requestedVideoId = initialParams.get('video_id') || '';
@@ -907,10 +943,40 @@
                     : Math.random().toString(36).slice(2) + Date.now().toString(36);
                 return prefix + '_' + random;
             };
+            const renderStudyTimeHistory = function () {
+                if (!studyTimeHistoryList || !studyTimeHistoryEmpty) return;
+                studyTimeHistoryList.textContent = '';
+                studyTimeHistoryEmpty.hidden = studyTimeSessions.length > 0;
+                studyTimeSessions.forEach(function (session) {
+                    const item = document.createElement('div');
+                    item.className = 'study-time-history-item';
+                    const kind = document.createElement('span');
+                    kind.className = 'study-time-kind ' + (session.kind === 'practice' ? 'practice' : 'video');
+                    kind.textContent = session.kind === 'practice' ? '刷題' : '影片';
+                    const label = document.createElement('span');
+                    label.className = 'study-time-history-label';
+                    label.textContent = session.label || (session.kind === 'practice' ? '刷題' : '影片學習');
+                    const duration = document.createElement('span');
+                    duration.className = 'study-time-history-duration';
+                    duration.textContent = formatLongClock(session.elapsed_seconds || 0);
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'study-time-delete';
+                    remove.dataset.deleteStudyTime = session.session_id || '';
+                    remove.textContent = '刪除';
+                    item.append(kind, label, duration, remove);
+                    studyTimeHistoryList.appendChild(item);
+                });
+            };
             const updateTodayStudyTime = function (today) {
                 if (!today) return;
                 if (todayStudyTime) todayStudyTime.textContent = (Number(today.total_seconds || 0) / 3600).toFixed(2) + 'h';
+                if (todayVideoTime) todayVideoTime.textContent = (Number(today.video_seconds || 0) / 3600).toFixed(2) + 'h';
                 if (todayPracticeTime) todayPracticeTime.textContent = (Number(today.practice_seconds || 0) / 3600).toFixed(2) + 'h';
+                if (Array.isArray(today.sessions)) {
+                    studyTimeSessions = today.sessions;
+                    renderStudyTimeHistory();
+                }
             };
             const postStudyTime = function (session, completed, keepalive) {
                 if (!session || !session.id) return Promise.resolve();
@@ -933,8 +999,12 @@
                     return response.json();
                 }).then(function (result) {
                     updateTodayStudyTime(result.today);
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '已同步';
                     return result;
-                }).catch(function () {});
+                }).catch(function () {
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '同步失敗，請重試';
+                    return { ok: false };
+                });
             };
             const currentSessionSeconds = function (session) {
                 if (!session) return 0;
@@ -1006,6 +1076,7 @@
                     };
                 } else if (practiceTimer.runningSince) {
                     pauseSession(practiceTimer);
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '同步中…';
                     postStudyTime(practiceTimer, false, false);
                 } else {
                     practiceTimer.runningSince = Date.now();
@@ -1017,11 +1088,43 @@
                 if (!practiceTimer) return;
                 pauseSession(practiceTimer);
                 const finished = practiceTimer;
-                practiceTimer = null;
                 persistPracticeTimer();
-                postStudyTime(finished, true, false);
-                if (practiceTimerLabel) practiceTimerLabel.value = '';
+                practiceTimerToggle.disabled = true;
+                practiceTimerFinish.disabled = true;
+                if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '儲存中…';
                 renderStudyTimers();
+                postStudyTime(finished, true, false).then(function (result) {
+                    practiceTimerToggle.disabled = false;
+                    if (!result || result.ok === false) {
+                        practiceTimer = finished;
+                        persistPracticeTimer();
+                        renderStudyTimers();
+                        return;
+                    }
+                    practiceTimer = null;
+                    persistPracticeTimer();
+                    if (practiceTimerLabel) practiceTimerLabel.value = '';
+                    renderStudyTimers();
+                });
+            });
+            if (studyTimeHistoryList) studyTimeHistoryList.addEventListener('click', function (event) {
+                const button = event.target.closest('[data-delete-study-time]');
+                if (!button || !button.dataset.deleteStudyTime) return;
+                button.disabled = true;
+                if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '刪除中…';
+                fetch('{{ url_for("admin_study_plan_study_time_delete", session_key="SESSION_KEY") }}'.replace('SESSION_KEY', encodeURIComponent(button.dataset.deleteStudyTime)), {
+                    method: 'DELETE',
+                    headers: { 'Accept': 'application/json' }
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('delete_failed');
+                    return response.json();
+                }).then(function (result) {
+                    updateTodayStudyTime(result.today);
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '已同步';
+                }).catch(function () {
+                    button.disabled = false;
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '刪除失敗，請重試';
+                });
             });
             studyTimePulseTimer = window.setInterval(function () {
                 if (videoStudySession && videoStudySession.runningSince) postStudyTime(videoStudySession, false, false);
@@ -1031,6 +1134,7 @@
                 }
             }, 15000);
             window.setInterval(renderStudyTimers, 1000);
+            renderStudyTimeHistory();
             renderStudyTimers();
             const setPlayerPosition = function (seconds, durationSeconds) {
                 const safeSeconds = Math.max(0, Number(seconds) || 0);
@@ -1615,6 +1719,13 @@
                     const label = focusModeToggle.querySelector('[data-focus-label]');
                     if (label) label.textContent = active ? '離開專注模式' : '專注播放';
                 }
+                if (active) {
+                    window.setTimeout(function () {
+                        if (isFocusMode() && focusKeyboardCapture) {
+                            focusKeyboardCapture.focus({ preventScroll: true });
+                        }
+                    }, 0);
+                }
             };
             const activateTheaterMode = function () {
                 if (!focusPlayerFrame || focusPlayerFrame.classList.contains('is-theater')) return;
@@ -1662,12 +1773,60 @@
                     } catch (error) {}
                 }
             };
+            const playerCanReceiveShortcuts = function () {
+                return Boolean(player && typeof player.getCurrentTime === 'function');
+            };
+            const seekPlayerBy = function (deltaSeconds) {
+                if (!playerCanReceiveShortcuts() || typeof player.seekTo !== 'function') return;
+                const current = Math.max(0, Number(player.getCurrentTime() || 0));
+                const duration = typeof player.getDuration === 'function'
+                    ? Math.max(0, Number(player.getDuration() || 0))
+                    : 0;
+                const next = Math.max(0, duration ? Math.min(duration, current + deltaSeconds) : current + deltaSeconds);
+                player.seekTo(next, true);
+                setPlayerPosition(next, duration);
+                showFocusToast((deltaSeconds < 0 ? '後退 ' : '快進 ') + Math.abs(deltaSeconds) + ' 秒');
+            };
+            const beginSpaceBoost = function () {
+                if (spaceBoostActive || !player || typeof player.setPlaybackRate !== 'function') return;
+                spacePreviousRate = typeof player.getPlaybackRate === 'function'
+                    ? Math.max(0.25, Number(player.getPlaybackRate() || 1))
+                    : 1;
+                const availableRates = typeof player.getAvailablePlaybackRates === 'function'
+                    ? (player.getAvailablePlaybackRates() || []).map(Number).filter(Number.isFinite)
+                    : [];
+                const candidates = availableRates.filter(function (rate) {
+                    return rate > spacePreviousRate && rate <= 2;
+                });
+                const boostRate = candidates.length ? Math.max.apply(Math, candidates) : 2;
+                if (!Number.isFinite(boostRate) || boostRate <= spacePreviousRate) return;
+                spaceBoostActive = true;
+                player.setPlaybackRate(boostRate);
+                showFocusToast('暫時 ' + boostRate + '× 播放');
+            };
+            const endSpaceBoost = function () {
+                if (!spaceBoostActive) return;
+                spaceBoostActive = false;
+                if (player && typeof player.setPlaybackRate === 'function') {
+                    player.setPlaybackRate(spacePreviousRate);
+                }
+                showFocusToast('恢復 ' + spacePreviousRate + '× 播放');
+            };
             if (focusModeToggle) focusModeToggle.addEventListener('click', function () {
                 if (isFocusMode()) exitFocusMode();
                 else enterFocusMode();
             });
             if (focusExit) focusExit.addEventListener('click', exitFocusMode);
             if (focusMarkerSave) focusMarkerSave.addEventListener('click', saveMarker);
+            if (focusKeyboardCapture) focusKeyboardCapture.addEventListener('click', function () {
+                if (!player || typeof player.getPlayerState !== 'function') return;
+                if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+                    if (typeof player.pauseVideo === 'function') player.pauseVideo();
+                } else if (typeof player.playVideo === 'function') {
+                    player.playVideo();
+                }
+                focusKeyboardCapture.focus({ preventScroll: true });
+            });
             document.addEventListener('fullscreenchange', updateFocusMode);
             document.addEventListener('webkitfullscreenchange', updateFocusMode);
             if (markerNote) markerNote.addEventListener('keydown', function (event) {
@@ -1678,8 +1837,20 @@
             });
             document.addEventListener('keydown', function (event) {
                 const target = event.target;
-                const isTyping = target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
-                if (!isTyping && !event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'm') {
+                const isTyping = target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
+                const plainShortcut = !isTyping && !event.altKey && !event.ctrlKey && !event.metaKey;
+                const pressedKey = String(event.key || '').toLowerCase();
+                if (plainShortcut && playerCanReceiveShortcuts() && (pressedKey === 'j' || pressedKey === 'l')) {
+                    event.preventDefault();
+                    seekPlayerBy(pressedKey === 'j' ? -10 : 10);
+                    return;
+                }
+                if (plainShortcut && playerCanReceiveShortcuts() && event.code === 'Space') {
+                    event.preventDefault();
+                    if (!event.repeat) beginSpaceBoost();
+                    return;
+                }
+                if (plainShortcut && pressedKey === 'm') {
                     const option = selectedOption();
                     if (!option || !option.dataset.youtubeVideoId) return;
                     event.preventDefault();
@@ -1689,6 +1860,15 @@
                     event.preventDefault();
                     exitFocusMode();
                 }
+            });
+            document.addEventListener('keyup', function (event) {
+                if (event.code !== 'Space') return;
+                event.preventDefault();
+                endSpaceBoost();
+            });
+            window.addEventListener('blur', endSpaceBoost);
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) endSpaceBoost();
             });
             document.querySelectorAll('[data-select-video]').forEach(function (button) {
                 button.addEventListener('click', function () {

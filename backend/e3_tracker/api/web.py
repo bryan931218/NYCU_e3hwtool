@@ -12660,6 +12660,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         study_time_today = storage.get_study_time_summary(
             day=_study_plan_business_date().isoformat()
         )
+        study_time_sessions = storage.list_study_time_sessions(
+            day=_study_plan_business_date().isoformat()
+        )
         return render_template_string(
             STUDY_PLAN_TEMPLATE,
             admin_user=user,
@@ -12678,6 +12681,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             replan_settings=replan_settings,
             replan_preview=replan_preview,
             study_time_today=study_time_today,
+            study_time_sessions=study_time_sessions,
             replan_defaults={
                 "start_date": next_week_start.isoformat(),
                 "end_date": effective_plan_end,
@@ -12895,6 +12899,27 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "total_seconds": round(float(summary["total_seconds"]), 1),
                 "video_seconds": round(float(summary["video_seconds"]), 1),
                 "practice_seconds": round(float(summary["practice_seconds"]), 1),
+                "sessions": storage.list_study_time_sessions(day=str(summary["day"])),
+            },
+        }
+
+    @app.delete("/admin/study-plan/study-time/<session_key>")
+    @admin_required
+    def admin_study_plan_study_time_delete(session_key: str):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", str(session_key or "")):
+            return {"ok": False, "error": "invalid_session"}, 400
+        if not storage.delete_study_time_session(session_key):
+            return {"ok": False, "error": "session_not_found"}, 404
+        day = _study_plan_business_date().isoformat()
+        summary = storage.get_study_time_summary(day=day)
+        _invalidate_study_progress_context()
+        return {
+            "ok": True,
+            "today": {
+                "total_seconds": round(float(summary["total_seconds"]), 1),
+                "video_seconds": round(float(summary["video_seconds"]), 1),
+                "practice_seconds": round(float(summary["practice_seconds"]), 1),
+                "sessions": storage.list_study_time_sessions(day=day),
             },
         }
 

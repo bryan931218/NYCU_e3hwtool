@@ -48,6 +48,24 @@ class StudyTimeTests(unittest.TestCase):
         self.assertEqual(summary["practice_seconds"], 30)
         self.assertEqual(summary["session_count"], 1)
 
+    def test_sessions_can_be_listed_and_deleted(self):
+        summary = self.storage.record_study_time_session(
+            session_key="practice_session_history",
+            kind="practice",
+            label="線代題庫",
+            elapsed_seconds=245,
+            completed=True,
+        )
+
+        sessions = self.storage.list_study_time_sessions(day=summary["day"])
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0]["label"], "線代題庫")
+        self.assertEqual(sessions[0]["elapsed_seconds"], 245)
+        self.assertTrue(sessions[0]["completed"])
+
+        self.assertTrue(self.storage.delete_study_time_session("practice_session_history"))
+        self.assertEqual(self.storage.list_study_time_sessions(day=summary["day"]), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1547,6 +1547,60 @@ class PersistentStorage:
             "session_count": len(rows),
         }
 
+    def list_study_time_sessions(self, *, day: str, limit: int = 20) -> List[Dict[str, Any]]:
+        stmt = (
+            select(
+                study_time_sessions_table.c.session_key,
+                study_time_sessions_table.c.kind,
+                study_time_sessions_table.c.video_id,
+                study_time_sessions_table.c.label,
+                study_time_sessions_table.c.elapsed_seconds,
+                study_time_sessions_table.c.completed,
+                study_time_sessions_table.c.started_at,
+                study_time_sessions_table.c.updated_at,
+                study_plan_videos_table.c.subject,
+                study_plan_videos_table.c.sequence,
+            )
+            .select_from(
+                study_time_sessions_table.outerjoin(
+                    study_plan_videos_table,
+                    study_time_sessions_table.c.video_id == study_plan_videos_table.c.id,
+                )
+            )
+            .where(study_time_sessions_table.c.day == str(day or ""))
+            .order_by(study_time_sessions_table.c.updated_at.desc())
+            .limit(max(1, min(int(limit or 20), 100)))
+        )
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+        return [
+            {
+                "session_id": str(row.session_key),
+                "kind": str(row.kind),
+                "video_id": int(row.video_id) if row.video_id is not None else None,
+                "label": str(row.label or ""),
+                "elapsed_seconds": max(0.0, float(row.elapsed_seconds or 0)),
+                "completed": bool(row.completed),
+                "started_at": str(row.started_at or ""),
+                "updated_at": str(row.updated_at or ""),
+                "subject": str(row.subject or ""),
+                "sequence": int(row.sequence or 0),
+            }
+            for row in rows
+        ]
+
+    def delete_study_time_session(self, session_key: str) -> bool:
+        key = str(session_key or "").strip()[:80]
+        if not key:
+            return False
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                delete(study_time_sessions_table).where(
+                    study_time_sessions_table.c.session_key == key
+                )
+            )
+        return bool(result.rowcount)
+
     # -- study recall loop -----------------------------------------------
     @staticmethod
     def _decode_json_list(value: Any) -> List[Any]:
