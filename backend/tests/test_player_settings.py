@@ -7,6 +7,7 @@ from e3_tracker.shared.deployment_runtime import (
     PLAYER_SETTINGS_DEFAULTS,
     normalize_player_settings,
 )
+from e3_tracker.shared.player_control_runtime import install_player_control_dock
 
 
 class PlayerSettingsTests(unittest.TestCase):
@@ -62,6 +63,22 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertFalse(settings["center_click_toggle"])
         self.assertTrue(settings["show_shortcut_hint"])
         self.assertEqual(settings["hint_duration_ms"], 5000)
+
+    def test_player_control_dock_is_appended_only_once(self):
+        class FakeWebModule:
+            STUDY_UPLOAD_TRACKER_TEMPLATE = "<div>tracker</div>"
+
+        module = FakeWebModule()
+        install_player_control_dock(module)
+        install_player_control_dock(module)
+
+        self.assertIn("__e3PlayerControlDockInstalled", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
+        self.assertEqual(
+            module.STUDY_UPLOAD_TRACKER_TEMPLATE.count("__e3PlayerControlDockInstalled"),
+            1,
+        )
+        self.assertIn("data-e3-volume", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
+        self.assertIn("data-e3-rate", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
 
 
 if __name__ == "__main__":
