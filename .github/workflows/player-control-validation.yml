@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - agent/fix-player-and-persistent-sync
+  pull_request:
+    paths:
+      - backend/e3_tracker/shared/player_control_runtime.py
+      - backend/server.py
+      - backend/wsgi.py
+      - backend/tests/test_player_settings.py
+      - frontend/templates/_player_shortcut_compat.html
+      - frontend/templates/_player_control_dock.html
 
 jobs:
   validate:
