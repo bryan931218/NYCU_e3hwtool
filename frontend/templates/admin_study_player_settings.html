@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>播放器設定｜E3 研究所備考中心</title>
+    <style>
+        :root {
+            --ink:#102a43;
+            --muted:#62768b;
+            --blue:#1463d9;
+            --blue-soft:#eaf3ff;
+            --line:#dce5ef;
+            --paper:#fff;
+            --canvas:#f6f8fb;
+            --green:#258957;
+            font-family:Inter,"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+        }
+        * { box-sizing:border-box; }
+        body { margin:0; color:var(--ink); background:var(--canvas); }
+        a { color:inherit; text-decoration:none; }
+        button,input,select { font:inherit; }
+        .nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:#fff; border-bottom:1px solid var(--line); }
+        .brand { display:flex; align-items:center; gap:10px; font-size:14px; font-weight:900; }
+        .mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }
+        .links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }
+        .links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }
+        .links a:hover,.links a.active { color:var(--blue); border-bottom-color:var(--blue); }
+        .admin { padding:6px 9px; color:#0f8b8d; background:#e8fbfb; border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
+        main { width:min(860px,calc(100% - 32px)); margin:34px auto 60px; }
+        .title-row { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:20px; }
+        h1 { margin:0; font-size:clamp(27px,4vw,38px); letter-spacing:-.04em; }
+        .subtitle { margin:8px 0 0; color:var(--muted); line-height:1.65; }
+        .back { color:var(--blue); font-size:13px; font-weight:850; white-space:nowrap; }
+        .flash { margin:0 0 16px; padding:12px 14px; color:#17633d; border:1px solid #b8dfc5; border-radius:10px; background:#edf9f1; font-size:13px; font-weight:800; }
+        .card { overflow:hidden; border:1px solid var(--line); border-radius:14px; background:var(--paper); box-shadow:0 12px 30px rgba(16,42,67,.06); }
+        .section { padding:22px; border-bottom:1px solid var(--line); }
+        .section:last-child { border-bottom:0; }
+        .section-head { margin-bottom:16px; }
+        .section-head strong { display:block; font-size:16px; }
+        .section-head span { display:block; margin-top:5px; color:var(--muted); font-size:13px; line-height:1.55; }
+        .field-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+        .field { display:grid; gap:7px; min-width:0; }
+        .field label { font-size:13px; font-weight:850; }
+        .field small { color:var(--muted); line-height:1.5; }
+        select,input[type="number"] { width:100%; min-height:42px; padding:8px 11px; color:var(--ink); border:1px solid #cbd8e6; border-radius:9px; background:#fff; }
+        select:focus,input:focus { outline:3px solid rgba(20,99,217,.14); border-color:var(--blue); }
+        .switch-row { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px 0; border-top:1px solid var(--line); }
+        .switch-row:first-child { padding-top:0; border-top:0; }
+        .switch-copy strong { display:block; font-size:14px; }
+        .switch-copy span { display:block; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.55; }
+        .switch { position:relative; width:48px; height:28px; flex:0 0 auto; }
+        .switch input { position:absolute; opacity:0; pointer-events:none; }
+        .switch span { position:absolute; inset:0; border-radius:99px; background:#c8d3df; cursor:pointer; transition:.18s ease; }
+        .switch span::after { content:""; position:absolute; top:4px; left:4px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 2px 7px rgba(0,0,0,.18); transition:.18s ease; }
+        .switch input:checked + span { background:var(--green); }
+        .switch input:checked + span::after { transform:translateX(20px); }
+        .actions { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 22px; background:#fbfdff; }
+        .note { color:var(--muted); font-size:12px; line-height:1.5; }
+        .save { min-height:42px; padding:9px 18px; color:#fff; border:0; border-radius:9px; background:var(--blue); font-weight:900; cursor:pointer; }
+        .preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+        .chip { padding:7px 9px; color:#35506d; border:1px solid #cbd8e6; border-radius:8px; background:#f7faff; font-size:12px; font-weight:800; }
+        @media (max-width:680px) {
+            .nav { align-items:flex-start; flex-direction:column; padding:14px 18px; }
+            .links { justify-content:flex-start; }
+            main { margin-top:24px; }
+            .title-row { align-items:flex-start; flex-direction:column; }
+            .field-grid { grid-template-columns:1fr; }
+            .actions { align-items:stretch; flex-direction:column; }
+            .save { width:100%; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <a class="brand" href="/admin/study"><span class="mark">E3</span><span>研究所備考中心</span></a>
+        <div class="links">
+            <a href="/admin/study">學習首頁</a>
+            <a href="/admin/study-plan">影片與讀書計畫</a>
+            <a href="/admin/study-settings">影片資料設定</a>
+            <a class="active" href="/admin/study-player-settings">播放器設定</a>
+            <span class="admin">{{ username }}</span>
+        </div>
+    </nav>
+
+    <main>
+        <div class="title-row">
+            <div>
+                <h1>播放器設定</h1>
+                <p class="subtitle">調整全螢幕快捷鍵、快進後退與中央點擊行為。設定會寫入正式資料庫，重新部署後仍會保留。</p>
+            </div>
+            <a class="back" href="/admin/study-plan">返回播放器 →</a>
+        </div>
+
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="flash" role="status">{{ message }}</div>
+        {% endfor %}
+
+        <form class="card" method="post">
+            <section class="section">
+                <div class="section-head">
+                    <strong>空白鍵控制</strong>
+                    <span>短按仍是播放／暫停；按住超過指定時間才會切換成暫時倍速。</span>
+                </div>
+                <div class="field-grid">
+                    <div class="field">
+                        <label for="hold_space_rate">長按空白鍵倍速</label>
+                        <select id="hold_space_rate" name="hold_space_rate">
+                            {% for rate in rate_options %}
+                            <option value="{{ rate }}" {% if settings.hold_space_rate == rate %}selected{% endif %}>{{ rate }}×</option>
+                            {% endfor %}
+                        </select>
+                        <small>放開空白鍵後會恢復長按前的播放速度。</small>
+                    </div>
+                    <div class="field">
+                        <label for="hold_delay_ms">判定為長按的時間</label>
+                        <input id="hold_delay_ms" name="hold_delay_ms" type="number" min="150" max="1200" step="50" value="{{ settings.hold_delay_ms }}">
+                        <small>單位為毫秒。建議 250～400 ms，太短容易把短按誤判成快轉。</small>
+                    </div>
+                </div>
+                <div class="preview">
+                    <span class="chip">短按：播放／暫停</span>
+                    <span class="chip">長按：{{ settings.hold_space_rate }}×</span>
+                    <span class="chip">門檻：{{ settings.hold_delay_ms }} ms</span>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="section-head">
+                    <strong>快進與後退</strong>
+                    <span>J 與左方向鍵共用後退功能；L 與右方向鍵共用快進功能。</span>
+                </div>
+                <div class="field" style="max-width:340px">
+                    <label for="seek_seconds">每次快進／後退秒數</label>
+                    <input id="seek_seconds" name="seek_seconds" type="number" min="1" max="120" step="1" value="{{ settings.seek_seconds }}">
+                    <small>按一下 J 或 ← 後退；按一下 L 或 → 快進。</small>
+                </div>
+                <div class="preview">
+                    <span class="chip">J／←：後退 {{ settings.seek_seconds }} 秒</span>
+                    <span class="chip">L／→：快進 {{ settings.seek_seconds }} 秒</span>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="section-head">
+                    <strong>滑鼠與提示</strong>
+                    <span>中央影片區由網站控制，底部 YouTube 原生進度列、音量與設定仍可直接操作。</span>
+                </div>
+                <div class="switch-row">
+                    <div class="switch-copy">
+                        <strong>點擊螢幕中央播放／暫停</strong>
+                        <span>開啟後，在全螢幕影片中央點一下即可切換播放狀態。</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" name="center_click_toggle" value="1" {% if settings.center_click_toggle %}checked{% endif %}>
+                        <span aria-hidden="true"></span>
+                    </label>
+                </div>
+                <div class="switch-row">
+                    <div class="switch-copy">
+                        <strong>進入全螢幕時顯示快捷鍵提示</strong>
+                        <span>提示只會顯示一次，不會因滑鼠移動或重新聚焦反覆跳出。</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" name="show_shortcut_hint" value="1" {% if settings.show_shortcut_hint %}checked{% endif %}>
+                        <span aria-hidden="true"></span>
+                    </label>
+                </div>
+                <div class="field" style="margin-top:14px;max-width:320px">
+                    <label for="hint_duration_ms">提示顯示時間</label>
+                    <input id="hint_duration_ms" name="hint_duration_ms" type="number" min="500" max="5000" step="100" value="{{ settings.hint_duration_ms }}">
+                    <small>單位為毫秒；關閉提示時，此數值不會生效。</small>
+                </div>
+            </section>
+
+            <div class="actions">
+                <span class="note">儲存後重新開啟或重新整理播放器頁即可套用。</span>
+                <button class="save" type="submit">儲存播放器設定</button>
+            </div>
+        </form>
+    </main>
+</body>
+</html>
