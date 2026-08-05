@@ -1,154 +1,3 @@
-<style>
-    .study-calendar-panel[data-e3-time-split-ready="true"] .calendar-kicker {
-        color: #a8e2dc;
-    }
-
-    .calendar-time-legend {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-top: 8px;
-        color: var(--muted);
-        font-size: 10px;
-        font-weight: 850;
-    }
-
-    .calendar-time-legend span,
-    .calendar-split-row {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-    }
-
-    .calendar-time-legend i,
-    .calendar-split-row::before {
-        content: "";
-        width: 7px;
-        height: 7px;
-        flex: 0 0 auto;
-        border-radius: 50%;
-        background: #2f80ed;
-        box-shadow: 0 0 0 2px rgba(47, 128, 237, .13);
-    }
-
-    .calendar-time-legend .is-study i,
-    .calendar-split-row.is-study::before {
-        background: #27a36b;
-        box-shadow: 0 0 0 2px rgba(39, 163, 107, .13);
-    }
-
-    .study-calendar-panel[data-e3-time-split-ready="true"] .calendar-day {
-        min-height: 70px;
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        grid-template-rows: auto 1fr;
-        align-items: start;
-    }
-
-    .study-calendar-panel[data-e3-time-split-ready="true"] .calendar-date {
-        grid-column: 1;
-        grid-row: 1;
-    }
-
-    .study-calendar-panel[data-e3-time-split-ready="true"] .calendar-duration {
-        display: none;
-    }
-
-    .calendar-time-split {
-        grid-column: 1 / -1;
-        grid-row: 2;
-        display: grid;
-        align-self: end;
-        gap: 3px;
-        width: 100%;
-        min-width: 0;
-        margin-top: 7px;
-        font-size: 8px;
-        font-weight: 900;
-        line-height: 1.15;
-    }
-
-    .calendar-split-row {
-        min-width: 0;
-        justify-content: space-between;
-    }
-
-    .calendar-split-label {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        opacity: .82;
-    }
-
-    .calendar-split-value {
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
-    }
-
-    .calendar-time-summary {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
-        margin-bottom: 4px;
-    }
-
-    .calendar-time-summary-card {
-        min-width: 0;
-        padding: 11px;
-        border: 1px solid var(--line);
-        border-radius: 11px;
-        background: #f8fbfe;
-    }
-
-    .calendar-time-summary-card.is-video {
-        border-color: #c9ddf7;
-        background: #f1f7ff;
-    }
-
-    .calendar-time-summary-card.is-study {
-        border-color: #c6e9d8;
-        background: #f0fbf5;
-    }
-
-    .calendar-time-summary-card span {
-        display: block;
-        color: var(--muted);
-        font-size: 10px;
-        font-weight: 850;
-    }
-
-    .calendar-time-summary-card strong {
-        display: block;
-        margin-top: 5px;
-        overflow: hidden;
-        color: var(--ink);
-        font-size: 15px;
-        font-weight: 950;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    @media (max-width: 470px) {
-        .study-calendar-panel[data-e3-time-split-ready="true"] .calendar-day {
-            min-height: 65px;
-            padding: 5px;
-        }
-
-        .calendar-time-split {
-            gap: 2px;
-            font-size: 7px;
-        }
-
-        .calendar-split-row::before {
-            width: 5px;
-            height: 5px;
-        }
-
-        .calendar-time-summary {
-            grid-template-columns: 1fr;
-        }
-    }
-</style>
 <script>
 (() => {
     if (window.__e3StudyCalendarTimeSplitInstalled) return;
@@ -166,22 +15,39 @@
         return;
     }
 
-    const firstMonth = String(calendarPayload.first_month || calendarPayload.initial_month || '').slice(0, 7);
+    const firstMonth = String(
+        calendarPayload.first_month || calendarPayload.initial_month || '',
+    ).slice(0, 7);
     const todayKey = String(calendarPayload.today || '');
-    if (!/^\d{4}-\d{2}$/.test(firstMonth) || !/^\d{4}-\d{2}-\d{2}$/.test(todayKey)) return;
+    if (!/^\d{4}-\d{2}$/.test(firstMonth) || !/^\d{4}-\d{2}-\d{2}$/.test(todayKey)) {
+        return;
+    }
 
-    const timeByDay = new Map();
+    const originalDayByKey = new Map(
+        (Array.isArray(calendarPayload.days) ? calendarPayload.days : [])
+            .map((item) => [String(item?.date || ''), item]),
+    );
+    const studySecondsByDay = new Map();
     const pad = (value) => String(value).padStart(2, '0');
-    const clampSeconds = (value) => Math.max(0, Number(value) || 0);
+    const secondsValue = (value) => Math.max(0, Number(value) || 0);
+
     const compactDuration = (seconds) => {
-        const value = clampSeconds(seconds);
-        if (value <= 0) return '0m';
+        const value = secondsValue(seconds);
+        if (value <= 0) return '';
         if (value < 3600) return `${Math.max(1, Math.round(value / 60))}m`;
         const hours = value / 3600;
         return `${hours >= 10 ? Math.round(hours) : hours.toFixed(1).replace('.0', '')}h`;
     };
+
+    const summaryDuration = (seconds) => {
+        const value = secondsValue(seconds);
+        if (value <= 0) return '0h';
+        if (value < 3600) return `${Math.max(1, Math.round(value / 60))} 分`;
+        return `${(value / 3600).toFixed(1).replace('.0', '')}h`;
+    };
+
     const fullDuration = (seconds) => {
-        const value = clampSeconds(seconds);
+        const value = secondsValue(seconds);
         if (value <= 0) return '0 分鐘';
         const minutes = Math.max(1, Math.round(value / 60));
         const hours = Math.floor(minutes / 60);
@@ -189,18 +55,37 @@
         if (!hours) return `${minutes} 分鐘`;
         return `${hours} 小時${remainder ? ` ${remainder} 分鐘` : ''}`;
     };
+
+    const signedDuration = (seconds) => {
+        const value = Number(seconds) || 0;
+        if (Math.abs(value) < .5) return '0 分鐘';
+        return `${value > 0 ? '+' : '−'}${fullDuration(Math.abs(value))}`;
+    };
+
     const spokenDate = (key) => {
         const [year, month, day] = key.split('-').map(Number);
         const value = new Date(year, month - 1, day);
-        const weekday = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][value.getDay()];
+        const weekday = [
+            '星期日', '星期一', '星期二', '星期三',
+            '星期四', '星期五', '星期六',
+        ][value.getDay()];
         return `${month} 月 ${day} 日・${weekday}`;
     };
-    const dayTime = (key) => timeByDay.get(key) || {
-        video_seconds: 0,
-        study_seconds: 0,
-        total_seconds: 0,
-        session_count: 0,
+
+    const totalStudySeconds = (key) => secondsValue(studySecondsByDay.get(key));
+
+    const videoProgressDelta = (key) => {
+        const detail = originalDayByKey.get(key) || {};
+        const activities = Array.isArray(detail.activities) ? detail.activities : [];
+        if (!activities.length) {
+            return secondsValue(detail.seconds);
+        }
+        return activities.reduce((total, activity) => {
+            const amount = secondsValue(activity?.seconds);
+            return total + (activity?.is_correction ? -amount : amount);
+        }, 0);
     };
+
     const visiblePrefix = () => {
         const firstCell = grid.querySelector('.calendar-day[data-date]');
         if (firstCell?.dataset.date) return firstCell.dataset.date.slice(0, 7);
@@ -208,135 +93,130 @@
         const match = heading.match(/(\d{4})\s*年\s*(\d{1,2})\s*月/);
         return match ? `${match[1]}-${pad(match[2])}` : firstMonth;
     };
-    const applyActualHeat = (cell, totalSeconds, monthMaximum) => {
-        if (totalSeconds <= 0 || monthMaximum <= 0) {
+
+    const applyOriginalHeat = (cell, seconds, monthMaximum) => {
+        if (seconds <= 0 || monthMaximum <= 0) {
             cell.style.background = 'linear-gradient(145deg, #fbfdff 0%, #edf3f9 100%)';
             cell.style.setProperty('--calendar-cell-border', '#e2eaf3');
             cell.style.color = '#17324d';
             return;
         }
-        const ratio = Math.min(1, Math.max(0, totalSeconds / monthMaximum));
-        const intensity = Math.pow(ratio, .68);
-        const hue = Math.round(205 - intensity * 38);
-        const topLightness = Math.round(97 - intensity * 40);
-        const bottomLightness = Math.round(94 - intensity * 50);
-        cell.style.background = `linear-gradient(145deg, hsl(${hue}, 72%, ${topLightness}%) 0%, hsl(${hue - 5}, 68%, ${bottomLightness}%) 100%)`;
-        cell.style.setProperty('--calendar-cell-border', `hsla(${hue}, 70%, ${Math.max(34, bottomLightness - 7)}%, .42)`);
-        cell.style.color = intensity >= .6 ? '#fff' : '#17324d';
+        const ratio = Math.min(1, Math.max(0, seconds / monthMaximum));
+        const intensity = Math.pow(ratio, .72);
+        const hue = Math.round(211 + intensity * 10);
+        const saturation = Math.round(76 + intensity * 14);
+        const topLightness = Math.round(97 - intensity * 43);
+        const bottomLightness = Math.round(94 - intensity * 54);
+        const borderLightness = Math.max(35, bottomLightness - 5);
+        cell.style.background = `linear-gradient(145deg, hsl(${hue}, ${saturation}%, ${topLightness}%) 0%, hsl(${hue + 3}, ${saturation}%, ${bottomLightness}%) 100%)`;
+        cell.style.setProperty(
+            '--calendar-cell-border',
+            `hsla(${hue}, ${saturation}%, ${borderLightness}%, .38)`,
+        );
+        cell.style.color = intensity >= .54 ? '#fff' : '#17324d';
     };
+
     const updateStaticCopy = () => {
-        root.dataset.e3TimeSplitReady = 'true';
-        root.setAttribute('aria-label', '每月實際影片與學習時間月曆');
-        const kicker = root.querySelector('.calendar-kicker');
+        root.setAttribute('aria-label', '每月總學習時間熱度月曆');
         const totalLabel = root.querySelector('.calendar-total-label');
         const caption = root.querySelector('.calendar-caption');
-        const gridNode = root.querySelector('[data-calendar-grid]');
-        if (kicker) kicker.textContent = 'ACTUAL STUDY HEATMAP';
-        if (totalLabel) totalLabel.textContent = '這個月實際學習總時間';
+        if (totalLabel) totalLabel.textContent = '這個月累積學習時間';
         if (caption) {
-            caption.textContent = '依實際計時呈現；藍色是觀看影片，綠色是刷題、複習與整理。';
-            if (!caption.parentElement.querySelector('.calendar-time-legend')) {
-                const legend = document.createElement('div');
-                legend.className = 'calendar-time-legend';
-                legend.innerHTML = '<span class="is-video"><i></i>影片時間</span><span class="is-study"><i></i>學習時間</span>';
-                caption.after(legend);
-            }
+            caption.textContent = '格子顏色依每日總學習時間計算；點選日期可查看影片進度變化量。';
         }
-        if (gridNode) gridNode.setAttribute('aria-label', '每日實際影片與學習時間');
+        grid.setAttribute('aria-label', '每日總學習時間');
     };
+
     const decorateCells = () => {
         const prefix = visiblePrefix();
         const monthMaximum = Math.max(
             0,
-            ...[...timeByDay.entries()]
+            ...[...studySecondsByDay.entries()]
                 .filter(([key]) => key.startsWith(`${prefix}-`))
-                .map(([, item]) => clampSeconds(item.total_seconds)),
+                .map(([, seconds]) => secondsValue(seconds)),
         );
         grid.querySelectorAll('.calendar-day[data-date]').forEach((cell) => {
-            const key = cell.dataset.date;
-            const item = dayTime(key);
-            const signature = `${item.video_seconds}|${item.study_seconds}|${monthMaximum}`;
-            if (cell.dataset.e3TimeSignature !== signature) {
-                cell.dataset.e3TimeSignature = signature;
-                let split = cell.querySelector('.calendar-time-split');
-                if (!split) {
-                    split = document.createElement('span');
-                    split.className = 'calendar-time-split';
-                    split.innerHTML = [
-                        '<span class="calendar-split-row is-video"><span class="calendar-split-label">影片</span><span class="calendar-split-value" data-e3-video-time></span></span>',
-                        '<span class="calendar-split-row is-study"><span class="calendar-split-label">學習</span><span class="calendar-split-value" data-e3-study-time></span></span>',
-                    ].join('');
-                    cell.appendChild(split);
-                }
-                split.querySelector('[data-e3-video-time]').textContent = compactDuration(item.video_seconds);
-                split.querySelector('[data-e3-study-time]').textContent = compactDuration(item.study_seconds);
-                cell.setAttribute(
-                    'aria-label',
-                    `${spokenDate(key)}，影片時間 ${fullDuration(item.video_seconds)}，學習時間 ${fullDuration(item.study_seconds)}，合計 ${fullDuration(item.total_seconds)}`,
-                );
-                applyActualHeat(cell, item.total_seconds, monthMaximum);
-            }
+            const key = String(cell.dataset.date || '');
+            const studySeconds = totalStudySeconds(key);
+            const signature = `${studySeconds}|${monthMaximum}`;
+            if (cell.dataset.e3StudyHeatSignature === signature) return;
+            cell.dataset.e3StudyHeatSignature = signature;
+            applyOriginalHeat(cell, studySeconds, monthMaximum);
+            const duration = cell.querySelector('.calendar-duration');
+            if (duration) duration.textContent = compactDuration(studySeconds);
+            cell.setAttribute(
+                'aria-label',
+                `${spokenDate(key)}，總學習時間 ${fullDuration(studySeconds)}`,
+            );
         });
     };
+
     const updateMonthSummary = () => {
         const prefix = visiblePrefix();
-        const rows = [...timeByDay.entries()]
-            .filter(([key, item]) => key.startsWith(`${prefix}-`) && clampSeconds(item.total_seconds) > 0)
+        const rows = [...studySecondsByDay.entries()]
+            .filter(([key, seconds]) => (
+                key.startsWith(`${prefix}-`) && secondsValue(seconds) > 0
+            ))
             .sort(([left], [right]) => left.localeCompare(right));
-        const total = rows.reduce((sum, [, item]) => sum + clampSeconds(item.total_seconds), 0);
+        const total = rows.reduce(
+            (sum, [, seconds]) => sum + secondsValue(seconds),
+            0,
+        );
         const best = rows.reduce(
-            (winner, item) => (!winner || item[1].total_seconds > winner[1].total_seconds ? item : winner),
+            (winner, item) => (!winner || item[1] > winner[1] ? item : winner),
             null,
         );
         const totalNode = root.querySelector('[data-calendar-total]');
         const activeNode = root.querySelector('[data-calendar-active-days]');
         const averageNode = root.querySelector('[data-calendar-average]');
         const bestNode = root.querySelector('[data-calendar-best]');
-        if (totalNode) totalNode.textContent = compactDuration(total);
+        if (totalNode) totalNode.textContent = summaryDuration(total);
         if (activeNode) activeNode.textContent = `${rows.length} 天`;
-        if (averageNode) averageNode.textContent = rows.length ? compactDuration(total / rows.length) : '0 分';
+        if (averageNode) {
+            averageNode.textContent = rows.length
+                ? summaryDuration(total / rows.length)
+                : '0 分';
+        }
         if (bestNode) {
             bestNode.textContent = best
-                ? `${Number(best[0].slice(5, 7))}/${Number(best[0].slice(8, 10))}・${compactDuration(best[1].total_seconds)}`
+                ? `${Number(best[0].slice(5, 7))}/${Number(best[0].slice(8, 10))}・${summaryDuration(best[1])}`
                 : '尚無紀錄';
         }
     };
+
     const updateFocus = (key) => {
         if (!key) return;
-        const item = dayTime(key);
         const dateNode = root.querySelector('[data-calendar-focus-date]');
         const durationNode = root.querySelector('[data-calendar-focus-duration]');
         if (dateNode) dateNode.textContent = spokenDate(key);
         if (durationNode) {
-            durationNode.textContent = `影片 ${fullDuration(item.video_seconds)}・學習 ${fullDuration(item.study_seconds)}・合計 ${fullDuration(item.total_seconds)}`;
+            durationNode.textContent = `總學習時間 ${fullDuration(totalStudySeconds(key))}`;
         }
     };
+
+    const selectedKey = () => (
+        grid.querySelector('.calendar-day.is-selected[data-date]')?.dataset.date
+        || grid.querySelector('.calendar-day[data-date]')?.dataset.date
+        || todayKey
+    );
+
     const updateModal = (key) => {
         const modal = document.querySelector('[data-calendar-modal]');
         const summary = modal?.querySelector('[data-calendar-modal-summary]');
-        const list = modal?.querySelector('[data-calendar-modal-list]');
-        if (!modal || modal.hidden || !summary || !list) return;
-        const item = dayTime(key);
-        const originalActivities = list.querySelectorAll('.calendar-activity-item').length;
-        summary.textContent = `實際計時：影片 ${fullDuration(item.video_seconds)}・學習 ${fullDuration(item.study_seconds)}・合計 ${fullDuration(item.total_seconds)}；影片進度 ${originalActivities} 項`;
-        list.querySelector('.calendar-time-summary')?.remove();
-        const cards = document.createElement('section');
-        cards.className = 'calendar-time-summary';
-        cards.setAttribute('aria-label', '當日實際計時摘要');
-        cards.innerHTML = [
-            `<div class="calendar-time-summary-card is-video"><span>觀看影片時間</span><strong>${fullDuration(item.video_seconds)}</strong></div>`,
-            `<div class="calendar-time-summary-card is-study"><span>學習時間</span><strong>${fullDuration(item.study_seconds)}</strong></div>`,
-            `<div class="calendar-time-summary-card"><span>實際總時間</span><strong>${fullDuration(item.total_seconds)}</strong></div>`,
-        ].join('');
-        list.prepend(cards);
+        if (!modal || modal.hidden || !summary || !key) return;
+        summary.textContent = [
+            `影片：${signedDuration(videoProgressDelta(key))}（影片觀看進度變化量）`,
+            `總學習時間：${fullDuration(totalStudySeconds(key))}`,
+        ].join('・');
     };
+
     const refreshVisibleCalendar = () => {
         updateStaticCopy();
         decorateCells();
         updateMonthSummary();
-        const selected = grid.querySelector('.calendar-day.is-selected[data-date]')
-            || grid.querySelector('.calendar-day[data-date]');
-        updateFocus(selected?.dataset.date || todayKey);
+        const key = selectedKey();
+        updateFocus(key);
+        updateModal(key);
     };
 
     let refreshQueued = false;
@@ -348,39 +228,55 @@
             refreshVisibleCalendar();
         });
     };
-    new MutationObserver(queueRefresh).observe(grid, { childList: true, subtree: true });
+
+    new MutationObserver(queueRefresh).observe(grid, {
+        childList: true,
+        subtree: true,
+    });
+
     grid.addEventListener('click', (event) => {
         const cell = event.target.closest('.calendar-day[data-date]');
         if (!cell) return;
-        window.requestAnimationFrame(() => {
+        window.setTimeout(() => {
             updateFocus(cell.dataset.date);
             updateModal(cell.dataset.date);
-        });
+        }, 0);
     });
 
-    const endpoint = `/admin/study-calendar/time-summary.json?start=${encodeURIComponent(`${firstMonth}-01`)}&end=${encodeURIComponent(todayKey)}`;
+    const modal = document.querySelector('[data-calendar-modal]');
+    if (modal) {
+        new MutationObserver(() => {
+            if (!modal.hidden) updateModal(selectedKey());
+        }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+    }
+
+    const endpoint = [
+        '/admin/study-calendar/time-summary.json',
+        `?start=${encodeURIComponent(`${firstMonth}-01`)}`,
+        `&end=${encodeURIComponent(todayKey)}`,
+    ].join('');
+
     fetch(endpoint, {
         credentials: 'same-origin',
         cache: 'no-store',
         headers: { Accept: 'application/json' },
     })
-        .then((response) => response.ok ? response.json() : null)
+        .then((response) => {
+            if (!response.ok) throw new Error('calendar_time_fetch_failed');
+            return response.json();
+        })
         .then((payload) => {
             if (!payload?.ok || !Array.isArray(payload.days)) return;
             payload.days.forEach((item) => {
                 const key = String(item?.date || '');
-                if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
-                const videoSeconds = clampSeconds(item.video_seconds);
-                const studySeconds = clampSeconds(item.study_seconds);
-                timeByDay.set(key, {
-                    video_seconds: videoSeconds,
-                    study_seconds: studySeconds,
-                    total_seconds: videoSeconds + studySeconds,
-                    session_count: Math.max(0, Number(item.session_count) || 0),
-                });
+                if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+                    studySecondsByDay.set(key, secondsValue(item.total_seconds));
+                }
             });
             refreshVisibleCalendar();
         })
-        .catch(() => null);
+        .catch(() => {
+            // Keep the original video-progress calendar if actual-time data is unavailable.
+        });
 })();
 </script>
