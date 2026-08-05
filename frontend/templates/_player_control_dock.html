@@ -1,1 +1,526 @@
-placeholder
+<style>
+    /* Leave YouTube's native top and bottom control regions fully clickable. */
+    .player-frame.is-focus-mode .focus-keyboard-capture {
+        inset: clamp(58px, 8vh, 86px) 0 78px 0 !important;
+    }
+
+    .e3-player-control-dock {
+        --dock-accent: #5ca6ff;
+        --dock-surface: rgba(8, 18, 32, .82);
+        --dock-line: rgba(255, 255, 255, .14);
+        --dock-text: #f7fbff;
+        --dock-muted: rgba(235, 244, 255, .68);
+        position: absolute;
+        left: 50%;
+        bottom: 72px;
+        z-index: 14;
+        display: none;
+        align-items: center;
+        gap: 10px;
+        width: min(94%, 760px);
+        min-height: 58px;
+        padding: 9px 12px;
+        color: var(--dock-text);
+        border: 1px solid var(--dock-line);
+        border-radius: 18px;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02)),
+            var(--dock-surface);
+        box-shadow:
+            0 18px 50px rgba(0, 0, 0, .34),
+            inset 0 1px 0 rgba(255, 255, 255, .08);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        backdrop-filter: blur(18px) saturate(140%);
+        transform: translateX(-50%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .22s ease, transform .22s ease, background .22s ease;
+    }
+
+    .player-frame.is-focus-mode .e3-player-control-dock {
+        display: flex;
+        bottom: 90px;
+        width: min(88%, 860px);
+        padding: 11px 14px;
+        border-radius: 20px;
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .player-frame.is-focus-mode.e3-controls-idle .e3-player-control-dock:not(:focus-within):not(:hover),
+    .player-frame.e3-native-controls-active .e3-player-control-dock {
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, 8px);
+    }
+
+    .e3-player-control-dock button,
+    .e3-player-control-dock input {
+        font: inherit;
+    }
+
+    .e3-control-icon {
+        flex: 0 0 auto;
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        color: var(--dock-text);
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 12px;
+        background: rgba(255,255,255,.08);
+        cursor: pointer;
+        transition: background .16s ease, border-color .16s ease, transform .16s ease;
+    }
+
+    .e3-control-icon:hover,
+    .e3-control-icon:focus-visible {
+        border-color: rgba(111, 180, 255, .68);
+        background: rgba(92, 166, 255, .22);
+        outline: none;
+        transform: translateY(-1px);
+    }
+
+    .e3-control-icon:active {
+        transform: translateY(0) scale(.96);
+    }
+
+    .e3-control-icon svg {
+        width: 20px;
+        height: 20px;
+        fill: currentColor;
+    }
+
+    .e3-control-divider {
+        width: 1px;
+        height: 30px;
+        flex: 0 0 auto;
+        background: rgba(255,255,255,.13);
+    }
+
+    .e3-control-cluster {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: auto minmax(86px, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        flex: 1 1 0;
+    }
+
+    .e3-control-cluster.speed {
+        flex-basis: 1.15fr;
+    }
+
+    .e3-control-label {
+        color: var(--dock-muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .04em;
+        white-space: nowrap;
+    }
+
+    .e3-control-value {
+        min-width: 46px;
+        padding: 5px 7px;
+        color: #fff;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 8px;
+        background: rgba(255,255,255,.07);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 900;
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    .e3-control-range {
+        --range-value: 50%;
+        width: 100%;
+        height: 24px;
+        margin: 0;
+        appearance: none;
+        -webkit-appearance: none;
+        background: transparent;
+        cursor: pointer;
+    }
+
+    .e3-control-range:focus-visible {
+        outline: none;
+    }
+
+    .e3-control-range::-webkit-slider-runnable-track {
+        height: 5px;
+        border-radius: 999px;
+        background:
+            linear-gradient(
+                90deg,
+                var(--dock-accent) 0,
+                var(--dock-accent) var(--range-value),
+                rgba(255,255,255,.18) var(--range-value),
+                rgba(255,255,255,.18) 100%
+            );
+        box-shadow: inset 0 1px 2px rgba(0,0,0,.2);
+    }
+
+    .e3-control-range::-moz-range-track {
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.18);
+        box-shadow: inset 0 1px 2px rgba(0,0,0,.2);
+    }
+
+    .e3-control-range::-moz-range-progress {
+        height: 5px;
+        border-radius: 999px;
+        background: var(--dock-accent);
+    }
+
+    .e3-control-range::-webkit-slider-thumb {
+        width: 16px;
+        height: 16px;
+        margin-top: -5.5px;
+        appearance: none;
+        -webkit-appearance: none;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        background: var(--dock-accent);
+        box-shadow: 0 3px 10px rgba(0,0,0,.38);
+        transition: transform .14s ease;
+    }
+
+    .e3-control-range::-moz-range-thumb {
+        width: 13px;
+        height: 13px;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        background: var(--dock-accent);
+        box-shadow: 0 3px 10px rgba(0,0,0,.38);
+        transition: transform .14s ease;
+    }
+
+    .e3-control-range:hover::-webkit-slider-thumb,
+    .e3-control-range:focus-visible::-webkit-slider-thumb,
+    .e3-control-range:hover::-moz-range-thumb,
+    .e3-control-range:focus-visible::-moz-range-thumb {
+        transform: scale(1.18);
+    }
+
+    .e3-speed-presets {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 0 0 auto;
+    }
+
+    .e3-speed-preset {
+        min-width: 36px;
+        height: 30px;
+        padding: 0 7px;
+        color: var(--dock-muted);
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        font-size: 11px;
+        font-weight: 850;
+        cursor: pointer;
+        transition: color .15s ease, background .15s ease, border-color .15s ease;
+    }
+
+    .e3-speed-preset:hover,
+    .e3-speed-preset:focus-visible,
+    .e3-speed-preset.is-active {
+        color: #fff;
+        border-color: rgba(92,166,255,.42);
+        background: rgba(92,166,255,.2);
+        outline: none;
+    }
+
+    @media (max-width: 760px) {
+        .player-frame.is-focus-mode .focus-keyboard-capture {
+            inset: 56px 0 72px 0 !important;
+        }
+
+        .e3-player-control-dock {
+            width: calc(100% - 18px);
+            gap: 7px;
+            padding: 8px;
+            border-radius: 14px;
+        }
+
+        .player-frame.is-focus-mode .e3-player-control-dock {
+            bottom: 82px;
+            width: calc(100% - 20px);
+        }
+
+        .e3-control-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+        }
+
+        .e3-control-divider,
+        .e3-speed-presets,
+        .e3-control-label {
+            display: none;
+        }
+
+        .e3-control-cluster {
+            grid-template-columns: minmax(68px, 1fr) auto;
+            gap: 6px;
+        }
+
+        .e3-control-range {
+            min-width: 64px;
+        }
+    }
+</style>
+
+<script>
+(() => {
+    if (window.__e3PlayerControlDockInstalled) return;
+    window.__e3PlayerControlDockInstalled = true;
+
+    const frame = document.getElementById('focus-player-frame');
+    const panel = document.getElementById('youtube-player-section');
+    const toast = document.getElementById('focus-toast');
+    if (!frame || !panel) return;
+
+    const dock = document.createElement('section');
+    dock.className = 'e3-player-control-dock';
+    dock.setAttribute('aria-label', '播放器音量與倍速控制');
+    dock.innerHTML = `
+        <button class="e3-control-icon" type="button" data-e3-play aria-label="播放影片" title="播放／暫停">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path data-e3-play-icon d="M8 5v14l11-7z"></path></svg>
+        </button>
+        <div class="e3-control-divider" aria-hidden="true"></div>
+        <button class="e3-control-icon" type="button" data-e3-mute aria-label="靜音" title="靜音／取消靜音">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path data-e3-volume-icon d="M3 10v4h4l5 4V6L7 10H3zm13.5 2a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12z"></path></svg>
+        </button>
+        <div class="e3-control-cluster volume">
+            <span class="e3-control-label">音量</span>
+            <input class="e3-control-range" data-e3-volume type="range" min="0" max="100" step="1" value="100" aria-label="音量">
+            <output class="e3-control-value" data-e3-volume-value>100%</output>
+        </div>
+        <div class="e3-control-divider" aria-hidden="true"></div>
+        <div class="e3-control-cluster speed">
+            <span class="e3-control-label">倍速</span>
+            <input class="e3-control-range" data-e3-rate type="range" min="0.25" max="2" step="0.25" value="1" aria-label="播放速度">
+            <output class="e3-control-value" data-e3-rate-value>1×</output>
+        </div>
+        <div class="e3-speed-presets" aria-label="常用倍速">
+            <button class="e3-speed-preset" type="button" data-e3-rate-preset="1">1×</button>
+            <button class="e3-speed-preset" type="button" data-e3-rate-preset="1.5">1.5×</button>
+            <button class="e3-speed-preset" type="button" data-e3-rate-preset="2">2×</button>
+        </div>
+    `;
+    frame.appendChild(dock);
+
+    const playButton = dock.querySelector('[data-e3-play]');
+    const playIcon = dock.querySelector('[data-e3-play-icon]');
+    const muteButton = dock.querySelector('[data-e3-mute]');
+    const volumeIcon = dock.querySelector('[data-e3-volume-icon]');
+    const volumeRange = dock.querySelector('[data-e3-volume]');
+    const volumeValue = dock.querySelector('[data-e3-volume-value]');
+    const rateRange = dock.querySelector('[data-e3-rate]');
+    const rateValue = dock.querySelector('[data-e3-rate-value]');
+    const ratePresets = Array.from(dock.querySelectorAll('[data-e3-rate-preset]'));
+
+    let controlsIdleTimer = null;
+    let toastTimer = null;
+    let playerState = -1;
+    let currentRate = 1;
+    let currentVolume = 100;
+    let lastAudibleVolume = 100;
+    let isMuted = false;
+    let wasFocusMode = frame.classList.contains('is-focus-mode');
+
+    const playerIframe = () => document.querySelector('iframe#youtube-player')
+        || document.querySelector('#youtube-player iframe');
+    const isFocusMode = () => frame.classList.contains('is-focus-mode');
+    const playerReady = () => !panel.classList.contains('is-hidden') && Boolean(playerIframe());
+    const formatRate = (rate) => Number(rate || 1).toFixed(2).replace(/\.00$/, '').replace(/0$/, '');
+    const sendCommand = (func, args = []) => {
+        const iframe = playerIframe();
+        if (!iframe || !iframe.contentWindow) return false;
+        iframe.contentWindow.postMessage(JSON.stringify({
+            event: 'command',
+            func,
+            args,
+        }), '*');
+        return true;
+    };
+    const rangePercent = (input) => {
+        const min = Number(input.min || 0);
+        const max = Number(input.max || 100);
+        const value = Number(input.value || min);
+        return max > min ? ((value - min) / (max - min)) * 100 : 0;
+    };
+    const paintRange = (input) => {
+        input.style.setProperty('--range-value', `${Math.max(0, Math.min(100, rangePercent(input)))}%`);
+    };
+    const showToast = (message) => {
+        if (!toast || !message) return;
+        if (toastTimer) window.clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.classList.remove('is-error');
+        toast.classList.add('is-visible');
+        toastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), 1100);
+    };
+    const syncPlayButton = () => {
+        const playing = playerState === 1;
+        playButton.setAttribute('aria-label', playing ? '暫停影片' : '播放影片');
+        playButton.title = playing ? '暫停' : '播放';
+        playIcon.setAttribute('d', playing ? 'M7 5h4v14H7zm6 0h4v14h-4z' : 'M8 5v14l11-7z');
+    };
+    const syncVolumeControls = () => {
+        const shown = isMuted ? 0 : Math.max(0, Math.min(100, Math.round(currentVolume)));
+        volumeRange.value = String(shown);
+        volumeValue.textContent = `${shown}%`;
+        paintRange(volumeRange);
+        const silent = isMuted || shown === 0;
+        muteButton.setAttribute('aria-label', silent ? '取消靜音' : '靜音');
+        muteButton.title = silent ? '取消靜音' : '靜音';
+        if (silent) {
+            volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm12.3-.7 1.4-1.4 2.1 2.1 2.1-2.1 1.4 1.4-2.1 2.1 2.1 2.1-1.4 1.4-2.1-2.1-2.1 2.1-1.4-1.4 2.1-2.1z');
+        } else if (shown < 45) {
+            volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm11 2a3 3 0 0 0-1.5-2.6v5.2A3 3 0 0 0 14 12z');
+        } else {
+            volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm13.5 2a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12z');
+        }
+    };
+    const syncRateControls = () => {
+        const shown = Math.max(.25, Math.min(2, Number(currentRate) || 1));
+        rateRange.value = String(shown);
+        rateValue.textContent = `${formatRate(shown)}×`;
+        paintRange(rateRange);
+        ratePresets.forEach((button) => {
+            const active = Math.abs(Number(button.dataset.e3RatePreset) - shown) < .001;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    };
+    const revealControls = () => {
+        frame.classList.remove('e3-controls-idle');
+        if (controlsIdleTimer) window.clearTimeout(controlsIdleTimer);
+        controlsIdleTimer = null;
+        if (isFocusMode()) {
+            controlsIdleTimer = window.setTimeout(() => {
+                if (!dock.matches(':hover') && !dock.contains(document.activeElement)) {
+                    frame.classList.add('e3-controls-idle');
+                }
+            }, 2600);
+        }
+    };
+    const togglePlayback = () => {
+        if (!playerReady()) return;
+        if (playerState === 1) {
+            sendCommand('pauseVideo');
+            playerState = 2;
+        } else {
+            sendCommand('playVideo');
+            playerState = 1;
+        }
+        syncPlayButton();
+        revealControls();
+    };
+    const setVolume = (value) => {
+        if (!playerReady()) return;
+        const next = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+        currentVolume = next;
+        if (next > 0) {
+            lastAudibleVolume = next;
+            isMuted = false;
+            sendCommand('unMute');
+        } else {
+            isMuted = true;
+            sendCommand('mute');
+        }
+        sendCommand('setVolume', [next]);
+        syncVolumeControls();
+        revealControls();
+    };
+    const toggleMute = () => {
+        if (!playerReady()) return;
+        if (isMuted || currentVolume <= 0) {
+            const restored = Math.max(1, lastAudibleVolume || 70);
+            isMuted = false;
+            currentVolume = restored;
+            sendCommand('unMute');
+            sendCommand('setVolume', [restored]);
+        } else {
+            lastAudibleVolume = currentVolume;
+            isMuted = true;
+            sendCommand('mute');
+        }
+        syncVolumeControls();
+        revealControls();
+    };
+    const setRate = (value, showFeedback = false) => {
+        if (!playerReady()) return;
+        const requested = Math.max(.25, Math.min(2, Number(value) || 1));
+        currentRate = requested;
+        sendCommand('setPlaybackRate', [requested]);
+        syncRateControls();
+        if (showFeedback) showToast(`${formatRate(requested)}× 播放`);
+        revealControls();
+    };
+
+    dock.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+        revealControls();
+    });
+    dock.addEventListener('pointerenter', revealControls);
+    dock.addEventListener('focusin', revealControls);
+    frame.addEventListener('pointermove', revealControls, { passive: true });
+
+    playButton.addEventListener('click', togglePlayback);
+    muteButton.addEventListener('click', toggleMute);
+    volumeRange.addEventListener('input', () => setVolume(volumeRange.value));
+    volumeRange.addEventListener('change', () => showToast(`音量 ${Math.round(Number(volumeRange.value))}%`));
+    rateRange.addEventListener('input', () => setRate(rateRange.value));
+    rateRange.addEventListener('change', () => setRate(rateRange.value, true));
+    ratePresets.forEach((button) => {
+        button.addEventListener('click', () => setRate(button.dataset.e3RatePreset, true));
+    });
+
+    window.addEventListener('message', (event) => {
+        const iframe = playerIframe();
+        if (!iframe || event.source !== iframe.contentWindow) return;
+        let payload = event.data;
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); }
+            catch (error) { return; }
+        }
+        const info = payload && payload.info;
+        if (!info || typeof info !== 'object') return;
+        if (Number.isFinite(Number(info.playerState))) {
+            playerState = Number(info.playerState);
+            syncPlayButton();
+        }
+        if (Number.isFinite(Number(info.volume))) {
+            currentVolume = Math.max(0, Math.min(100, Number(info.volume)));
+            if (currentVolume > 0) lastAudibleVolume = currentVolume;
+        }
+        if (info.muted !== undefined) isMuted = Boolean(info.muted);
+        if (Number.isFinite(Number(info.playbackRate)) && Number(info.playbackRate) > 0) {
+            currentRate = Number(info.playbackRate);
+        }
+        syncVolumeControls();
+        syncRateControls();
+    });
+
+    const classObserver = new MutationObserver(() => {
+        const active = isFocusMode();
+        if (active === wasFocusMode) return;
+        wasFocusMode = active;
+        if (!active) frame.classList.remove('e3-controls-idle');
+        revealControls();
+    });
+    classObserver.observe(frame, { attributes: true, attributeFilter: ['class'] });
+
+    syncPlayButton();
+    syncVolumeControls();
+    syncRateControls();
+})();
+</script>
