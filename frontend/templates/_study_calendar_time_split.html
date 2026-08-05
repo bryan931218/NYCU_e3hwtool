@@ -1,3 +1,56 @@
+<style>
+    .calendar-time-summary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+        margin-bottom: 4px;
+    }
+
+    .calendar-time-summary-card {
+        min-width: 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: #f8fbfe;
+    }
+
+    .calendar-time-summary-card.is-video {
+        border-color: #c9ddf7;
+        background: #f1f7ff;
+    }
+
+    .calendar-time-summary-card.is-study {
+        border-color: #c6e9d8;
+        background: #f0fbf5;
+    }
+
+    .calendar-time-summary-card span {
+        display: block;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 850;
+    }
+
+    .calendar-time-summary-card strong {
+        display: block;
+        margin-top: 5px;
+        overflow: hidden;
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 950;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 390px) {
+        .calendar-time-summary-card {
+            padding: 10px 8px;
+        }
+        .calendar-time-summary-card strong {
+            font-size: 14px;
+        }
+    }
+</style>
 <script>
 (() => {
     if (window.__e3StudyCalendarTimeSplitInstalled) return;
@@ -56,12 +109,6 @@
         return `${hours} 小時${remainder ? ` ${remainder} 分鐘` : ''}`;
     };
 
-    const signedDuration = (seconds) => {
-        const value = Number(seconds) || 0;
-        if (Math.abs(value) < .5) return '0 分鐘';
-        return `${value > 0 ? '+' : '−'}${fullDuration(Math.abs(value))}`;
-    };
-
     const spokenDate = (key) => {
         const [year, month, day] = key.split('-').map(Number);
         const value = new Date(year, month - 1, day);
@@ -73,17 +120,9 @@
     };
 
     const totalStudySeconds = (key) => secondsValue(studySecondsByDay.get(key));
-
-    const videoProgressDelta = (key) => {
+    const videoWatchSeconds = (key) => {
         const detail = originalDayByKey.get(key) || {};
-        const activities = Array.isArray(detail.activities) ? detail.activities : [];
-        if (!activities.length) {
-            return secondsValue(detail.seconds);
-        }
-        return activities.reduce((total, activity) => {
-            const amount = secondsValue(activity?.seconds);
-            return total + (activity?.is_correction ? -amount : amount);
-        }, 0);
+        return secondsValue(detail.seconds);
     };
 
     const visiblePrefix = () => {
@@ -117,51 +156,49 @@
     };
 
     const updateStaticCopy = () => {
-        root.setAttribute('aria-label', '每月總學習時間熱度月曆');
+        root.setAttribute('aria-label', '每月影片觀看時間熱度月曆');
         const totalLabel = root.querySelector('.calendar-total-label');
         const caption = root.querySelector('.calendar-caption');
-        if (totalLabel) totalLabel.textContent = '這個月累積學習時間';
+        if (totalLabel) totalLabel.textContent = '這個月累積影片觀看時間';
         if (caption) {
-            caption.textContent = '格子顏色依每日總學習時間計算；點選日期可查看影片進度變化量。';
+            caption.textContent = '格子顏色依每日影片觀看時間計算；點選日期可查看影片與實際學習時間。';
         }
-        grid.setAttribute('aria-label', '每日總學習時間');
+        grid.setAttribute('aria-label', '每日影片觀看時間');
     };
 
     const decorateCells = () => {
         const prefix = visiblePrefix();
         const monthMaximum = Math.max(
             0,
-            ...[...studySecondsByDay.entries()]
+            ...[...originalDayByKey.entries()]
                 .filter(([key]) => key.startsWith(`${prefix}-`))
-                .map(([, seconds]) => secondsValue(seconds)),
+                .map(([, item]) => secondsValue(item?.seconds)),
         );
         grid.querySelectorAll('.calendar-day[data-date]').forEach((cell) => {
             const key = String(cell.dataset.date || '');
-            const studySeconds = totalStudySeconds(key);
-            const signature = `${studySeconds}|${monthMaximum}`;
-            if (cell.dataset.e3StudyHeatSignature === signature) return;
-            cell.dataset.e3StudyHeatSignature = signature;
-            applyOriginalHeat(cell, studySeconds, monthMaximum);
+            const videoSeconds = videoWatchSeconds(key);
+            const signature = `${videoSeconds}|${monthMaximum}`;
+            if (cell.dataset.e3VideoHeatSignature === signature) return;
+            cell.dataset.e3VideoHeatSignature = signature;
+            applyOriginalHeat(cell, videoSeconds, monthMaximum);
             const duration = cell.querySelector('.calendar-duration');
-            if (duration) duration.textContent = compactDuration(studySeconds);
+            if (duration) duration.textContent = compactDuration(videoSeconds);
             cell.setAttribute(
                 'aria-label',
-                `${spokenDate(key)}，總學習時間 ${fullDuration(studySeconds)}`,
+                `${spokenDate(key)}，影片觀看時間 ${fullDuration(videoSeconds)}`,
             );
         });
     };
 
     const updateMonthSummary = () => {
         const prefix = visiblePrefix();
-        const rows = [...studySecondsByDay.entries()]
+        const rows = [...originalDayByKey.entries()]
+            .map(([key, item]) => [key, secondsValue(item?.seconds)])
             .filter(([key, seconds]) => (
-                key.startsWith(`${prefix}-`) && secondsValue(seconds) > 0
+                key.startsWith(`${prefix}-`) && seconds > 0
             ))
             .sort(([left], [right]) => left.localeCompare(right));
-        const total = rows.reduce(
-            (sum, [, seconds]) => sum + secondsValue(seconds),
-            0,
-        );
+        const total = rows.reduce((sum, [, seconds]) => sum + seconds, 0);
         const best = rows.reduce(
             (winner, item) => (!winner || item[1] > winner[1] ? item : winner),
             null,
@@ -190,7 +227,7 @@
         const durationNode = root.querySelector('[data-calendar-focus-duration]');
         if (dateNode) dateNode.textContent = spokenDate(key);
         if (durationNode) {
-            durationNode.textContent = `總學習時間 ${fullDuration(totalStudySeconds(key))}`;
+            durationNode.textContent = `影片觀看時間 ${fullDuration(videoWatchSeconds(key))}`;
         }
     };
 
@@ -203,11 +240,26 @@
     const updateModal = (key) => {
         const modal = document.querySelector('[data-calendar-modal]');
         const summary = modal?.querySelector('[data-calendar-modal-summary]');
-        if (!modal || modal.hidden || !summary || !key) return;
-        summary.textContent = [
-            `影片：${signedDuration(videoProgressDelta(key))}（影片觀看進度變化量）`,
-            `總學習時間：${fullDuration(totalStudySeconds(key))}`,
-        ].join('・');
+        const list = modal?.querySelector('[data-calendar-modal-list]');
+        if (!modal || modal.hidden || !summary || !list || !key) return;
+
+        const detail = originalDayByKey.get(key) || {};
+        const activities = Array.isArray(detail.activities) ? detail.activities : [];
+        const progressedCount = activities.filter((item) => !item?.is_correction).length;
+        const videoSeconds = videoWatchSeconds(key);
+        const studySeconds = totalStudySeconds(key);
+
+        summary.textContent = `${progressedCount} 支影片有進度`;
+        list.querySelector('.calendar-time-summary')?.remove();
+
+        const cards = document.createElement('section');
+        cards.className = 'calendar-time-summary';
+        cards.setAttribute('aria-label', '當日影片與學習時間統計');
+        cards.innerHTML = [
+            `<div class="calendar-time-summary-card is-video"><span>影片觀看時間</span><strong>${fullDuration(videoSeconds)}</strong></div>`,
+            `<div class="calendar-time-summary-card is-study"><span>實際學習時間</span><strong>${fullDuration(studySeconds)}</strong></div>`,
+        ].join('');
+        list.prepend(cards);
     };
 
     const refreshVisibleCalendar = () => {
@@ -276,7 +328,7 @@
             refreshVisibleCalendar();
         })
         .catch(() => {
-            // Keep the original video-progress calendar if actual-time data is unavailable.
+            // Video heat still works; actual learning time remains unavailable in the modal.
         });
 })();
 </script>
