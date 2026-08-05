@@ -1,5 +1,5 @@
 <style>
-    /* Leave YouTube's native top and bottom control regions fully clickable. */
+    /* Leave YouTube's native top and bottom control regions fully clickable on desktop. */
     .player-frame.is-focus-mode .focus-keyboard-capture {
         inset: clamp(58px, 8vh, 86px) 0 78px 0 !important;
     }
@@ -236,42 +236,20 @@
         outline: none;
     }
 
-    @media (max-width: 760px) {
+    @media (max-width: 760px), (hover: none) and (pointer: coarse) {
+        /* Mobile uses the untouched native YouTube player and receives every tap. */
         .player-frame.is-focus-mode .focus-keyboard-capture {
-            inset: 56px 0 72px 0 !important;
+            inset: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            cursor: default !important;
         }
 
-        .e3-player-control-dock {
-            width: calc(100% - 18px);
-            gap: 7px;
-            padding: 8px;
-            border-radius: 14px;
-        }
-
-        .player-frame.is-focus-mode .e3-player-control-dock {
-            bottom: 82px;
-            width: calc(100% - 20px);
-        }
-
-        .e3-control-icon {
-            width: 36px;
-            height: 36px;
-            border-radius: 10px;
-        }
-
-        .e3-control-divider,
-        .e3-speed-presets,
-        .e3-control-label {
-            display: none;
-        }
-
-        .e3-control-cluster {
-            grid-template-columns: minmax(68px, 1fr) auto;
-            gap: 6px;
-        }
-
-        .e3-control-range {
-            min-width: 64px;
+        .player-frame.is-focus-mode .e3-player-control-dock,
+        .player-frame.is-focus-mode .focus-shortcut-hint {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
     }
 </style>
@@ -280,6 +258,11 @@
 (() => {
     if (window.__e3PlayerControlDockInstalled) return;
     window.__e3PlayerControlDockInstalled = true;
+
+    const nativeMobilePlayer = window.matchMedia(
+        '(max-width: 760px), (hover: none) and (pointer: coarse)'
+    );
+    if (nativeMobilePlayer.matches) return;
 
     const frame = document.getElementById('focus-player-frame');
     const panel = document.getElementById('youtube-player-section');
@@ -325,6 +308,24 @@
     const rateRange = dock.querySelector('[data-e3-rate]');
     const rateValue = dock.querySelector('[data-e3-rate-value]');
     const ratePresets = Array.from(dock.querySelectorAll('[data-e3-rate-preset]'));
+    const shortcutHint = document.querySelector('.focus-shortcut-hint');
+
+    const syncVolumeShortcutHint = () => {
+        if (!shortcutHint) return;
+        const prefix = '↑／↓ 音量 ±5%　';
+        const current = shortcutHint.textContent.replace(/^↑／↓ 音量 ±5%　?/, '');
+        const next = `${prefix}${current}`;
+        if (shortcutHint.textContent !== next) shortcutHint.textContent = next;
+    };
+    if (shortcutHint) {
+        const shortcutHintObserver = new MutationObserver(syncVolumeShortcutHint);
+        shortcutHintObserver.observe(shortcutHint, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
+        syncVolumeShortcutHint();
+    }
 
     let controlsIdleTimer = null;
     let toastTimer = null;
@@ -483,6 +484,32 @@
     ratePresets.forEach((button) => {
         button.addEventListener('click', () => setRate(button.dataset.e3RatePreset, true));
     });
+
+    const isTypingTarget = (target) => Boolean(target && (
+        ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+        || target.isContentEditable
+    ));
+    window.addEventListener('keydown', (event) => {
+        const direction = event.code === 'ArrowUp' ? 1 : event.code === 'ArrowDown' ? -1 : 0;
+        if (
+            !direction
+            || !isFocusMode()
+            || !playerReady()
+            || isTypingTarget(event.target)
+            || event.isComposing
+            || event.altKey
+            || event.ctrlKey
+            || event.metaKey
+        ) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        const base = isMuted ? 0 : currentVolume;
+        const next = Math.max(0, Math.min(100, Math.round(base + direction * 5)));
+        setVolume(next);
+        showToast(`音量 ${next}%`);
+    }, true);
 
     window.addEventListener('message', (event) => {
         const iframe = playerIframe();
