@@ -68,7 +68,9 @@ class StudyCalendarRuntimeTests(unittest.TestCase):
             ),
             1,
         )
-        self.assertIn("影片觀看進度變化量", module.STUDY_HOME_TEMPLATE)
+        self.assertIn("影片觀看時間", module.STUDY_HOME_TEMPLATE)
+        self.assertIn("實際學習時間", module.STUDY_HOME_TEMPLATE)
+        self.assertIn("calendar-time-summary", module.STUDY_HOME_TEMPLATE)
         self.assertIn("total_seconds", module.STUDY_HOME_TEMPLATE)
         self.assertNotIn("calendar-time-split", module.STUDY_HOME_TEMPLATE)
 
