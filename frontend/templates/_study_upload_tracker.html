@@ -95,4 +95,31 @@
     if (activeJob) { trackedJobId = activeJob; poll(activeJob); }
 })();
 </script>
-{% include '_continuous_video_study_timer.html' %}
+<script>
+(() => {
+ const select=document.getElementById('video_id'),panel=document.getElementById('youtube-player-section'),clock=document.getElementById('player-study-time');
+ if(!select||!panel||!clock)return;
+ const endpoint='/admin/study-plan/study-time',rawFetch=window.fetch.bind(window);
+ let session=null;
+ const path=x=>{try{return new URL(typeof x==='string'?x:x.url,location.href).pathname}catch(e){return''}};
+ window.fetch=(input,init)=>{
+  if(path(input)===endpoint&&String(init?.method||'GET').toUpperCase()==='POST'){
+   try{if(JSON.parse(init?.body||'{}').kind==='video')return Promise.resolve(new Response('{"ok":true,"today":null}',{status:200,headers:{'Content-Type':'application/json'}}))}catch(e){}
+  }
+  return rawFetch(input,init);
+ };
+ const id=()=>('video_open_'+(crypto?.randomUUID?.().replaceAll('-','')||Math.random().toString(36).slice(2)+Date.now().toString(36))).slice(0,80);
+ const elapsed=s=>s?Math.max(0,(Date.now()-s.startedAt)/1000):0;
+ const format=s=>{s=Math.max(0,Math.floor(s||0));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+ const current=()=>{const o=select.options[select.selectedIndex];return o&&o.value&&o.dataset.youtubeVideoId&&!panel.classList.contains('is-hidden')?{videoId:Number(o.value),label:o.dataset.title||'影片學習'}:null};
+ const renderToday=t=>{if(!t)return;const set=(id,v)=>{const n=document.getElementById(id);if(n)n.textContent=(Number(v||0)/3600).toFixed(2)+'h'};set('today-study-time',t.total_seconds);set('today-video-time',t.video_seconds);set('today-practice-time',t.practice_seconds)};
+ const post=(s,done,keepalive)=>s?rawFetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s.id,kind:'video',video_id:s.videoId,label:s.label,elapsed_seconds:elapsed(s),completed:!!done}),keepalive:!!keepalive}).then(r=>r.ok?r.json():null).then(r=>{if(r)renderToday(r.today);return r}).catch(()=>null):Promise.resolve(null);
+ const finish=keepalive=>{const s=session;session=null;clock.textContent='0:00';return post(s,true,keepalive)};
+ const sync=()=>{const v=current();if(!v){finish(false);return}if(session?.videoId===v.videoId)return;const old=session;session={id:id(),videoId:v.videoId,label:v.label,startedAt:Date.now()};if(old)post(old,true,false)};
+ select.addEventListener('change',()=>setTimeout(sync,0));
+ setInterval(()=>{clock.textContent=format(elapsed(session))},500);
+ setInterval(()=>{if(session)post(session,false,false)},15000);
+ addEventListener('beforeunload',()=>{if(session)post(session,true,true)});
+ sync();
+})();
+</script>
