@@ -308,6 +308,24 @@
     const rateRange = dock.querySelector('[data-e3-rate]');
     const rateValue = dock.querySelector('[data-e3-rate-value]');
     const ratePresets = Array.from(dock.querySelectorAll('[data-e3-rate-preset]'));
+    const shortcutHint = document.querySelector('.focus-shortcut-hint');
+
+    const syncVolumeShortcutHint = () => {
+        if (!shortcutHint) return;
+        const prefix = '↑／↓ 音量 ±5%　';
+        const current = shortcutHint.textContent.replace(/^↑／↓ 音量 ±5%　?/, '');
+        const next = `${prefix}${current}`;
+        if (shortcutHint.textContent !== next) shortcutHint.textContent = next;
+    };
+    if (shortcutHint) {
+        const shortcutHintObserver = new MutationObserver(syncVolumeShortcutHint);
+        shortcutHintObserver.observe(shortcutHint, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
+        syncVolumeShortcutHint();
+    }
 
     let controlsIdleTimer = null;
     let toastTimer = null;
@@ -365,39 +383,35 @@
         muteButton.setAttribute('aria-label', silent ? '取消靜音' : '靜音');
         muteButton.title = silent ? '取消靜音' : '靜音';
         if (silent) {
-            volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm12.3-.7 1.4-1.4 2.1 2.1 2.1-2.1 1.4 1.4-2.1 2.1 2.1 2.1-1.4 1.4-2.1-2.1-2.1 2.1-1.4-1.4 2.1-2.1-2.1z');
-        } else if (shown < 50) {
-            volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm11 2a2 2 0 0 0-1-1.73v3.46A2 2 0 0 0 14 12z');
+            volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm12.3-.7 1.4-1.4 2.1 2.1 2.1-2.1 1.4 1.4-2.1 2.1 2.1 2.1-1.4 1.4-2.1-2.1-2.1 2.1-1.4-1.4 2.1-2.1z');
+        } else if (shown < 45) {
+            volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm11 2a3 3 0 0 0-1.5-2.6v5.2A3 3 0 0 0 14 12z');
         } else {
             volumeIcon.setAttribute('d', 'M3 10v4h4l5 4V6L7 10H3zm13.5 2a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12z');
         }
     };
     const syncRateControls = () => {
-        const clamped = Math.max(.25, Math.min(2, Number(currentRate) || 1));
-        rateRange.value = String(clamped);
-        rateValue.textContent = `${formatRate(clamped)}×`;
+        const shown = Math.max(.25, Math.min(2, Number(currentRate) || 1));
+        rateRange.value = String(shown);
+        rateValue.textContent = `${formatRate(shown)}×`;
         paintRange(rateRange);
         ratePresets.forEach((button) => {
-            const active = Math.abs(Number(button.dataset.e3RatePreset) - clamped) < .01;
+            const active = Math.abs(Number(button.dataset.e3RatePreset) - shown) < .001;
             button.classList.toggle('is-active', active);
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
     };
-    const scheduleControlsIdle = () => {
-        if (controlsIdleTimer) window.clearTimeout(controlsIdleTimer);
-        if (!isFocusMode()) {
-            frame.classList.remove('e3-controls-idle');
-            return;
-        }
-        controlsIdleTimer = window.setTimeout(() => {
-            if (!dock.matches(':hover') && !dock.matches(':focus-within')) {
-                frame.classList.add('e3-controls-idle');
-            }
-        }, 2600);
-    };
     const revealControls = () => {
         frame.classList.remove('e3-controls-idle');
-        scheduleControlsIdle();
+        if (controlsIdleTimer) window.clearTimeout(controlsIdleTimer);
+        controlsIdleTimer = null;
+        if (isFocusMode()) {
+            controlsIdleTimer = window.setTimeout(() => {
+                if (!dock.matches(':hover') && !dock.contains(document.activeElement)) {
+                    frame.classList.add('e3-controls-idle');
+                }
+            }, 2600);
+        }
     };
     const togglePlayback = () => {
         if (!playerReady()) return;
@@ -413,7 +427,7 @@
     };
     const setVolume = (value) => {
         if (!playerReady()) return;
-        const next = Math.max(0, Math.min(100, Number(value) || 0));
+        const next = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
         currentVolume = next;
         if (next > 0) {
             lastAudibleVolume = next;
@@ -421,6 +435,7 @@
             sendCommand('unMute');
         } else {
             isMuted = true;
+            sendCommand('mute');
         }
         sendCommand('setVolume', [next]);
         syncVolumeControls();
@@ -470,6 +485,32 @@
         button.addEventListener('click', () => setRate(button.dataset.e3RatePreset, true));
     });
 
+    const isTypingTarget = (target) => Boolean(target && (
+        ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+        || target.isContentEditable
+    ));
+    window.addEventListener('keydown', (event) => {
+        const direction = event.code === 'ArrowUp' ? 1 : event.code === 'ArrowDown' ? -1 : 0;
+        if (
+            !direction
+            || !isFocusMode()
+            || !playerReady()
+            || isTypingTarget(event.target)
+            || event.isComposing
+            || event.altKey
+            || event.ctrlKey
+            || event.metaKey
+        ) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        const base = isMuted ? 0 : currentVolume;
+        const next = Math.max(0, Math.min(100, Math.round(base + direction * 5)));
+        setVolume(next);
+        showToast(`音量 ${next}%`);
+    }, true);
+
     window.addEventListener('message', (event) => {
         const iframe = playerIframe();
         if (!iframe || event.source !== iframe.contentWindow) return;
@@ -500,11 +541,8 @@
         const active = isFocusMode();
         if (active === wasFocusMode) return;
         wasFocusMode = active;
-        if (active) revealControls();
-        else {
-            if (controlsIdleTimer) window.clearTimeout(controlsIdleTimer);
-            frame.classList.remove('e3-controls-idle');
-        }
+        if (!active) frame.classList.remove('e3-controls-idle');
+        revealControls();
     });
     classObserver.observe(frame, { attributes: true, attributeFilter: ['class'] });
 
