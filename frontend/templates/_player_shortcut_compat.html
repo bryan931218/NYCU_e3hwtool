@@ -1,0 +1,99 @@
+<style>
+    #e3-player-shortcut-focus {
+        position: fixed;
+        left: -10000px;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+        pointer-events: none;
+    }
+</style>
+<script>
+(() => {
+    if (window.__e3PlayerShortcutCompatibilityInstalled) return;
+    window.__e3PlayerShortcutCompatibilityInstalled = true;
+
+    // The YouTube IFrame API replaces <div id="youtube-player"> with
+    // <iframe id="youtube-player">. The compact timer's shortcut guard still
+    // checks for "#youtube-player iframe", so make that legacy lookup resolve
+    // the actual API iframe instead of letting the old immediate-boost handler run.
+    const nativeQuerySelector = Document.prototype.querySelector;
+    Document.prototype.querySelector = function (selector) {
+        if (selector === '#youtube-player iframe') {
+            return nativeQuerySelector.call(this, selector)
+                || nativeQuerySelector.call(this, 'iframe#youtube-player');
+        }
+        return nativeQuerySelector.call(this, selector);
+    };
+
+    const shortcutHost = document.createElement('span');
+    shortcutHost.id = 'e3-player-shortcut-focus';
+    shortcutHost.tabIndex = -1;
+    shortcutHost.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(shortcutHost);
+
+    const hint = document.querySelector('.focus-shortcut-hint');
+    if (hint) hint.textContent = '空白鍵：短按播放／暫停　長按暫時加速';
+
+    let pointerInsidePlayer = false;
+    let boundIframe = null;
+    let reclaimTimer = null;
+
+    const playerIframe = () => nativeQuerySelector.call(document, 'iframe#youtube-player')
+        || nativeQuerySelector.call(document, '#youtube-player iframe');
+    const playerVisible = () => {
+        const panel = document.getElementById('youtube-player-section');
+        return Boolean(panel && !panel.classList.contains('is-hidden') && playerIframe());
+    };
+    const focusShortcutHost = () => {
+        if (!playerVisible()) return;
+        try { shortcutHost.focus({ preventScroll: true }); }
+        catch (error) { shortcutHost.focus(); }
+    };
+    const scheduleFocusReclaim = (delay = 600) => {
+        if (reclaimTimer) window.clearTimeout(reclaimTimer);
+        reclaimTimer = window.setTimeout(() => {
+            const iframe = playerIframe();
+            if (iframe && document.activeElement === iframe && !pointerInsidePlayer) {
+                focusShortcutHost();
+            }
+        }, delay);
+    };
+    const bindPlayerIframe = () => {
+        const iframe = playerIframe();
+        if (!iframe || iframe === boundIframe) return;
+        boundIframe = iframe;
+        iframe.addEventListener('mouseenter', () => { pointerInsidePlayer = true; });
+        iframe.addEventListener('mouseleave', () => {
+            pointerInsidePlayer = false;
+            focusShortcutHost();
+        });
+        iframe.addEventListener('load', () => scheduleFocusReclaim(0));
+    };
+
+    const observer = new MutationObserver(() => {
+        bindPlayerIframe();
+        const frame = document.getElementById('focus-player-frame');
+        if (frame && frame.classList.contains('is-focus-mode')) {
+            window.setTimeout(focusShortcutHost, 0);
+        }
+    });
+    observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class'],
+    });
+
+    // Clicking native YouTube controls moves keyboard focus into the cross-origin
+    // iframe. Give the click time to finish, then return shortcut focus to this
+    // page. Mouse clicks still go straight to YouTube because no overlay is used.
+    window.addEventListener('blur', () => scheduleFocusReclaim(600));
+    document.addEventListener('fullscreenchange', () => window.setTimeout(focusShortcutHost, 0));
+    document.addEventListener('webkitfullscreenchange', () => window.setTimeout(focusShortcutHost, 0));
+
+    bindPlayerIframe();
+})();
+</script>
