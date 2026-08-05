@@ -37,7 +37,6 @@
     const hint = document.querySelector('.focus-shortcut-hint');
     if (hint) hint.textContent = '空白鍵：短按播放／暫停　長按暫時加速';
 
-    let pointerInsidePlayer = false;
     let boundIframe = null;
     let reclaimTimer = null;
 
@@ -52,24 +51,18 @@
         try { shortcutHost.focus({ preventScroll: true }); }
         catch (error) { shortcutHost.focus(); }
     };
-    const scheduleFocusReclaim = (delay = 600) => {
+    const scheduleFocusReclaim = (delay = 350) => {
         if (reclaimTimer) window.clearTimeout(reclaimTimer);
         reclaimTimer = window.setTimeout(() => {
             const iframe = playerIframe();
-            if (iframe && document.activeElement === iframe && !pointerInsidePlayer) {
-                focusShortcutHost();
-            }
+            if (iframe && document.activeElement === iframe) focusShortcutHost();
         }, delay);
     };
     const bindPlayerIframe = () => {
         const iframe = playerIframe();
         if (!iframe || iframe === boundIframe) return;
         boundIframe = iframe;
-        iframe.addEventListener('mouseenter', () => { pointerInsidePlayer = true; });
-        iframe.addEventListener('mouseleave', () => {
-            pointerInsidePlayer = false;
-            focusShortcutHost();
-        });
+        iframe.addEventListener('mouseleave', focusShortcutHost);
         iframe.addEventListener('load', () => scheduleFocusReclaim(0));
     };
 
@@ -90,7 +83,7 @@
     // Clicking native YouTube controls moves keyboard focus into the cross-origin
     // iframe. Give the click time to finish, then return shortcut focus to this
     // page. Mouse clicks still go straight to YouTube because no overlay is used.
-    window.addEventListener('blur', () => scheduleFocusReclaim(600));
+    window.addEventListener('blur', () => scheduleFocusReclaim(350));
     document.addEventListener('fullscreenchange', () => window.setTimeout(focusShortcutHost, 0));
     document.addEventListener('webkitfullscreenchange', () => window.setTimeout(focusShortcutHost, 0));
 
