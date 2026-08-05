@@ -1,4 +1,6 @@
-from e3_tracker.api.web import create_app
+from e3_tracker.api import web
+from e3_tracker.shared.deployment_runtime import install_deployment_runtime
 
 
-app = create_app()
+install_deployment_runtime(web)
+app = web.create_app()
