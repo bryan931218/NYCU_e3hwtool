@@ -321,6 +321,7 @@
     let currentVolume = 100;
     let lastAudibleVolume = 100;
     let isMuted = false;
+    let wasFocusMode = frame.classList.contains('is-focus-mode');
 
     const playerIframe = () => document.querySelector('iframe#youtube-player')
         || document.querySelector('#youtube-player iframe');
@@ -498,7 +499,10 @@
     });
 
     const classObserver = new MutationObserver(() => {
-        if (!isFocusMode()) frame.classList.remove('e3-controls-idle');
+        const active = isFocusMode();
+        if (active === wasFocusMode) return;
+        wasFocusMode = active;
+        if (!active) frame.classList.remove('e3-controls-idle');
         revealControls();
     });
     classObserver.observe(frame, { attributes: true, attributeFilter: ['class'] });
