@@ -70,15 +70,13 @@ class PlayerSettingsTests(unittest.TestCase):
 
         module = FakeWebModule()
         install_player_control_dock(module)
+        installed_template = module.STUDY_UPLOAD_TRACKER_TEMPLATE
         install_player_control_dock(module)
 
-        self.assertIn("__e3PlayerControlDockInstalled", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
-        self.assertEqual(
-            module.STUDY_UPLOAD_TRACKER_TEMPLATE.count("__e3PlayerControlDockInstalled"),
-            1,
-        )
-        self.assertIn("data-e3-volume", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
-        self.assertIn("data-e3-rate", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
+        self.assertEqual(module.STUDY_UPLOAD_TRACKER_TEMPLATE, installed_template)
+        self.assertIn("__e3PlayerControlDockInstalled", installed_template)
+        self.assertIn("data-e3-volume", installed_template)
+        self.assertIn("data-e3-rate", installed_template)
 
 
 if __name__ == "__main__":
