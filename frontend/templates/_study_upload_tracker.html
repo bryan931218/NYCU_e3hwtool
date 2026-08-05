@@ -1,12 +1,69 @@
 <style>
-    .study-upload-tracker { position:fixed; right:18px; bottom:18px; z-index:1000; width:min(360px,calc(100vw - 32px)); padding:13px 14px; color:#172033; border:1px solid #c9d7e8; border-left:4px solid #1769d8; border-radius:6px; background:#fff; box-shadow:0 14px 34px rgba(23,32,51,.16); }
-    .study-upload-tracker[hidden] { display:none; }.study-upload-tracker-head { display:flex; align-items:start; justify-content:space-between; gap:12px; }.study-upload-tracker strong { display:block; font-size:13px; line-height:1.4; }.study-upload-tracker p { margin:4px 0 9px; color:#68758a; font-size:12px; line-height:1.5; }.study-upload-tracker progress { display:block; width:100%; height:8px; accent-color:#1769d8; }.study-upload-tracker-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:9px; }.study-upload-tracker-action-links { display:flex; align-items:center; justify-content:flex-end; gap:10px; }.study-upload-tracker-percent { color:#087f80; font-size:11px; font-weight:850; }.study-upload-tracker-open { color:#1769d8; font-size:12px; font-weight:850; }.study-upload-tracker-cancel { padding:0; color:#b83b45; border:0; background:transparent; font-size:12px; font-weight:850; cursor:pointer; }.study-upload-tracker-cancel:disabled { color:#8c96a6; cursor:wait; }.study-upload-tracker-close { width:28px; height:28px; display:grid; flex:0 0 auto; place-items:center; padding:0; color:#68758a; border:0; background:transparent; cursor:pointer; font-size:20px; line-height:1; }.study-upload-tracker.is-error { border-left-color:#b83b45; }.study-upload-tracker.is-error progress { accent-color:#b83b45; }.study-upload-tracker.is-cancelled { border-left-color:#8c96a6; }.study-upload-tracker.is-cancelled progress { accent-color:#8c96a6; }
+    .study-upload-tracker { position:fixed; right:18px; bottom:18px; z-index:1000; width:min(360px,calc(100vw - 32px)); padding:13px 14px; color:#172033; border:1px solid #c9d7e8; border-left:4px solid #1769d8; border-radius:8px; background:#fff; box-shadow:0 14px 34px rgba(23,32,51,.16); }
+    .study-upload-tracker[hidden] { display:none; }
+    .study-upload-tracker-head,.study-upload-tracker-actions,.study-upload-tracker-action-links { display:flex; align-items:center; gap:10px; }
+    .study-upload-tracker-head,.study-upload-tracker-actions { justify-content:space-between; }
+    .study-upload-tracker-head { align-items:flex-start; }
+    .study-upload-tracker strong { display:block; font-size:13px; line-height:1.4; }
+    .study-upload-tracker p { margin:4px 0 9px; color:#68758a; font-size:12px; line-height:1.5; }
+    .study-upload-tracker progress { display:block; width:100%; height:8px; accent-color:#1769d8; }
+    .study-upload-tracker-actions { margin-top:9px; }
+    .study-upload-tracker-percent { color:#087f80; font-size:11px; font-weight:850; }
+    .study-upload-tracker-open { color:#1769d8; font-size:12px; font-weight:850; }
+    .study-upload-tracker-cancel { padding:0; color:#b83b45; border:0; background:transparent; font-size:12px; font-weight:850; cursor:pointer; }
+    .study-upload-tracker-cancel:disabled { color:#8c96a6; cursor:wait; }
+    .study-upload-tracker-close { width:28px; height:28px; display:grid; flex:0 0 auto; place-items:center; padding:0; color:#68758a; border:0; background:transparent; cursor:pointer; font-size:20px; line-height:1; }
+    .study-upload-tracker.is-error { border-left-color:#b83b45; }
+    .study-upload-tracker.is-error progress { accent-color:#b83b45; }
+    .study-upload-tracker.is-cancelled { border-left-color:#8c96a6; }
+    .study-upload-tracker.is-cancelled progress { accent-color:#8c96a6; }
+
+    /* Compact practice timer: one row by default, details only when requested. */
+    .study-time-panel.e3-compact-timer { grid-template-columns:minmax(0,1fr) auto; gap:10px; margin:10px 16px 0; padding:9px 11px; border-radius:11px; }
+    .study-time-panel.e3-compact-timer .study-time-heading { align-items:center; margin:0; }
+    .study-time-panel.e3-compact-timer .study-time-heading h3 { font-size:13px; }
+    .study-time-panel.e3-compact-timer .study-time-clock { display:inline-block; margin-left:8px; font-size:18px; letter-spacing:-.02em; vertical-align:middle; }
+    .study-time-panel.e3-compact-timer .study-time-meta { display:none; }
+    .study-time-panel.e3-compact-timer .study-time-controls { gap:6px; }
+    .study-time-panel.e3-compact-timer .study-time-label,
+    .study-time-panel.e3-compact-timer #practice-timer-finish,
+    .study-time-panel.e3-compact-timer .study-time-history { display:none; }
+    .study-time-panel.e3-compact-timer.is-expanded { padding:12px 14px; }
+    .study-time-panel.e3-compact-timer.is-expanded .study-time-meta { display:flex; }
+    .study-time-panel.e3-compact-timer.is-expanded .study-time-label,
+    .study-time-panel.e3-compact-timer.is-expanded #practice-timer-finish { display:block; }
+    .study-time-panel.e3-compact-timer.is-expanded .study-time-history { display:block; }
+    .e3-timer-expand { min-width:34px; min-height:34px; display:grid; place-items:center; padding:0; color:var(--muted,#62768b); border:1px solid #c9d8e7; border-radius:8px; background:#fff; cursor:pointer; }
+    .e3-timer-expand::before { content:'⌄'; transition:transform .18s ease; }
+    .study-time-panel.is-expanded .e3-timer-expand::before { transform:rotate(180deg); }
+
+    /* Small video timer controls inside the existing player status card. */
+    .e3-video-timer-row { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; padding-top:7px; border-top:1px solid #dce6ef; }
+    .e3-video-timer-main { min-width:0; display:flex; align-items:center; gap:7px; color:var(--muted,#62768b); font-size:11px; }
+    .e3-video-timer-dot { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:#258957; box-shadow:0 0 0 3px rgba(37,137,87,.12); }
+    .e3-video-timer-row.is-paused .e3-video-timer-dot { background:#b86d00; box-shadow:0 0 0 3px rgba(184,109,0,.12); }
+    .e3-video-timer-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .e3-video-timer-time { color:var(--ink,#102a43); font-weight:900; font-variant-numeric:tabular-nums; }
+    .e3-video-timer-actions { display:flex; gap:5px; flex:0 0 auto; }
+    .e3-video-timer-button { min-height:28px; padding:4px 8px; color:var(--blue,#1463d9); border:1px solid #bfd2e8; border-radius:7px; background:#fff; font-size:10px; font-weight:850; cursor:pointer; }
+    .e3-video-timer-button.end { color:#a33b45; border-color:#e3c3c7; }
+    .e3-video-timer-button:disabled { opacity:.45; cursor:not-allowed; }
+    @media (max-width:700px) {
+        .study-time-panel.e3-compact-timer,.study-time-panel.e3-compact-timer.is-expanded { grid-template-columns:1fr; margin:8px 10px 0; }
+        .study-time-panel.e3-compact-timer .study-time-controls { justify-content:flex-end; }
+        .study-time-panel.e3-compact-timer.is-expanded .study-time-label { width:100%; }
+        .e3-video-timer-row { align-items:flex-start; flex-direction:column; }
+        .e3-video-timer-actions { width:100%; }
+        .e3-video-timer-button { flex:1; }
+    }
 </style>
+
 <aside class="study-upload-tracker" data-study-upload-tracker hidden aria-live="polite">
     <div class="study-upload-tracker-head"><div><strong data-study-upload-title>筆記整理中</strong><p data-study-upload-message>正在準備背景處理。</p></div><button class="study-upload-tracker-close" type="button" data-study-upload-close title="關閉進度提示" aria-label="關閉進度提示">×</button></div>
     <progress max="100" value="0" data-study-upload-bar></progress>
     <div class="study-upload-tracker-actions"><span class="study-upload-tracker-percent" data-study-upload-percent>0%</span><div class="study-upload-tracker-action-links"><button class="study-upload-tracker-cancel" type="button" data-study-upload-cancel>取消處理</button><a class="study-upload-tracker-open" data-study-upload-open hidden>開啟完成的筆記</a></div></div>
 </aside>
+
 <script>
 (() => {
     const root = document.querySelector('[data-study-upload-tracker]');
@@ -28,13 +85,7 @@
         root.hidden = false;
         root.classList.toggle('is-error', job.status === 'error');
         root.classList.toggle('is-cancelled', job.status === 'cancelled');
-        title.textContent = job.status === 'success'
-            ? '筆記整理完成'
-            : job.status === 'error'
-                ? '筆記整理失敗'
-                : job.status === 'cancelled'
-                    ? '筆記處理已取消'
-                    : '筆記背景處理中';
+        title.textContent = job.status === 'success' ? '筆記整理完成' : job.status === 'error' ? '筆記整理失敗' : job.status === 'cancelled' ? '筆記處理已取消' : '筆記背景處理中';
         message.textContent = job.message || '正在處理筆記。';
         bar.value = value;
         percent.textContent = `${value}%`;
@@ -71,11 +122,7 @@
         message.textContent = '正在取消背景處理…';
         clearTimer();
         try {
-            const response = await fetch(`/admin/study-recall/upload-jobs/${encodeURIComponent(jobId)}/cancel`, {
-                method:'POST',
-                credentials:'same-origin',
-                headers:{ Accept:'application/json' },
-            });
+            const response = await fetch(`/admin/study-recall/upload-jobs/${encodeURIComponent(jobId)}/cancel`, { method:'POST', credentials:'same-origin', headers:{ Accept:'application/json' } });
             const job = await response.json().catch(() => ({}));
             if (!response.ok || !job.ok) throw new Error(job.error || '取消失敗，請再試一次。');
             trackedJobId = null;
@@ -95,31 +142,162 @@
     if (activeJob) { trackedJobId = activeJob; poll(activeJob); }
 })();
 </script>
+
 <script>
 (() => {
- const select=document.getElementById('video_id'),panel=document.getElementById('youtube-player-section'),clock=document.getElementById('player-study-time');
- if(!select||!panel||!clock)return;
- const endpoint='/admin/study-plan/study-time',rawFetch=window.fetch.bind(window);
- let session=null;
- const path=x=>{try{return new URL(typeof x==='string'?x:x.url,location.href).pathname}catch(e){return''}};
- window.fetch=(input,init)=>{
-  if(path(input)===endpoint&&String(init?.method||'GET').toUpperCase()==='POST'){
-   try{if(JSON.parse(init?.body||'{}').kind==='video')return Promise.resolve(new Response('{"ok":true,"today":null}',{status:200,headers:{'Content-Type':'application/json'}}))}catch(e){}
-  }
-  return rawFetch(input,init);
- };
- const id=()=>('video_open_'+(crypto?.randomUUID?.().replaceAll('-','')||Math.random().toString(36).slice(2)+Date.now().toString(36))).slice(0,80);
- const elapsed=s=>s?Math.max(0,(Date.now()-s.startedAt)/1000):0;
- const format=s=>{s=Math.max(0,Math.floor(s||0));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
- const current=()=>{const o=select.options[select.selectedIndex];return o&&o.value&&o.dataset.youtubeVideoId&&!panel.classList.contains('is-hidden')?{videoId:Number(o.value),label:o.dataset.title||'影片學習'}:null};
- const renderToday=t=>{if(!t)return;const set=(id,v)=>{const n=document.getElementById(id);if(n)n.textContent=(Number(v||0)/3600).toFixed(2)+'h'};set('today-study-time',t.total_seconds);set('today-video-time',t.video_seconds);set('today-practice-time',t.practice_seconds)};
- const post=(s,done,keepalive)=>s?rawFetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s.id,kind:'video',video_id:s.videoId,label:s.label,elapsed_seconds:elapsed(s),completed:!!done}),keepalive:!!keepalive}).then(r=>r.ok?r.json():null).then(r=>{if(r)renderToday(r.today);return r}).catch(()=>null):Promise.resolve(null);
- const finish=keepalive=>{const s=session;session=null;clock.textContent='0:00';return post(s,true,keepalive)};
- const sync=()=>{const v=current();if(!v){finish(false);return}if(session?.videoId===v.videoId)return;const old=session;session={id:id(),videoId:v.videoId,label:v.label,startedAt:Date.now()};if(old)post(old,true,false)};
- select.addEventListener('change',()=>setTimeout(sync,0));
- setInterval(()=>{clock.textContent=format(elapsed(session))},500);
- setInterval(()=>{if(session)post(session,false,false)},15000);
- addEventListener('beforeunload',()=>{if(session)post(session,true,true)});
- sync();
+    const practicePanel = document.querySelector('.study-time-panel');
+    if (practicePanel) {
+        practicePanel.classList.add('e3-compact-timer');
+        const controls = practicePanel.querySelector('.study-time-controls');
+        if (controls && !practicePanel.querySelector('.e3-timer-expand')) {
+            const expand = document.createElement('button');
+            expand.type = 'button';
+            expand.className = 'e3-timer-expand';
+            expand.setAttribute('aria-label', '展開計時器詳細資訊');
+            expand.setAttribute('aria-expanded', 'false');
+            controls.appendChild(expand);
+            expand.addEventListener('click', () => {
+                const expanded = practicePanel.classList.toggle('is-expanded');
+                expand.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                expand.setAttribute('aria-label', expanded ? '收合計時器詳細資訊' : '展開計時器詳細資訊');
+            });
+        }
+    }
+
+    const select = document.getElementById('video_id');
+    const panel = document.getElementById('youtube-player-section');
+    const legacyClock = document.getElementById('player-study-time');
+    const statusCard = panel && panel.querySelector('.player-status');
+    if (!select || !panel || !legacyClock || !statusCard) return;
+
+    const endpoint = '/admin/study-plan/study-time';
+    const rawFetch = window.fetch.bind(window);
+    let session = null;
+    let posting = false;
+    let queuedPost = false;
+
+    const requestPath = (input) => {
+        try { return new URL(typeof input === 'string' ? input : input.url, location.href).pathname; }
+        catch (error) { return ''; }
+    };
+
+    // Disable the old PLAYING-only video timer so only this continuous timer writes video sessions.
+    window.fetch = function (input, init) {
+        if (requestPath(input) === endpoint && String((init && init.method) || 'GET').toUpperCase() === 'POST') {
+            try {
+                const payload = JSON.parse((init && init.body) || '{}');
+                if (payload.kind === 'video') {
+                    return Promise.resolve(new Response('{"ok":true,"today":null}', { status:200, headers:{ 'Content-Type':'application/json' } }));
+                }
+            } catch (error) {}
+        }
+        return rawFetch(input, init);
+    };
+
+    const row = document.createElement('div');
+    row.className = 'e3-video-timer-row';
+    row.innerHTML = '<div class="e3-video-timer-main"><span class="e3-video-timer-dot" aria-hidden="true"></span><span class="e3-video-timer-label">播放器開啟即計時</span><strong class="e3-video-timer-time">0:00</strong></div><div class="e3-video-timer-actions"><button class="e3-video-timer-button" type="button" data-video-timer-pause disabled>暫停</button><button class="e3-video-timer-button end" type="button" data-video-timer-end disabled>結束</button></div>';
+    statusCard.appendChild(row);
+    const timeNode = row.querySelector('.e3-video-timer-time');
+    const labelNode = row.querySelector('.e3-video-timer-label');
+    const pauseButton = row.querySelector('[data-video-timer-pause]');
+    const endButton = row.querySelector('[data-video-timer-end]');
+
+    const makeId = () => {
+        const random = window.crypto && typeof window.crypto.randomUUID === 'function'
+            ? window.crypto.randomUUID().replace(/-/g, '')
+            : Math.random().toString(36).slice(2) + Date.now().toString(36);
+        return (`video_open_${random}`).slice(0, 80);
+    };
+    const elapsed = (value = session) => {
+        if (!value) return 0;
+        return Math.max(0, Number(value.elapsed || 0)) + (value.runningSince ? Math.max(0, (Date.now() - value.runningSince) / 1000) : 0);
+    };
+    const format = (seconds) => {
+        const value = Math.max(0, Math.floor(Number(seconds) || 0));
+        const hours = Math.floor(value / 3600);
+        const minutes = Math.floor((value % 3600) / 60);
+        const rest = value % 60;
+        return hours ? `${hours}:${String(minutes).padStart(2,'0')}:${String(rest).padStart(2,'0')}` : `${minutes}:${String(rest).padStart(2,'0')}`;
+    };
+    const currentVideo = () => {
+        const option = select.options[select.selectedIndex];
+        return option && option.value && option.dataset.youtubeVideoId && !panel.classList.contains('is-hidden')
+            ? { videoId:Number(option.value), label:option.dataset.title || '影片學習' }
+            : null;
+    };
+    const renderToday = (today) => {
+        if (!today) return;
+        const setHours = (id, seconds) => { const node = document.getElementById(id); if (node) node.textContent = `${(Number(seconds || 0) / 3600).toFixed(2)}h`; };
+        setHours('today-study-time', today.total_seconds);
+        setHours('today-video-time', today.video_seconds);
+        setHours('today-practice-time', today.practice_seconds);
+    };
+    const render = () => {
+        const active = Boolean(session);
+        const paused = Boolean(session && !session.runningSince);
+        row.classList.toggle('is-paused', paused);
+        timeNode.textContent = format(elapsed());
+        labelNode.textContent = !active ? '選擇影片後自動計時' : paused ? '已手動暫停' : session.label;
+        pauseButton.disabled = !active;
+        endButton.disabled = !active;
+        pauseButton.textContent = paused ? '繼續' : '暫停';
+        legacyClock.textContent = format(elapsed());
+    };
+    const post = (value, completed, keepalive) => {
+        if (!value) return Promise.resolve(null);
+        if (posting && !keepalive) { queuedPost = true; return Promise.resolve(null); }
+        posting = true;
+        return rawFetch(endpoint, {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body:JSON.stringify({ session_id:value.id, kind:'video', video_id:value.videoId, label:value.label, elapsed_seconds:elapsed(value), completed:Boolean(completed) }),
+            keepalive:Boolean(keepalive)
+        }).then((response) => response.ok ? response.json() : null)
+          .then((result) => { if (result) renderToday(result.today); return result; })
+          .catch(() => null)
+          .finally(() => {
+              posting = false;
+              if (queuedPost && session && !keepalive) { queuedPost = false; post(session, false, false); }
+          });
+    };
+    const finish = (keepalive = false) => {
+        const finished = session;
+        if (finished && finished.runningSince) {
+            finished.elapsed = elapsed(finished);
+            finished.runningSince = null;
+        }
+        session = null;
+        render();
+        return post(finished, true, keepalive);
+    };
+    const sync = () => {
+        const video = currentVideo();
+        if (!video) { finish(false); return; }
+        if (session && session.videoId === video.videoId) return;
+        const previous = session;
+        session = { id:makeId(), videoId:video.videoId, label:video.label, elapsed:0, runningSince:Date.now() };
+        render();
+        if (previous) post(previous, true, false);
+    };
+
+    pauseButton.addEventListener('click', () => {
+        if (!session) return;
+        if (session.runningSince) {
+            session.elapsed = elapsed(session);
+            session.runningSince = null;
+            post(session, false, false);
+        } else {
+            session.runningSince = Date.now();
+        }
+        render();
+    });
+    endButton.addEventListener('click', () => finish(false));
+    select.addEventListener('change', () => window.setTimeout(sync, 0));
+    window.setInterval(render, 500);
+    window.setInterval(() => { if (session && session.runningSince) post(session, false, false); }, 15000);
+    window.addEventListener('beforeunload', () => { if (session) post(session, true, true); });
+    sync();
+    render();
 })();
 </script>
