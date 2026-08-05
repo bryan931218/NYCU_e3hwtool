@@ -17,12 +17,11 @@ def _study_calendar_time_rows(
     start_day: str,
     end_day: str,
 ) -> List[Dict[str, Any]]:
-    """Return actual video/practice elapsed time grouped by learning day."""
+    """Return total recorded learning time grouped by learning day."""
 
     statement = text(
         "SELECT day, "
-        "SUM(CASE WHEN kind = 'video' THEN elapsed_seconds ELSE 0 END) AS video_seconds, "
-        "SUM(CASE WHEN kind = 'practice' THEN elapsed_seconds ELSE 0 END) AS practice_seconds, "
+        "SUM(elapsed_seconds) AS total_seconds, "
         "COUNT(*) AS session_count "
         "FROM study_time_sessions "
         "WHERE day >= :start_day AND day <= :end_day "
@@ -36,14 +35,13 @@ def _study_calendar_time_rows(
 
     result: List[Dict[str, Any]] = []
     for row in rows:
-        video_seconds = max(0.0, float(row.get("video_seconds") or 0))
-        practice_seconds = max(0.0, float(row.get("practice_seconds") or 0))
         result.append(
             {
                 "date": str(row.get("day") or ""),
-                "video_seconds": round(video_seconds, 1),
-                "study_seconds": round(practice_seconds, 1),
-                "total_seconds": round(video_seconds + practice_seconds, 1),
+                "total_seconds": round(
+                    max(0.0, float(row.get("total_seconds") or 0)),
+                    1,
+                ),
                 "session_count": max(0, int(row.get("session_count") or 0)),
             }
         )
@@ -98,7 +96,7 @@ def _register_study_calendar_routes(app: Any, storage: Any) -> None:
 
 
 def install_study_calendar_runtime(web_module: Any) -> None:
-    """Add actual video/study time to the study-home calendar."""
+    """Use total learning time for study-home calendar heat and summaries."""
 
     if getattr(web_module, "__e3_study_calendar_runtime_installed", False):
         return

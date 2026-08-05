@@ -14,7 +14,7 @@ from e3_tracker.shared.study_calendar_runtime import (
 
 
 class StudyCalendarRuntimeTests(unittest.TestCase):
-    def test_time_rows_split_video_and_study_seconds(self):
+    def test_time_rows_sum_all_learning_sessions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = DeploymentSafeStorage(str(Path(temp_dir) / "calendar.sqlite3"))
             with storage._lock, storage._engine.begin() as conn:
@@ -40,15 +40,11 @@ class StudyCalendarRuntimeTests(unittest.TestCase):
                 [
                     {
                         "date": "2026-08-05",
-                        "video_seconds": 1800.0,
-                        "study_seconds": 900.0,
                         "total_seconds": 2700.0,
                         "session_count": 2,
                     },
                     {
                         "date": "2026-08-06",
-                        "video_seconds": 0.0,
-                        "study_seconds": 1200.0,
                         "total_seconds": 1200.0,
                         "session_count": 1,
                     },
@@ -67,11 +63,14 @@ class StudyCalendarRuntimeTests(unittest.TestCase):
 
         self.assertEqual(module.STUDY_HOME_TEMPLATE, first_template)
         self.assertEqual(
-            module.STUDY_HOME_TEMPLATE.count("__e3StudyCalendarTimeSplitInstalled"),
+            module.STUDY_HOME_TEMPLATE.count(
+                "__e3StudyCalendarTimeSplitInstalled"
+            ),
             1,
         )
-        self.assertIn("data-e3-video-time", module.STUDY_HOME_TEMPLATE)
-        self.assertIn("data-e3-study-time", module.STUDY_HOME_TEMPLATE)
+        self.assertIn("影片觀看進度變化量", module.STUDY_HOME_TEMPLATE)
+        self.assertIn("total_seconds", module.STUDY_HOME_TEMPLATE)
+        self.assertNotIn("calendar-time-split", module.STUDY_HOME_TEMPLATE)
 
 
 if __name__ == "__main__":
