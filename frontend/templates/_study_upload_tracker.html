@@ -48,6 +48,22 @@
     .e3-video-timer-button { min-height:28px; padding:4px 8px; color:var(--blue,#1463d9); border:1px solid #bfd2e8; border-radius:7px; background:#fff; font-size:10px; font-weight:850; cursor:pointer; }
     .e3-video-timer-button.end { color:#a33b45; border-color:#e3c3c7; }
     .e3-video-timer-button:disabled { opacity:.45; cursor:not-allowed; }
+
+    /* Keep the native YouTube player and settings bar clickable. */
+    .focus-keyboard-capture {
+        pointer-events:none !important;
+        inset:auto !important;
+        top:0 !important;
+        left:0 !important;
+        width:1px !important;
+        height:1px !important;
+        min-width:0 !important;
+        min-height:0 !important;
+        padding:0 !important;
+        opacity:0 !important;
+        cursor:default !important;
+    }
+
     @media (max-width:700px) {
         .study-time-panel.e3-compact-timer,.study-time-panel.e3-compact-timer.is-expanded { grid-template-columns:1fr; margin:8px 10px 0; }
         .study-time-panel.e3-compact-timer .study-time-controls { justify-content:flex-end; }
@@ -299,5 +315,87 @@
     window.addEventListener('beforeunload', () => { if (session) post(session, true, true); });
     sync();
     render();
+})();
+</script>
+
+<script>
+(() => {
+    const capture = document.getElementById('focus-keyboard-capture');
+    const playerPanel = document.getElementById('youtube-player-section');
+    if (!capture || !playerPanel) return;
+
+    capture.tabIndex = -1;
+    capture.setAttribute('aria-hidden', 'true');
+    const hint = document.querySelector('.focus-shortcut-hint');
+    if (hint) hint.textContent = '空白鍵：短按播放／暫停　長按暫時加速';
+
+    const HOLD_DELAY_MS = 300;
+    let holdTimer = null;
+    let spaceDown = false;
+    let longPress = false;
+    let forwardingLegacyEvent = false;
+
+    const isTypingTarget = (target) => Boolean(target && (
+        ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(target.tagName) || target.isContentEditable
+    ));
+    const playerReady = () => !playerPanel.classList.contains('is-hidden') && Boolean(document.querySelector('#youtube-player iframe'));
+    const forwardToOriginalShortcut = (type) => {
+        forwardingLegacyEvent = true;
+        try {
+            document.dispatchEvent(new KeyboardEvent(type, {
+                key:' ', code:'Space', bubbles:true, cancelable:true
+            }));
+        } finally {
+            forwardingLegacyEvent = false;
+        }
+    };
+    const clearHoldTimer = () => {
+        if (holdTimer) window.clearTimeout(holdTimer);
+        holdTimer = null;
+    };
+    const resetSpace = (restoreRate) => {
+        clearHoldTimer();
+        if (restoreRate && longPress) forwardToOriginalShortcut('keyup');
+        spaceDown = false;
+        longPress = false;
+    };
+
+    document.addEventListener('keydown', (event) => {
+        if (forwardingLegacyEvent || event.code !== 'Space') return;
+        if (isTypingTarget(event.target) || event.altKey || event.ctrlKey || event.metaKey || !playerReady()) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (spaceDown || event.repeat) return;
+
+        spaceDown = true;
+        longPress = false;
+        holdTimer = window.setTimeout(() => {
+            if (!spaceDown) return;
+            longPress = true;
+            forwardToOriginalShortcut('keydown');
+        }, HOLD_DELAY_MS);
+    }, true);
+
+    document.addEventListener('keyup', (event) => {
+        if (forwardingLegacyEvent || event.code !== 'Space' || !spaceDown) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        clearHoldTimer();
+
+        if (longPress) {
+            forwardToOriginalShortcut('keyup');
+        } else {
+            // Reuse the player's existing click handler, which has access to the YouTube API object.
+            capture.click();
+        }
+        spaceDown = false;
+        longPress = false;
+    }, true);
+
+    window.addEventListener('blur', () => resetSpace(true));
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) resetSpace(true);
+    });
 })();
 </script>
