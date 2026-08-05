@@ -48,9 +48,10 @@ class DeploymentSafeStorage(PersistentStorage):
                 merged.append(item)
                 continue
             saved = existing.get(key)
-            if saved and any(saved.values()):
-                for field in _YOUTUBE_FIELDS:
-                    item[field] = saved[field] or None
+            if saved:
+                for field, value in saved.items():
+                    if value:
+                        item[field] = value
             merged.append(item)
 
         super().sync_study_plan_videos(merged)
