@@ -1,13 +1,32 @@
 <style>
-    #e3-player-shortcut-focus {
-        position: fixed;
-        left: -10000px;
-        top: 0;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        opacity: 0;
-        pointer-events: none;
+    /* The main video surface belongs to our controls; the bottom strip remains YouTube-native. */
+    .player-frame.is-focus-mode .focus-keyboard-capture {
+        pointer-events: auto !important;
+        inset: 0 0 78px 0 !important;
+        width: auto !important;
+        height: auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        opacity: 1 !important;
+        z-index: 1 !important;
+        background: transparent !important;
+        cursor: pointer !important;
+        touch-action: manipulation;
+    }
+
+    /* YouTube's settings menu opens upward from the bottom-right. */
+    .player-frame.is-focus-mode.e3-native-controls-active .focus-keyboard-capture {
+        right: min(380px, 42vw) !important;
+    }
+
+    /* Hints are controlled explicitly and never shown again merely because focus moved. */
+    .player-frame.is-focus-mode .focus-layer:hover .focus-shortcut-hint,
+    .player-frame.is-focus-mode .focus-keyboard-capture:focus + .focus-shortcut-hint {
+        opacity: 0 !important;
+    }
+    .player-frame.is-focus-mode.e3-show-shortcut-hint .focus-shortcut-hint {
+        opacity: 1 !important;
     }
 </style>
 <script>
@@ -15,10 +34,18 @@
     if (window.__e3PlayerShortcutCompatibilityInstalled) return;
     window.__e3PlayerShortcutCompatibilityInstalled = true;
 
-    // The YouTube IFrame API replaces <div id="youtube-player"> with
-    // <iframe id="youtube-player">. The compact timer's shortcut guard still
-    // checks for "#youtube-player iframe", so make that legacy lookup resolve
-    // the actual API iframe instead of letting the old immediate-boost handler run.
+    const DEFAULT_SETTINGS = {
+        hold_space_rate: 2,
+        hold_delay_ms: 300,
+        seek_seconds: 10,
+        center_click_toggle: true,
+        show_shortcut_hint: true,
+        hint_duration_ms: 1400,
+    };
+    const settings = { ...DEFAULT_SETTINGS };
+    window.E3PlayerSettings = settings;
+
+    // YouTube replaces <div id="youtube-player"> with <iframe id="youtube-player">.
     const nativeQuerySelector = Document.prototype.querySelector;
     Document.prototype.querySelector = function (selector) {
         if (selector === '#youtube-player iframe') {
@@ -28,65 +55,265 @@
         return nativeQuerySelector.call(this, selector);
     };
 
-    const shortcutHost = document.createElement('span');
-    shortcutHost.id = 'e3-player-shortcut-focus';
-    shortcutHost.tabIndex = -1;
-    shortcutHost.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(shortcutHost);
-
+    const frame = document.getElementById('focus-player-frame');
+    const capture = document.getElementById('focus-keyboard-capture');
+    const panel = document.getElementById('youtube-player-section');
     const hint = document.querySelector('.focus-shortcut-hint');
-    if (hint) hint.textContent = '空白鍵：短按播放／暫停　長按暫時加速';
+    const toast = document.getElementById('focus-toast');
+    if (!frame || !capture || !panel) return;
 
-    let boundIframe = null;
-    let reclaimTimer = null;
+    capture.tabIndex = 0;
+    capture.removeAttribute('aria-hidden');
+
+    const nav = document.querySelector('.nav-links');
+    if (nav && !nav.querySelector('[data-player-settings-link]')) {
+        const link = document.createElement('a');
+        link.href = '/admin/study-player-settings';
+        link.textContent = '播放器設定';
+        link.dataset.playerSettingsLink = '1';
+        nav.appendChild(link);
+    }
+
+    let wasFocusMode = false;
+    let hintTimer = null;
+    let nativeControlsTimer = null;
+    let toastTimer = null;
+    let holdTimer = null;
+    let spaceDown = false;
+    let longPress = false;
+    let boostActive = false;
+    let currentRate = 1;
+    let previousRate = 1;
+    let playerState = -1;
+    let currentTime = 0;
+    let duration = 0;
 
     const playerIframe = () => nativeQuerySelector.call(document, 'iframe#youtube-player')
         || nativeQuerySelector.call(document, '#youtube-player iframe');
-    const playerVisible = () => {
-        const panel = document.getElementById('youtube-player-section');
-        return Boolean(panel && !panel.classList.contains('is-hidden') && playerIframe());
+    const playerReady = () => !panel.classList.contains('is-hidden') && Boolean(playerIframe());
+    const isFocusMode = () => frame.classList.contains('is-focus-mode');
+    const formatRate = (rate) => Number(rate || 1).toFixed(2).replace(/\.00$/, '').replace(/0$/, '');
+    const updateHintText = () => {
+        const seconds = Math.max(1, Number(settings.seek_seconds) || 10);
+        const rate = formatRate(settings.hold_space_rate);
+        const text = `J／← 後退 ${seconds} 秒　L／→ 快進 ${seconds} 秒　短按空白鍵播放／暫停　長按 ${settings.hold_delay_ms}ms ${rate}×`;
+        if (hint) hint.textContent = text;
+        capture.setAttribute('aria-label', `播放器鍵盤控制區；${text}`);
     };
-    const focusShortcutHost = () => {
-        if (!playerVisible()) return;
-        try { shortcutHost.focus({ preventScroll: true }); }
-        catch (error) { shortcutHost.focus(); }
+    const showToast = (message) => {
+        if (!toast || !message) return;
+        if (toastTimer) window.clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.classList.remove('is-error');
+        toast.classList.add('is-visible');
+        toastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), 1100);
     };
-    const scheduleFocusReclaim = (delay = 350) => {
-        if (reclaimTimer) window.clearTimeout(reclaimTimer);
-        reclaimTimer = window.setTimeout(() => {
-            const iframe = playerIframe();
-            if (iframe && document.activeElement === iframe) focusShortcutHost();
-        }, delay);
+    const focusCapture = () => {
+        if (!isFocusMode()) return;
+        try { capture.focus({ preventScroll: true }); }
+        catch (error) { capture.focus(); }
     };
-    const bindPlayerIframe = () => {
+    const sendCommand = (func, args = []) => {
         const iframe = playerIframe();
-        if (!iframe || iframe === boundIframe) return;
-        boundIframe = iframe;
-        iframe.addEventListener('mouseleave', focusShortcutHost);
-        iframe.addEventListener('load', () => scheduleFocusReclaim(0));
+        if (!iframe || !iframe.contentWindow) return false;
+        iframe.contentWindow.postMessage(JSON.stringify({
+            event: 'command',
+            func,
+            args,
+        }), '*');
+        return true;
+    };
+    const togglePlayback = () => {
+        if (playerState === 1) {
+            sendCommand('pauseVideo');
+            playerState = 2;
+        } else {
+            sendCommand('playVideo');
+            playerState = 1;
+        }
+    };
+    const seekBy = (deltaSeconds) => {
+        const base = Number.isFinite(currentTime) ? currentTime : 0;
+        const end = Number.isFinite(duration) && duration > 0 ? duration : Number.POSITIVE_INFINITY;
+        const next = Math.max(0, Math.min(end, base + deltaSeconds));
+        if (!sendCommand('seekTo', [next, true])) return;
+        currentTime = next;
+        showToast(`${deltaSeconds < 0 ? '後退' : '快進'} ${Math.abs(deltaSeconds)} 秒`);
+    };
+    const clearHoldTimer = () => {
+        if (holdTimer) window.clearTimeout(holdTimer);
+        holdTimer = null;
+    };
+    const restorePlaybackRate = () => {
+        if (!boostActive) return;
+        boostActive = false;
+        sendCommand('setPlaybackRate', [previousRate]);
+        currentRate = previousRate;
+        showToast(`恢復 ${formatRate(previousRate)}×`);
+    };
+    const resetSpace = (restoreRate = true) => {
+        clearHoldTimer();
+        if (restoreRate) restorePlaybackRate();
+        spaceDown = false;
+        longPress = false;
+    };
+    const isTypingTarget = (target) => Boolean(target && target !== capture && (
+        ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+        || target.isContentEditable
+    ));
+    const isBlockedShortcut = (event) => (
+        event.isComposing
+        || isTypingTarget(event.target)
+        || event.altKey
+        || event.ctrlKey
+        || event.metaKey
+        || !playerReady()
+    );
+    const consume = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
     };
 
-    const observer = new MutationObserver(() => {
-        bindPlayerIframe();
-        const frame = document.getElementById('focus-player-frame');
-        if (frame && frame.classList.contains('is-focus-mode')) {
-            window.setTimeout(focusShortcutHost, 0);
+    const activateShortcutSurface = () => {
+        if (!isFocusMode()) return;
+        frame.classList.remove('e3-native-controls-active');
+        if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
+        nativeControlsTimer = null;
+        focusCapture();
+    };
+    const showHintOnce = () => {
+        if (!settings.show_shortcut_hint) return;
+        if (hintTimer) window.clearTimeout(hintTimer);
+        frame.classList.add('e3-show-shortcut-hint');
+        hintTimer = window.setTimeout(() => {
+            frame.classList.remove('e3-show-shortcut-hint');
+        }, settings.hint_duration_ms);
+    };
+    const releaseForNativeControls = () => {
+        if (!isFocusMode()) return;
+        resetSpace(true);
+        if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
+        frame.classList.add('e3-native-controls-active');
+        nativeControlsTimer = window.setTimeout(() => {
+            frame.classList.remove('e3-native-controls-active');
+            nativeControlsTimer = null;
+        }, 12000);
+    };
+    const syncFocusMode = () => {
+        const active = isFocusMode();
+        if (active && !wasFocusMode) {
+            wasFocusMode = true;
+            frame.classList.remove('e3-native-controls-active');
+            showHintOnce();
+            window.setTimeout(focusCapture, 0);
+        } else if (!active && wasFocusMode) {
+            wasFocusMode = false;
+            resetSpace(true);
+            frame.classList.remove('e3-native-controls-active', 'e3-show-shortcut-hint');
+            if (hintTimer) window.clearTimeout(hintTimer);
+            if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
+            hintTimer = null;
+            nativeControlsTimer = null;
+        }
+    };
+
+    // Keep the existing main-player click handler, but allow it to be disabled in settings.
+    capture.addEventListener('click', (event) => {
+        if (settings.center_click_toggle) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }, true);
+    capture.addEventListener('pointerenter', activateShortcutSurface);
+    capture.addEventListener('pointerdown', activateShortcutSurface);
+
+    // Capture all custom shortcuts at window level so the old handler and YouTube
+    // iframe cannot also process the same key press.
+    window.addEventListener('keydown', (event) => {
+        const seekDirections = {
+            KeyJ: -1,
+            ArrowLeft: -1,
+            KeyL: 1,
+            ArrowRight: 1,
+        };
+        const direction = seekDirections[event.code];
+        if (direction) {
+            if (isBlockedShortcut(event)) return;
+            consume(event);
+            if (!event.repeat) seekBy(direction * Math.max(1, Number(settings.seek_seconds) || 10));
+            return;
+        }
+
+        if (event.code !== 'Space' || isBlockedShortcut(event)) return;
+        consume(event);
+        if (spaceDown || event.repeat) return;
+
+        spaceDown = true;
+        longPress = false;
+        holdTimer = window.setTimeout(() => {
+            if (!spaceDown) return;
+            longPress = true;
+            previousRate = Number.isFinite(currentRate) && currentRate > 0 ? currentRate : 1;
+            boostActive = true;
+            sendCommand('setPlaybackRate', [settings.hold_space_rate]);
+            currentRate = settings.hold_space_rate;
+            showToast(`暫時 ${formatRate(settings.hold_space_rate)}×`);
+        }, settings.hold_delay_ms);
+    }, true);
+
+    window.addEventListener('keyup', (event) => {
+        if (event.code !== 'Space' || !spaceDown) return;
+        consume(event);
+        clearHoldTimer();
+        if (longPress) restorePlaybackRate();
+        else togglePlayback();
+        spaceDown = false;
+        longPress = false;
+    }, true);
+
+    // Track authoritative YouTube state, rate and position updates from the API iframe.
+    window.addEventListener('message', (event) => {
+        const iframe = playerIframe();
+        if (!iframe || event.source !== iframe.contentWindow) return;
+        let payload = event.data;
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); }
+            catch (error) { return; }
+        }
+        const info = payload && payload.info;
+        if (!info || typeof info !== 'object') return;
+        if (Number.isFinite(Number(info.playerState))) playerState = Number(info.playerState);
+        if (Number.isFinite(Number(info.currentTime))) currentTime = Math.max(0, Number(info.currentTime));
+        if (Number.isFinite(Number(info.duration))) duration = Math.max(0, Number(info.duration));
+        if (!boostActive && Number.isFinite(Number(info.playbackRate)) && Number(info.playbackRate) > 0) {
+            currentRate = Number(info.playbackRate);
         }
     });
-    observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ['class'],
+
+    window.addEventListener('blur', releaseForNativeControls);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) resetSpace(true);
     });
 
-    // Clicking native YouTube controls moves keyboard focus into the cross-origin
-    // iframe. Give the click time to finish, then return shortcut focus to this
-    // page. Mouse clicks still go straight to YouTube because no overlay is used.
-    window.addEventListener('blur', () => scheduleFocusReclaim(350));
-    document.addEventListener('fullscreenchange', () => window.setTimeout(focusShortcutHost, 0));
-    document.addEventListener('webkitfullscreenchange', () => window.setTimeout(focusShortcutHost, 0));
+    const observer = new MutationObserver(syncFocusMode);
+    observer.observe(frame, { attributes: true, attributeFilter: ['class'] });
+    document.addEventListener('fullscreenchange', syncFocusMode);
+    document.addEventListener('webkitfullscreenchange', syncFocusMode);
 
-    bindPlayerIframe();
+    fetch('/admin/study-player-settings.json', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+    })
+        .then((response) => response.ok ? response.json() : null)
+        .then((payload) => {
+            if (!payload || !payload.ok || !payload.settings) return;
+            Object.assign(settings, payload.settings);
+            updateHintText();
+        })
+        .catch(() => null);
+
+    updateHintText();
+    syncFocusMode();
 })();
 </script>
