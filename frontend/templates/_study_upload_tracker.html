@@ -18,7 +18,6 @@
     .study-upload-tracker.is-cancelled { border-left-color:#8c96a6; }
     .study-upload-tracker.is-cancelled progress { accent-color:#8c96a6; }
 
-    /* Compact practice timer: one row by default, details only when requested. */
     .study-time-panel.e3-compact-timer { grid-template-columns:minmax(0,1fr) auto; gap:10px; margin:10px 16px 0; padding:9px 11px; border-radius:11px; }
     .study-time-panel.e3-compact-timer .study-time-heading { align-items:center; margin:0; }
     .study-time-panel.e3-compact-timer .study-time-heading h3 { font-size:13px; }
@@ -37,7 +36,6 @@
     .e3-timer-expand::before { content:'⌄'; transition:transform .18s ease; }
     .study-time-panel.is-expanded .e3-timer-expand::before { transform:rotate(180deg); }
 
-    /* Small video timer controls inside the existing player status card. */
     .e3-video-timer-row { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; padding-top:7px; border-top:1px solid #dce6ef; }
     .e3-video-timer-main { min-width:0; display:flex; align-items:center; gap:7px; color:var(--muted,#62768b); font-size:11px; }
     .e3-video-timer-dot { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:#258957; box-shadow:0 0 0 3px rgba(37,137,87,.12); }
@@ -49,7 +47,6 @@
     .e3-video-timer-button.end { color:#a33b45; border-color:#e3c3c7; }
     .e3-video-timer-button:disabled { opacity:.45; cursor:not-allowed; }
 
-    /* Keep the native YouTube player and settings bar clickable. */
     .focus-keyboard-capture {
         pointer-events:none !important;
         inset:auto !important;
@@ -197,7 +194,6 @@
         catch (error) { return ''; }
     };
 
-    // Disable the old PLAYING-only video timer so only this continuous timer writes video sessions.
     window.fetch = function (input, init) {
         if (requestPath(input) === endpoint && String((init && init.method) || 'GET').toUpperCase() === 'POST') {
             try {
@@ -326,6 +322,7 @@
 
     capture.tabIndex = -1;
     capture.setAttribute('aria-hidden', 'true');
+    capture.addEventListener('focus', () => capture.blur());
     const hint = document.querySelector('.focus-shortcut-hint');
     if (hint) hint.textContent = '空白鍵：短按播放／暫停　長按暫時加速';
 
@@ -335,16 +332,14 @@
     let longPress = false;
     let forwardingLegacyEvent = false;
 
-    const isTypingTarget = (target) => Boolean(target && (
+    const isTypingTarget = (target) => Boolean(target && target !== capture && (
         ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(target.tagName) || target.isContentEditable
     ));
     const playerReady = () => !playerPanel.classList.contains('is-hidden') && Boolean(document.querySelector('#youtube-player iframe'));
     const forwardToOriginalShortcut = (type) => {
         forwardingLegacyEvent = true;
         try {
-            document.dispatchEvent(new KeyboardEvent(type, {
-                key:' ', code:'Space', bubbles:true, cancelable:true
-            }));
+            document.dispatchEvent(new KeyboardEvent(type, { key:' ', code:'Space', bubbles:true, cancelable:true }));
         } finally {
             forwardingLegacyEvent = false;
         }
@@ -363,7 +358,6 @@
     document.addEventListener('keydown', (event) => {
         if (forwardingLegacyEvent || event.code !== 'Space') return;
         if (isTypingTarget(event.target) || event.altKey || event.ctrlKey || event.metaKey || !playerReady()) return;
-
         event.preventDefault();
         event.stopImmediatePropagation();
         if (spaceDown || event.repeat) return;
@@ -382,13 +376,8 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         clearHoldTimer();
-
-        if (longPress) {
-            forwardToOriginalShortcut('keyup');
-        } else {
-            // Reuse the player's existing click handler, which has access to the YouTube API object.
-            capture.click();
-        }
+        if (longPress) forwardToOriginalShortcut('keyup');
+        else capture.click();
         spaceDown = false;
         longPress = false;
     }, true);
