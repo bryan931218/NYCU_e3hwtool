@@ -1,4 +1,9 @@
 <style>
+    /* Leave YouTube's native top and bottom control regions fully clickable. */
+    .player-frame.is-focus-mode .focus-keyboard-capture {
+        inset: clamp(58px, 8vh, 86px) 0 78px 0 !important;
+    }
+
     .e3-player-control-dock {
         --dock-accent: #5ca6ff;
         --dock-surface: rgba(8, 18, 32, .82);
@@ -9,7 +14,7 @@
         left: 50%;
         bottom: 72px;
         z-index: 14;
-        display: flex;
+        display: none;
         align-items: center;
         gap: 10px;
         width: min(94%, 760px);
@@ -27,16 +32,19 @@
         -webkit-backdrop-filter: blur(18px) saturate(140%);
         backdrop-filter: blur(18px) saturate(140%);
         transform: translateX(-50%);
-        opacity: 1;
-        pointer-events: auto;
+        opacity: 0;
+        pointer-events: none;
         transition: opacity .22s ease, transform .22s ease, background .22s ease;
     }
 
     .player-frame.is-focus-mode .e3-player-control-dock {
+        display: flex;
         bottom: 90px;
         width: min(88%, 860px);
         padding: 11px 14px;
         border-radius: 20px;
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .player-frame.is-focus-mode.e3-controls-idle .e3-player-control-dock:not(:focus-within):not(:hover),
@@ -229,6 +237,10 @@
     }
 
     @media (max-width: 760px) {
+        .player-frame.is-focus-mode .focus-keyboard-capture {
+            inset: 56px 0 72px 0 !important;
+        }
+
         .e3-player-control-dock {
             width: calc(100% - 18px);
             gap: 7px;
