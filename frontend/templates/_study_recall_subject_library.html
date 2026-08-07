@@ -1,0 +1,210 @@
+<style>
+    .subject-library-shell { display:grid; gap:12px; }
+    .subject-library-toolbar { display:grid; gap:9px; }
+    .subject-library-search { position:relative; }
+    .subject-library-search input { width:100%; min-height:39px; padding:8px 34px 8px 10px; border:1px solid var(--line); border-radius:4px; color:var(--ink); background:#fff; font-size:12px; outline:0; }
+    .subject-library-search input:focus { border-color:#9cc0eb; box-shadow:0 0 0 3px rgba(23,105,216,.10); }
+    .subject-library-search-clear { position:absolute; right:7px; top:50%; width:26px; height:26px; padding:0; transform:translateY(-50%); border:0; border-radius:4px; color:var(--muted); background:transparent; cursor:pointer; font-size:16px; }
+    .subject-library-search-clear:hover { color:var(--blue); background:var(--blue-soft); }
+    .subject-library-tabs { display:flex; flex-wrap:wrap; gap:6px; }
+    .subject-library-tab { min-height:30px; padding:0 8px; border:1px solid var(--line); border-radius:4px; color:var(--muted); background:#fff; font-size:11px; font-weight:850; cursor:pointer; }
+    .subject-library-tab:hover { color:var(--blue); border-color:#b8cdea; }
+    .subject-library-tab.is-active { color:#fff; border-color:var(--blue); background:var(--blue); }
+    .subject-library-tab-count { margin-left:3px; opacity:.76; font-variant-numeric:tabular-nums; }
+    .subject-library-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--muted); font-size:10px; }
+    .subject-library-actions { display:flex; gap:5px; }
+    .subject-library-action { padding:4px 6px; border:0; border-radius:3px; color:var(--blue); background:var(--blue-soft); font-size:10px; font-weight:850; cursor:pointer; }
+    .subject-library-groups { display:grid; gap:8px; }
+    .subject-library-group { overflow:hidden; border:1px solid var(--line); border-radius:5px; background:#fff; }
+    .subject-library-group[hidden] { display:none; }
+    .subject-library-group > summary { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 11px; cursor:pointer; list-style:none; background:#fafcff; }
+    .subject-library-group > summary::-webkit-details-marker { display:none; }
+    .subject-library-group[open] > summary { border-bottom:1px solid var(--line); background:#f6f9fd; }
+    .subject-library-subject { min-width:0; display:grid; gap:2px; }
+    .subject-library-subject strong { color:var(--ink); font-size:12px; }
+    .subject-library-subject small { color:var(--muted); font-size:10px; font-weight:650; }
+    .subject-library-chevron { color:var(--muted); font-size:16px; transition:transform .16s ease; }
+    .subject-library-group[open] .subject-library-chevron { transform:rotate(45deg); }
+    .subject-library-list { display:grid; }
+    .subject-library-list .history-note { border-bottom:1px solid #edf1f6; }
+    .subject-library-list .history-note:last-child { border-bottom:0; }
+    .subject-library-list .history-note[hidden] { display:none; }
+    .subject-library-list .queue-item { border:0; border-radius:0; }
+    .subject-library-list .queue-title { white-space:normal; line-height:1.35; }
+    .subject-library-list .queue-meta { line-height:1.45; }
+    .subject-library-list .history-note.is-current { background:#f2f7ff; box-shadow:inset 3px 0 0 var(--blue); }
+    .subject-library-empty { padding:18px 12px; color:var(--muted); border:1px dashed #cbd6e3; border-radius:5px; background:#fafcff; font-size:12px; text-align:center; }
+    .subject-library-empty[hidden] { display:none; }
+    @media (max-width:760px) { .subject-library-tab { min-height:34px; } .subject-library-group > summary { padding:12px; } }
+</style>
+<script>
+(() => {
+    if (window.__e3StudyRecallSubjectLibraryInstalled) return;
+    window.__e3StudyRecallSubjectLibraryInstalled = true;
+
+    const library = document.querySelector('.panel.history [data-recall-fold="library"]');
+    if (!library) return;
+    const sourceQueue = Array.from(library.children).find((node) => node.classList?.contains('queue'));
+    if (!sourceQueue) return;
+
+    const notes = [...sourceQueue.querySelectorAll('.history-note')];
+    const heading = library.querySelector(':scope > summary h2');
+    const caption = library.querySelector(':scope > summary .caption');
+    if (heading) heading.textContent = '科目筆記';
+    if (caption) caption.textContent = '依科目分類・快速搜尋與瀏覽';
+    if (!notes.length) return;
+
+    const preferredOrder = ['線性代數', '離散數學', '資料結構', '作業系統', '計算機組織', '演算法'];
+    const currentSessionId = new URL(window.location.href).searchParams.get('session_id') || '';
+    const entries = notes.map((note) => {
+        const link = note.querySelector('a.queue-item');
+        const titleNode = note.querySelector('.queue-title');
+        const metaNode = note.querySelector('.queue-meta');
+        const originalMeta = String(metaNode?.textContent || '').trim();
+        const metaParts = originalMeta.split('・').map((part) => part.trim()).filter(Boolean);
+        const subject = metaParts[0] || '未分類';
+        const date = metaParts[1] || '';
+        const title = String(titleNode?.textContent || '').trim();
+        const linkUrl = link ? new URL(link.href, window.location.href) : null;
+        const sessionId = linkUrl?.searchParams.get('session_id') || '';
+        if (metaNode && metaParts[0] === subject) metaNode.textContent = metaParts.slice(1).join('・') || subject;
+        note.dataset.librarySearch = `${subject} ${title} ${originalMeta}`.toLocaleLowerCase('zh-Hant');
+        note.dataset.librarySubject = subject;
+        if (currentSessionId && sessionId === currentSessionId) note.classList.add('is-current');
+        return { note, subject, date, title, sessionId };
+    });
+
+    const grouped = new Map();
+    entries.forEach((entry) => {
+        if (!grouped.has(entry.subject)) grouped.set(entry.subject, []);
+        grouped.get(entry.subject).push(entry);
+    });
+    grouped.forEach((items) => {
+        items.sort((left, right) => String(right.date).localeCompare(String(left.date)) || right.title.localeCompare(left.title));
+    });
+
+    const subjects = [...grouped.keys()].sort((left, right) => {
+        const leftIndex = preferredOrder.indexOf(left);
+        const rightIndex = preferredOrder.indexOf(right);
+        if (leftIndex >= 0 || rightIndex >= 0) {
+            if (leftIndex < 0) return 1;
+            if (rightIndex < 0) return -1;
+            return leftIndex - rightIndex;
+        }
+        return left.localeCompare(right, 'zh-Hant');
+    });
+
+    const shell = document.createElement('div');
+    shell.className = 'subject-library-shell';
+    shell.dataset.recallSubjectLibrary = '';
+    shell.innerHTML = [
+        '<div class="subject-library-toolbar">',
+        '  <div class="subject-library-search">',
+        '    <input type="search" data-subject-library-search placeholder="搜尋筆記名稱、科目或日期…" aria-label="搜尋筆記">',
+        '    <button class="subject-library-search-clear" type="button" data-subject-library-clear aria-label="清除搜尋">×</button>',
+        '  </div>',
+        '  <div class="subject-library-tabs" data-subject-library-tabs></div>',
+        '  <div class="subject-library-meta">',
+        '    <span data-subject-library-result></span>',
+        '    <span class="subject-library-actions">',
+        '      <button class="subject-library-action" type="button" data-subject-library-expand>全部展開</button>',
+        '      <button class="subject-library-action" type="button" data-subject-library-collapse>全部收合</button>',
+        '    </span>',
+        '  </div>',
+        '</div>',
+        '<div class="subject-library-groups" data-subject-library-groups></div>',
+        '<div class="subject-library-empty" data-subject-library-empty hidden>找不到符合條件的筆記。</div>',
+    ].join('');
+
+    const tabsNode = shell.querySelector('[data-subject-library-tabs]');
+    const groupsNode = shell.querySelector('[data-subject-library-groups]');
+    const searchInput = shell.querySelector('[data-subject-library-search]');
+    const resultNode = shell.querySelector('[data-subject-library-result]');
+    const emptyNode = shell.querySelector('[data-subject-library-empty]');
+    const groupNodes = new Map();
+
+    const createTab = (subject, count, active = false) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `subject-library-tab${active ? ' is-active' : ''}`;
+        button.dataset.subject = subject;
+        button.innerHTML = `<span>${subject}</span><span class="subject-library-tab-count">${count}</span>`;
+        tabsNode.appendChild(button);
+    };
+    createTab('全部', entries.length, true);
+    subjects.forEach((subject) => createTab(subject, grouped.get(subject).length));
+
+    subjects.forEach((subject, index) => {
+        const items = grouped.get(subject);
+        const latestDate = items.map((item) => item.date).filter(Boolean).sort().reverse()[0] || '尚無日期';
+        const details = document.createElement('details');
+        details.className = 'subject-library-group';
+        details.dataset.subject = subject;
+        const hasCurrent = items.some((item) => item.sessionId && item.sessionId === currentSessionId);
+        details.open = hasCurrent || index === 0;
+        const summary = document.createElement('summary');
+        summary.innerHTML = [
+            '<span class="subject-library-subject">',
+            `  <strong>${subject}</strong>`,
+            `  <small>${items.length} 份筆記・最近 ${latestDate}</small>`,
+            '</span>',
+            '<span class="subject-library-chevron" aria-hidden="true">+</span>',
+        ].join('');
+        const list = document.createElement('div');
+        list.className = 'queue subject-library-list';
+        items.forEach((item) => list.appendChild(item.note));
+        details.append(summary, list);
+        groupsNode.appendChild(details);
+        groupNodes.set(subject, details);
+    });
+
+    sourceQueue.replaceChildren(shell);
+    library.open = true;
+
+    let selectedSubject = '全部';
+    const applyFilter = () => {
+        const query = String(searchInput.value || '').trim().toLocaleLowerCase('zh-Hant');
+        let visibleNotes = 0;
+        subjects.forEach((subject) => {
+            const group = groupNodes.get(subject);
+            const subjectAllowed = selectedSubject === '全部' || selectedSubject === subject;
+            let groupMatches = 0;
+            group.querySelectorAll('.history-note').forEach((note) => {
+                const matchesQuery = !query || String(note.dataset.librarySearch || '').includes(query);
+                const visible = subjectAllowed && matchesQuery;
+                note.hidden = !visible;
+                if (visible) groupMatches += 1;
+            });
+            group.hidden = !subjectAllowed || groupMatches === 0;
+            if (query && groupMatches > 0) group.open = true;
+            visibleNotes += groupMatches;
+        });
+        resultNode.textContent = query || selectedSubject !== '全部'
+            ? `顯示 ${visibleNotes} / ${entries.length} 份筆記`
+            : `共 ${entries.length} 份筆記・${subjects.length} 個科目`;
+        emptyNode.hidden = visibleNotes !== 0;
+    };
+
+    tabsNode.addEventListener('click', (event) => {
+        const button = event.target.closest('.subject-library-tab');
+        if (!button) return;
+        selectedSubject = button.dataset.subject || '全部';
+        tabsNode.querySelectorAll('.subject-library-tab').forEach((tab) => tab.classList.toggle('is-active', tab === button));
+        if (selectedSubject !== '全部') groupNodes.get(selectedSubject)?.setAttribute('open', '');
+        applyFilter();
+    });
+    searchInput.addEventListener('input', applyFilter);
+    shell.querySelector('[data-subject-library-clear]').addEventListener('click', () => {
+        searchInput.value = '';
+        searchInput.focus();
+        applyFilter();
+    });
+    shell.querySelector('[data-subject-library-expand]').addEventListener('click', () => {
+        groupNodes.forEach((group) => { if (!group.hidden) group.open = true; });
+    });
+    shell.querySelector('[data-subject-library-collapse]').addEventListener('click', () => {
+        groupNodes.forEach((group) => { group.open = false; });
+    });
+    applyFilter();
+})();
+</script>
