@@ -1,0 +1,150 @@
+<script>
+(() => {
+    if (window.__e3CombinedDailyProgressInstalled) return;
+    window.__e3CombinedDailyProgressInstalled = true;
+
+    const endpoint = '/admin/study-plan/combined-daily-progress.json';
+    let refreshTimer = null;
+    let requestSerial = 0;
+
+    const completionText = (day) => (
+        Number(day?.target_seconds || 0) > 0
+            ? `${Math.round(Number(day?.completion || 0))}%`
+            : '—'
+    );
+
+    const ensureCombinedProgressUi = (card) => {
+        if (!card) return {};
+        const subjectList = card.querySelector('.day-subject-list');
+        if (subjectList) subjectList.remove();
+
+        let completion = card.querySelector('.day-completion');
+        if (!completion) {
+            completion = document.createElement('div');
+            completion.className = 'day-completion';
+            completion.innerHTML = '<span>完成度</span><strong>—</strong>';
+            const focus = card.querySelector('.day-focus');
+            (focus || card.lastElementChild)?.insertAdjacentElement('afterend', completion);
+            if (!completion.parentElement) card.appendChild(completion);
+        }
+
+        let progress = card.querySelector('.day-progress');
+        if (!progress) {
+            progress = document.createElement('div');
+            progress.className = 'day-progress';
+            progress.innerHTML = '<div class="day-progress-fill"></div>';
+            completion.insertAdjacentElement('afterend', progress);
+        }
+        return { completion, progress };
+    };
+
+    const renderDay = (card, day) => {
+        if (!card || !day) return;
+        card.className = `day-chip ${day.state || 'upcoming'}`;
+        card.style.setProperty('--day-progress', `${Number(day.completion || 0)}%`);
+        card.dataset.combinedDailyProgress = 'true';
+
+        const status = card.querySelector('.day-status');
+        if (status) status.textContent = day.state_label || '';
+
+        const ui = ensureCombinedProgressUi(card);
+        const strong = ui.completion?.querySelector('strong');
+        if (strong) strong.textContent = completionText(day);
+        card.setAttribute(
+            'aria-label',
+            `${day.date}，當日合併進度 ${completionText(day)}`,
+        );
+    };
+
+    const renderWeek = (week) => {
+        if (!week?.start) return;
+        const row = document.querySelector(`[data-timeline-week-start="${week.start}"]`);
+        if (!row) return;
+        row.className = `week-row ${week.state || 'upcoming'}`;
+        const state = row.querySelector('.state');
+        const watched = row.querySelector('[data-week-watched]');
+        const remaining = row.querySelector('[data-week-remaining]');
+        const completion = row.querySelector('[data-week-completion]');
+        if (state) {
+            state.className = `state ${week.state || 'upcoming'}`;
+            state.textContent = week.state_label || '';
+        }
+        if (watched) watched.textContent = `${Number(week.watched_hours || 0).toFixed(1)}h`;
+        if (remaining) remaining.textContent = `${Number(week.remaining_hours || 0).toFixed(1)}h`;
+        if (completion) completion.textContent = `${Number(week.completion || 0).toFixed(1)}%`;
+    };
+
+    const applyPayload = (payload) => {
+        if (!payload?.ok) return;
+        const dayByDate = new Map(
+            (payload.days || []).map((day) => [String(day.date || ''), day]),
+        );
+
+        document.querySelectorAll('[data-timeline-day-date]').forEach((card) => {
+            renderDay(card, dayByDate.get(String(card.dataset.timelineDayDate || '')));
+        });
+        (payload.weeks || []).forEach(renderWeek);
+
+        const current = payload.current_week || {};
+        (current.days || []).forEach((day, index) => {
+            renderDay(document.querySelector(`[data-focus-day-index="${index}"]`), day);
+        });
+
+        const weekWatched = document.getElementById('current-week-watched');
+        const weekRemaining = document.getElementById('current-week-remaining');
+        const weekCompletion = document.getElementById('current-week-completion');
+        const weekFill = document.getElementById('current-week-fill');
+        const weekState = document.getElementById('current-week-state');
+        if (weekWatched) weekWatched.textContent = Number(current.watched_hours || 0).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0';
+        if (weekRemaining) weekRemaining.textContent = Number(current.remaining_hours || 0).toFixed(1);
+        if (weekCompletion) weekCompletion.textContent = Number(current.completion || 0).toFixed(1);
+        if (weekFill) weekFill.style.setProperty('--progress', `${Number(current.completion || 0)}%`);
+        if (weekState) {
+            weekState.className = `state ${current.state || 'upcoming'}`;
+            weekState.textContent = current.state_label || '';
+        }
+    };
+
+    const refresh = () => {
+        const serial = ++requestSerial;
+        return fetch(endpoint, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { Accept: 'application/json' },
+        })
+            .then((response) => {
+                if (!response.ok) throw new Error('combined_daily_progress_failed');
+                return response.json();
+            })
+            .then((payload) => {
+                if (serial !== requestSerial) return;
+                applyPayload(payload);
+            })
+            .catch(() => {
+                // Keep the original server-rendered progress if the helper endpoint fails.
+            });
+    };
+
+    const scheduleRefresh = () => {
+        if (refreshTimer) window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(refresh, 120);
+    };
+
+    window.__e3RefreshCombinedDailyProgress = refresh;
+    window.addEventListener('pageshow', scheduleRefresh);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) scheduleRefresh();
+    });
+
+    const watchedNode = document.getElementById('current-week-watched');
+    if (watchedNode) {
+        new MutationObserver(scheduleRefresh).observe(watchedNode, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
+    }
+
+    scheduleRefresh();
+})();
+</script>
