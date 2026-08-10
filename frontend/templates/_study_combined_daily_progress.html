@@ -7,6 +7,12 @@
     let refreshTimer = null;
     let requestSerial = 0;
 
+    const setText = (node, value) => {
+        if (!node) return;
+        const next = String(value);
+        if (node.textContent !== next) node.textContent = next;
+    };
+
     const completionText = (day) => (
         Number(day?.target_seconds || 0) > 0
             ? `${Math.round(Number(day?.completion || 0))}%`
@@ -24,7 +30,8 @@
             completion.className = 'day-completion';
             completion.innerHTML = '<span>完成度</span><strong>—</strong>';
             const focus = card.querySelector('.day-focus');
-            (focus || card.lastElementChild)?.insertAdjacentElement('afterend', completion);
+            const anchor = focus || card.lastElementChild;
+            if (anchor) anchor.insertAdjacentElement('afterend', completion);
             if (!completion.parentElement) card.appendChild(completion);
         }
 
@@ -44,12 +51,9 @@
         card.style.setProperty('--day-progress', `${Number(day.completion || 0)}%`);
         card.dataset.combinedDailyProgress = 'true';
 
-        const status = card.querySelector('.day-status');
-        if (status) status.textContent = day.state_label || '';
-
+        setText(card.querySelector('.day-status'), day.state_label || '');
         const ui = ensureCombinedProgressUi(card);
-        const strong = ui.completion?.querySelector('strong');
-        if (strong) strong.textContent = completionText(day);
+        setText(ui.completion?.querySelector('strong'), completionText(day));
         card.setAttribute(
             'aria-label',
             `${day.date}，當日合併進度 ${completionText(day)}`,
@@ -62,16 +66,11 @@
         if (!row) return;
         row.className = `week-row ${week.state || 'upcoming'}`;
         const state = row.querySelector('.state');
-        const watched = row.querySelector('[data-week-watched]');
-        const remaining = row.querySelector('[data-week-remaining]');
-        const completion = row.querySelector('[data-week-completion]');
-        if (state) {
-            state.className = `state ${week.state || 'upcoming'}`;
-            state.textContent = week.state_label || '';
-        }
-        if (watched) watched.textContent = `${Number(week.watched_hours || 0).toFixed(1)}h`;
-        if (remaining) remaining.textContent = `${Number(week.remaining_hours || 0).toFixed(1)}h`;
-        if (completion) completion.textContent = `${Number(week.completion || 0).toFixed(1)}%`;
+        if (state) state.className = `state ${week.state || 'upcoming'}`;
+        setText(state, week.state_label || '');
+        setText(row.querySelector('[data-week-watched]'), `${Number(week.watched_hours || 0).toFixed(1)}h`);
+        setText(row.querySelector('[data-week-remaining]'), `${Number(week.remaining_hours || 0).toFixed(1)}h`);
+        setText(row.querySelector('[data-week-completion]'), `${Number(week.completion || 0).toFixed(1)}%`);
     };
 
     const applyPayload = (payload) => {
@@ -95,14 +94,16 @@
         const weekCompletion = document.getElementById('current-week-completion');
         const weekFill = document.getElementById('current-week-fill');
         const weekState = document.getElementById('current-week-state');
-        if (weekWatched) weekWatched.textContent = Number(current.watched_hours || 0).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0';
-        if (weekRemaining) weekRemaining.textContent = Number(current.remaining_hours || 0).toFixed(1);
-        if (weekCompletion) weekCompletion.textContent = Number(current.completion || 0).toFixed(1);
+        const watchedText = Number(current.watched_hours || 0)
+            .toFixed(2)
+            .replace(/0+$/, '')
+            .replace(/\.$/, '') || '0';
+        setText(weekWatched, watchedText);
+        setText(weekRemaining, Number(current.remaining_hours || 0).toFixed(1));
+        setText(weekCompletion, Number(current.completion || 0).toFixed(1));
         if (weekFill) weekFill.style.setProperty('--progress', `${Number(current.completion || 0)}%`);
-        if (weekState) {
-            weekState.className = `state ${current.state || 'upcoming'}`;
-            weekState.textContent = current.state_label || '';
-        }
+        if (weekState) weekState.className = `state ${current.state || 'upcoming'}`;
+        setText(weekState, current.state_label || '');
     };
 
     const refresh = () => {
@@ -136,14 +137,15 @@
         if (!document.hidden) scheduleRefresh();
     });
 
-    const watchedNode = document.getElementById('current-week-watched');
-    if (watchedNode) {
-        new MutationObserver(scheduleRefresh).observe(watchedNode, {
+    ['current-week-watched', 'current-week-completion'].forEach((id) => {
+        const node = document.getElementById(id);
+        if (!node) return;
+        new MutationObserver(scheduleRefresh).observe(node, {
             childList: true,
             characterData: true,
             subtree: true,
         });
-    }
+    });
 
     scheduleRefresh();
 })();
