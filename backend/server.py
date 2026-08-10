@@ -12,6 +12,7 @@ from e3_tracker.shared.player_control_runtime import install_player_control_dock
 from e3_tracker.shared.study_calendar_runtime import install_study_calendar_runtime
 from e3_tracker.shared.study_note_upload_runtime import install_study_note_upload_runtime
 from e3_tracker.shared.study_recall_library_runtime import install_study_recall_library_runtime
+from e3_tracker.shared.study_week_progress_runtime import install_study_week_progress_runtime
 
 
 install_deployment_runtime(web)
@@ -19,6 +20,7 @@ install_player_control_dock(web)
 install_study_calendar_runtime(web)
 install_study_note_upload_runtime(web)
 install_study_recall_library_runtime(web)
+install_study_week_progress_runtime(web)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
