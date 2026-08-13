@@ -550,150 +550,180 @@
     "sequence": 1,
     "title": "001_01-01_CH1 P.3(1時44分24秒)",
     "duration_seconds": 6264.2,
-    "youtube_video_id": "EroKULsRa30",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=EroKULsRa30&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 2,
-    "title": "002_01-02_CH1 P.7(1時45分56秒)",
-    "duration_seconds": 6356.7,
-    "youtube_video_id": "z4bNjGJwWrA",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=z4bNjGJwWrA&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 3,
-    "title": "003_02-01_CH1 P.8(2時07分20秒)",
-    "duration_seconds": 7640,
-    "youtube_video_id": "rJSJzP6h6qw",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=rJSJzP6h6qw&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 4,
-    "title": "004_02-02_CH1 程式碼(0時56分12秒)",
-    "duration_seconds": 3372.9,
-    "youtube_video_id": "lsTFcvZIjuA",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=lsTFcvZIjuA&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 5,
-    "title": "005_03-01_例2.Permutation 列印 (1時47分33秒)",
-    "duration_seconds": 6453.1,
-    "youtube_video_id": "bwrWmLR7-Sc",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=bwrWmLR7-Sc&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 6,
-    "title": "006_03-02_複習.數學公式.等差數列 (1時45分58秒)",
-    "duration_seconds": 6358.7,
-    "youtube_video_id": "xf2HXlKhXRY",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=xf2HXlKhXRY&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 7,
-    "title": "007_04-01_例題(1時55分53秒)",
-    "duration_seconds": 6953.3,
-    "youtube_video_id": "MUd_ZPuVj1I",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=MUd_ZPuVj1I&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 8,
-    "title": "008_04-02_例題(0時55分44秒)",
-    "duration_seconds": 3344.6,
-    "youtube_video_id": "oDdaXJWgvvo",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=oDdaXJWgvvo&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 9,
-    "title": "009_05-01_Theta(1時55分26秒)",
-    "duration_seconds": 6926.4,
-    "youtube_video_id": "3SyWmtgx-0w",
-    "youtube_playlist_id": "PLVQPv-6fTfFU",
-    "youtube_url": "https://www.youtube.com/watch?v=3SyWmtgx-0w&list=PLVQPv-6fTfFU"
-  },
-  {
-    "subject": "資料結構",
-    "sequence": 10,
-    "title": "010_05-02_Recursive Time function(1時43分10秒)",
-    "duration_seconds": 6189.7,
     "youtube_video_id": "Q9IMVtgp1q4",
     "youtube_playlist_id": "PLVQPv-6fTfFU",
     "youtube_url": "https://www.youtube.com/watch?v=Q9IMVtgp1q4&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
+    "sequence": 2,
+    "title": "002_01-02_CH1 P.7(1時45分56秒)",
+    "duration_seconds": 6356.7,
+    "youtube_video_id": "3SyWmtgx-0w",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=3SyWmtgx-0w&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 3,
+    "title": "003_02-01_CH1 P.8(2時07分20秒)",
+    "duration_seconds": 7640,
+    "youtube_video_id": "oDdaXJWgvvo",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=oDdaXJWgvvo&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 4,
+    "title": "004_02-02_CH1 程式碼(0時56分12秒)",
+    "duration_seconds": 3372.9,
+    "youtube_video_id": "MUd_ZPuVj1I",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=MUd_ZPuVj1I&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 5,
+    "title": "005_03-01_例2.Permutation 列印 (1時47分33秒)",
+    "duration_seconds": 6453.1,
+    "youtube_video_id": "xf2HXlKhXRY",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=xf2HXlKhXRY&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 6,
+    "title": "006_03-02_複習.數學公式.等差數列 (1時45分58秒)",
+    "duration_seconds": 6358.7,
+    "youtube_video_id": "bwrWmLR7-Sc",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=bwrWmLR7-Sc&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 7,
+    "title": "007_04-01_例題(1時55分53秒)",
+    "duration_seconds": 6953.3,
+    "youtube_video_id": "lsTFcvZIjuA",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=lsTFcvZIjuA&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 8,
+    "title": "008_04-02_例題(0時55分44秒)",
+    "duration_seconds": 3344.6,
+    "youtube_video_id": "rJSJzP6h6qw",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=rJSJzP6h6qw&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 9,
+    "title": "009_05-01_Theta(1時55分26秒)",
+    "duration_seconds": 6926.4,
+    "youtube_video_id": "z4bNjGJwWrA",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=z4bNjGJwWrA&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
+    "sequence": 10,
+    "title": "010_05-02_Recursive Time function(1時43分10秒)",
+    "duration_seconds": 6189.7,
+    "youtube_video_id": "EroKULsRa30",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=EroKULsRa30&list=PLVQPv-6fTfFU"
+  },
+  {
+    "subject": "資料結構",
     "sequence": 11,
     "title": "011_06-01_CH2 例題(1時57分10秒)",
-    "duration_seconds": 7030.2
+    "duration_seconds": 7030.2,
+    "youtube_video_id": "TGU2sm-5Noo",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=TGU2sm-5Noo&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 12,
     "title": "012_06-02_例題(0時55分59秒)",
-    "duration_seconds": 3359.2
+    "duration_seconds": 3359.2,
+    "youtube_video_id": "v-gRBBk82lo",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=v-gRBBk82lo&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 13,
     "title": "013_07-01_CH3(2時01分50秒)",
-    "duration_seconds": 7310.5
+    "duration_seconds": 7310.5,
+    "youtube_video_id": "xk3iz-t-L-k",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=xk3iz-t-L-k&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 14,
     "title": "014_07-02_Infix 轉換(1時40分34秒)",
-    "duration_seconds": 6034.3
+    "duration_seconds": 6034.3,
+    "youtube_video_id": "ymd_6_ctWUo",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=ymd_6_ctWUo&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 15,
     "title": "015_08-01_CH3 例題解析(1時57分00秒)",
-    "duration_seconds": 7020.9
+    "duration_seconds": 7020.9,
+    "youtube_video_id": "zbZ_KPw0hnI",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=zbZ_KPw0hnI&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 16,
     "title": "016_08-02_CH3 例題解析(1時03分07秒)",
-    "duration_seconds": 3787.2
+    "duration_seconds": 3787.2,
+    "youtube_video_id": "VWL2jq2UmSs",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=VWL2jq2UmSs&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 17,
     "title": "017_09-01_CH3.Linear array (2時07分03秒)",
-    "duration_seconds": 7623
+    "duration_seconds": 7623,
+    "youtube_video_id": "1rf6t9vnwbE",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=1rf6t9vnwbE&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 18,
     "title": "018_09-02_CH3.練習題 (1時29分11秒)",
-    "duration_seconds": 5351.9
+    "duration_seconds": 5351.9,
+    "youtube_video_id": "3_gBGtFjEB4",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=3_gBGtFjEB4&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 19,
     "title": "019_10-01_CH5.tree的表示方法 (1時59分37秒)",
-    "duration_seconds": 7177.2
+    "duration_seconds": 7177.2,
+    "youtube_video_id": "3kyK-3LtMi8",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=3kyK-3LtMi8&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
     "sequence": 20,
     "title": "020_10-02_CH5.練習題 (1時04分53秒)",
-    "duration_seconds": 3893.6
+    "duration_seconds": 3893.6,
+    "youtube_video_id": "emPoFJHWjDg",
+    "youtube_playlist_id": "PLVQPv-6fTfFU",
+    "youtube_url": "https://www.youtube.com/watch?v=emPoFJHWjDg&list=PLVQPv-6fTfFU"
   },
   {
     "subject": "資料結構",
