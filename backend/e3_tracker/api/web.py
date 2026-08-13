@@ -2652,6 +2652,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         week_rows: List[Dict[str, Any]] = []
         planned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
         replanned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
+        timeline_progress_locked = False
         for definition in _study_plan_schedule_definitions(videos, replan_settings):
             week_start = definition["start"]
             week_end = definition["end"]
@@ -2679,6 +2680,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 for video_start, video_end, video in video_ranges.get(subject, []):
                     if video_end > prior_seconds and video_start < range_end:
                         weekly_videos[int(video.get("id") or id(video))] = video
+
+            week_progress_blocked = timeline_progress_locked
+            if week_progress_blocked:
+                subject_credits = {subject: 0.0 for subject in subject_credits}
 
             remaining_credit = dict(subject_credits)
             daily_recommendations: List[Dict[str, Any]] = []
@@ -2733,6 +2738,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 else:
                     state = "upcoming"
                     state_label = "未開始"
+                if week_progress_blocked and has_target:
+                    state = "upcoming"
+                    state_label = "等待前段"
                 focus = daily_target.get("focus") or "＋".join(
                     f"{short_subject.get(subject, subject)} {round(seconds / 3600, 2):g}h"
                     for subject, seconds in allocations.items()
@@ -2776,6 +2784,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             else:
                 state = "upcoming"
                 state_label = "未開始"
+            if week_progress_blocked and target_seconds > 0:
+                state = "upcoming"
+                state_label = "等待前段"
             subject_mix = [
                 {
                     "name": subject,
@@ -2830,9 +2841,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "completion": completion,
                     "state": state,
                     "state_label": state_label,
+                    "progress_blocked": week_progress_blocked,
                     "is_replanned": bool(definition.get("is_replanned")),
                 }
             )
+            if target_seconds > 0 and not week_is_complete:
+                timeline_progress_locked = True
             for subject, target_seconds in subject_targets.items():
                 if subject in credit_baselines:
                     replanned_before[subject] = replanned_before.get(subject, 0.0) + target_seconds

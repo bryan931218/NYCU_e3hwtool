@@ -104,6 +104,14 @@ class StudyPlanProgressTests(unittest.TestCase):
                 f"第 {phase_week['number']} 週・{phase_week['start'].isoformat()}",
                 response.get_data(as_text=True),
             )
+            html = response.get_data(as_text=True)
+            phase_fragment = html.split(
+                f'data-timeline-week-start="{phase_week["start"].isoformat()}"',
+                1,
+            )[1]
+            later_fragment = phase_fragment.split('data-timeline-week-start="', 1)[1]
+            self.assertIn("等待前段", later_fragment)
+            self.assertIn("data-week-completion>0.0%</strong>", later_fragment)
             storage._engine.dispose()
 
     def test_progress_summary_does_not_leave_time_behind_for_completed_videos(self):
