@@ -13,6 +13,7 @@ from e3_tracker.api.web import (
     _study_plan_progress_race,
     _study_plan_progress_summary,
     _study_plan_progress_week,
+    _study_plan_range_credited_seconds,
     _study_plan_schedule_definitions,
     _study_plan_subject_status,
     _study_plan_credited_video_seconds,
@@ -25,6 +26,85 @@ class StudyPlanProgressTests(unittest.TestCase):
     def test_completed_video_credits_full_duration_despite_player_end_gap(self):
         self.assertEqual(_study_plan_credited_video_seconds(600, 596), 600)
         self.assertEqual(_study_plan_credited_video_seconds(600, 590), 590)
+
+    def test_later_video_progress_does_not_fill_an_earlier_schedule_range(self):
+        video_ranges = [
+            (0, 100, {"duration_seconds": 100, "watched_seconds": 20}),
+            (100, 200, {"duration_seconds": 100, "watched_seconds": 100}),
+        ]
+
+        self.assertEqual(_study_plan_range_credited_seconds(video_ranges, 0, 100), 20)
+        self.assertEqual(_study_plan_range_credited_seconds(video_ranges, 100, 200), 100)
+
+    def test_long_week_does_not_complete_with_minutes_remaining(self):
+        week_rows = [
+            {"number": 1, "target_seconds": 24 * 3600, "watched_seconds": 24 * 3600 - 180},
+            {"number": 2, "target_seconds": 24 * 3600, "watched_seconds": 0},
+        ]
+
+        self.assertEqual(_study_plan_progress_week(week_rows)["number"], 1)
+
+    def test_plan_page_stays_on_earliest_week_when_only_later_videos_are_watched(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+
+            storage = app.extensions["e3_storage"]
+            videos = storage.list_study_plan_videos_with_records()
+            for video in videos:
+                if video["subject"] != "線性代數":
+                    continue
+                storage.update_study_plan_video_progress(
+                    video_id=int(video["id"]),
+                    watched_seconds=float(video["duration_seconds"]),
+                    expected_version=int(video["progress_version"]),
+                )
+
+            phase_week = next(
+                definition
+                for definition in _study_plan_schedule_definitions(videos)
+                if set(definition["subjects"]) == {"離散數學", "資料結構"}
+            )
+            for subject, target_seconds in phase_week["subject_targets"].items():
+                remaining = float(target_seconds)
+                subject_videos = sorted(
+                    (video for video in videos if video["subject"] == subject),
+                    key=lambda video: int(video["sequence"]),
+                    reverse=True,
+                )
+                for video in subject_videos:
+                    if remaining <= 0:
+                        break
+                    storage.update_study_plan_video_progress(
+                        video_id=int(video["id"]),
+                        watched_seconds=float(video["duration_seconds"]),
+                        expected_version=int(video["progress_version"]),
+                    )
+                    remaining -= float(video["duration_seconds"])
+
+            token = "ordered-plan-test-session"
+            storage.save_web_session(token, "test-admin")
+            client = app.test_client()
+            with client.session_transaction() as browser_session:
+                browser_session["username"] = "test-admin"
+                browser_session["session_token"] = token
+                browser_session["is_admin"] = True
+
+            response = client.get("/admin/study-plan")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(
+                f"第 {phase_week['number']} 週・{phase_week['start'].isoformat()}",
+                response.get_data(as_text=True),
+            )
+            storage._engine.dispose()
 
     def test_progress_summary_does_not_leave_time_behind_for_completed_videos(self):
         summary = _study_plan_progress_summary(

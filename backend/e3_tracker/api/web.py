@@ -273,6 +273,30 @@ def _study_plan_credited_video_seconds(duration_seconds: Any, watched_seconds: A
     return watched
 
 
+def _study_plan_range_credited_seconds(
+    video_ranges: Iterable[Tuple[float, float, Dict[str, Any]]],
+    range_start: Any,
+    range_end: Any,
+) -> float:
+    """Credit only watched video portions that physically overlap a scheduled range."""
+    start = _study_plan_nonnegative_number(range_start)
+    end = max(start, _study_plan_nonnegative_number(range_end))
+    credited = 0.0
+    for video_start, video_end, video in video_ranges:
+        if video_end <= start or video_start >= end:
+            continue
+        watched_end = min(
+            video_end,
+            video_start
+            + _study_plan_credited_video_seconds(
+                video.get("duration_seconds"),
+                video.get("watched_seconds"),
+            ),
+        )
+        credited += max(0.0, min(end, watched_end) - max(start, video_start))
+    return min(max(0.0, end - start), credited)
+
+
 def _parse_youtube_url(value: Any) -> Optional[Dict[str, str]]:
     raw = str(value or "").strip()
     if not raw:
@@ -307,7 +331,9 @@ def _study_plan_total_is_complete(target_seconds: Any, watched_seconds: Any) -> 
     watched = _study_plan_nonnegative_number(watched_seconds)
     if target <= 0:
         return False
-    return watched >= target - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / target >= STUDY_PLAN_COMPLETE_RATIO
+    # Ratio tolerance is appropriate for a single player near its final frame,
+    # but on a long weekly total it can hide several genuinely unwatched minutes.
+    return watched >= target - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS
 
 
 def _study_plan_completion_percent(target_seconds: Any, watched_seconds: Any, *, complete_override: bool = False) -> float:
@@ -2637,12 +2663,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             for subject, target_seconds in subject_targets.items():
                 if subject in credit_baselines:
                     prior_seconds = credit_baselines.get(subject, 0.0) + replanned_before.get(subject, 0.0)
+                    credited_seconds = min(
+                        max(watched_by_subject.get(subject, 0.0) - prior_seconds, 0.0),
+                        target_seconds,
+                    )
                 else:
                     prior_seconds = planned_before.get(subject, 0.0)
-                credited_seconds = min(
-                    max(watched_by_subject.get(subject, 0.0) - prior_seconds, 0.0),
-                    target_seconds,
-                )
+                    credited_seconds = _study_plan_range_credited_seconds(
+                        video_ranges.get(subject, []),
+                        prior_seconds,
+                        prior_seconds + target_seconds,
+                    )
                 subject_credits[subject] = credited_seconds
                 range_end = prior_seconds + target_seconds
                 for video_start, video_end, video in video_ranges.get(subject, []):
