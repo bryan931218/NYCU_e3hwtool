@@ -44,7 +44,7 @@ class StudyPlanProgressTests(unittest.TestCase):
 
         self.assertEqual(_study_plan_progress_week(week_rows)["number"], 1)
 
-    def test_plan_page_stays_on_earliest_week_when_only_later_videos_are_watched(self):
+    def test_plan_page_keeps_earliest_focus_but_shows_later_week_progress(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(
                 os.environ,
@@ -110,8 +110,12 @@ class StudyPlanProgressTests(unittest.TestCase):
                 1,
             )[1]
             later_fragment = phase_fragment.split('data-timeline-week-start="', 1)[1]
-            self.assertIn("等待前段", later_fragment)
-            self.assertIn("data-week-completion>0.0%</strong>", later_fragment)
+            later_completions = [
+                float(value)
+                for value in re.findall(r"data-week-completion>([\d.]+)%", later_fragment)
+            ]
+            self.assertNotIn("等待前段", later_fragment)
+            self.assertTrue(any(value > 0 for value in later_completions))
             storage._engine.dispose()
 
     def test_progress_summary_does_not_leave_time_behind_for_completed_videos(self):
