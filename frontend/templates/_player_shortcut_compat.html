@@ -15,9 +15,11 @@
         touch-action: manipulation;
     }
 
-    /* YouTube's settings menu opens upward from the bottom-right. */
+    /* Let real pointer movement reach the cross-origin YouTube player so its
+       native timeline and controls can wake up together with our dock. */
     .player-frame.is-focus-mode.e3-native-controls-active .focus-keyboard-capture {
-        right: min(380px, 42vw) !important;
+        pointer-events: none !important;
+        right: 0 !important;
     }
 
     /* Hints are controlled explicitly and never shown again merely because focus moved. */
@@ -198,7 +200,7 @@
         nativeControlsTimer = window.setTimeout(() => {
             frame.classList.remove('e3-native-controls-active');
             nativeControlsTimer = null;
-        }, 12000);
+        }, 3400);
     };
     const syncFocusMode = () => {
         const active = isFocusMode();
@@ -225,6 +227,7 @@
         event.stopImmediatePropagation();
     }, true);
     capture.addEventListener('pointerenter', activateShortcutSurface);
+    capture.addEventListener('pointermove', releaseForNativeControls, { passive: true });
     capture.addEventListener('pointerdown', activateShortcutSurface);
 
     // Capture all custom shortcuts at window level so the old handler and YouTube

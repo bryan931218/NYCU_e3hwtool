@@ -70,15 +70,32 @@ class PlayerSettingsTests(unittest.TestCase):
 
         module = FakeWebModule()
         install_player_control_dock(module)
+        installed_template = module.STUDY_UPLOAD_TRACKER_TEMPLATE
         install_player_control_dock(module)
 
         self.assertIn("__e3PlayerControlDockInstalled", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
-        self.assertEqual(
-            module.STUDY_UPLOAD_TRACKER_TEMPLATE.count("__e3PlayerControlDockInstalled"),
-            1,
-        )
+        self.assertEqual(module.STUDY_UPLOAD_TRACKER_TEMPLATE, installed_template)
         self.assertIn("data-e3-volume", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
         self.assertIn("data-e3-rate", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
+
+    def test_fullscreen_mouse_movement_reveals_native_controls_without_hiding_dock(self):
+        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
+        shortcut_source = (template_dir / "_player_shortcut_compat.html").read_text(
+            encoding="utf-8"
+        )
+        dock_source = (template_dir / "_player_control_dock.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "capture.addEventListener('pointermove', releaseForNativeControls",
+            shortcut_source,
+        )
+        self.assertIn("pointer-events: none !important", shortcut_source)
+        self.assertNotIn(
+            ".player-frame.e3-native-controls-active .e3-player-control-dock",
+            dock_source,
+        )
 
 
 if __name__ == "__main__":
