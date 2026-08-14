@@ -288,7 +288,7 @@
         <div class="e3-control-divider" aria-hidden="true"></div>
         <div class="e3-control-cluster speed">
             <span class="e3-control-label">倍速</span>
-            <input class="e3-control-range" data-e3-rate type="range" min="0.25" max="2" step="0.25" value="1" aria-label="播放速度">
+            <input class="e3-control-range" data-e3-rate type="range" min="0.25" max="2" step="0.05" value="1" aria-label="播放速度，每次調整 0.05 倍">
             <output class="e3-control-value" data-e3-rate-value>1×</output>
         </div>
         <div class="e3-speed-presets" aria-label="常用倍速">
@@ -459,7 +459,9 @@
     };
     const setRate = (value, showFeedback = false) => {
         if (!playerReady()) return;
-        const requested = Math.max(.25, Math.min(2, Number(value) || 1));
+        const requested = Math.round(
+            Math.max(.25, Math.min(2, Number(value) || 1)) * 20
+        ) / 20;
         currentRate = requested;
         sendCommand('setPlaybackRate', [requested]);
         syncRateControls();

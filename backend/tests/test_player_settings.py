@@ -91,6 +91,7 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertEqual(module.STUDY_UPLOAD_TRACKER_TEMPLATE, installed_template)
         self.assertIn("data-e3-volume", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
         self.assertIn("data-e3-rate", module.STUDY_UPLOAD_TRACKER_TEMPLATE)
+        self.assertIn('data-e3-rate type="range" min="0.25" max="2" step="0.05"', module.STUDY_UPLOAD_TRACKER_TEMPLATE)
 
     def test_fullscreen_mouse_movement_reveals_native_controls_without_hiding_dock(self):
         template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
