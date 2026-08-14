@@ -44,7 +44,7 @@
         padding: 11px 14px;
         border-radius: 20px;
         opacity: 1;
-        pointer-events: auto;
+        pointer-events: none;
     }
 
     .player-frame.is-focus-mode.e3-controls-idle:not(.e3-native-controls-active) .e3-player-control-dock:not(:focus-within):not(:hover) {
@@ -55,6 +55,7 @@
 
     .e3-player-control-dock button,
     .e3-player-control-dock input {
+        pointer-events: auto;
         font: inherit;
     }
 

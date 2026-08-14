@@ -96,6 +96,8 @@ class PlayerSettingsTests(unittest.TestCase):
             ".player-frame.is-focus-mode.e3-controls-idle:not(.e3-native-controls-active)",
             dock_source,
         )
+        self.assertIn("opacity: 1;\n        pointer-events: none;", dock_source)
+        self.assertIn("pointer-events: auto;\n        font: inherit;", dock_source)
 
 
 if __name__ == "__main__":
