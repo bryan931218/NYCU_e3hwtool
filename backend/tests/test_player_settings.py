@@ -92,8 +92,8 @@ class PlayerSettingsTests(unittest.TestCase):
             shortcut_source,
         )
         self.assertIn("pointer-events: none !important", shortcut_source)
-        self.assertNotIn(
-            ".player-frame.e3-native-controls-active .e3-player-control-dock",
+        self.assertIn(
+            ".player-frame.is-focus-mode.e3-controls-idle:not(.e3-native-controls-active)",
             dock_source,
         )
 
