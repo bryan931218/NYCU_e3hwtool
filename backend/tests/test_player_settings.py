@@ -64,6 +64,20 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertTrue(settings["show_shortcut_hint"])
         self.assertEqual(settings["hint_duration_ms"], 5000)
 
+    def test_hold_speed_uses_fine_grained_five_percent_steps(self):
+        self.assertEqual(
+            normalize_player_settings({"hold_space_rate": 1.37})["hold_space_rate"],
+            1.35,
+        )
+        self.assertEqual(
+            normalize_player_settings({"hold_space_rate": 1.39})["hold_space_rate"],
+            1.4,
+        )
+        self.assertEqual(
+            normalize_player_settings({"hold_space_rate": 0.5})["hold_space_rate"],
+            1.05,
+        )
+
     def test_player_control_dock_is_appended_only_once(self):
         class FakeWebModule:
             STUDY_UPLOAD_TRACKER_TEMPLATE = "<div>tracker</div>"
@@ -113,6 +127,8 @@ class PlayerSettingsTests(unittest.TestCase):
 
         self.assertIn("VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000", source)
         self.assertIn("scheduleVideoStudyIdleCutoff", source)
+        self.assertNotIn("pauseSession(videoStudySession);\n                if (!videoStudySession.pausedAt)", source)
+        self.assertIn("筆記寬限中・5 分鐘內仍持續計時", tracker_source)
         self.assertIn("finalizeVideoStudySession('idle', false)", source)
         self.assertIn("runningSince: null, pausedAt: null", source)
         self.assertIn("VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000", tracker_source)

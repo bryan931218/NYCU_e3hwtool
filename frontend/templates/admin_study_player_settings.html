@@ -45,6 +45,10 @@
         .field small { color:var(--muted); line-height:1.5; }
         select,input[type="number"] { width:100%; min-height:42px; padding:8px 11px; color:var(--ink); border:1px solid #cbd8e6; border-radius:9px; background:#fff; }
         select:focus,input:focus { outline:3px solid rgba(20,99,217,.14); border-color:var(--blue); }
+        .rate-control { display:grid; grid-template-columns:minmax(0,1fr) 62px; align-items:center; gap:12px; min-height:42px; }
+        .rate-control input { width:100%; accent-color:var(--blue); }
+        .rate-control output { display:grid; place-items:center; min-height:36px; color:var(--blue); border:1px solid #c9dcf8; border-radius:9px; background:var(--blue-soft); font-size:13px; font-weight:900; }
+        .rate-scale { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; }
         .switch-row { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px 0; border-top:1px solid var(--line); }
         .switch-row:first-child { padding-top:0; border-top:0; }
         .switch-copy strong { display:block; font-size:14px; }
@@ -105,11 +109,11 @@
                 <div class="field-grid">
                     <div class="field">
                         <label for="hold_space_rate">長按空白鍵倍速</label>
-                        <select id="hold_space_rate" name="hold_space_rate">
-                            {% for rate in rate_options %}
-                            <option value="{{ rate }}" {% if settings.hold_space_rate == rate %}selected{% endif %}>{{ rate }}×</option>
-                            {% endfor %}
-                        </select>
+                        <div class="rate-control">
+                            <input id="hold_space_rate" name="hold_space_rate" type="range" min="1.05" max="2" step="0.05" value="{{ settings.hold_space_rate }}">
+                            <output id="hold-space-rate-value" for="hold_space_rate">{{ settings.hold_space_rate }}×</output>
+                        </div>
+                        <div class="rate-scale" aria-hidden="true"><span>1.05×</span><span>1.5×</span><span>2×</span></div>
                         <small>放開空白鍵後會恢復長按前的播放速度。</small>
                     </div>
                     <div class="field">
@@ -120,7 +124,7 @@
                 </div>
                 <div class="preview">
                     <span class="chip">短按：播放／暫停</span>
-                    <span class="chip">長按：{{ settings.hold_space_rate }}×</span>
+                    <span class="chip" id="hold-space-rate-preview">長按：{{ settings.hold_space_rate }}×</span>
                     <span class="chip">門檻：{{ settings.hold_delay_ms }} ms</span>
                 </div>
             </section>
@@ -179,5 +183,21 @@
             </div>
         </form>
     </main>
+    <script>
+        (() => {
+            const input = document.getElementById('hold_space_rate');
+            const output = document.getElementById('hold-space-rate-value');
+            const preview = document.getElementById('hold-space-rate-preview');
+            if (!input || !output || !preview) return;
+            const render = () => {
+                const rate = Number(input.value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+                output.value = `${rate}×`;
+                output.textContent = `${rate}×`;
+                preview.textContent = `長按：${rate}×`;
+            };
+            input.addEventListener('input', render);
+            render();
+        })();
+    </script>
 </body>
 </html>

@@ -18,7 +18,9 @@ _YOUTUBE_FIELDS = (
     "youtube_url",
 )
 
-PLAYER_RATE_OPTIONS = (1.25, 1.5, 1.75, 2.0)
+PLAYER_RATE_MIN = 1.05
+PLAYER_RATE_MAX = 2.0
+PLAYER_RATE_STEP = 0.05
 PLAYER_SETTINGS_DEFAULTS: Dict[str, Any] = {
     "hold_space_rate": 2.0,
     "hold_delay_ms": 300,
@@ -58,9 +60,12 @@ def normalize_player_settings(values: Mapping[str, Any] | None) -> Dict[str, Any
         source.get("hold_space_rate"),
         float(PLAYER_SETTINGS_DEFAULTS["hold_space_rate"]),
     )
-    hold_space_rate = min(
-        PLAYER_RATE_OPTIONS,
-        key=lambda rate: abs(rate - requested_rate),
+    hold_space_rate = min(PLAYER_RATE_MAX, max(PLAYER_RATE_MIN, requested_rate))
+    hold_space_rate = round(
+        round((hold_space_rate - PLAYER_RATE_MIN) / PLAYER_RATE_STEP)
+        * PLAYER_RATE_STEP
+        + PLAYER_RATE_MIN,
+        2,
     )
     hold_delay_ms = min(
         1200,
@@ -270,7 +275,6 @@ def _register_player_settings_routes(
         return render_template_string(
             template,
             settings=storage.load_study_player_settings(),
-            rate_options=PLAYER_RATE_OPTIONS,
             username=session.get("username") or "管理員",
         )
 

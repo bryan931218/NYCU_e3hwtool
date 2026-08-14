@@ -252,13 +252,16 @@
     const render = () => {
         const active = Boolean(session);
         const paused = Boolean(session && !session.runningSince);
+        const inGrace = Boolean(session && session.runningSince && session.pausedAt);
         row.classList.toggle('is-paused', paused);
         timeNode.textContent = format(elapsed());
         labelNode.textContent = !active
             ? (currentVideo() ? '等待影片播放' : '選擇影片後自動計時')
             : paused
                 ? (manuallyPaused ? '已手動暫停' : '等待繼續播放')
-                : session.label;
+                : inGrace
+                    ? '筆記寬限中・5 分鐘內仍持續計時'
+                    : session.label;
         pauseButton.disabled = !active || (paused && playerState !== 1);
         endButton.disabled = !active;
         pauseButton.textContent = paused ? '繼續' : '暫停';
@@ -289,7 +292,11 @@
         clearIdleTimer();
         const finished = session;
         if (finished && finished.runningSince) {
-            finished.elapsed = elapsed(finished);
+            const stoppedAt = finished.pausedAt
+                ? Math.min(Date.now(), Number(finished.pausedAt) + VIDEO_STUDY_IDLE_TIMEOUT_MS)
+                : Date.now();
+            finished.elapsed = Math.max(0, Number(finished.elapsed || 0))
+                + Math.max(0, (stoppedAt - Number(finished.runningSince)) / 1000);
             finished.runningSince = null;
         }
         session = null;
@@ -298,13 +305,13 @@
     };
     const scheduleIdleCutoff = () => {
         clearIdleTimer();
-        if (!session || session.runningSince) return;
+        if (!session) return;
         if (!session.pausedAt) session.pausedAt = Date.now();
         const sessionId = session.id;
         const idleFor = Math.max(0, Date.now() - Number(session.pausedAt || 0));
         idleTimer = window.setTimeout(() => {
             idleTimer = null;
-            if (!session || session.id !== sessionId || session.runningSince) return;
+            if (!session || session.id !== sessionId || !session.pausedAt) return;
             if (Date.now() - Number(session.pausedAt || 0) < VIDEO_STUDY_IDLE_TIMEOUT_MS) {
                 scheduleIdleCutoff();
                 return;
@@ -334,10 +341,6 @@
     };
     const pauseForIdle = () => {
         if (!session) return;
-        if (session.runningSince) {
-            session.elapsed = elapsed(session);
-            session.runningSince = null;
-        }
         if (!session.pausedAt) session.pausedAt = Date.now();
         post(session, false, false);
         scheduleIdleCutoff();
@@ -355,7 +358,11 @@
         if (!session) return;
         if (session.runningSince) {
             manuallyPaused = true;
-            pauseForIdle();
+            clearIdleTimer();
+            session.elapsed = elapsed(session);
+            session.runningSince = null;
+            session.pausedAt = null;
+            post(session, false, false);
         } else if (playerState === 1) {
             manuallyPaused = false;
             startForPlayback();
@@ -389,8 +396,7 @@
     window.setInterval(render, 500);
     window.setInterval(() => { if (session && session.runningSince) post(session, false, false); }, 15000);
     window.addEventListener('beforeunload', () => {
-        clearIdleTimer();
-        if (session) post(session, true, true);
+        if (session) finish(true);
     });
     sync();
     render();

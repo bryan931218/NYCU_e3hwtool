@@ -1038,10 +1038,18 @@
             } catch (error) {
                 practiceTimer = null;
             }
-            const pauseSession = function (session) {
+            const pauseSessionAt = function (session, stoppedAt) {
                 if (!session || !session.runningSince) return;
-                session.elapsed = currentSessionSeconds(session);
+                const stopTime = Math.max(
+                    Number(session.runningSince),
+                    Number(stoppedAt) || Date.now()
+                );
+                session.elapsed = Math.max(0, Number(session.elapsed || 0))
+                    + Math.max(0, (stopTime - Number(session.runningSince)) / 1000);
                 session.runningSince = null;
+            };
+            const pauseSession = function (session) {
+                pauseSessionAt(session, Date.now());
             };
             const VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
             const clearVideoStudyIdleTimer = function () {
@@ -1054,7 +1062,13 @@
                     return Promise.resolve();
                 }
                 clearVideoStudyIdleTimer();
-                pauseSession(videoStudySession);
+                const stoppedAt = videoStudySession.pausedAt
+                    ? Math.min(
+                        Date.now(),
+                        Number(videoStudySession.pausedAt) + VIDEO_STUDY_IDLE_TIMEOUT_MS
+                    )
+                    : Date.now();
+                pauseSessionAt(videoStudySession, stoppedAt);
                 const finishedSession = videoStudySession;
                 videoStudySession = null;
                 renderStudyTimers();
@@ -1065,7 +1079,7 @@
             };
             const scheduleVideoStudyIdleCutoff = function () {
                 clearVideoStudyIdleTimer();
-                if (!videoStudySession || videoStudySession.runningSince) return;
+                if (!videoStudySession) return;
                 if (!videoStudySession.pausedAt) videoStudySession.pausedAt = Date.now();
                 const sessionId = videoStudySession.id;
                 const elapsedIdle = Math.max(0, Date.now() - Number(videoStudySession.pausedAt || 0));
@@ -1075,7 +1089,7 @@
                     if (
                         !videoStudySession
                         || videoStudySession.id !== sessionId
-                        || videoStudySession.runningSince
+                        || !videoStudySession.pausedAt
                     ) return;
                     const idleFor = Math.max(0, Date.now() - Number(videoStudySession.pausedAt || 0));
                     if (idleFor < VIDEO_STUDY_IDLE_TIMEOUT_MS) {
@@ -1117,7 +1131,6 @@
                     finalizeVideoStudySession('complete', false);
                     return;
                 }
-                pauseSession(videoStudySession);
                 if (!videoStudySession.pausedAt) videoStudySession.pausedAt = Date.now();
                 postStudyTime(videoStudySession, false, false);
                 scheduleVideoStudyIdleCutoff();
