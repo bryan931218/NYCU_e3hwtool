@@ -876,6 +876,7 @@
             let focusToastTimer = null;
             let theaterScrollY = 0;
             let videoStudySession = null;
+            let videoStudyIdleTimer = null;
             let practiceTimer = null;
             let studyTimePulseTimer = null;
             let spaceBoostActive = false;
@@ -1042,29 +1043,84 @@
                 session.elapsed = currentSessionSeconds(session);
                 session.runningSince = null;
             };
+            const VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+            const clearVideoStudyIdleTimer = function () {
+                if (videoStudyIdleTimer) window.clearTimeout(videoStudyIdleTimer);
+                videoStudyIdleTimer = null;
+            };
+            const finalizeVideoStudySession = function (reason, keepalive) {
+                if (!videoStudySession) {
+                    clearVideoStudyIdleTimer();
+                    return Promise.resolve();
+                }
+                clearVideoStudyIdleTimer();
+                pauseSession(videoStudySession);
+                const finishedSession = videoStudySession;
+                videoStudySession = null;
+                renderStudyTimers();
+                if (reason === 'idle') {
+                    playerSyncState.textContent = '已停止本輪計時，播放後將開始新一輪';
+                }
+                return postStudyTime(finishedSession, true, Boolean(keepalive));
+            };
+            const scheduleVideoStudyIdleCutoff = function () {
+                clearVideoStudyIdleTimer();
+                if (!videoStudySession || videoStudySession.runningSince) return;
+                if (!videoStudySession.pausedAt) videoStudySession.pausedAt = Date.now();
+                const sessionId = videoStudySession.id;
+                const elapsedIdle = Math.max(0, Date.now() - Number(videoStudySession.pausedAt || 0));
+                const remainingIdle = Math.max(0, VIDEO_STUDY_IDLE_TIMEOUT_MS - elapsedIdle);
+                videoStudyIdleTimer = window.setTimeout(function verifyIdleCutoff() {
+                    videoStudyIdleTimer = null;
+                    if (
+                        !videoStudySession
+                        || videoStudySession.id !== sessionId
+                        || videoStudySession.runningSince
+                    ) return;
+                    const idleFor = Math.max(0, Date.now() - Number(videoStudySession.pausedAt || 0));
+                    if (idleFor < VIDEO_STUDY_IDLE_TIMEOUT_MS) {
+                        scheduleVideoStudyIdleCutoff();
+                        return;
+                    }
+                    finalizeVideoStudySession('idle', false);
+                }, remainingIdle);
+            };
             const beginVideoStudyTime = function () {
                 const option = selectedOption();
                 if (!option) return;
                 const videoId = Number(option.value);
                 if (videoStudySession && videoStudySession.videoId !== videoId) {
-                    pauseSession(videoStudySession);
-                    postStudyTime(videoStudySession, true, false);
-                    videoStudySession = null;
+                    finalizeVideoStudySession('switch', false);
                 }
+                if (
+                    videoStudySession
+                    && videoStudySession.pausedAt
+                    && Date.now() - Number(videoStudySession.pausedAt) >= VIDEO_STUDY_IDLE_TIMEOUT_MS
+                ) {
+                    finalizeVideoStudySession('idle', false);
+                }
+                clearVideoStudyIdleTimer();
                 if (!videoStudySession) {
                     videoStudySession = {
                         id: makeStudySessionId('video'), kind: 'video', videoId: videoId,
-                        label: option.dataset.title || '影片學習', elapsed: 0, runningSince: null
+                        label: option.dataset.title || '影片學習', elapsed: 0,
+                        runningSince: null, pausedAt: null
                     };
                 }
+                videoStudySession.pausedAt = null;
                 if (!videoStudySession.runningSince) videoStudySession.runningSince = Date.now();
                 renderStudyTimers();
             };
             const pauseVideoStudyTime = function (completed) {
                 if (!videoStudySession) return;
+                if (completed) {
+                    finalizeVideoStudySession('complete', false);
+                    return;
+                }
                 pauseSession(videoStudySession);
-                postStudyTime(videoStudySession, Boolean(completed), false);
-                if (completed) videoStudySession = null;
+                if (!videoStudySession.pausedAt) videoStudySession.pausedAt = Date.now();
+                postStudyTime(videoStudySession, false, false);
+                scheduleVideoStudyIdleCutoff();
                 renderStudyTimers();
             };
             if (practiceTimerToggle) practiceTimerToggle.addEventListener('click', function () {

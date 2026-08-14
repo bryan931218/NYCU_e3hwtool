@@ -188,6 +188,10 @@
     let session = null;
     let posting = false;
     let queuedPost = false;
+    let idleTimer = null;
+    let playerState = -1;
+    let manuallyPaused = false;
+    const VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
     const requestPath = (input) => {
         try { return new URL(typeof input === 'string' ? input : input.url, location.href).pathname; }
@@ -208,7 +212,7 @@
 
     const row = document.createElement('div');
     row.className = 'e3-video-timer-row';
-    row.innerHTML = '<div class="e3-video-timer-main"><span class="e3-video-timer-dot" aria-hidden="true"></span><span class="e3-video-timer-label">播放器開啟即計時</span><strong class="e3-video-timer-time">0:00</strong></div><div class="e3-video-timer-actions"><button class="e3-video-timer-button" type="button" data-video-timer-pause disabled>暫停</button><button class="e3-video-timer-button end" type="button" data-video-timer-end disabled>結束</button></div>';
+    row.innerHTML = '<div class="e3-video-timer-main"><span class="e3-video-timer-dot" aria-hidden="true"></span><span class="e3-video-timer-label">播放影片後自動計時</span><strong class="e3-video-timer-time">0:00</strong></div><div class="e3-video-timer-actions"><button class="e3-video-timer-button" type="button" data-video-timer-pause disabled>暫停</button><button class="e3-video-timer-button end" type="button" data-video-timer-end disabled>結束</button></div>';
     statusCard.appendChild(row);
     const timeNode = row.querySelector('.e3-video-timer-time');
     const labelNode = row.querySelector('.e3-video-timer-label');
@@ -250,8 +254,12 @@
         const paused = Boolean(session && !session.runningSince);
         row.classList.toggle('is-paused', paused);
         timeNode.textContent = format(elapsed());
-        labelNode.textContent = !active ? '選擇影片後自動計時' : paused ? '已手動暫停' : session.label;
-        pauseButton.disabled = !active;
+        labelNode.textContent = !active
+            ? (currentVideo() ? '等待影片播放' : '選擇影片後自動計時')
+            : paused
+                ? (manuallyPaused ? '已手動暫停' : '等待繼續播放')
+                : session.label;
+        pauseButton.disabled = !active || (paused && playerState !== 1);
         endButton.disabled = !active;
         pauseButton.textContent = paused ? '繼續' : '暫停';
         legacyClock.textContent = format(elapsed());
@@ -273,7 +281,12 @@
               if (queuedPost && session && !keepalive) { queuedPost = false; post(session, false, false); }
           });
     };
+    const clearIdleTimer = () => {
+        if (idleTimer) window.clearTimeout(idleTimer);
+        idleTimer = null;
+    };
     const finish = (keepalive = false) => {
+        clearIdleTimer();
         const finished = session;
         if (finished && finished.runningSince) {
             finished.elapsed = elapsed(finished);
@@ -283,32 +296,102 @@
         render();
         return post(finished, true, keepalive);
     };
+    const scheduleIdleCutoff = () => {
+        clearIdleTimer();
+        if (!session || session.runningSince) return;
+        if (!session.pausedAt) session.pausedAt = Date.now();
+        const sessionId = session.id;
+        const idleFor = Math.max(0, Date.now() - Number(session.pausedAt || 0));
+        idleTimer = window.setTimeout(() => {
+            idleTimer = null;
+            if (!session || session.id !== sessionId || session.runningSince) return;
+            if (Date.now() - Number(session.pausedAt || 0) < VIDEO_STUDY_IDLE_TIMEOUT_MS) {
+                scheduleIdleCutoff();
+                return;
+            }
+            finish(false);
+        }, Math.max(0, VIDEO_STUDY_IDLE_TIMEOUT_MS - idleFor));
+    };
+    const startForPlayback = () => {
+        const video = currentVideo();
+        if (!video || manuallyPaused) return;
+        if (session && session.videoId !== video.videoId) finish(false);
+        if (
+            session
+            && session.pausedAt
+            && Date.now() - Number(session.pausedAt) >= VIDEO_STUDY_IDLE_TIMEOUT_MS
+        ) finish(false);
+        clearIdleTimer();
+        if (!session) {
+            session = {
+                id:makeId(), videoId:video.videoId, label:video.label,
+                elapsed:0, runningSince:null, pausedAt:null
+            };
+        }
+        session.pausedAt = null;
+        if (!session.runningSince) session.runningSince = Date.now();
+        render();
+    };
+    const pauseForIdle = () => {
+        if (!session) return;
+        if (session.runningSince) {
+            session.elapsed = elapsed(session);
+            session.runningSince = null;
+        }
+        if (!session.pausedAt) session.pausedAt = Date.now();
+        post(session, false, false);
+        scheduleIdleCutoff();
+        render();
+    };
     const sync = () => {
         const video = currentVideo();
-        if (!video) { finish(false); return; }
-        if (session && session.videoId === video.videoId) return;
-        const previous = session;
-        session = { id:makeId(), videoId:video.videoId, label:video.label, elapsed:0, runningSince:Date.now() };
+        manuallyPaused = false;
+        playerState = -1;
+        if (!video || (session && session.videoId !== video.videoId)) finish(false);
         render();
-        if (previous) post(previous, true, false);
     };
 
     pauseButton.addEventListener('click', () => {
         if (!session) return;
         if (session.runningSince) {
-            session.elapsed = elapsed(session);
-            session.runningSince = null;
-            post(session, false, false);
-        } else {
-            session.runningSince = Date.now();
+            manuallyPaused = true;
+            pauseForIdle();
+        } else if (playerState === 1) {
+            manuallyPaused = false;
+            startForPlayback();
         }
         render();
     });
-    endButton.addEventListener('click', () => finish(false));
+    endButton.addEventListener('click', () => { manuallyPaused = false; finish(false); });
     select.addEventListener('change', () => window.setTimeout(sync, 0));
+    window.addEventListener('message', (event) => {
+        const iframe = document.querySelector('iframe#youtube-player')
+            || document.querySelector('#youtube-player iframe');
+        if (!iframe || event.source !== iframe.contentWindow) return;
+        let payload = event.data;
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); }
+            catch (error) { return; }
+        }
+        const info = payload && payload.info;
+        if (!info || !Number.isFinite(Number(info.playerState))) return;
+        playerState = Number(info.playerState);
+        if (playerState === 1) {
+            startForPlayback();
+        } else if (playerState === 0) {
+            manuallyPaused = false;
+            finish(false);
+        } else if ([-1, 2, 3, 5].includes(playerState)) {
+            manuallyPaused = false;
+            pauseForIdle();
+        }
+    });
     window.setInterval(render, 500);
     window.setInterval(() => { if (session && session.runningSince) post(session, false, false); }, 15000);
-    window.addEventListener('beforeunload', () => { if (session) post(session, true, true); });
+    window.addEventListener('beforeunload', () => {
+        clearIdleTimer();
+        if (session) post(session, true, true);
+    });
     sync();
     render();
 })();

@@ -99,6 +99,28 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertIn("opacity: 1;\n        pointer-events: none;", dock_source)
         self.assertIn("pointer-events: auto;\n        font: inherit;", dock_source)
 
+    def test_video_study_timer_starts_a_new_session_after_five_idle_minutes(self):
+        template_path = (
+            Path(__file__).resolve().parents[2]
+            / "frontend"
+            / "templates"
+            / "admin_study_plan.html"
+        )
+        source = template_path.read_text(encoding="utf-8")
+        tracker_source = (
+            template_path.parent / "_study_upload_tracker.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000", source)
+        self.assertIn("scheduleVideoStudyIdleCutoff", source)
+        self.assertIn("finalizeVideoStudySession('idle', false)", source)
+        self.assertIn("runningSince: null, pausedAt: null", source)
+        self.assertIn("VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000", tracker_source)
+        self.assertIn("scheduleIdleCutoff", tracker_source)
+        self.assertIn("startForPlayback", tracker_source)
+        self.assertIn("pauseForIdle", tracker_source)
+        self.assertIn("event.source !== iframe.contentWindow", tracker_source)
+
 
 if __name__ == "__main__":
     unittest.main()
