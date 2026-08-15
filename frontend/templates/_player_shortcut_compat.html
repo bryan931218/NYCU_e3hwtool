@@ -98,7 +98,7 @@
     const updateHintText = () => {
         const seconds = Math.max(1, Number(settings.seek_seconds) || 10);
         const rate = formatRate(settings.hold_space_rate);
-        const text = `J／← 後退 ${seconds} 秒　L／→ 快進 ${seconds} 秒　短按空白鍵播放／暫停　長按 ${settings.hold_delay_ms}ms ${rate}×`;
+        const text = `R 快速紀錄　M 靜音　J／← 後退 ${seconds} 秒　L／→ 快進 ${seconds} 秒　短按空白鍵播放／暫停　長按 ${settings.hold_delay_ms}ms ${rate}×`;
         if (hint) hint.textContent = text;
         capture.setAttribute('aria-label', `播放器鍵盤控制區；${text}`);
     };

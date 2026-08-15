@@ -101,7 +101,6 @@ class PlayerSettingsTests(unittest.TestCase):
         dock_source = (template_dir / "_player_control_dock.html").read_text(
             encoding="utf-8"
         )
-
         self.assertIn(
             "capture.addEventListener('pointermove', releaseForNativeControls",
             shortcut_source,
@@ -113,6 +112,25 @@ class PlayerSettingsTests(unittest.TestCase):
         )
         self.assertIn("opacity: 1;\n        pointer-events: none;", dock_source)
         self.assertIn("pointer-events: auto;\n        font: inherit;", dock_source)
+
+    def test_quick_marker_uses_r_and_m_remains_mute(self):
+        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
+        plan_source = (template_dir / "admin_study_plan.html").read_text(
+            encoding="utf-8"
+        )
+        dock_source = (template_dir / "_player_control_dock.html").read_text(
+            encoding="utf-8"
+        )
+        shortcut_source = (template_dir / "_player_shortcut_compat.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("plainShortcut && pressedKey === 'r'", plan_source)
+        self.assertNotIn("plainShortcut && pressedKey === 'm'", plan_source)
+        self.assertIn('<span class="marker-shortcut">R</span>', plan_source)
+        self.assertIn("event.code === 'KeyM'", dock_source)
+        self.assertIn("R 快速紀錄", plan_source)
+        self.assertIn("R 快速紀錄　M 靜音", shortcut_source)
 
     def test_video_study_timer_starts_a_new_session_after_five_idle_minutes(self):
         template_path = (

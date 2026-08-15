@@ -487,14 +487,15 @@
         button.addEventListener('click', () => setRate(button.dataset.e3RatePreset, true));
     });
 
-    const isTypingTarget = (target) => Boolean(target && (
+    const isTypingTarget = (target) => Boolean(target && target.id !== 'focus-keyboard-capture' && (
         ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
         || target.isContentEditable
     ));
     window.addEventListener('keydown', (event) => {
+        const isMuteShortcut = event.code === 'KeyM';
         const direction = event.code === 'ArrowUp' ? 1 : event.code === 'ArrowDown' ? -1 : 0;
         if (
-            !direction
+            (!direction && !isMuteShortcut)
             || !isFocusMode()
             || !playerReady()
             || isTypingTarget(event.target)
@@ -507,6 +508,11 @@
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
+        if (isMuteShortcut) {
+            toggleMute();
+            showToast(isMuted ? '已靜音' : `音量 ${Math.round(currentVolume)}%`);
+            return;
+        }
         const base = isMuted ? 0 : currentVolume;
         const next = Math.max(0, Math.min(100, Math.round(base + direction * 5)));
         setVolume(next);
