@@ -81,6 +81,8 @@
     let nativeControlsTimer = null;
     let toastTimer = null;
     let holdTimer = null;
+    let heldSeekCode = '';
+    let lastSeekAt = 0;
     let spaceDown = false;
     let longPress = false;
     let boostActive = false;
@@ -98,7 +100,7 @@
     const updateHintText = () => {
         const seconds = Math.max(1, Number(settings.seek_seconds) || 10);
         const rate = formatRate(settings.hold_space_rate);
-        const text = `R 快速紀錄　M 靜音　J／← 後退 ${seconds} 秒　L／→ 快進 ${seconds} 秒　短按空白鍵播放／暫停　長按 ${settings.hold_delay_ms}ms ${rate}×`;
+        const text = `R 快速紀錄　M 靜音　J／← 後退 ${seconds} 秒　L／→ 快進 ${seconds} 秒（長按連續）　短按空白鍵播放／暫停　長按 ${settings.hold_delay_ms}ms ${rate}×`;
         if (hint) hint.textContent = text;
         capture.setAttribute('aria-label', `播放器鍵盤控制區；${text}`);
     };
@@ -141,6 +143,33 @@
         if (!sendCommand('seekTo', [next, true])) return;
         currentTime = next;
         showToast(`${deltaSeconds < 0 ? '後退' : '快進'} ${Math.abs(deltaSeconds)} 秒`);
+    };
+    const SEEK_REPEAT_THROTTLE_MS = 150;
+    const seekDirections = {
+        KeyJ: -1,
+        ArrowLeft: -1,
+        KeyL: 1,
+        ArrowRight: 1,
+    };
+    const stopContinuousSeek = (code = '') => {
+        if (code && heldSeekCode && code !== heldSeekCode) return;
+        heldSeekCode = '';
+        lastSeekAt = 0;
+    };
+    const seekOnKeyDown = (event, direction) => {
+        const now = typeof window.performance?.now === 'function'
+            ? window.performance.now()
+            : Date.now();
+        const seekStep = Math.max(1, Number(settings.seek_seconds) || 10);
+        if (!event.repeat || heldSeekCode !== event.code) {
+            heldSeekCode = event.code;
+            lastSeekAt = now;
+            seekBy(direction * seekStep);
+            return;
+        }
+        if (now - lastSeekAt < SEEK_REPEAT_THROTTLE_MS) return;
+        lastSeekAt = now;
+        seekBy(direction * seekStep);
     };
     const clearHoldTimer = () => {
         if (holdTimer) window.clearTimeout(holdTimer);
@@ -193,8 +222,9 @@
         }, settings.hint_duration_ms);
     };
     const releaseForNativeControls = () => {
-        if (!isFocusMode()) return;
         resetSpace(true);
+        stopContinuousSeek();
+        if (!isFocusMode()) return;
         if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
         frame.classList.add('e3-native-controls-active');
         nativeControlsTimer = window.setTimeout(() => {
@@ -212,6 +242,7 @@
         } else if (!active && wasFocusMode) {
             wasFocusMode = false;
             resetSpace(true);
+            stopContinuousSeek();
             frame.classList.remove('e3-native-controls-active', 'e3-show-shortcut-hint');
             if (hintTimer) window.clearTimeout(hintTimer);
             if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
@@ -233,17 +264,11 @@
     // Capture all custom shortcuts at window level so the old handler and YouTube
     // iframe cannot also process the same key press.
     window.addEventListener('keydown', (event) => {
-        const seekDirections = {
-            KeyJ: -1,
-            ArrowLeft: -1,
-            KeyL: 1,
-            ArrowRight: 1,
-        };
         const direction = seekDirections[event.code];
         if (direction) {
             if (isBlockedShortcut(event)) return;
             consume(event);
-            if (!event.repeat) seekBy(direction * Math.max(1, Number(settings.seek_seconds) || 10));
+            seekOnKeyDown(event, direction);
             return;
         }
 
@@ -265,6 +290,11 @@
     }, true);
 
     window.addEventListener('keyup', (event) => {
+        if (seekDirections[event.code]) {
+            if (heldSeekCode === event.code) consume(event);
+            stopContinuousSeek(event.code);
+            return;
+        }
         if (event.code !== 'Space' || !spaceDown) return;
         consume(event);
         clearHoldTimer();
@@ -295,7 +325,10 @@
 
     window.addEventListener('blur', releaseForNativeControls);
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden) resetSpace(true);
+        if (document.hidden) {
+            resetSpace(true);
+            stopContinuousSeek();
+        }
     });
 
     const observer = new MutationObserver(syncFocusMode);

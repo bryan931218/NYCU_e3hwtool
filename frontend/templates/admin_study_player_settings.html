@@ -132,12 +132,12 @@
             <section class="section">
                 <div class="section-head">
                     <strong>快進與後退</strong>
-                    <span>J 與左方向鍵共用後退功能；L 與右方向鍵共用快進功能。</span>
+                    <span>J 與左方向鍵後退；L 與右方向鍵快進。短按跳一次，長按會持續跳轉。</span>
                 </div>
                 <div class="field" style="max-width:340px">
                     <label for="seek_seconds">每次快進／後退秒數</label>
                     <input id="seek_seconds" name="seek_seconds" type="number" min="1" max="120" step="1" value="{{ settings.seek_seconds }}">
-                    <small>按一下 J 或 ← 後退；按一下 L 或 → 快進。</small>
+                    <small>短按跳一次；長按會依鍵盤的連發節奏持續跳轉。</small>
                 </div>
                 <div class="preview">
                     <span class="chip">J／←：後退 {{ settings.seek_seconds }} 秒</span>

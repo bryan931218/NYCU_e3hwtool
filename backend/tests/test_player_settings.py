@@ -132,6 +132,20 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertIn("R 快速紀錄", plan_source)
         self.assertIn("R 快速紀錄　M 靜音", shortcut_source)
 
+    def test_seek_shortcuts_repeat_until_the_key_is_released(self):
+        shortcut_source = (
+            Path(__file__).resolve().parents[2]
+            / "frontend"
+            / "templates"
+            / "_player_shortcut_compat.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("const SEEK_REPEAT_THROTTLE_MS = 150", shortcut_source)
+        self.assertIn("if (!event.repeat || heldSeekCode !== event.code)", shortcut_source)
+        self.assertIn("seekOnKeyDown(event, direction)", shortcut_source)
+        self.assertIn("stopContinuousSeek(event.code)", shortcut_source)
+        self.assertNotIn("if (!event.repeat) seekBy", shortcut_source)
+
     def test_video_study_timer_starts_a_new_session_after_five_idle_minutes(self):
         template_path = (
             Path(__file__).resolve().parents[2]
