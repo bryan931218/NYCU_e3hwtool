@@ -22,10 +22,18 @@ PLAYER_RATE_MIN = 1.05
 PLAYER_RATE_MAX = 2.0
 PLAYER_RATE_STEP = 0.05
 PLAYER_SETTINGS_DEFAULTS: Dict[str, Any] = {
+    "default_playback_rate": 1.0,
     "hold_space_rate": 2.0,
     "hold_delay_ms": 300,
-    "seek_seconds": 10,
+    "seek_back_seconds": 10,
+    "seek_forward_seconds": 10,
+    "seek_repeat_ms": 150,
+    "playback_rate_step": 0.05,
+    "volume_step": 5,
+    "controls_hide_ms": 2600,
     "center_click_toggle": True,
+    "pause_on_marker": False,
+    "show_speed_presets": True,
     "show_shortcut_hint": True,
     "hint_duration_ms": 1400,
 }
@@ -56,6 +64,11 @@ def _boolean(value: Any, default: bool) -> bool:
 
 def normalize_player_settings(values: Mapping[str, Any] | None) -> Dict[str, Any]:
     source = dict(values or {})
+    default_playback_rate = min(
+        2.0,
+        max(0.25, _number(source.get("default_playback_rate"), 1.0)),
+    )
+    default_playback_rate = round(round(default_playback_rate * 20) / 20, 2)
     requested_rate = _number(
         source.get("hold_space_rate"),
         float(PLAYER_SETTINGS_DEFAULTS["hold_space_rate"]),
@@ -71,21 +84,57 @@ def normalize_player_settings(values: Mapping[str, Any] | None) -> Dict[str, Any
         1200,
         max(150, _integer(source.get("hold_delay_ms"), 300)),
     )
-    seek_seconds = min(
+    legacy_seek_seconds = source.get("seek_seconds", 10)
+    seek_back_seconds = min(
         120,
-        max(1, _integer(source.get("seek_seconds"), 10)),
+        max(1, _integer(source.get("seek_back_seconds", legacy_seek_seconds), 10)),
+    )
+    seek_forward_seconds = min(
+        120,
+        max(1, _integer(source.get("seek_forward_seconds", legacy_seek_seconds), 10)),
+    )
+    seek_repeat_ms = min(
+        500,
+        max(75, _integer(source.get("seek_repeat_ms"), 150)),
+    )
+    requested_rate_step = _number(source.get("playback_rate_step"), 0.05)
+    playback_rate_step = min(
+        (0.05, 0.1, 0.25),
+        key=lambda option: abs(option - requested_rate_step),
+    )
+    volume_step = min(
+        20,
+        max(1, _integer(source.get("volume_step"), 5)),
+    )
+    controls_hide_ms = min(
+        8000,
+        max(1200, _integer(source.get("controls_hide_ms"), 2600)),
     )
     hint_duration_ms = min(
         5000,
         max(500, _integer(source.get("hint_duration_ms"), 1400)),
     )
     return {
+        "default_playback_rate": float(default_playback_rate),
         "hold_space_rate": float(hold_space_rate),
         "hold_delay_ms": hold_delay_ms,
-        "seek_seconds": seek_seconds,
+        "seek_back_seconds": seek_back_seconds,
+        "seek_forward_seconds": seek_forward_seconds,
+        "seek_repeat_ms": seek_repeat_ms,
+        "playback_rate_step": float(playback_rate_step),
+        "volume_step": volume_step,
+        "controls_hide_ms": controls_hide_ms,
         "center_click_toggle": _boolean(
             source.get("center_click_toggle"),
             bool(PLAYER_SETTINGS_DEFAULTS["center_click_toggle"]),
+        ),
+        "pause_on_marker": _boolean(
+            source.get("pause_on_marker"),
+            bool(PLAYER_SETTINGS_DEFAULTS["pause_on_marker"]),
+        ),
+        "show_speed_presets": _boolean(
+            source.get("show_speed_presets"),
+            bool(PLAYER_SETTINGS_DEFAULTS["show_speed_presets"]),
         ),
         "show_shortcut_hint": _boolean(
             source.get("show_shortcut_hint"),
@@ -108,10 +157,18 @@ class DeploymentSafeStorage(PersistentStorage):
                 text(
                     "CREATE TABLE IF NOT EXISTS study_player_settings ("
                     "id INTEGER PRIMARY KEY, "
+                    "default_playback_rate FLOAT NOT NULL DEFAULT 1.0, "
                     "hold_space_rate FLOAT NOT NULL, "
                     "hold_delay_ms INTEGER NOT NULL, "
-                    "seek_seconds INTEGER NOT NULL DEFAULT 10, "
+                    "seek_back_seconds INTEGER NOT NULL DEFAULT 10, "
+                    "seek_forward_seconds INTEGER NOT NULL DEFAULT 10, "
+                    "seek_repeat_ms INTEGER NOT NULL DEFAULT 150, "
+                    "playback_rate_step FLOAT NOT NULL DEFAULT 0.05, "
+                    "volume_step INTEGER NOT NULL DEFAULT 5, "
+                    "controls_hide_ms INTEGER NOT NULL DEFAULT 2600, "
                     "center_click_toggle INTEGER NOT NULL, "
+                    "pause_on_marker INTEGER NOT NULL DEFAULT 0, "
+                    "show_speed_presets INTEGER NOT NULL DEFAULT 1, "
                     "show_shortcut_hint INTEGER NOT NULL, "
                     "hint_duration_ms INTEGER NOT NULL, "
                     "updated_at VARCHAR(64) NOT NULL"
@@ -122,12 +179,25 @@ class DeploymentSafeStorage(PersistentStorage):
             column["name"]
             for column in inspect(self._engine).get_columns("study_player_settings")
         }
-        if "seek_seconds" not in columns:
+        migrations = {
+            "default_playback_rate": "FLOAT NOT NULL DEFAULT 1.0",
+            "seek_back_seconds": "INTEGER NOT NULL DEFAULT 10",
+            "seek_forward_seconds": "INTEGER NOT NULL DEFAULT 10",
+            "seek_repeat_ms": "INTEGER NOT NULL DEFAULT 150",
+            "playback_rate_step": "FLOAT NOT NULL DEFAULT 0.05",
+            "volume_step": "INTEGER NOT NULL DEFAULT 5",
+            "controls_hide_ms": "INTEGER NOT NULL DEFAULT 2600",
+            "pause_on_marker": "INTEGER NOT NULL DEFAULT 0",
+            "show_speed_presets": "INTEGER NOT NULL DEFAULT 1",
+        }
+        for column_name, definition in migrations.items():
+            if column_name in columns:
+                continue
             with self._lock, self._engine.begin() as conn:
                 conn.execute(
                     text(
                         "ALTER TABLE study_player_settings "
-                        "ADD COLUMN seek_seconds INTEGER NOT NULL DEFAULT 10"
+                        f"ADD COLUMN {column_name} {definition}"
                     )
                 )
 
@@ -135,8 +205,11 @@ class DeploymentSafeStorage(PersistentStorage):
         with self._lock, self._engine.connect() as conn:
             row = conn.execute(
                 text(
-                    "SELECT hold_space_rate, hold_delay_ms, seek_seconds, "
-                    "center_click_toggle, show_shortcut_hint, hint_duration_ms "
+                    "SELECT default_playback_rate, hold_space_rate, hold_delay_ms, "
+                    "seek_back_seconds, seek_forward_seconds, seek_repeat_ms, "
+                    "playback_rate_step, volume_step, controls_hide_ms, "
+                    "center_click_toggle, pause_on_marker, show_speed_presets, "
+                    "show_shortcut_hint, hint_duration_ms "
                     "FROM study_player_settings WHERE id = 1"
                 )
             ).mappings().first()
@@ -149,6 +222,8 @@ class DeploymentSafeStorage(PersistentStorage):
         params = {
             **settings,
             "center_click_toggle": 1 if settings["center_click_toggle"] else 0,
+            "pause_on_marker": 1 if settings["pause_on_marker"] else 0,
+            "show_speed_presets": 1 if settings["show_speed_presets"] else 0,
             "show_shortcut_hint": 1 if settings["show_shortcut_hint"] else 0,
             "updated_at": datetime.utcnow().isoformat(),
         }
@@ -160,10 +235,18 @@ class DeploymentSafeStorage(PersistentStorage):
                 conn.execute(
                     text(
                         "UPDATE study_player_settings SET "
+                        "default_playback_rate = :default_playback_rate, "
                         "hold_space_rate = :hold_space_rate, "
                         "hold_delay_ms = :hold_delay_ms, "
-                        "seek_seconds = :seek_seconds, "
+                        "seek_back_seconds = :seek_back_seconds, "
+                        "seek_forward_seconds = :seek_forward_seconds, "
+                        "seek_repeat_ms = :seek_repeat_ms, "
+                        "playback_rate_step = :playback_rate_step, "
+                        "volume_step = :volume_step, "
+                        "controls_hide_ms = :controls_hide_ms, "
                         "center_click_toggle = :center_click_toggle, "
+                        "pause_on_marker = :pause_on_marker, "
+                        "show_speed_presets = :show_speed_presets, "
                         "show_shortcut_hint = :show_shortcut_hint, "
                         "hint_duration_ms = :hint_duration_ms, "
                         "updated_at = :updated_at WHERE id = 1"
@@ -174,11 +257,17 @@ class DeploymentSafeStorage(PersistentStorage):
                 conn.execute(
                     text(
                         "INSERT INTO study_player_settings ("
-                        "id, hold_space_rate, hold_delay_ms, seek_seconds, "
-                        "center_click_toggle, show_shortcut_hint, hint_duration_ms, updated_at"
+                        "id, default_playback_rate, hold_space_rate, hold_delay_ms, "
+                        "seek_back_seconds, seek_forward_seconds, seek_repeat_ms, "
+                        "playback_rate_step, volume_step, controls_hide_ms, "
+                        "center_click_toggle, pause_on_marker, show_speed_presets, "
+                        "show_shortcut_hint, hint_duration_ms, updated_at"
                         ") VALUES ("
-                        "1, :hold_space_rate, :hold_delay_ms, :seek_seconds, "
-                        ":center_click_toggle, :show_shortcut_hint, "
+                        "1, :default_playback_rate, :hold_space_rate, :hold_delay_ms, "
+                        ":seek_back_seconds, :seek_forward_seconds, :seek_repeat_ms, "
+                        ":playback_rate_step, :volume_step, :controls_hide_ms, "
+                        ":center_click_toggle, :pause_on_marker, :show_speed_presets, "
+                        ":show_shortcut_hint, "
                         ":hint_duration_ms, :updated_at"
                         ")"
                     ),
@@ -257,18 +346,27 @@ def _register_player_settings_routes(
         if request.method == "POST":
             saved = storage.save_study_player_settings(
                 {
+                    "default_playback_rate": request.form.get("default_playback_rate"),
                     "hold_space_rate": request.form.get("hold_space_rate"),
                     "hold_delay_ms": request.form.get("hold_delay_ms"),
-                    "seek_seconds": request.form.get("seek_seconds"),
+                    "seek_back_seconds": request.form.get("seek_back_seconds"),
+                    "seek_forward_seconds": request.form.get("seek_forward_seconds"),
+                    "seek_repeat_ms": request.form.get("seek_repeat_ms"),
+                    "playback_rate_step": request.form.get("playback_rate_step"),
+                    "volume_step": request.form.get("volume_step"),
+                    "controls_hide_ms": request.form.get("controls_hide_ms"),
                     "center_click_toggle": request.form.get("center_click_toggle") == "1",
+                    "pause_on_marker": request.form.get("pause_on_marker") == "1",
+                    "show_speed_presets": request.form.get("show_speed_presets") == "1",
                     "show_shortcut_hint": request.form.get("show_shortcut_hint") == "1",
                     "hint_duration_ms": request.form.get("hint_duration_ms"),
                 }
             )
             flash(
                 "播放器設定已儲存："
-                f"長按空白鍵 {saved['hold_space_rate']:g}×，"
-                f"快進／後退 {saved['seek_seconds']} 秒。",
+                f"預設 {saved['default_playback_rate']:g}×，"
+                f"後退 {saved['seek_back_seconds']} 秒、"
+                f"快進 {saved['seek_forward_seconds']} 秒。",
                 "success",
             )
             return redirect(url_for("admin_study_player_settings"))

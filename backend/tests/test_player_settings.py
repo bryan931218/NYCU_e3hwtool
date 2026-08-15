@@ -26,10 +26,18 @@ class PlayerSettingsTests(unittest.TestCase):
             storage = DeploymentSafeStorage(database_path)
             saved = storage.save_study_player_settings(
                 {
+                    "default_playback_rate": "1.35",
                     "hold_space_rate": "1.75",
                     "hold_delay_ms": "450",
-                    "seek_seconds": "15",
+                    "seek_back_seconds": "7",
+                    "seek_forward_seconds": "18",
+                    "seek_repeat_ms": "125",
+                    "playback_rate_step": "0.1",
+                    "volume_step": "3",
+                    "controls_hide_ms": "4100",
                     "center_click_toggle": True,
+                    "pause_on_marker": True,
+                    "show_speed_presets": False,
                     "show_shortcut_hint": False,
                     "hint_duration_ms": "2200",
                 }
@@ -40,8 +48,16 @@ class PlayerSettingsTests(unittest.TestCase):
             self.assertEqual(restarted.load_study_player_settings(), saved)
             self.assertEqual(saved["hold_space_rate"], 1.75)
             self.assertEqual(saved["hold_delay_ms"], 450)
-            self.assertEqual(saved["seek_seconds"], 15)
+            self.assertEqual(saved["default_playback_rate"], 1.35)
+            self.assertEqual(saved["seek_back_seconds"], 7)
+            self.assertEqual(saved["seek_forward_seconds"], 18)
+            self.assertEqual(saved["seek_repeat_ms"], 125)
+            self.assertEqual(saved["playback_rate_step"], 0.1)
+            self.assertEqual(saved["volume_step"], 3)
+            self.assertEqual(saved["controls_hide_ms"], 4100)
             self.assertTrue(saved["center_click_toggle"])
+            self.assertTrue(saved["pause_on_marker"])
+            self.assertFalse(saved["show_speed_presets"])
             self.assertFalse(saved["show_shortcut_hint"])
             self.assertEqual(saved["hint_duration_ms"], 2200)
             restarted._engine.dispose()
@@ -51,7 +67,13 @@ class PlayerSettingsTests(unittest.TestCase):
             {
                 "hold_space_rate": 2.42,
                 "hold_delay_ms": 10,
-                "seek_seconds": 999,
+                "default_playback_rate": 9,
+                "seek_back_seconds": 0,
+                "seek_forward_seconds": 999,
+                "seek_repeat_ms": 1,
+                "playback_rate_step": 0.18,
+                "volume_step": 50,
+                "controls_hide_ms": 100,
                 "center_click_toggle": "0",
                 "show_shortcut_hint": "yes",
                 "hint_duration_ms": 9000,
@@ -59,7 +81,13 @@ class PlayerSettingsTests(unittest.TestCase):
         )
         self.assertEqual(settings["hold_space_rate"], 2.0)
         self.assertEqual(settings["hold_delay_ms"], 150)
-        self.assertEqual(settings["seek_seconds"], 120)
+        self.assertEqual(settings["default_playback_rate"], 2.0)
+        self.assertEqual(settings["seek_back_seconds"], 1)
+        self.assertEqual(settings["seek_forward_seconds"], 120)
+        self.assertEqual(settings["seek_repeat_ms"], 75)
+        self.assertEqual(settings["playback_rate_step"], 0.25)
+        self.assertEqual(settings["volume_step"], 20)
+        self.assertEqual(settings["controls_hide_ms"], 1200)
         self.assertFalse(settings["center_click_toggle"])
         self.assertTrue(settings["show_shortcut_hint"])
         self.assertEqual(settings["hint_duration_ms"], 5000)
@@ -140,11 +168,41 @@ class PlayerSettingsTests(unittest.TestCase):
             / "_player_shortcut_compat.html"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("const SEEK_REPEAT_THROTTLE_MS = 150", shortcut_source)
+        self.assertIn("Number(settings.seek_repeat_ms) || 150", shortcut_source)
         self.assertIn("if (!event.repeat || heldSeekCode !== event.code)", shortcut_source)
         self.assertIn("seekOnKeyDown(event, direction)", shortcut_source)
         self.assertIn("stopContinuousSeek(event.code)", shortcut_source)
         self.assertNotIn("if (!event.repeat) seekBy", shortcut_source)
+
+    def test_player_settings_expose_fine_grained_controls(self):
+        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
+        settings_source = (template_dir / "admin_study_player_settings.html").read_text(
+            encoding="utf-8"
+        )
+        shortcut_source = (template_dir / "_player_shortcut_compat.html").read_text(
+            encoding="utf-8"
+        )
+        dock_source = (template_dir / "_player_control_dock.html").read_text(
+            encoding="utf-8"
+        )
+
+        for field_name in (
+            "default_playback_rate",
+            "seek_back_seconds",
+            "seek_forward_seconds",
+            "seek_repeat_ms",
+            "playback_rate_step",
+            "volume_step",
+            "controls_hide_ms",
+            "pause_on_marker",
+            "show_speed_presets",
+        ):
+            self.assertIn(f'name="{field_name}"', settings_source)
+        self.assertIn("settings.seek_back_seconds", shortcut_source)
+        self.assertIn("settings.seek_forward_seconds", shortcut_source)
+        self.assertIn("settings.pause_on_marker", shortcut_source)
+        self.assertIn("playerSettings.volume_step", dock_source)
+        self.assertIn("playerSettings.controls_hide_ms", dock_source)
 
     def test_video_study_timer_starts_a_new_session_after_five_idle_minutes(self):
         template_path = (

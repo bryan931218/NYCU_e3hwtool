@@ -268,6 +268,13 @@
     const panel = document.getElementById('youtube-player-section');
     const toast = document.getElementById('focus-toast');
     if (!frame || !panel) return;
+    const playerSettings = {
+        playback_rate_step: 0.05,
+        volume_step: 5,
+        controls_hide_ms: 2600,
+        show_speed_presets: true,
+        ...(window.E3PlayerSettings || {}),
+    };
 
     const dock = document.createElement('section');
     dock.className = 'e3-player-control-dock';
@@ -308,12 +315,14 @@
     const rateRange = dock.querySelector('[data-e3-rate]');
     const rateValue = dock.querySelector('[data-e3-rate-value]');
     const ratePresets = Array.from(dock.querySelectorAll('[data-e3-rate-preset]'));
+    const ratePresetGroup = dock.querySelector('.e3-speed-presets');
     const shortcutHint = document.querySelector('.focus-shortcut-hint');
 
     const syncVolumeShortcutHint = () => {
         if (!shortcutHint) return;
-        const prefix = '↑／↓ 音量 ±5%　';
-        const current = shortcutHint.textContent.replace(/^↑／↓ 音量 ±5%　?/, '');
+        const volumeStep = Math.max(1, Number(playerSettings.volume_step) || 5);
+        const prefix = `↑／↓ 音量 ±${volumeStep}%　`;
+        const current = shortcutHint.textContent.replace(/^↑／↓ 音量 ±\d+%　?/, '');
         const next = `${prefix}${current}`;
         if (shortcutHint.textContent !== next) shortcutHint.textContent = next;
     };
@@ -401,6 +410,14 @@
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
     };
+    const applyPlayerSettings = (nextSettings = {}) => {
+        Object.assign(playerSettings, nextSettings);
+        rateRange.step = String(playerSettings.playback_rate_step || 0.05);
+        rateRange.setAttribute('aria-label', `播放速度，每次調整 ${rateRange.step} 倍`);
+        if (ratePresetGroup) ratePresetGroup.hidden = !playerSettings.show_speed_presets;
+        syncVolumeShortcutHint();
+        syncRateControls();
+    };
     const revealControls = () => {
         frame.classList.remove('e3-controls-idle');
         if (controlsIdleTimer) window.clearTimeout(controlsIdleTimer);
@@ -410,7 +427,7 @@
                 if (!dock.matches(':hover') && !dock.contains(document.activeElement)) {
                     frame.classList.add('e3-controls-idle');
                 }
-            }, 2600);
+            }, Math.max(1200, Number(playerSettings.controls_hide_ms) || 2600));
         }
     };
     const togglePlayback = () => {
@@ -459,9 +476,10 @@
     };
     const setRate = (value, showFeedback = false) => {
         if (!playerReady()) return;
+        const rateStep = Math.max(.05, Number(playerSettings.playback_rate_step) || .05);
         const requested = Math.round(
-            Math.max(.25, Math.min(2, Number(value) || 1)) * 20
-        ) / 20;
+            Math.max(.25, Math.min(2, Number(value) || 1)) / rateStep
+        ) * rateStep;
         currentRate = requested;
         sendCommand('setPlaybackRate', [requested]);
         syncRateControls();
@@ -514,7 +532,8 @@
             return;
         }
         const base = isMuted ? 0 : currentVolume;
-        const next = Math.max(0, Math.min(100, Math.round(base + direction * 5)));
+        const volumeStep = Math.max(1, Number(playerSettings.volume_step) || 5);
+        const next = Math.max(0, Math.min(100, Math.round(base + direction * volumeStep)));
         setVolume(next);
         showToast(`音量 ${next}%`);
     }, true);
@@ -554,6 +573,12 @@
     });
     classObserver.observe(frame, { attributes: true, attributeFilter: ['class'] });
 
+    window.addEventListener('e3-player-settings-ready', (event) => {
+        applyPlayerSettings(event.detail || {});
+        revealControls();
+    });
+
+    applyPlayerSettings(playerSettings);
     syncPlayButton();
     syncVolumeControls();
     syncRateControls();
