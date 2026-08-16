@@ -82,6 +82,12 @@ from ..shared.study_math import (
     repair_math_delimiters,
     wrap_bare_math_candidate,
 )
+from ..shared.study_note_composer import (
+    StudyNoteToolAccumulator,
+    StudyNoteToolError,
+    build_study_note_tools,
+    run_study_note_tool_conversation,
+)
 from ..shared.excel import build_excel
 from ..shared.utils import json_safe
 
@@ -3793,6 +3799,90 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             or "run out of credits" in normalized_message
         )
 
+    def _request_openai_response(
+        *,
+        name: str,
+        request_body: Dict[str, Any],
+        timeout: int,
+    ) -> Dict[str, Any]:
+        """Send one Responses API request with the shared retry policy."""
+
+        response = None
+        for attempt in range(6):
+            _raise_if_study_upload_cancelled()
+            try:
+                response = requests.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={
+                        "Authorization": f"Bearer {openai_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=request_body,
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                _raise_if_study_upload_cancelled()
+                break
+            except requests.RequestException as exc:
+                error_response = getattr(exc, "response", None)
+                status_code = getattr(error_response, "status_code", None)
+                error_code, error_type, error_message = _openai_error_details(error_response)
+                quota_exhausted = status_code == 429 and _is_openai_quota_error(
+                    error_code,
+                    error_type,
+                    error_message,
+                )
+                setattr(exc, "openai_error_code", error_code)
+                setattr(exc, "openai_error_type", error_type)
+                setattr(exc, "openai_error_message", error_message)
+                retryable = (
+                    status_code is None
+                    or (status_code == 429 and not quota_exhausted)
+                    or (status_code is not None and status_code >= 500)
+                )
+                retry_limit = 6 if status_code == 429 else 4
+                if not retryable or attempt + 1 >= retry_limit:
+                    raise
+                retry_after = 0.0
+                if error_response is not None:
+                    try:
+                        retry_after = float(error_response.headers.get("Retry-After") or 0)
+                    except (TypeError, ValueError):
+                        retry_after = 0.0
+                retry_delay = min(
+                    90.0,
+                    max(
+                        retry_after,
+                        5.0 * (2 ** attempt)
+                        if status_code == 429
+                        else 2.0 * (attempt + 1),
+                    ),
+                )
+                job_id = getattr(study_upload_context, "job_id", None)
+                if job_id and status_code == 429:
+                    _set_study_upload_job(
+                        job_id,
+                        message=(
+                            f"AI 服務目前忙碌，{math.ceil(retry_delay)} 秒後自動重試"
+                            f"（第 {attempt + 1}／{retry_limit - 1} 次）。"
+                        ),
+                    )
+                app.logger.warning(
+                    "Retrying OpenAI request %s after status=%s in %.1fs (attempt %s/%s)",
+                    name,
+                    status_code,
+                    retry_delay,
+                    attempt + 1,
+                    retry_limit - 1,
+                )
+                _study_upload_retry_wait(retry_delay)
+        if response is None:
+            raise requests.RequestException("OpenAI request did not return a response")
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("OpenAI response payload is not an object")
+        return payload
+
     def _call_openai_json(
         *,
         name: str,
@@ -3828,70 +3918,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         )
         if effective_reasoning_effort:
             request_body["reasoning"] = {"effort": effective_reasoning_effort}
-        response = None
-        for attempt in range(6):
-            _raise_if_study_upload_cancelled()
-            try:
-                response = requests.post(
-                    "https://api.openai.com/v1/responses",
-                    headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
-                    json=request_body,
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                _raise_if_study_upload_cancelled()
-                break
-            except requests.RequestException as exc:
-                error_response = getattr(exc, "response", None)
-                status_code = getattr(error_response, "status_code", None)
-                error_code, error_type, error_message = _openai_error_details(error_response)
-                quota_exhausted = status_code == 429 and _is_openai_quota_error(
-                    error_code,
-                    error_type,
-                    error_message,
-                )
-                setattr(exc, "openai_error_code", error_code)
-                setattr(exc, "openai_error_type", error_type)
-                setattr(exc, "openai_error_message", error_message)
-                retryable = (
-                    status_code is None
-                    or (status_code == 429 and not quota_exhausted)
-                    or (status_code is not None and status_code >= 500)
-                )
-                retry_limit = 6 if status_code == 429 else 4
-                if not retryable or attempt + 1 >= retry_limit:
-                    raise
-                retry_after = 0.0
-                if error_response is not None:
-                    try:
-                        retry_after = float(error_response.headers.get("Retry-After") or 0)
-                    except (TypeError, ValueError):
-                        retry_after = 0.0
-                retry_delay = min(
-                    90.0,
-                    max(retry_after, 5.0 * (2 ** attempt) if status_code == 429 else 2.0 * (attempt + 1)),
-                )
-                job_id = getattr(study_upload_context, "job_id", None)
-                if job_id and status_code == 429:
-                    _set_study_upload_job(
-                        job_id,
-                        message=(
-                            f"AI 服務目前忙碌，{math.ceil(retry_delay)} 秒後自動重試"
-                            f"（第 {attempt + 1}／{retry_limit - 1} 次）。"
-                        ),
-                    )
-                app.logger.warning(
-                    "Retrying OpenAI request %s after status=%s in %.1fs (attempt %s/%s)",
-                    name,
-                    status_code,
-                    retry_delay,
-                    attempt + 1,
-                    retry_limit - 1,
-                )
-                _study_upload_retry_wait(retry_delay)
-        if response is None:
-            raise requests.RequestException("OpenAI request did not return a response")
-        response_payload = response.json()
+        response_payload = _request_openai_response(
+            name=name,
+            request_body=request_body,
+            timeout=timeout,
+        )
         output_text = _extract_openai_text(response_payload)
         if not output_text:
             incomplete = response_payload.get("incomplete_details") or {}
@@ -3970,6 +4001,123 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not isinstance(parsed, dict):
             raise ValueError("OpenAI did not return a JSON object")
         return repair_strings(parsed)
+
+    def _call_openai_study_note_tools(
+        *,
+        subject: str,
+        source_pages: List[Dict[str, Any]],
+        coverage_checklist: List[Dict[str, Any]],
+        allow_corrections: bool,
+        max_rounds: int = 24,
+    ) -> Dict[str, Any]:
+        """Let the model compose a note through semantic function tools."""
+
+        valid_coverage_ids = {
+            str(item.get("id") or "").strip()
+            for item in coverage_checklist
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        }
+        required_coverage_ids = {
+            str(item.get("id") or "").strip()
+            for item in coverage_checklist
+            if isinstance(item, dict)
+            and item.get("priority") == "required"
+            and str(item.get("id") or "").strip()
+        }
+        # A page containing only explanatory prose still needs representation.
+        # Requiring its first source item prevents an entire non-mathematical
+        # page from disappearing merely because it has no formula/example cue.
+        represented_pages: Set[int] = set()
+        for item in coverage_checklist:
+            if not isinstance(item, dict):
+                continue
+            try:
+                image_index = int(item.get("image_index") or 0)
+            except (TypeError, ValueError):
+                continue
+            coverage_id = str(item.get("id") or "").strip()
+            if image_index > 0 and coverage_id and image_index not in represented_pages:
+                required_coverage_ids.add(coverage_id)
+                represented_pages.add(image_index)
+        accumulator = StudyNoteToolAccumulator(
+            source_pages=source_pages,
+            valid_coverage_ids=valid_coverage_ids,
+            required_coverage_ids=required_coverage_ids,
+            coverage_items=coverage_checklist,
+        )
+        prompt = (
+            f"你是「{subject}」筆記的忠實內容架構師。你可使用工具自由決定區塊數量、順序與類型，"
+            "不要把所有內容硬塞成同一種卡片。只根據 source_pages；禁止補充課本知識、外部例子、"
+            "來源未寫出的因果或定義。先呼叫 set_note_overview，再依內容呼叫 add_note_block，最後才呼叫 "
+            "finish_note。可在同一輪呼叫多個 add_note_block。\n"
+            "block_type 選擇規則：definition 用於明確定義；concept 用於核心觀念；procedure 用於流程、"
+            "演算法步驟、系統執行階段或操作順序；comparison 用於來源明確列出的差異；formula 用於公式、"
+            "遞迴式、複雜度或硬體關係；code 用於程式碼、虛擬碼、指令或資料結構操作；example 只用於來源"
+            "確實存在的例題／案例／練習；fact 用於不適合前述類型的具體事實。六科全部使用相同規則。\n"
+            "每個區塊只處理一個可獨立複習的目標。key_point 寫最重要結論，explanation 寫來源已有的脈絡；"
+            "details 只在來源真的有步驟、條目、組成或比較項目時使用。example 是可選欄位；definition、"
+            "concept、procedure、comparison、formula、code、fact 沒有來源例子時必須傳 null，不得為了填欄位"
+            "創造數字、情境或程式。example 區塊則必須在 example 放完整可作答題設或完整案例。pitfall 與 "
+            "memory_hint 也只有來源明寫時才填，否則傳 null。\n"
+            "所有公式使用 KaTeX 可渲染的 \\( ... \\) 或 \\[ ... \\]；程式碼保留自然換行，不要把程式碼改成"
+            "數學式。title 與 topic 必須是實際細分內容，不能直接等於六科科目名稱，也不能使用『其他』或"
+            "『綜合重點』。recall_cue 可為 null；系統會安全產生後備提示。\n"
+            "每個 sources.evidence 都必須逐字複製對應 transcription 中連續出現的原文；工具會拒絕改寫、"
+            "摘要、錯頁或不存在的 evidence。coverage_checklist 中 is_example=true 的項目必須各自建立 "
+            "example 區塊，其餘 required 項目必須被至少一個區塊覆蓋。coverage_ids 只能填實際涵蓋的 id。\n"
+            + (
+                "只可修正能由來源中的公式、標準定義或直接計算毫無歧義確認的錯誤；修正時 correction 四欄"
+                "完整填寫，否則 applied=false 且其他欄傳 null。"
+                if allow_corrections
+                else "不得修正內容；correction.applied=false，其他欄一律傳 null。"
+            )
+            + "\n若工具回傳錯誤，依錯誤修正該次呼叫，不要放棄整份筆記。finish_note 前自行確認每個重要"
+            "定義、流程、公式、程式碼、比較、例題與結論都已涵蓋。\n\n"
+            "source_pages="
+            + json.dumps(source_pages, ensure_ascii=False, separators=(",", ":"))
+            + "\ncoverage_checklist="
+            + json.dumps(coverage_checklist, ensure_ascii=False, separators=(",", ":"))
+        )
+        initial_input: List[Dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": prompt}],
+            }
+        ]
+        tools = build_study_note_tools(max_image_index=len(source_pages))
+
+        def request_round(
+            conversation: List[Dict[str, Any]],
+            round_index: int,
+        ) -> Dict[str, Any]:
+            _raise_if_study_upload_cancelled()
+            request_body: Dict[str, Any] = {
+                "model": openai_model,
+                "store": False,
+                "input": conversation,
+                "tools": tools,
+                "tool_choice": "required",
+                "parallel_tool_calls": True,
+                "max_output_tokens": 12000,
+            }
+            effective_reasoning_effort = normalize_openai_reasoning_effort(
+                openai_model,
+                "medium",
+            )
+            if effective_reasoning_effort:
+                request_body["reasoning"] = {"effort": effective_reasoning_effort}
+            return _request_openai_response(
+                name=f"study_note_tool_composer_{round_index + 1}",
+                request_body=request_body,
+                timeout=300,
+            )
+
+        return run_study_note_tool_conversation(
+            initial_input=initial_input,
+            accumulator=accumulator,
+            request_round=request_round,
+            max_rounds=max_rounds,
+        )
 
     def _study_text_quality_issue(value: Any, *, max_length: int) -> Optional[str]:
         text = str(value or "")
@@ -8290,6 +8438,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             core_summary = normalize_math_markup(strip_process_narration(str(item.get("core_summary") or "").strip()))
             explanation = normalize_math_markup(strip_process_narration(str(item.get("explanation") or "").strip()))
             card_type = "example" if item.get("card_type") == "example" else "concept"
+            content_kind = str(item.get("content_kind") or "").strip().lower()
+            if content_kind not in {
+                "definition",
+                "concept",
+                "procedure",
+                "comparison",
+                "formula",
+                "code",
+                "example",
+                "fact",
+            }:
+                content_kind = "example" if card_type == "example" else "concept"
             example_problem = normalize_math_markup(strip_process_narration(str(item.get("example_problem") or "").strip()))
             example_method = normalize_math_markup(strip_process_narration(str(item.get("example_method") or "").strip()))
             simple_example = normalize_math_markup(strip_process_narration(str(item.get("simple_example") or "").strip()))
@@ -8297,7 +8457,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             common_confusion = normalize_math_markup(strip_process_narration(str(item.get("common_confusion") or "").strip()))
             reasoning_steps = [
                 normalize_math_markup(strip_process_narration(str(step or "").strip()))
-                for step in (item.get("reasoning_steps") or [])[:4]
+                for step in (item.get("reasoning_steps") or [])[:8]
                 if str(step or "").strip()
             ] if isinstance(item.get("reasoning_steps"), list) else []
             topic = _normalize_study_concept_title(item.get("topic"), detected_topic)
@@ -8337,8 +8497,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     [core_summary, explanation, example_problem, example_method, *reasoning_steps]
                 )
             if card_type == "example" and not example_problem:
-                continue
-            if card_type == "concept" and not simple_example:
                 continue
             if card_type != "example":
                 example_problem = ""
@@ -8423,6 +8581,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "core_summary": core_summary,
                     "explanation": explanation,
                     "card_type": card_type,
+                    "content_kind": content_kind,
                     "example_problem": example_problem,
                     "example_method": example_method,
                     "simple_example": simple_example,
@@ -8435,7 +8594,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "coverage_ids": list(dict.fromkeys(coverage_ids))[:8],
                     "related_concepts": [
                         str(value).strip()[:80]
-                        for value in related_concepts[:2]
+                        for value in related_concepts[:4]
                         if str(value).strip()
                     ] if isinstance(related_concepts, list) else [],
                     "search_keywords": list(dict.fromkeys(search_keywords))[:8],
@@ -8472,12 +8631,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 matched = title_lookup.get(related.casefold())
                 if matched and matched != item["concept"] and matched not in normalized_related:
                     normalized_related.append(matched)
-            item["related_concepts"] = normalized_related[:2]
+            item["related_concepts"] = normalized_related[:4]
         for item in prepared_concepts:
             for related in list(item["related_concepts"]):
                 target = concepts_by_title.get(related)
                 if target is not None and item["concept"] not in target["related_concepts"]:
-                    target["related_concepts"] = (target["related_concepts"] + [item["concept"]])[:2]
+                    target["related_concepts"] = (target["related_concepts"] + [item["concept"]])[:4]
         return {
             "detected_topic": detected_topic[:80],
             "summary": summary,
@@ -8758,6 +8917,130 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 },
             },
         }
+
+        def finalize_tool_composed_note(
+            payload: Dict[str, Any],
+            source_pages: List[Dict[str, Any]],
+        ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+            """Apply deterministic validation and source localization to tool output."""
+
+            validated = _validate_recall_output(payload, source_pages)
+            if not validated:
+                return None, (
+                    "筆記內容已完成轉錄，但沒有可通過來源驗證的內容區塊；"
+                    "請稍後重試，不需要把其他科目的內容改成數學例題。"
+                )
+            _enrich_study_card_coverage_ids(validated, source_pages)
+            remaining_example_items = (
+                _study_recall_coverage_gaps(validated, source_pages).get("example_items") or []
+            )
+            if remaining_example_items:
+                app.logger.warning(
+                    "Tool-composed example coverage validation failed: %s",
+                    [item.get("id") for item in remaining_example_items],
+                )
+                return None, (
+                    f"仍有 {len(remaining_example_items)} 個來源中的例題未能可靠建立區塊，"
+                    "系統已保留原筆記，請稍後重試。"
+                )
+            validated["source_transcription"] = source_pages
+            validated["uncertain_fragments"] = [
+                {"image_index": page["image_index"], "text": fragment}
+                for page in source_pages
+                for fragment in page.get("uncertain_fragments") or []
+            ]
+            if progress_callback:
+                progress_callback(82, "內容工具已完成六科通用驗證，正在定位原文區塊。")
+            _raise_if_study_upload_cancelled()
+            try:
+                _localize_study_card_sources(
+                    images,
+                    validated["key_concepts"],
+                    validated["source_transcription"],
+                )
+                retry_concepts: List[Dict[str, Any]] = []
+                source_groups = 0
+                located_groups = 0
+                for concept in validated["key_concepts"]:
+                    if not isinstance(concept, dict):
+                        continue
+                    refs_by_page: Dict[int, List[Dict[str, Any]]] = {}
+                    for source_ref in concept.get("source_refs") or []:
+                        if not isinstance(source_ref, dict):
+                            continue
+                        try:
+                            image_index = int(source_ref.get("image_index") or 0)
+                        except (TypeError, ValueError):
+                            continue
+                        if (
+                            1 <= image_index <= len(images)
+                            and _literal_study_source_evidence(source_ref.get("evidence"))
+                        ):
+                            refs_by_page.setdefault(image_index, []).append(source_ref)
+                    missing_refs: List[Dict[str, Any]] = []
+                    for image_index, page_refs in refs_by_page.items():
+                        source_groups += 1
+                        if any(
+                            _validated_study_source_bbox(
+                                source_ref.get("bbox"),
+                                require_text_verified=True,
+                                expected_image_index=image_index,
+                            )
+                            is not None
+                            for source_ref in page_refs
+                        ):
+                            located_groups += 1
+                        else:
+                            missing_refs.append(
+                                max(
+                                    page_refs,
+                                    key=lambda source_ref: len(
+                                        _literal_study_source_evidence(
+                                            source_ref.get("evidence")
+                                        )
+                                    ),
+                                )
+                            )
+                    if missing_refs:
+                        retry_concept = {
+                            field: copy.deepcopy(concept.get(field))
+                            for field in (
+                                "concept",
+                                "topic",
+                                "content_kind",
+                                "core_summary",
+                                "explanation",
+                                "example_problem",
+                                "example_method",
+                                "simple_example",
+                            )
+                        }
+                        retry_concept["source_refs"] = missing_refs
+                        retry_concepts.append(retry_concept)
+                if (
+                    retry_concepts
+                    and source_groups
+                    and located_groups / source_groups < 0.90
+                ):
+                    if progress_callback:
+                        progress_callback(
+                            88,
+                            f"首次定位完成 {located_groups}/{source_groups} 個來源區塊，"
+                            "正在重試未定位區塊。",
+                        )
+                    _raise_if_study_upload_cancelled()
+                    _localize_study_card_sources(
+                        images,
+                        retry_concepts,
+                        validated["source_transcription"],
+                    )
+            except (requests.RequestException, ValueError, TypeError):
+                app.logger.exception("Tool-composed study-note source localization failed")
+            if progress_callback:
+                progress_callback(100, "來源區塊定位完成，本批筆記已完成整理。")
+            validated["organization_mode"] = "tool_composer_v1"
+            return validated, None
+
         try:
             if progress_callback:
                 progress_callback(20, "正在逐頁忠實轉錄文字、符號與公式，不做延伸解釋。")
@@ -9080,6 +9363,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "image_index": item["image_index"],
                     "text": str(item["text"])[:500],
                     "content_type": item.get("content_type") or "concept",
+                    "priority": item.get("priority") or "supporting",
                     "is_example": bool(item.get("is_example")),
                 }
                 for item in _study_source_coverage_items(source_pages)
@@ -9089,13 +9373,38 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if allow_corrections
                 else "不得修正任何內容；所有 correction.applied 必須是 false，其餘欄位為空字串。"
             )
+            if progress_callback:
+                progress_callback(52, "符號核對完成，正在用六科通用內容工具建立筆記。")
+            try:
+                tool_composed = _call_openai_study_note_tools(
+                    subject=subject,
+                    source_pages=source_pages,
+                    coverage_checklist=coverage_checklist,
+                    allow_corrections=allow_corrections,
+                )
+                finalized_tool_note, tool_note_error = finalize_tool_composed_note(
+                    tool_composed,
+                    source_pages,
+                )
+                if finalized_tool_note:
+                    return finalized_tool_note, None
+                raise StudyNoteToolError(
+                    tool_note_error or "tool-composed note failed deterministic validation"
+                )
+            except (json.JSONDecodeError, StudyNoteToolError, ValueError, TypeError) as exc:
+                # Keep the established JSON pipeline as a compatibility fallback
+                # for models or gateways that do not yet return valid function calls.
+                app.logger.warning(
+                    "Study-note tool composer failed; using legacy compatibility path: %s",
+                    exc,
+                )
             organizer_prompt = (
-                "你是跨學科的忠實筆記編輯，只能根據下方逐頁轉錄稿整理重點卡。除了 concept 卡 simple_example 可依後述規則做最小代入示範外，不得加入轉錄稿沒有的定義、背景知識、例子、用途、推導、因果關係或專有名詞解釋；"
+                "你是跨學科的忠實筆記編輯，只能根據下方逐頁轉錄稿整理重點卡。不得加入轉錄稿沒有的定義、背景知識、例子、用途、推導、因果關係或專有名詞解釋；"
                 "不得把僅被提到的術語另做定義卡。可以改寫語序與合併同一觀念的重複句，但每一句資訊都必須能在轉錄稿找到。"
                 "每張卡只處理一個原筆記正在記錄的觀念，concept 使用不超過 18 個中文字的短標題。recall_cue 是揭示內容前的回想線索，以 2 至 4 個來源已有的關鍵詞呈現，可使用『條件 → 關係 → 結論』等短結構，但不能直接洩露完整答案、不能使用問號，也不能寫成考題。core_summary 用 1 至 2 個短句或一個完整公式直接寫出這張卡最需要記住的結論。explanation 再補足成立條件、觀念脈絡與來源確實寫出的最短推導；通常 2 至 4 個短句即可。"
                 "reasoning_steps 只在來源確實包含推導、程序或解題步驟時填入 2 至 4 個可重用短步驟，純定義卡輸出空陣列。common_confusion 只有來源明確比較兩個觀念、指出易錯處，或允許校正且有直接可驗證錯誤時才填寫，否則輸出空字串；不可自行猜測學生會錯在哪裡。"
                 "若來源是例題、範例或算例，card_type 必須為 example；一般觀念卡為 concept。example 卡的 example_problem 必須寫成一個可直接作答的具體題目示例，完整保留必要的數值、向量、矩陣、函數、條件與明確要求，不可只寫『判斷某性質』卻省略實際題設；example_method 只用 1 至 2 個短句寫來源實際採用、可重複使用的核心判斷或策略，不得編號或逐步列舉；reasoning_steps 再列必要操作。題目、方法與步驟不可混寫或重複。example 卡的 simple_example 必須是空字串。"
-                "每張 concept 卡都要填 simple_example：優先整理來源中原有的最短例子；若來源沒有例子，只能把該卡來源已寫出的定義或公式代入最簡單的數值、符號或情境，做 1 至 2 句的最小示範。不得引入新定理、新術語、新條件、不同題型或來源外的解法，也不能只是重複定義。concept 卡的 example_problem 與 example_method 必須是空字串。"
+                "concept 卡的 simple_example 只整理來源中原有的最短例子；來源沒有例子時必須留空，不得創造數值、公式代入、情境或程式。concept 卡的 example_problem 與 example_method 必須是空字串。"
                 "例題卡可刪除不影響作答的冗長背景，但不得刪掉具體題設、必要數值、給定式或要求，也不可只給最終答案。不得把偶然數值寫進 core_summary。只有用來否定性質的最小反例，才可保留證明失敗所必需的數值。"
                 "例題方法可以把來源中反覆使用或清楚展示的操作抽象成一般步驟，但每個步驟都必須能由該例題的 source_refs 支持；不可補入來源沒用到的定理、捷徑或新解法。若來源只有題目和答案、沒有可辨識過程，就不要臆造解法。"
                 "刪除教學口吻、重要性說明、驗證過程、重複結論、公式的文字重述、同義改寫、延伸提醒與『換句話說』『這表示』『可以看出』『值得注意』等填充語。"
@@ -9132,7 +9441,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "正文與 search_keywords 都應優先保留原筆記實際使用的詞彙、記號和條件順序；不要用外部同義詞取代。search_keywords 只保留能在卡片、source_refs 或高信心校正結果中找到的搜尋詞。"
                 "保留清楚可辨的原筆記公式。correction 只有在錯誤毫無歧義且允許校正時才能保留，否則恢復原文或刪除該項。"
                 "再次排除重複句、公式的文字重述、教學口吻與不影響複習的補充。所有卡片文字欄位與 summary 只要仍含『筆記給出／註明／記載／指出／提到』及其同義寫法，就視為審核不合格並改寫為直接知識陳述。recall_cue 不得洩露 core_summary，也不得寫成問題；reasoning_steps 與 common_confusion 沒有直接來源支持時必須留空。summary 只能用最多 5 個短句直接摘要核心結論。不要輸出審核說明。"
-                "另外檢查所有例題卡：card_type 必須為 example，example_problem 必須包含一個具體、可直接作答的完整題目示例與明確要求，example_method 只留來源真正使用的可重用判斷，reasoning_steps 只留操作順序，simple_example 留空。三者不可互相重複，也不能創造新技巧。每張 concept 卡的 simple_example 都必須是簡短具體示範；若原文沒有例子，只允許對來源已有定義或公式做最小數值或符號代入，不得補充來源外知識。"
+                "另外檢查所有例題卡：card_type 必須為 example，example_problem 必須包含一個具體、可直接作答的完整題目示例與明確要求，example_method 只留來源真正使用的可重用判斷，reasoning_steps 只留操作順序，simple_example 留空。三者不可互相重複，也不能創造新技巧。concept 卡只有在原文確實提供例子時才保留 simple_example，否則留空。"
                 "所有聲稱某性質不成立的例題都必須重新驗算前提與運算：測試輸入若不符合該性質的前提、計算錯誤，或實際上反而滿足該性質，就不能當成反例。來源清楚且允許校正時，必須依來源已有的映射、定義與直接計算修正成正確卡片並記入 correction；只有原圖與前後文仍無法唯一推定時才略過。"
                 "先逐段清點 source_pages 與圖片中的標題、定義、公式、例題方法與結論；draft 漏掉但圖片或高／中信心的上下文補全仍足以確認核心觀念時，必須補回卡片。局部字跡不清不代表整段都要刪除；先利用重複記號、句法、公式結構與相鄰推導補全，只略過仍有多種合理結果且會影響正確性的字元。來源中清楚可辨但結論錯誤的觀念必須修正後補回，不得視為無來源。"
                 f"各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}。逐頁檢查 source_refs，優先讓有公式、定義、方法或例題策略的頁面得到代表卡；一般補充內容可併入相關卡片，不得用無關卡片虛報引用。"
@@ -9166,11 +9475,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "所有推導、計算、分類、因果或比較都必須符合來源中明示的前提。來源本身清楚但內容有誤，且 allow_corrections=true 時，必須做最小必要修正、保留為正確卡片並記入 correction，不得以刪卡代替校正；只有結果完全沒有來源支持時才能刪除。"
                 "重新對照圖片，OCR 與圖片不同時以圖片為準；這類 OCR、上下文補字、漏字、標點或 LaTeX 排版修復不算筆記內容校正，不得建立 correction。correction 只記錄原圖筆記本身可直接驗證的知識、公式、計算或結論錯誤。若某個文字、數字或符號無法直接辨認，先以同頁前後文、重複記號、公式結構與相鄰推導做最小補全；已被唯一推定且有高／中信心紀錄時保留。仍有多種合理結果時才刪除受影響的卡片，不可在卡片中寫模糊或待確認說明。"
                 "除例題方法卡可從來源已展示的操作整理成可重用步驟外，禁止在具體內容與一般內容之間擅自轉換，禁止加入課本延伸、跨科聯想或來源沒有的教學解釋。方法卡只能描述 source_refs 實際出現的判斷與操作，不得替操作新增來源沒寫的理論名稱、資料結構、演算法、定理、空間分類、證明或另一套解法。"
-                "同時刪除原筆記未明說的通則、額外定義、延伸例子與教學詮釋；唯一例外是 concept 卡 simple_example 可對來源既有定義或公式做最小數值／符號代入，不得因此產生新知識。source_refs.evidence 仍必須逐字存在於對應 transcription，並且是原圖可見字元，不得是頁面位置、圖示或內容大意的描述；"
+                "同時刪除原筆記未明說的通則、額外定義、延伸例子與教學詮釋；concept 卡 simple_example 只能保留來源明示的例子，沒有時留空。source_refs.evidence 仍必須逐字存在於對應 transcription，並且是原圖可見字元，不得是頁面位置、圖示或內容大意的描述；"
                 "優先保留來源原本的專有名詞、關鍵短語、變數與條件順序，只做最小必要的模糊字補全或可直接驗證校正。search_keywords 必須是可從卡片、source_refs 或高信心校正結果直接找到的原始搜尋詞，不得自行擴充同義詞。"
                 "若修正結果是由來源中的明確內容直接得到，可引用包含該內容的原文。卡片正文只寫可複習的來源內容，絕對不可提到筆記、原稿、OCR、核對、稽核或修正過程；"
                 "每張卡只輸出一個核心觀念所需的最短完整內容：recall_cue 提供不洩漏答案的關鍵詞，core_summary 放最需要記住的結論，explanation 放條件與脈絡，reasoning_steps 只放來源已有的必要推導或操作。不得輸出重複結論、驗證代回、同義重述、重要性說明與教學填充語。所有文字欄位與 summary 禁止出現『筆記給出』『筆記註明』『筆記記載／紀載』『根據筆記』『原文指出』等來源敘事；發現時必須先改寫，不能原樣輸出。"
-                "例題卡的 card_type 必須為 example，並把具體且可直接作答的完整必要題設、可重用解法、操作順序分別寫入 example_problem、example_method、reasoning_steps，simple_example 留空；可刪冗長背景但不可省略數值、給定式、條件或要求。若來源沒有足夠過程可整理方法，仍保留該例題卡，example_method 填『來源未提供完整解法』，不可臆造解法。一般卡為 concept，example_problem 與 example_method 留空，simple_example 必須是來源例子或只對來源已有定義／公式所做的最小代入示範。"
+                "例題卡的 card_type 必須為 example，並把具體且可直接作答的完整必要題設、可重用解法、操作順序分別寫入 example_problem、example_method、reasoning_steps，simple_example 留空；可刪冗長背景但不可省略數值、給定式、條件或要求。若來源沒有足夠過程可整理方法，仍保留該例題卡，example_method 填『來源未提供完整解法』，不可臆造解法。一般卡為 concept，example_problem 與 example_method 留空，simple_example 只有來源存在例子時才填寫。"
                 "對每個反例或性質判定例，逐項驗證輸入是否符合欲檢查性質的前提，並重新計算映射結果；來源清楚且 allow_corrections=true 時，錯誤反例、錯誤等號或錯誤結論必須校正並記錄，不能刪除該觀念。只有影像與前後文都不足以唯一判定正確內容時才略過。"
                 f"稽核前先建立 source_pages 的內容清單，逐段比對 verified；依目前資訊量，本批建議至少約 {audit_card_floor} 張互不重複的候選卡片，但卡片數量不設上限，也不可為達成張數拆出空泛卡。圖片或高／中信心補全仍可確認核心定義、公式、方法或結論的段落若遭漏掉，應優先補回；同一張卡若混入可各自複習的獨立定義、方法或章節，才需要拆卡。局部不清先做最小上下文補全，不得刪除其餘可確認觀念；若清楚觀念本身寫錯且允許校正，補回修正後的正確卡片。"
                 f"各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}。逐頁計數 source_refs，優先補回缺頁的公式、定義、方法、例題策略與結論；一般補充段落可以併入同觀念卡。不可用與該頁無關的卡片虛報引用。"
@@ -9325,7 +9634,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "只能使用 source_pages 與原圖已有內容，不得補充課本知識。priority=required 的公式、定義、方法、例題策略與結論優先補回；supporting 一般敘述可併入最相關卡片，不必獨立成卡。"
                     "同一觀念的成對定義、連續推導或同方法例題可以合併成資訊完整的一張卡；不同章節或不同複習目標才拆卡。卡片數量不設上限，由你依來源資訊與複習目標決定。"
                     "source_refs.evidence 必須逐字連續存在於對應頁 transcription，並且能在原圖直接看到，不得用頁面位置、圖示或內容大意取代原文；coverage_ids 只能標記該卡實際整理的區塊，不可用無關卡片虛報。"
-                    "例題必須使用 card_type=example，example_problem 要保留可直接作答的具體題設、數值／給定式、條件與要求，並和可重用解法 example_method、操作 reasoning_steps 分欄；simple_example 留空。若來源未提供解法，example_method 填『來源未提供完整解法』，不可臆造。一般卡使用 card_type=concept，兩個 example 欄位留空，simple_example 必須提供來源例子或只對來源既有定義／公式做最小代入的短示範。"
+                    "例題必須使用 card_type=example，example_problem 要保留可直接作答的具體題設、數值／給定式、條件與要求，並和可重用解法 example_method、操作 reasoning_steps 分欄；simple_example 留空。若來源未提供解法，example_method 填『來源未提供完整解法』，不可臆造。一般卡使用 card_type=concept，兩個 example 欄位留空；simple_example 只有來源明示例子時才填寫，否則留空。"
                     "卡片正文不得出現來源敘事、稽核說明、外部延伸或來源沒有的術語。錯誤只做可由原圖內容直接驗證的最小修正。不可因卡片數量而刪除重點。"
                     f"\nallow_corrections={str(allow_corrections).lower()}"
                     f"\npage_information_targets={json.dumps(coverage_plan['page_quotas'], ensure_ascii=False)}"
@@ -9590,12 +9899,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "card_type=example 的卡不可改成 concept。example_problem 必須是一個拿到後可以直接開始作答的具體題目示例：保留所有必要數值、向量、矩陣、函數、給定式、條件及明確要求；可以刪除不影響作答的背景敘述，但不可只留下抽象的『判斷是否成立』而沒有實際題設，也不可包含完整運算或最終答案。simple_example 必須留空。"
                     "example_method 用 1 至 2 個短句說明來源實際採用、可重用的判斷或策略，不得編號、不得寫『步驟一』，也不得直接重複 reasoning_steps；"
                     "既有 reasoning_steps 已在前一階段完成，不要在這次輸出重寫。"
-                    "card_type=concept 的卡不可改成 example。simple_example 必須用 1 至 2 句給一個最小、具體且能看出觀念如何套用的例子；優先使用 source_evidence 原有例子。來源沒有例子時，只能把 source_evidence 已有的定義或公式代入最簡單的數值、符號或情境，例如替既有變數選小整數後展示公式結果；不得加入新定理、新名詞、新成立條件、新題型或不同解法，也不能只重複 core_summary。example_problem、example_method 與 reasoning_steps 維持原本內容，其中兩個 example 欄位必須留空。"
+                    "card_type=concept 的卡不可改成 example。simple_example 只可整理 source_evidence 原有的例子；來源沒有例子時留空，不得創造數值、情境、公式代入或程式。example_problem、example_method 與 reasoning_steps 維持原本內容，其中兩個 example 欄位必須留空。"
                     "來源只有最終結果而沒有方法時，不可發明新解法；可把來源明示的直接代入、列式、比較或計算寫成最小方法。"
                     "逐題重新檢查題設前提、函數或映射輸入、維度、正負號、上下標、代入、算術、等號與結論。若用反例否定性質，必須先確認測試值滿足該性質要求的關係；例如檢查齊次性 f(-u)=-f(u) 時，左側輸入必須真的是 -u。"
                     "內容與公式已由前一階段校正；本次只整理 simple_example、example_problem、example_method 三欄，不可重寫其他卡片內容。"
                     "不得加入來源沒有的定理、術語、公式、數值或另一套解法。數學式使用 KaTeX LaTeX，行內用 \\( ... \\)，獨立式用 \\[ ... \\]。"
-                    "每個指定 concept_index 必須恰好輸出一次。example 卡的 example_problem 與 example_method 必須非空；concept 卡的 simple_example 必須非空。只輸出 schema JSON。\n\n"
+                    "每個指定 concept_index 必須恰好輸出一次。example 卡的 example_problem 與 example_method 必須非空；concept 卡允許 simple_example 為空字串。只輸出 schema JSON。\n\n"
                     f"allow_corrections={str(allow_corrections).lower()}\n"
                     + json.dumps(example_catalog, ensure_ascii=False, separators=(",", ":"))
                 )
@@ -9631,7 +9940,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         simple_example = str(item.get("simple_example") or "").strip()
                         if (
                             (expected_type == "example" and (not problem or not method or simple_example))
-                            or (expected_type == "concept" and (not simple_example or problem or method))
+                            or (expected_type == "concept" and (problem or method))
                             or (_study_text_quality_issue(problem, max_length=420) if problem else None)
                             or (_study_text_quality_issue(method, max_length=340) if method else None)
                             or (_study_text_quality_issue(simple_example, max_length=420) if simple_example else None)
@@ -9741,10 +10050,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 ],
             }
             latex_prompt = (
-                "你是最後的筆記呈現校對器。先根據每張卡的 source_evidence 判斷它是一般知識還是例題。一般知識卡必須刪除 source_evidence 不支持的補充、證明與術語，只保留來源內容並修正 LaTeX；除下述高信心錯誤校正及 simple_example 的最小代入示範外，不可改變知識內容。例題卡必須同時保留可直接作答的具體題目示例與可重用解題方法：example_problem 保留必要數值、給定式、條件和明確要求，只刪不影響作答的背景敘述及最終答案；example_method 與 reasoning_steps 保留來源實際展示的關鍵判斷與必要操作。"
+                "你是最後的筆記呈現校對器。先根據每張卡的 source_evidence 判斷它是一般知識還是例題。一般知識卡必須刪除 source_evidence 不支持的補充、證明與術語，只保留來源內容並修正 LaTeX；除下述高信心錯誤校正外，不可改變知識內容。例題卡必須同時保留可直接作答的具體題目示例與可重用解題方法：example_problem 保留必要數值、給定式、條件和明確要求，只刪不影響作答的背景敘述及最終答案；example_method 與 reasoning_steps 保留來源實際展示的關鍵判斷與必要操作。"
                 "例題方法不得加入 source_evidence 沒有使用的定理、術語或步驟，也不得替來源中的操作命名新的理論、演算法、資料結構、空間分類或證明方式。每張卡完成後逐一比對名詞：來源只有公式或操作時就直接保留公式或操作，不得補上課本分類名稱；例如來源只有 rank(A)=n 或 rank(A)=m，就不可額外稱為滿列秩、滿行秩或滿柱秩。其他科目也使用相同規則。只有最小反例卡可保留否定性質必需的數值。若任何卡片的前提、定義、計算、矩陣維度、等號或結論錯誤，但可由 source_evidence 中已有的定義、公式或直接計算明確判定，allow_corrections=true 時必須做最小必要修正、輸出正確卡片，不得刪除。"
                 "修正時 correction_applied=true，correction_original 逐字放入來源中最小的錯誤片段，correction_reason 簡述可直接驗證的原因；未修正時 correction_applied=false 且兩個字串留空。OCR 誤讀、上下文補字、漏字、標點、用詞潤飾與 LaTeX 排版修復不算筆記內容錯誤，correction_applied 必須是 false。不得為修正補入來源沒有使用的新觀念、定理或另一套解法。已由前後文唯一補全且有高／中信心紀錄的文字必須正常保留；只有仍含〔無法推定〕的片段才維持略過結果。"
-                "summary 可重新整理成最後保留卡片的核心總結，但不得列出例題的具體答案，也不得加入新知識。concept 改成不含公式、變數、題號或題目數值的簡短純中文名稱，忠實描述原卡核心；topic 可重新整理成科目內精確的細分觀念。recall_cue 只保留來源已有的 2 至 4 個提示關鍵詞，不可使用問號或直接揭露 core_summary。core_summary、explanation、example_problem、example_method、reasoning_steps、common_confusion 與 memory_hint 都只能修正排版，不能補入 source_evidence 沒有的知識；沒有直接來源支持的欄位必須留空。例題維持 card_type=example，將具體可作答的必要題設、可重用解法、操作步驟分欄，simple_example 留空；example_method 只能用 1 至 2 句寫策略，不得包含 1)、2)、『步驟』等逐項內容，也不得重複 reasoning_steps。一般卡維持 concept，example_problem 與 example_method 留空；simple_example 必須保留前一階段的簡短具體示例，並把其中公式修成 LaTeX。若來源沒有原例子，simple_example 只可對 source_evidence 已有定義或公式做最小數值／符號代入，不得加入新知識。"
+                "summary 可重新整理成最後保留卡片的核心總結，但不得列出例題的具體答案，也不得加入新知識。concept 改成不含公式、變數、題號或題目數值的簡短純中文名稱，忠實描述原卡核心；topic 可重新整理成科目內精確的細分觀念。recall_cue 只保留來源已有的 2 至 4 個提示關鍵詞，不可使用問號或直接揭露 core_summary。core_summary、explanation、example_problem、example_method、reasoning_steps、common_confusion 與 memory_hint 都只能修正排版，不能補入 source_evidence 沒有的知識；沒有直接來源支持的欄位必須留空。例題維持 card_type=example，將具體可作答的必要題設、可重用解法、操作步驟分欄，simple_example 留空；example_method 只能用 1 至 2 句寫策略，不得包含 1)、2)、『步驟』等逐項內容，也不得重複 reasoning_steps。一般卡維持 concept，example_problem 與 example_method 留空；simple_example 只保留前一階段已有且可由 source_evidence 支持的例子，來源沒有例子時留空。"
                 "每個數學、離散數學、演算法或計算機科學符號表達都必須使用可由 KaTeX 渲染的 LaTeX：行內一律用 \\( ... \\)，獨立式一律用 \\[ ... \\]。矩陣與向量的每個分量必須分格，欄用 &、列用 \\\\，禁止把兩個分量或兩列直接相連。"
                 "包括變數與函數式、集合與邏輯式、上下標、向量、矩陣、映射、等式、不等式、複雜度、機率、求和、遞迴式及所有含運算符的式子。普通中文必須留在 LaTeX 定界符外；禁止輸出 \\(T為線性\\) 這類把中文直接放進數學模式的格式，應寫成 \\(T\\) 為線性。禁止在一組 \\( ... \\) 或 \\[ ... \\] 內再嵌套另一組定界符。"
                 "禁止使用 $ 或 $$；禁止留下像 T(a,b)=...、R^2、x_i、rank(A) 這種沒有分隔符的裸露公式。"
@@ -13429,5 +13738,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             app_home_url=app_home_url,
             support_email=support_email,
         )
+
+    # Keep the deterministic validator reachable for integration tests without
+    # exposing a route or coupling tests to OpenAI/network behavior.
+    app.extensions["study_note_output_validator"] = _validate_recall_output
+    app.extensions["study_note_tool_composer"] = _call_openai_study_note_tools
 
     return app
