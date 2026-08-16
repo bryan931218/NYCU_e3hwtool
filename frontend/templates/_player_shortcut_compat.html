@@ -11,8 +11,8 @@
         opacity: 1 !important;
         z-index: 1 !important;
         background: transparent !important;
-        cursor: default !important;
-        touch-action: auto;
+        cursor: pointer !important;
+        touch-action: manipulation;
     }
 
     /* Let real pointer movement reach the cross-origin YouTube player so its
@@ -87,7 +87,6 @@
     let wasFocusMode = false;
     let hintTimer = null;
     let nativeControlsTimer = null;
-    let nativeControlsActivityFrame = 0;
     let toastTimer = null;
     let holdTimer = null;
     let heldSeekCode = '';
@@ -221,10 +220,6 @@
 
     const activateShortcutSurface = () => {
         if (!isFocusMode()) return;
-        if (nativeControlsActivityFrame) {
-            window.cancelAnimationFrame(nativeControlsActivityFrame);
-            nativeControlsActivityFrame = 0;
-        }
         frame.classList.remove('e3-native-controls-active');
         if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
         nativeControlsTimer = null;
@@ -238,25 +233,16 @@
             frame.classList.remove('e3-show-shortcut-hint');
         }, settings.hint_duration_ms);
     };
-    const flushNativeControlActivity = () => {
-        nativeControlsActivityFrame = 0;
+    const releaseForNativeControls = () => {
+        resetSpace(true);
+        stopContinuousSeek();
         if (!isFocusMode()) return;
-        if (spaceDown || boostActive) resetSpace(true);
-        if (heldSeekCode) stopContinuousSeek();
         if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
-        if (!frame.classList.contains('e3-native-controls-active')) {
-            frame.classList.add('e3-native-controls-active');
-        }
+        frame.classList.add('e3-native-controls-active');
         nativeControlsTimer = window.setTimeout(() => {
             frame.classList.remove('e3-native-controls-active');
             nativeControlsTimer = null;
         }, Math.max(1200, Number(settings.controls_hide_ms) || 2600));
-    };
-    const releaseForNativeControls = () => {
-        if (!isFocusMode() || nativeControlsActivityFrame) return;
-        nativeControlsActivityFrame = window.requestAnimationFrame(
-            flushNativeControlActivity
-        );
     };
     const syncFocusMode = () => {
         const active = isFocusMode();
@@ -272,12 +258,8 @@
             frame.classList.remove('e3-native-controls-active', 'e3-show-shortcut-hint');
             if (hintTimer) window.clearTimeout(hintTimer);
             if (nativeControlsTimer) window.clearTimeout(nativeControlsTimer);
-            if (nativeControlsActivityFrame) {
-                window.cancelAnimationFrame(nativeControlsActivityFrame);
-            }
             hintTimer = null;
             nativeControlsTimer = null;
-            nativeControlsActivityFrame = 0;
         }
     };
 
@@ -287,6 +269,7 @@
         event.preventDefault();
         event.stopImmediatePropagation();
     }, true);
+    capture.addEventListener('pointerenter', activateShortcutSurface);
     capture.addEventListener('pointermove', releaseForNativeControls, { passive: true });
     capture.addEventListener('pointerdown', activateShortcutSurface);
     document.querySelectorAll('#marker-save, #focus-marker-save').forEach((button) => {

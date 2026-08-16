@@ -129,17 +129,8 @@ class PlayerSettingsTests(unittest.TestCase):
         dock_source = (template_dir / "_player_control_dock.html").read_text(
             encoding="utf-8"
         )
-        tracker_source = (template_dir / "_study_upload_tracker.html").read_text(
-            encoding="utf-8"
-        )
         self.assertIn(
             "capture.addEventListener('pointermove', releaseForNativeControls",
-            shortcut_source,
-        )
-        self.assertIn("nativeControlsActivityFrame", shortcut_source)
-        self.assertIn("requestAnimationFrame(\n            flushNativeControlActivity", shortcut_source)
-        self.assertNotIn(
-            "capture.addEventListener('pointerenter', activateShortcutSurface)",
             shortcut_source,
         )
         self.assertIn("pointer-events: none !important", shortcut_source)
@@ -149,13 +140,6 @@ class PlayerSettingsTests(unittest.TestCase):
         )
         self.assertIn("opacity: 1;\n        pointer-events: none;", dock_source)
         self.assertIn("pointer-events: auto;\n        font: inherit;", dock_source)
-        self.assertIn("controlsActivityFrame", dock_source)
-        self.assertIn("requestAnimationFrame(flushControlActivity)", dock_source)
-        self.assertIn("-webkit-backdrop-filter: none;", dock_source)
-        self.assertIn(
-            "if (!window.__e3PlayerShortcutCompatibilityInstalled) capture.blur()",
-            tracker_source,
-        )
 
     def test_quick_marker_uses_r_and_m_remains_mute(self):
         template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"

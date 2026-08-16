@@ -29,9 +29,8 @@
         box-shadow:
             0 18px 50px rgba(0, 0, 0, .34),
             inset 0 1px 0 rgba(255, 255, 255, .08);
-        -webkit-backdrop-filter: none;
-        backdrop-filter: none;
-        contain: layout paint style;
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        backdrop-filter: blur(18px) saturate(140%);
         transform: translateX(-50%);
         opacity: 0;
         pointer-events: none;
@@ -46,17 +45,6 @@
         border-radius: 20px;
         opacity: 1;
         pointer-events: none;
-    }
-
-    /* Live backdrop blur over a playing iframe forces expensive compositing on
-       every video frame and can make pointer movement feel delayed. */
-    .player-frame .focus-launch,
-    .player-frame .focus-exit,
-    .player-frame .focus-marker,
-    .player-frame .focus-toast,
-    .player-frame .video-end-screen {
-        -webkit-backdrop-filter: none !important;
-        backdrop-filter: none !important;
     }
 
     .player-frame.is-focus-mode.e3-controls-idle:not(.e3-native-controls-active) .e3-player-control-dock:not(:focus-within):not(:hover) {
@@ -349,8 +337,6 @@
     }
 
     let controlsIdleTimer = null;
-    let controlsActivityFrame = 0;
-    let controlsIdleDeadline = 0;
     let toastTimer = null;
     let playerState = -1;
     let currentRate = 1;
@@ -432,46 +418,17 @@
         syncVolumeShortcutHint();
         syncRateControls();
     };
-    const pointerClock = () => (
-        typeof window.performance?.now === 'function'
-            ? window.performance.now()
-            : Date.now()
-    );
-    const controlsHideDelay = () => Math.max(
-        1200,
-        Number(playerSettings.controls_hide_ms) || 2600
-    );
-    const armControlsIdleTimer = () => {
-        if (controlsIdleTimer || !isFocusMode()) return;
-        const checkIdle = () => {
-            controlsIdleTimer = null;
-            if (!isFocusMode()) return;
-            const remaining = controlsIdleDeadline - pointerClock();
-            if (remaining > 16) {
-                controlsIdleTimer = window.setTimeout(checkIdle, remaining);
-                return;
-            }
-            if (!dock.matches(':hover') && !dock.contains(document.activeElement)) {
-                frame.classList.add('e3-controls-idle');
-            }
-        };
-        controlsIdleTimer = window.setTimeout(
-            checkIdle,
-            Math.max(16, controlsIdleDeadline - pointerClock())
-        );
-    };
-    const flushControlActivity = () => {
-        controlsActivityFrame = 0;
-        if (!isFocusMode()) return;
-        if (frame.classList.contains('e3-controls-idle')) {
-            frame.classList.remove('e3-controls-idle');
-        }
-        controlsIdleDeadline = pointerClock() + controlsHideDelay();
-        armControlsIdleTimer();
-    };
     const revealControls = () => {
-        if (!isFocusMode() || controlsActivityFrame) return;
-        controlsActivityFrame = window.requestAnimationFrame(flushControlActivity);
+        frame.classList.remove('e3-controls-idle');
+        if (controlsIdleTimer) window.clearTimeout(controlsIdleTimer);
+        controlsIdleTimer = null;
+        if (isFocusMode()) {
+            controlsIdleTimer = window.setTimeout(() => {
+                if (!dock.matches(':hover') && !dock.contains(document.activeElement)) {
+                    frame.classList.add('e3-controls-idle');
+                }
+            }, Math.max(1200, Number(playerSettings.controls_hide_ms) || 2600));
+        }
     };
     const togglePlayback = () => {
         if (!playerReady()) return;
@@ -611,15 +568,7 @@
         const active = isFocusMode();
         if (active === wasFocusMode) return;
         wasFocusMode = active;
-        if (!active) {
-            frame.classList.remove('e3-controls-idle');
-            if (controlsActivityFrame) window.cancelAnimationFrame(controlsActivityFrame);
-            if (controlsIdleTimer) window.clearTimeout(controlsIdleTimer);
-            controlsActivityFrame = 0;
-            controlsIdleTimer = null;
-            controlsIdleDeadline = 0;
-            return;
-        }
+        if (!active) frame.classList.remove('e3-controls-idle');
         revealControls();
     });
     classObserver.observe(frame, { attributes: true, attributeFilter: ['class'] });
