@@ -875,6 +875,9 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("Number(video.completion || 0) < 100", marker_html)
             self.assertNotIn("&& Boolean(String(video.youtube_video_id", marker_html)
             self.assertIn("尚未連結 YouTube", marker_html)
+            self.assertIn("grid-template-columns:repeat(auto-fit,minmax(158px,1fr))", marker_html)
+            self.assertNotIn(".video-end-list { min-height:0; display:flex", marker_html)
+            self.assertIn("candidates.forEach(function (video)", marker_html)
 
             completed_candidate = today_task_videos[0]
             completed_video = next(
