@@ -12981,6 +12981,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         videos = storage.list_study_plan_videos_with_records()
         week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
         current_week = _study_plan_progress_week(week_rows)
+        videos_by_subject: Dict[str, List[Dict[str, Any]]] = {
+            subject: [] for subject in STUDY_PLAN_SUBJECTS
+        }
+        for video in videos:
+            videos_by_subject.setdefault(str(video.get("subject") or ""), []).append(video)
+        today_task_videos = _study_plan_today_task_videos(
+            videos_by_subject,
+            week_rows,
+            current_week,
+        )
         if not result.get("stale"):
             record_ui_event(
                 "study_plan_youtube_progress_saved",
@@ -12996,6 +13006,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "total_videos": int(summary["total_videos"]),
                 "video_completion": round(float(summary["video_completion"]), 1),
             },
+            "today_task_videos": today_task_videos,
             "current_week": {
                 "start": current_week["start"],
                 "watched_minutes": round(float(current_week["watched_minutes"]), 1),

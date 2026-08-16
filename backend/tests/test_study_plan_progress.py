@@ -687,6 +687,11 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertEqual(payload["completion"], 100)
             self.assertEqual(payload["summary"]["completed_videos"], 1)
             self.assertEqual(payload["progress_version"], 1)
+            self.assertIn("today_task_videos", payload)
+            self.assertNotIn(
+                int(first_video["id"]),
+                {int(video["id"]) for video in payload["today_task_videos"]},
+            )
             current_day_subjects = payload["current_week"]["daily_recommendations"][0]["subject_progress"]
             self.assertEqual(
                 [item["name"] for item in current_day_subjects],
@@ -793,6 +798,79 @@ class StudyPlanProgressTests(unittest.TestCase):
                 item for item in public_calendar["days"] if item["date"] == date.today().isoformat()
             )
             self.assertEqual(public_today_entry["activities"][0]["title"], first_video["title"])
+            storage._engine.dispose()
+
+    def test_progress_api_refreshes_all_subject_candidates_after_video_ends(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+
+            storage = app.extensions["e3_storage"]
+            videos = storage.list_study_plan_videos_with_records()
+            for video in videos:
+                if video["subject"] != "線性代數":
+                    continue
+                storage.update_study_plan_video_progress(
+                    video_id=int(video["id"]),
+                    watched_seconds=float(video["duration_seconds"]),
+                    expected_version=int(video["progress_version"]),
+                )
+
+            token = "study-plan-refresh-candidates-session"
+            storage.save_web_session(token, "test-admin")
+            client = app.test_client()
+            with client.session_transaction() as browser_session:
+                browser_session["username"] = "test-admin"
+                browser_session["session_token"] = token
+                browser_session["is_admin"] = True
+
+            page = client.get("/admin/study-plan")
+            match = re.search(
+                r'<script type="application/json" id="today-task-videos-data">(.*?)</script>',
+                page.get_data(as_text=True),
+                re.DOTALL,
+            )
+            self.assertIsNotNone(match)
+            initial_tasks = json.loads(match.group(1))
+            self.assertGreaterEqual(len(initial_tasks), 2)
+            self.assertEqual(
+                {video["subject"] for video in initial_tasks[:2]},
+                {"離散數學", "資料結構"},
+            )
+
+            completed_task = initial_tasks[0]
+            completed_video = next(
+                video
+                for video in storage.list_study_plan_videos_with_records()
+                if int(video["id"]) == int(completed_task["id"])
+            )
+            response = client.post(
+                "/admin/study-plan/video-progress",
+                json={
+                    "video_id": completed_video["id"],
+                    "watched_seconds": completed_video["duration_seconds"],
+                    "expected_version": completed_video["progress_version"],
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            refreshed_tasks = response.get_json()["today_task_videos"]
+            self.assertGreaterEqual(len(refreshed_tasks), 2)
+            self.assertNotIn(
+                int(completed_task["id"]),
+                {int(video["id"]) for video in refreshed_tasks},
+            )
+            self.assertEqual(
+                {video["subject"] for video in refreshed_tasks[:2]},
+                {"離散數學", "資料結構"},
+            )
             storage._engine.dispose()
 
     def test_video_markers_and_smart_replan_endpoints(self):
