@@ -164,6 +164,25 @@
         .player-frame { position: relative; align-self: start; width: 100%; aspect-ratio: 16 / 9; min-height: 0; border: 1px solid #c4d3e2; border-radius: 16px; background: #07111d; overflow: hidden; box-shadow: 0 16px 34px rgba(16, 42, 67, .16); }
         .player-frame iframe, #youtube-player { display: block; width: 100%; height: 100%; min-height: 0; border: 0; }
         .player-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9c7d8; text-align: center; line-height: 1.65; }
+        .video-end-screen { position:absolute; z-index:30; inset:0; display:flex; flex-direction:column; gap:12px; padding:clamp(16px,3.5vw,28px); color:#fff; background:linear-gradient(150deg,rgba(2,9,18,.96),rgba(8,24,42,.94) 56%,rgba(6,17,31,.97)); opacity:1; visibility:visible; transition:opacity .2s ease,visibility .2s ease; }
+        .video-end-screen[hidden] { display:none !important; }
+        .video-end-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .video-end-heading { min-width:0; }
+        .video-end-kicker { margin:0 0 3px; color:#83baff; font-size:10px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+        .video-end-heading h3 { margin:0; color:#fff; font-size:clamp(17px,2.4vw,24px); letter-spacing:-.025em; }
+        .video-end-actions { display:flex; gap:7px; flex:0 0 auto; }
+        .video-end-action { min-height:34px; padding:0 11px; border:1px solid rgba(255,255,255,.2); border-radius:9px; color:#fff; background:rgba(255,255,255,.08); font-size:11px; font-weight:850; cursor:pointer; backdrop-filter:blur(10px); }
+        .video-end-action:hover,.video-end-action:focus-visible { border-color:rgba(112,180,255,.65); background:rgba(75,145,224,.25); outline:none; }
+        .video-end-list { min-height:0; display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; overflow:auto; scrollbar-width:thin; }
+        .video-end-card { min-width:0; display:grid; grid-template-rows:minmax(0,1fr) auto; overflow:hidden; padding:0; border:1px solid rgba(255,255,255,.16); border-radius:12px; color:#fff; background:rgba(255,255,255,.07); text-align:left; cursor:pointer; transition:transform .16s ease,border-color .16s ease,background .16s ease; }
+        .video-end-card:hover,.video-end-card:focus-visible { transform:translateY(-2px); border-color:rgba(112,180,255,.72); background:rgba(74,143,220,.18); outline:none; }
+        .video-end-thumb { position:relative; min-height:70px; overflow:hidden; background:linear-gradient(135deg,#16314f,#0a1829); }
+        .video-end-thumb img { width:100%; height:100%; display:block; object-fit:cover; }
+        .video-end-play { position:absolute; inset:50% auto auto 50%; width:34px; height:34px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.25); border-radius:50%; background:rgba(3,10,18,.78); box-shadow:0 6px 18px rgba(0,0,0,.3); transform:translate(-50%,-50%); }
+        .video-end-copy { min-width:0; padding:9px 10px 10px; }
+        .video-end-title { display:-webkit-box; overflow:hidden; color:#fff; font-size:11px; font-weight:850; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+        .video-end-meta { margin-top:5px; overflow:hidden; color:rgba(226,239,255,.68); font-size:9px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
+        .video-end-empty { flex:1; display:grid; place-items:center; min-height:0; color:rgba(232,241,252,.76); font-size:13px; font-weight:800; text-align:center; }
         .focus-launch { position: absolute; z-index: 4; right: 12px; bottom: 12px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.22); border-radius: 9px; color: #fff; background: rgba(7,15,26,.78); box-shadow: 0 6px 18px rgba(0,0,0,.28); cursor: pointer; backdrop-filter: blur(10px); transition: background .16s ease,border-color .16s ease,opacity .16s ease; }
         .focus-launch:hover { border-color: rgba(255,255,255,.5); background: rgba(20,31,45,.94); }
         .focus-launch:active { background: rgba(3,10,18,.96); }
@@ -485,13 +504,20 @@
             .player-copy > .player-title, .player-copy > .player-status, .player-copy > .marker-studio { grid-column: 1; }
             .focus-exit { width: 42px; height: 42px; padding: 0; }
             .focus-toast { max-width: calc(100vw - 86px); white-space: normal; }
+            .video-end-screen { gap:8px; padding:12px; }
+            .video-end-heading h3 { font-size:16px; }
+            .video-end-action { min-height:30px; padding:0 9px; }
+            .video-end-list { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:minmax(145px,72%); gap:8px; overscroll-behavior-inline:contain; scroll-snap-type:x proximity; }
+            .video-end-card { scroll-snap-align:start; }
+            .video-end-thumb { min-height:62px; }
+            .video-end-copy { padding:7px 8px 8px; }
         }
         @media (orientation: landscape) and (max-height: 520px) {
             .focus-exit { top: calc(50% - 47px); width: 40px; height: 40px; }
             .focus-marker { top: calc(50% + 3px); width: 40px; min-width: 40px; height: 40px; min-height: 40px; border-radius: 12px; }
         }
         @media (prefers-reduced-motion: reduce) {
-            .focus-layer, .focus-launch, .focus-marker, .focus-toast { transition: none; }
+            .focus-layer, .focus-launch, .focus-marker, .focus-toast, .video-end-screen, .video-end-card { transition: none; }
         }
     </style>
 </head>
@@ -629,6 +655,17 @@
                             <div class="player-frame" id="focus-player-frame">
                                 <div id="youtube-player"></div>
                                 <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
+                                <section class="video-end-screen" id="video-end-screen" hidden aria-hidden="true" aria-label="今日任務接著觀看">
+                                    <div class="video-end-head">
+                                        <div class="video-end-heading"><p class="video-end-kicker">TODAY'S TASK</p><h3 id="video-end-title">接著觀看</h3></div>
+                                        <div class="video-end-actions">
+                                            <button class="video-end-action" id="video-end-replay" type="button">重播</button>
+                                            <button class="video-end-action" id="video-end-close" type="button" aria-label="關閉推薦">✕</button>
+                                        </div>
+                                    </div>
+                                    <div class="video-end-list" id="video-end-list"></div>
+                                    <div class="video-end-empty" id="video-end-empty" hidden>今日任務沒有其他未完成影片</div>
+                                </section>
                                 <button class="focus-launch" id="focus-mode-toggle" type="button" disabled aria-pressed="false" aria-label="進入專注全螢幕"><span class="focus-launch-icon" aria-hidden="true">⛶</span><span class="focus-launch-label" data-focus-label>專注播放</span></button>
                                 <div class="focus-layer" id="focus-layer" aria-hidden="true" inert>
                                     <button class="focus-keyboard-capture" id="focus-keyboard-capture" type="button" aria-label="播放器鍵盤控制區；R 快速紀錄、M 靜音、J 後退 10 秒、L 快進 10 秒，長按可連續跳轉、按住空白鍵暫時加速"></button>
@@ -660,6 +697,7 @@
                             </div>
                         </div>
                         <script type="application/json" id="video-markers-data">{{ video_markers|tojson }}</script>
+                        <script type="application/json" id="today-task-videos-data">{{ today_task_videos|tojson }}</script>
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
@@ -860,6 +898,13 @@
             const focusMarkerTime = document.getElementById('focus-marker-time');
             const focusVideoTitle = document.getElementById('focus-video-title');
             const focusToast = document.getElementById('focus-toast');
+            const videoEndScreen = document.getElementById('video-end-screen');
+            const videoEndTitle = document.getElementById('video-end-title');
+            const videoEndList = document.getElementById('video-end-list');
+            const videoEndEmpty = document.getElementById('video-end-empty');
+            const videoEndReplay = document.getElementById('video-end-replay');
+            const videoEndClose = document.getElementById('video-end-close');
+            const todayTaskVideosData = document.getElementById('today-task-videos-data');
             const videoSummary = document.querySelector('[data-video-summary]');
             const videoSummaryToggle = document.getElementById('video-summary-toggle');
             const videoSummaryBody = document.getElementById('video-summary-body');
@@ -882,6 +927,7 @@
             let spaceBoostActive = false;
             let spacePreviousRate = 1;
             let studyTimeSessions = [];
+            let todayTaskVideos = [];
             try {
                 videoMarkers = JSON.parse(markerData ? markerData.textContent || '[]' : '[]');
                 if (!Array.isArray(videoMarkers)) videoMarkers = [];
@@ -893,6 +939,12 @@
                 if (!Array.isArray(studyTimeSessions)) studyTimeSessions = [];
             } catch (error) {
                 studyTimeSessions = [];
+            }
+            try {
+                todayTaskVideos = JSON.parse(todayTaskVideosData ? todayTaskVideosData.textContent || '[]' : '[]');
+                if (!Array.isArray(todayTaskVideos)) todayTaskVideos = [];
+            } catch (error) {
+                todayTaskVideos = [];
             }
             const initialParams = new URLSearchParams(window.location.search);
             const requestedVideoId = initialParams.get('video_id') || '';
@@ -1225,6 +1277,90 @@
                     return option.value === String(value);
                 }) || null;
             };
+            const hideVideoEndScreen = function (restoreFocus) {
+                if (!videoEndScreen || videoEndScreen.hidden) return;
+                videoEndScreen.hidden = true;
+                videoEndScreen.setAttribute('aria-hidden', 'true');
+                if (restoreFocus && focusKeyboardCapture && isFocusMode()) {
+                    window.setTimeout(function () {
+                        focusKeyboardCapture.focus({ preventScroll: true });
+                    }, 0);
+                }
+            };
+            const playTodayTaskVideo = function (video) {
+                if (!video || !video.id) return;
+                hideVideoEndScreen(false);
+                const option = optionByValue(video.id);
+                if (option) {
+                    videoSelect.value = String(video.id);
+                    videoSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    return;
+                }
+                const target = new URL('{{ url_for("admin_study_plan") }}', window.location.origin);
+                target.searchParams.set('subject', String(video.subject || ''));
+                target.searchParams.set('video_id', String(video.id));
+                target.hash = 'youtube-player-section';
+                window.location.assign(target.toString());
+            };
+            const renderVideoEndScreen = function () {
+                if (!videoEndList || !videoEndEmpty) return [];
+                const currentId = String(selectedOption() ? selectedOption().value : '');
+                const candidates = todayTaskVideos.filter(function (video) {
+                    return String(video.id || '') !== currentId
+                        && Number(video.completion || 0) < 100
+                        && Boolean(String(video.youtube_video_id || '').trim());
+                });
+                videoEndList.replaceChildren();
+                candidates.forEach(function (video) {
+                    const card = document.createElement('button');
+                    card.type = 'button';
+                    card.className = 'video-end-card';
+                    card.setAttribute('aria-label', '播放 ' + String(video.title || '今日任務影片'));
+
+                    const thumb = document.createElement('span');
+                    thumb.className = 'video-end-thumb';
+                    const image = document.createElement('img');
+                    image.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(String(video.youtube_video_id || '')) + '/mqdefault.jpg';
+                    image.alt = '';
+                    image.loading = 'lazy';
+                    const playIcon = document.createElement('span');
+                    playIcon.className = 'video-end-play';
+                    playIcon.setAttribute('aria-hidden', 'true');
+                    playIcon.textContent = '▶';
+                    thumb.append(image, playIcon);
+
+                    const copy = document.createElement('span');
+                    copy.className = 'video-end-copy';
+                    const title = document.createElement('span');
+                    title.className = 'video-end-title';
+                    title.textContent = String(video.title || '未命名影片');
+                    const meta = document.createElement('span');
+                    meta.className = 'video-end-meta';
+                    meta.textContent = String(video.subject || '')
+                        + '・剩餘 ' + Number(video.remaining_minutes || 0).toFixed(1) + ' 分'
+                        + '・' + Number(video.completion || 0).toFixed(1) + '%';
+                    copy.append(title, meta);
+                    card.append(thumb, copy);
+                    card.addEventListener('click', function () { playTodayTaskVideo(video); });
+                    videoEndList.appendChild(card);
+                });
+                videoEndList.hidden = candidates.length === 0;
+                videoEndEmpty.hidden = candidates.length > 0;
+                if (videoEndTitle) videoEndTitle.textContent = candidates.length ? '接著觀看' : '今天先到這裡';
+                return candidates;
+            };
+            const showVideoEndScreen = function () {
+                if (!videoEndScreen) return;
+                const candidates = renderVideoEndScreen();
+                videoEndScreen.hidden = false;
+                videoEndScreen.setAttribute('aria-hidden', 'false');
+                window.setTimeout(function () {
+                    const target = candidates.length
+                        ? videoEndList.querySelector('.video-end-card')
+                        : videoEndReplay;
+                    if (target) target.focus({ preventScroll: true });
+                }, 0);
+            };
             const renderMarkers = function () {
                 if (!markerList || !markerCount) return;
                 const option = selectedOption();
@@ -1475,6 +1611,7 @@
                 renderMarkers();
             };
             const updatePlayerPanel = function (option) {
+                hideVideoEndScreen(false);
                 if (!option) {
                     if (youtubePlayerPanel) youtubePlayerPanel.classList.add('is-hidden');
                     stopPlaybackTimer();
@@ -1710,6 +1847,7 @@
                             },
                             onStateChange: function (event) {
                                 if (event.data === YT.PlayerState.PLAYING) {
+                                    hideVideoEndScreen(false);
                                     beginVideoStudyTime();
                                     startPlaybackTimer();
                                     startSaveTimer();
@@ -1723,7 +1861,7 @@
                                     pauseVideoStudyTime(true);
                                     stopPlaybackTimer();
                                     stopSaveTimer();
-                                    saveProgress('ended', false);
+                                    saveProgress('ended', false).finally(showVideoEndScreen);
                                 } else if (event.data === YT.PlayerState.CUED) {
                                     pauseVideoStudyTime(false);
                                     syncPlaybackPosition();
@@ -1768,6 +1906,15 @@
                 loadNextVideo();
             });
             if (markerSave) markerSave.addEventListener('click', saveMarker);
+            if (videoEndReplay) videoEndReplay.addEventListener('click', function () {
+                hideVideoEndScreen(false);
+                if (!player) return;
+                if (typeof player.seekTo === 'function') player.seekTo(0, true);
+                if (typeof player.playVideo === 'function') player.playVideo();
+            });
+            if (videoEndClose) videoEndClose.addEventListener('click', function () {
+                hideVideoEndScreen(true);
+            });
             const fullscreenElement = function () {
                 return document.fullscreenElement || document.webkitFullscreenElement || null;
             };

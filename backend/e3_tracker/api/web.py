@@ -2846,6 +2846,60 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         summary = _study_plan_progress_summary(videos)
         return week_rows, active_week, summary
 
+    def _study_plan_today_task_videos(
+        videos_by_subject: Dict[str, List[Dict[str, Any]]],
+        week_rows: List[Dict[str, Any]],
+        current_week: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        today = _study_plan_business_date()
+        overdue_subjects: List[str] = []
+        for subject in STUDY_PLAN_SUBJECTS:
+            subject_videos = videos_by_subject.get(subject, [])
+            subject_progress = _study_plan_progress_summary(subject_videos)
+            subject_weeks = [
+                row
+                for row in week_rows
+                if subject in row.get("subjects", [row.get("subject")])
+            ]
+            subject_state, _subject_state_label = _study_plan_subject_status(
+                subject_weeks,
+                today,
+                completion=float(subject_progress.get("completion") or 0),
+                watched_seconds=float(subject_progress.get("total_watched_seconds") or 0),
+            )
+            if subject_state == "behind":
+                overdue_subjects.append(subject)
+
+        current_subjects = list(
+            current_week.get("subjects")
+            or [str(current_week.get("subject") or "")]
+        )
+        suggested_subjects = list(dict.fromkeys([*overdue_subjects, *current_subjects]))
+        next_videos: List[Dict[str, Any]] = []
+        for current_subject in suggested_subjects:
+            for video in videos_by_subject.get(current_subject, []):
+                duration = float(video.get("duration_seconds") or 0)
+                watched = min(float(video.get("watched_seconds") or 0), duration)
+                youtube_video_id = str(video.get("youtube_video_id") or "").strip()
+                if (
+                    duration <= 0
+                    or _study_plan_video_is_complete(duration, watched)
+                ):
+                    continue
+                next_videos.append(
+                    {
+                        "id": int(video.get("id") or 0),
+                        "subject": str(video.get("subject") or current_subject),
+                        "sequence": int(video.get("sequence") or 0),
+                        "title": str(video.get("title") or ""),
+                        "remaining_minutes": round(max(0.0, duration - watched) / 60, 1),
+                        "completion": round(min(100.0, watched / duration * 100), 1),
+                        "youtube_video_id": youtube_video_id,
+                    }
+                )
+                break
+        return next_videos
+
     def _build_study_home_context(
         videos: List[Dict[str, Any]],
         week_rows: List[Dict[str, Any]],
@@ -2953,27 +3007,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 (row for row in current_week.get("daily_recommendations", []) if row.get("state") in {"active", "upcoming", "behind"}),
                 (current_week.get("daily_recommendations") or [{}])[0],
             )
-        next_videos: List[Dict[str, Any]] = []
-        overdue_subjects = [item["name"] for item in subject_rows if item["state"] == "behind"]
-        current_subjects = list(current_week.get("subjects") or [str(current_week.get("subject") or "")])
-        suggested_subjects = list(dict.fromkeys([*overdue_subjects, *current_subjects]))
-        for current_subject in suggested_subjects:
-            for video in videos_by_subject.get(current_subject, []):
-                duration = float(video.get("duration_seconds") or 0)
-                watched = min(float(video.get("watched_seconds") or 0), duration)
-                if duration <= 0 or _study_plan_video_is_complete(duration, watched):
-                    continue
-                next_videos.append(
-                    {
-                        "id": int(video.get("id") or 0),
-                        "subject": str(video.get("subject") or current_subject),
-                        "sequence": int(video.get("sequence") or 0),
-                        "title": str(video.get("title") or ""),
-                        "remaining_minutes": round(max(0.0, duration - watched) / 60, 1),
-                        "completion": round(min(100.0, watched / duration * 100), 1),
-                    }
-                )
-                break
+        next_videos = _study_plan_today_task_videos(
+            videos_by_subject,
+            week_rows,
+            current_week,
+        )
 
         last_updated_label = "尚未開始"
         latest_dt: Optional[datetime] = None
@@ -12682,6 +12720,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
             video["completion"] = _study_plan_video_completion(video["duration_seconds"], video["watched_seconds"])
             videos_by_subject.setdefault(video["subject"], []).append(video)
+        today_task_videos = _study_plan_today_task_videos(
+            videos_by_subject,
+            week_rows,
+            current_week,
+        )
         visible_videos = videos_by_subject.get(selected_subject, [])
         visible_video_ids = [int(video["id"]) for video in visible_videos]
         video_markers = storage.list_study_plan_video_markers(video_ids=visible_video_ids)
@@ -12704,6 +12747,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             subjects=STUDY_PLAN_SUBJECTS,
             selected_subject=selected_subject,
             videos=visible_videos,
+            today_task_videos=today_task_videos,
             video_count=len(visible_videos),
             plan_total_weeks=len(week_rows),
             plan_start=STUDY_PLAN_START,

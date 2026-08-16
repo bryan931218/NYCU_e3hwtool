@@ -823,6 +823,48 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("requestFullscreen", marker_html)
             self.assertIn("fs: 0", marker_html)
             self.assertIn("playsinline: 1", marker_html)
+            self.assertIn('id="video-end-screen"', marker_html)
+            self.assertIn('id="today-task-videos-data"', marker_html)
+            self.assertIn("showVideoEndScreen", marker_html)
+            self.assertIn("saveProgress('ended', false).finally(showVideoEndScreen)", marker_html)
+            self.assertIn("playTodayTaskVideo", marker_html)
+            today_task_match = re.search(
+                r'<script type="application/json" id="today-task-videos-data">(.*?)</script>',
+                marker_html,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(today_task_match)
+            today_task_videos = json.loads(today_task_match.group(1))
+            self.assertTrue(today_task_videos)
+            self.assertTrue(all(float(video["completion"]) < 100 for video in today_task_videos))
+            self.assertTrue(all("youtube_video_id" in video for video in today_task_videos))
+            self.assertIn("Number(video.completion || 0) < 100", marker_html)
+
+            completed_candidate = today_task_videos[0]
+            completed_video = next(
+                video
+                for video in storage.list_study_plan_videos_with_records()
+                if int(video["id"]) == int(completed_candidate["id"])
+            )
+            storage.upsert_study_plan_video_record(
+                video_id=int(completed_video["id"]),
+                watched_seconds=float(completed_video["duration_seconds"]),
+                notes="",
+            )
+            refreshed_page = client.get(
+                f"/admin/study-plan?subject={first_video['subject']}&video_id={first_video['id']}"
+            )
+            refreshed_match = re.search(
+                r'<script type="application/json" id="today-task-videos-data">(.*?)</script>',
+                refreshed_page.get_data(as_text=True),
+                re.DOTALL,
+            )
+            self.assertIsNotNone(refreshed_match)
+            refreshed_tasks = json.loads(refreshed_match.group(1))
+            self.assertNotIn(
+                int(completed_candidate["id"]),
+                {int(video["id"]) for video in refreshed_tasks},
+            )
             marker_match = re.search(
                 r'<script type="application/json" id="video-markers-data">(.*?)</script>',
                 marker_html,
