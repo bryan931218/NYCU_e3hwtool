@@ -411,7 +411,12 @@
 
     capture.tabIndex = -1;
     capture.setAttribute('aria-hidden', 'true');
-    capture.addEventListener('focus', () => capture.blur());
+    capture.addEventListener('focus', () => {
+        // The legacy fallback keeps this surface inert by itself. Once the
+        // full shortcut controller is installed it owns focus, so do not
+        // immediately force a focus/blur cycle on every pointer activation.
+        if (!window.__e3PlayerShortcutCompatibilityInstalled) capture.blur();
+    });
     const hint = document.querySelector('.focus-shortcut-hint');
     if (hint) hint.textContent = 'R 快速紀錄　M 靜音　空白鍵：短按播放／暫停　長按暫時加速';
 
