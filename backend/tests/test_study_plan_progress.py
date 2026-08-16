@@ -15,6 +15,7 @@ from e3_tracker.api.web import (
     _study_plan_progress_week,
     _study_plan_range_credited_seconds,
     _study_plan_schedule_definitions,
+    _study_plan_interleave_video_queues,
     _study_plan_subject_status,
     _study_plan_task_video_queue,
     _study_plan_credited_video_seconds,
@@ -36,6 +37,25 @@ class StudyPlanProgressTests(unittest.TestCase):
 
         self.assertEqual([video["id"] for video in queue], [2, 3])
         self.assertNotIn(1, [video["id"] for video in queue])
+
+    def test_daily_task_queues_alternate_subjects_before_repeating(self):
+        discrete = [
+            {"id": 1, "subject": "離散數學"},
+            {"id": 2, "subject": "離散數學"},
+            {"id": 3, "subject": "離散數學"},
+        ]
+        data_structures = [
+            {"id": 4, "subject": "資料結構"},
+            {"id": 5, "subject": "資料結構"},
+        ]
+
+        queue = _study_plan_interleave_video_queues([discrete, data_structures])
+
+        self.assertEqual([video["id"] for video in queue], [1, 4, 2, 5, 3])
+        self.assertEqual(
+            [video["subject"] for video in queue[:2]],
+            ["離散數學", "資料結構"],
+        )
 
     def test_completed_video_credits_full_duration_despite_player_end_gap(self):
         self.assertEqual(_study_plan_credited_video_seconds(600, 596), 600)
@@ -853,6 +873,8 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertTrue(all(float(video["completion"]) < 100 for video in today_task_videos))
             self.assertTrue(all("youtube_video_id" in video for video in today_task_videos))
             self.assertIn("Number(video.completion || 0) < 100", marker_html)
+            self.assertNotIn("&& Boolean(String(video.youtube_video_id", marker_html)
+            self.assertIn("尚未連結 YouTube", marker_html)
 
             completed_candidate = today_task_videos[0]
             completed_video = next(

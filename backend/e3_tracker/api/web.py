@@ -411,6 +411,19 @@ def _study_plan_task_video_queue(
     return queue
 
 
+def _study_plan_interleave_video_queues(
+    queues: Iterable[Iterable[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Keep every subject visible by alternating videos across task queues."""
+    rows = [list(queue) for queue in queues if queue]
+    interleaved: List[Dict[str, Any]] = []
+    for index in range(max((len(queue) for queue in rows), default=0)):
+        for queue in rows:
+            if index < len(queue):
+                interleaved.append(queue[index])
+    return interleaved
+
+
 def _study_plan_progress_week(week_rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     """Return the first scheduled week that the learner has not completed yet."""
     rows = list(week_rows)
@@ -2926,7 +2939,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
             for progress in today_row.get("subject_progress", [])
         }
-        next_videos: List[Dict[str, Any]] = []
+        subject_video_queues: List[List[Dict[str, Any]]] = []
         for current_subject in suggested_subjects:
             remaining_task_seconds = max(
                 0.0,
@@ -2937,11 +2950,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 videos_by_subject.get(current_subject, []),
                 remaining_task_seconds,
             )
+            subject_queue: List[Dict[str, Any]] = []
             for video in task_queue:
                 duration = float(video.get("duration_seconds") or 0)
                 watched = min(float(video.get("watched_seconds") or 0), duration)
                 youtube_video_id = str(video.get("youtube_video_id") or "").strip()
-                next_videos.append(
+                subject_queue.append(
                     {
                         "id": int(video.get("id") or 0),
                         "subject": str(video.get("subject") or current_subject),
@@ -2952,7 +2966,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "youtube_video_id": youtube_video_id,
                     }
                 )
-        return next_videos
+            if subject_queue:
+                subject_video_queues.append(subject_queue)
+        return _study_plan_interleave_video_queues(subject_video_queues)
 
     def _build_study_home_context(
         videos: List[Dict[str, Any]],

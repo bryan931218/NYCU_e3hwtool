@@ -179,10 +179,12 @@
         .video-end-card:hover,.video-end-card:focus-visible { transform:translateY(-1px); border-color:rgba(112,180,255,.66); background:rgba(74,143,220,.16); outline:none; }
         .video-end-thumb { position:relative; min-width:0; height:100%; overflow:hidden; background:linear-gradient(135deg,#16314f,#0a1829); }
         .video-end-thumb img { width:100%; height:100%; display:block; object-fit:cover; }
+        .video-end-thumb.is-unlinked { display:grid; place-items:center; background:linear-gradient(135deg,#17324d,#0b1d31); }
+        .video-end-unlinked { color:rgba(225,239,255,.7); font-size:9px; font-weight:850; letter-spacing:.04em; }
         .video-end-play { position:absolute; inset:50% auto auto 50%; width:28px; height:28px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.24); border-radius:50%; background:rgba(3,10,18,.76); box-shadow:0 5px 14px rgba(0,0,0,.28); font-size:10px; transform:translate(-50%,-50%); }
         .video-end-copy { min-width:0; display:flex; flex-direction:column; justify-content:center; padding:7px 8px; }
         .video-end-title { display:-webkit-box; overflow:hidden; color:#fff; font-size:10px; font-weight:850; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-        .video-end-meta { margin-top:5px; overflow:hidden; color:rgba(226,239,255,.64); font-size:8px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
+        .video-end-meta { margin-top:5px; overflow:hidden; color:#9bc8ff; font-size:8px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
         .video-end-empty { min-height:48px; display:grid; place-items:center; color:rgba(232,241,252,.72); font-size:11px; font-weight:800; text-align:center; }
         .video-end-empty[hidden] { display:none !important; }
         .focus-launch { position: absolute; z-index: 4; right: 12px; bottom: 12px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.22); border-radius: 9px; color: #fff; background: rgba(7,15,26,.78); box-shadow: 0 6px 18px rgba(0,0,0,.28); cursor: pointer; backdrop-filter: blur(10px); transition: background .16s ease,border-color .16s ease,opacity .16s ease; }
@@ -1312,8 +1314,7 @@
                 const currentId = String(selectedOption() ? selectedOption().value : '');
                 const candidates = todayTaskVideos.filter(function (video) {
                     return String(video.id || '') !== currentId
-                        && Number(video.completion || 0) < 100
-                        && Boolean(String(video.youtube_video_id || '').trim());
+                        && Number(video.completion || 0) < 100;
                 });
                 videoEndList.replaceChildren();
                 candidates.forEach(function (video) {
@@ -1324,15 +1325,27 @@
 
                     const thumb = document.createElement('span');
                     thumb.className = 'video-end-thumb';
-                    const image = document.createElement('img');
-                    image.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(String(video.youtube_video_id || '')) + '/mqdefault.jpg';
-                    image.alt = '';
-                    image.loading = 'lazy';
-                    const playIcon = document.createElement('span');
-                    playIcon.className = 'video-end-play';
-                    playIcon.setAttribute('aria-hidden', 'true');
-                    playIcon.textContent = '▶';
-                    thumb.append(image, playIcon);
+                    const youtubeVideoId = String(video.youtube_video_id || '').trim();
+                    if (youtubeVideoId) {
+                        const image = document.createElement('img');
+                        image.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(youtubeVideoId) + '/mqdefault.jpg';
+                        image.alt = '';
+                        image.loading = 'lazy';
+                        thumb.appendChild(image);
+                    } else {
+                        thumb.classList.add('is-unlinked');
+                        const unlinked = document.createElement('span');
+                        unlinked.className = 'video-end-unlinked';
+                        unlinked.textContent = '尚未連結';
+                        thumb.appendChild(unlinked);
+                    }
+                    if (youtubeVideoId) {
+                        const playIcon = document.createElement('span');
+                        playIcon.className = 'video-end-play';
+                        playIcon.setAttribute('aria-hidden', 'true');
+                        playIcon.textContent = '▶';
+                        thumb.appendChild(playIcon);
+                    }
 
                     const copy = document.createElement('span');
                     copy.className = 'video-end-copy';
@@ -1341,9 +1354,11 @@
                     title.textContent = String(video.title || '未命名影片');
                     const meta = document.createElement('span');
                     meta.className = 'video-end-meta';
-                    meta.textContent = String(video.subject || '')
-                        + '・剩餘 ' + Number(video.remaining_minutes || 0).toFixed(1) + ' 分'
-                        + '・' + Number(video.completion || 0).toFixed(1) + '%';
+                    meta.textContent = String(video.subject || '') + '・' + (
+                        youtubeVideoId
+                            ? '剩餘 ' + Number(video.remaining_minutes || 0).toFixed(1) + ' 分'
+                            : '尚未連結 YouTube'
+                    );
                     copy.append(title, meta);
                     card.append(thumb, copy);
                     card.addEventListener('click', function () { playTodayTaskVideo(video); });
