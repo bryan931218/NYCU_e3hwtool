@@ -350,7 +350,7 @@
                     </details>
                 </article>
                 <article class="quick-review-launch" aria-labelledby="quick-review-title">
-                    <div class="quick-review-copy"><p class="eyebrow">MEMORY SPRINT</p><h2 id="quick-review-title">把記憶叫回來，不只是重看</h2><p>題目會依筆記內容切換成定義、公式、流程、辨析或解題決策；忘記的題目會在本輪結尾立即補強。</p><div class="quick-review-steps" aria-label="記憶衝刺流程"><span>先回想</span><span>看答案骨架</span><span>自評</span><span>短補強</span></div></div>
+                    <div class="quick-review-copy"><p class="eyebrow">GRAD EXAM DRILL</p><h2 id="quick-review-title">用研究所考題，把觀念練成得分能力</h2><p>優先出有唯一正解的單選、是非與來源計算題；作答後立即判分，答錯的題目會在本回合結尾再考一次。</p><div class="quick-review-steps" aria-label="考場快測流程"><span>客觀作答</span><span>立即判分</span><span>看來源正解</span><span>錯題再考</span></div></div>
                     {% if review_cards %}<div class="quick-review-actions"><a class="quick-review-primary" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">3 分鐘・5 題</a><a class="quick-review-secondary" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">7 分鐘・10 題</a></div>{% else %}<div class="quick-review-done">今天已複習完成</div>{% endif %}
                 </article>
                 <article id="review-zone" class="panel review-zone">

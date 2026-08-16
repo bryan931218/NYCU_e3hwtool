@@ -3633,8 +3633,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
         return interleaved
 
-    def _build_quick_review_item(item: Dict[str, Any]) -> Dict[str, Any]:
-        """Turn one grounded note card into a short retrieval-and-transfer drill."""
+    def _build_quick_review_item(
+        item: Dict[str, Any],
+        question_pool: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Turn one grounded note card into a source-grounded exam drill."""
 
         prepared = copy.deepcopy(item)
         concept = prepared.get("concept_data") if isinstance(prepared.get("concept_data"), dict) else {}
@@ -3725,11 +3728,88 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             prompt = f"如果只有 30 秒，你會怎麼教別人「{title}」？"
             answer_title = "最小完整答案"
 
-        answer_summary = example_method if card_type == "example" and example_method else core_summary
+        answer_summary = core_summary or (example_method if card_type == "example" else "")
         if not answer_summary:
             answer_summary = explanation
         answer_steps = reasoning_steps
         hint = str(concept.get("recall_cue") or concept.get("memory_hint") or "").strip()
+
+        distractors: List[str] = []
+        seen_distractors = {re.sub(r"\s+", "", answer_summary).casefold()}
+        pool_items = question_pool if isinstance(question_pool, list) else []
+        prioritized_pool = sorted(
+            pool_items,
+            key=lambda candidate: (
+                str(candidate.get("subject") or "") != str(item.get("subject") or ""),
+                str((candidate.get("concept_data") or {}).get("topic") or "")
+                != str(concept.get("topic") or ""),
+            ),
+        )
+        for candidate in prioritized_pool:
+            if (
+                int(candidate.get("session_id") or 0) == int(item.get("session_id") or 0)
+                and int(candidate.get("concept_index") or -1) == int(item.get("concept_index") or -1)
+            ):
+                continue
+            candidate_concept = candidate.get("concept_data") if isinstance(candidate.get("concept_data"), dict) else {}
+            candidate_text = str(
+                candidate_concept.get("core_summary")
+                or candidate_concept.get("example_method")
+                or ""
+            ).strip()
+            normalized_candidate = re.sub(r"\s+", "", candidate_text).casefold()
+            if not normalized_candidate or normalized_candidate in seen_distractors:
+                continue
+            if title and title.casefold() in candidate_text.casefold():
+                continue
+            seen_distractors.add(normalized_candidate)
+            distractors.append(candidate_text)
+            if len(distractors) >= 3:
+                break
+
+        interaction = "written"
+        exam_options: List[Dict[str, Any]] = []
+        seed = (
+            int(item.get("session_id") or 0) * 37
+            + int(item.get("concept_index") or 0) * 17
+        )
+        if card_type == "example" and example_problem:
+            interaction = "calculation"
+            question_type = "計算／解題題"
+            mission = "依題意算出結果，並保留關鍵步驟"
+            instruction = "請先在紙上完成作答；揭曉後核對答案、方法與必要步驟。"
+            prompt = example_problem
+            answer_title = "來源正解"
+            estimated_seconds = 120
+        elif len(distractors) >= 3 and seed % 3 != 0:
+            interaction = "single_choice"
+            question_type = "單選題"
+            mission = "選出唯一正確的核心敘述"
+            instruction = "四個選項只有一個符合這張筆記卡的原始內容。"
+            prompt = f"依這份筆記，下列何者是「{title}」這張卡記錄的核心敘述？"
+            option_texts = [answer_summary, *distractors[:3]]
+            rotation = seed % len(option_texts)
+            option_texts = option_texts[rotation:] + option_texts[:rotation]
+            exam_options = [
+                {"text": option_text, "is_correct": option_text == answer_summary}
+                for option_text in option_texts
+            ]
+            answer_title = "正確答案"
+            estimated_seconds = 50
+        elif distractors:
+            interaction = "true_false"
+            question_type = "是非題"
+            mission = "判斷敘述是否真的屬於這個觀念"
+            instruction = "請依筆記中的定義與條件判斷，不要只憑關鍵字。"
+            statement_is_correct = seed % 2 == 0
+            statement = answer_summary if statement_is_correct else distractors[0]
+            prompt = f"依這份筆記，判斷下列敘述是否為「{title}」的核心敘述：\n{statement}"
+            exam_options = [
+                {"text": "正確", "is_correct": statement_is_correct},
+                {"text": "錯誤", "is_correct": not statement_is_correct},
+            ]
+            answer_title = "判斷依據"
+            estimated_seconds = 35
 
         prepared["quick_review"] = {
             "question_type": question_type,
@@ -3740,10 +3820,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "estimated_seconds": estimated_seconds,
             "answer_title": answer_title,
             "answer_summary": answer_summary,
+            "answer_method": example_method if example_method != answer_summary else "",
             "answer_steps": answer_steps,
             "explanation": explanation if explanation != answer_summary else "",
             "example": simple_example,
             "pitfall": pitfall,
+            "interaction": interaction,
+            "exam_options": exam_options,
+            "is_objective": bool(exam_options),
         }
         return prepared
 
@@ -12180,9 +12264,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             requested_size = 5
         session_size = requested_size if requested_size in {5, 10, 18} else 5
         recall_context = _build_recall_widget_context()
+        interleaved_cards = _interleave_recall_cards(recall_context["cards"])
         review_cards = [
-            _build_quick_review_item(item)
-            for item in _interleave_recall_cards(recall_context["cards"])[:session_size]
+            _build_quick_review_item(item, interleaved_cards)
+            for item in interleaved_cards[:session_size]
         ]
         return render_template_string(
             STUDY_RECALL_QUICK_TEMPLATE,

@@ -60,7 +60,7 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
 
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(page.count('data-quick-card data-card-type='), 5)
-                self.assertIn("把記憶叫回來，不只是重看", client.get("/admin/study-recall").get_data(as_text=True))
+                self.assertIn("用研究所考題，把觀念練成得分能力", client.get("/admin/study-recall").get_data(as_text=True))
                 card_sections = page.split('data-quick-card data-card-type=')[1:]
                 rendered_subjects = [
                     "離散數學" if "離散數學" in section[:700] else "資料結構"
@@ -70,10 +70,9 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
                     all(left != right for left, right in zip(rendered_subjects, rendered_subjects[1:])),
                     rendered_subjects,
                 )
-                self.assertIn("空白鍵揭示", page)
-                self.assertIn("忘了", page)
-                self.assertIn("模糊", page)
-                self.assertIn("記得", page)
+                self.assertIn("考場快測", page)
+                self.assertTrue("單選題" in page or "是非題" in page)
+                self.assertIn("每題都有來源正解", page)
             finally:
                 storage._engine.dispose()
 
@@ -139,6 +138,12 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
                         "example_method": "使用 Dijkstra，每輪確定目前距離最小的未確定節點。",
                         "reasoning_steps": ["初始化距離", "挑選最小者", "鬆弛相鄰邊"],
                     },
+                    {
+                        **self._card("演算法", 4),
+                        "concept": "貪心選擇",
+                        "content_kind": "fact",
+                        "core_summary": "每一步選擇當下最佳解，仍須另外證明能導向全域最佳解。",
+                    },
                 ]
                 storage.create_study_recall_session(
                     study_date="2025-01-01",
@@ -153,22 +158,43 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
                 page = response.get_data(as_text=True)
 
                 self.assertEqual(response.status_code, 200)
-                self.assertIn("順序重建", page)
-                self.assertIn("公式重建", page)
-                self.assertIn("定義壓縮", page)
-                self.assertIn("解題決策", page)
-                self.assertIn("解題骨架", page)
+                self.assertIn("單選題", page)
+                self.assertIn("是非題", page)
+                self.assertIn("計算／解題題", page)
+                self.assertIn("來源正解", page)
                 self.assertIn('class="answer-steps"', page)
                 self.assertIn("防錯線", page)
                 self.assertNotIn("data-answer-point", page)
                 document = BeautifulSoup(page, "html.parser")
                 rendered_cards = document.select("[data-quick-card]")
-                self.assertEqual(len(rendered_cards), 4)
+                self.assertEqual(len(rendered_cards), 5)
                 for rendered_card in rendered_cards:
                     self.assertIsNotNone(rendered_card.select_one(".answer-sheet .answer-core"))
-                    self.assertEqual(len(rendered_card.select("[data-rating]")), 3)
                     self.assertTrue(rendered_card.select_one("[data-question-type]").get_text(strip=True))
                     self.assertTrue(rendered_card.select_one(".answer-core p").get_text(strip=True))
+                    options = rendered_card.select("[data-exam-option]")
+                    if options:
+                        self.assertIn(len(options), {2, 4})
+                        self.assertEqual(
+                            sum(option.get("data-correct") == "true" for option in options),
+                            1,
+                        )
+                        self.assertIsNotNone(rendered_card.select_one("[data-submit-objective]"))
+                        self.assertEqual(len(rendered_card.select("[data-rating]")), 0)
+                    else:
+                        self.assertEqual(rendered_card.get("data-interaction"), "calculation")
+                        self.assertEqual(len(rendered_card.select("[data-rating]")), 3)
+                        self.assertIsNotNone(rendered_card.select_one(".answer-method"))
+                true_false_cards = [
+                    card
+                    for card in rendered_cards
+                    if card.select_one("[data-question-type]").get_text(strip=True) == "是非題"
+                ]
+                correct_true_false_answers = {
+                    card.select_one('[data-exam-option][data-correct="true"] .option-text').get_text(strip=True)
+                    for card in true_false_cards
+                }
+                self.assertEqual(correct_true_false_answers, {"正確", "錯誤"})
             finally:
                 storage._engine.dispose()
 

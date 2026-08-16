@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>記憶衝刺｜E3 學習中心</title>
+    <title>考場快測｜E3 學習中心</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderQuickMath && window.renderQuickMath()"></script>
@@ -62,6 +62,20 @@
         .prompt-block h2 { max-width:800px; margin:0; font-size:clamp(23px,4vw,32px); line-height:1.45; letter-spacing:-.025em; overflow-wrap:anywhere; }
         .question-instruction { max-width:690px; margin:0; color:var(--muted); font-size:13px; font-weight:700; line-height:1.65; }
         .concept-title { margin:1px 0 0; color:#96a3af; font-size:10px; font-weight:800; }
+        .exam-options { display:grid; gap:8px; padding:0 2px 12px; }
+        .exam-option { width:100%; min-width:0; display:grid; grid-template-columns:31px minmax(0,1fr); align-items:start; gap:11px; padding:13px 14px; color:#344d63; text-align:left; border:1px solid var(--line); border-radius:13px; background:#fbfcfe; cursor:pointer; }
+        .option-letter { width:29px; height:29px; display:grid; place-items:center; color:#4f6b84; border:1px solid #cad8e4; border-radius:9px; background:#fff; font-size:11px; font-weight:950; }
+        .option-text { min-width:0; padding-top:3px; font-size:13px; font-weight:720; line-height:1.65; white-space:pre-line; overflow-wrap:anywhere; }
+        .exam-option:hover,.exam-option.is-selected { border-color:#8bb8ed; background:#f1f6ff; }
+        .exam-option.is-selected .option-letter { color:#fff; border-color:var(--blue); background:var(--blue); }
+        .exam-option.is-correct { color:#1d6946; border-color:#8dcca7; background:var(--green-soft); }
+        .exam-option.is-correct .option-letter { color:#fff; border-color:var(--green); background:var(--green); }
+        .exam-option.is-wrong { color:#913444; border-color:#e3a8b2; background:var(--rose-soft); }
+        .exam-option.is-wrong .option-letter { color:#fff; border-color:var(--rose); background:var(--rose); }
+        .exam-option:disabled { cursor:default; }
+        .written-work { display:grid; gap:7px; padding:0 2px 12px; }
+        .written-work label { color:#617589; font-size:11px; font-weight:850; }
+        .written-work textarea { width:100%; min-height:78px; resize:vertical; padding:12px 13px; color:var(--ink); border:1px solid var(--line); border-radius:12px; background:#fbfcfe; font-size:13px; line-height:1.6; }
         .reveal-wrap { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:0 2px; }
         .reveal-button,.hint-button { min-height:51px; border-radius:13px; font-size:13px; font-weight:950; cursor:pointer; }
         .reveal-button { color:#fff; border:0; background:linear-gradient(135deg,#266be8,#174db4); box-shadow:0 9px 20px rgba(36,99,235,.18); }
@@ -77,8 +91,10 @@
         .answer-head p { max-width:350px; margin:0; color:var(--muted); text-align:right; font-size:11px; line-height:1.45; }
         .answer-sheet { min-width:0; overflow:hidden; border:1px solid #cce2d4; border-radius:17px; background:linear-gradient(145deg,#f6fcf8,#fff); }
         .answer-core { min-width:0; padding:17px 18px; }
+        .answer-method { min-width:0; padding:14px 18px; border-top:1px solid #dcece2; background:rgba(255,255,255,.55); }
         .answer-label { display:block; margin-bottom:7px; color:var(--green); font-size:10px; font-weight:950; }
-        .answer-core p { min-width:0; margin:0; color:#244738; font-size:15px; font-weight:760; line-height:1.75; white-space:pre-line; overflow-wrap:anywhere; }
+        .answer-core p,.answer-method p { min-width:0; margin:0; color:#244738; font-size:15px; font-weight:760; line-height:1.75; white-space:pre-line; overflow-wrap:anywhere; }
+        .answer-method p { color:#405d50; font-size:13px; font-weight:720; }
         .answer-steps { margin:0; padding:0; list-style:none; border-top:1px solid #dcece2; counter-reset:answer-step; }
         .answer-steps li { min-width:0; display:grid; grid-template-columns:26px minmax(0,1fr); gap:10px; padding:12px 18px; color:#405d50; font-size:13px; line-height:1.68; counter-increment:answer-step; overflow-wrap:anywhere; }
         .answer-steps li + li { border-top:1px solid #e5efe9; }
@@ -102,6 +118,11 @@
         .rating-button.know { color:var(--green); border:1px solid #bcdcc8; background:var(--green-soft); }
         .rating-button:hover { transform:translateY(-1px); filter:saturate(1.08); }
         .rating-button:disabled { opacity:.52; cursor:wait; transform:none; }
+        .objective-feedback { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:9px; padding:12px 14px; border:1px solid #bcdcc8; border-radius:12px; background:var(--green-soft); color:#245d42; }
+        .objective-feedback.is-wrong { color:#873747; border-color:#e4b0b9; background:var(--rose-soft); }
+        .objective-feedback strong { font-size:12px; white-space:nowrap; }
+        .objective-feedback span { min-width:0; font-size:12px; line-height:1.6; }
+        .objective-next { min-height:51px; color:#fff; border:0; border-radius:13px; background:linear-gradient(135deg,#266be8,#174db4); font-size:13px; font-weight:950; cursor:pointer; }
         .rescue-note { padding:11px 13px; color:#12655e; border:1px solid #b9ddd7; border-radius:11px; background:var(--mint-soft); font-size:12px; line-height:1.6; }
         .rescue-next { min-height:51px; color:#fff; border:0; border-radius:13px; background:linear-gradient(135deg,#0b8b7e,#07655f); font-size:13px; font-weight:950; cursor:pointer; }
         .save-status { min-height:16px; margin:0; color:var(--rose); text-align:center; font-size:11px; }
@@ -138,6 +159,8 @@
             .prompt-block { gap:9px; padding:25px 3px 23px; }
             .prompt-block h2 { font-size:22px; line-height:1.5; }
             .question-instruction { font-size:12px; }
+            .exam-option { padding:11px 10px; grid-template-columns:29px minmax(0,1fr); }
+            .option-text { font-size:12px; }
             .reveal-wrap { grid-template-columns:1fr; }
             .hint-button { min-width:0; min-height:43px; grid-row:2; }
             .hint-box,.shortcut { grid-column:1; }
@@ -160,30 +183,31 @@
     <header class="study-nav" aria-label="學習中心導覽"><a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a><a class="nav-link" href="{{ url_for('admin_study_recall') }}">回筆記庫</a></header>
     <main class="quick-shell">
         <header class="session-head">
-            <div class="session-top"><div><p class="eyebrow">MEMORY SPRINT</p><h1>記憶衝刺</h1><p class="session-copy">每題只做一件事：把答案從腦中叫回來。</p></div><div class="session-meta"><span>{{ today }}</span><span class="timer" data-timer>00:00</span></div></div>
+            <div class="session-top"><div><p class="eyebrow">GRAD EXAM DRILL</p><h1>考場快測</h1><p class="session-copy">單選、是非與計算題；每題都有來源正解。</p></div><div class="session-meta"><span>{{ today }}</span><span class="timer" data-timer>00:00</span></div></div>
             <div class="progress-row" {% if not review_cards %}hidden{% endif %}><div class="progress-track" aria-hidden="true"><div class="progress-bar" data-progress-bar></div></div><span class="progress-label" data-progress-label>第 1 / {{ review_cards|length }} 題</span></div>
             <nav class="mode-picker" aria-label="選擇複習份量"><a class="{% if session_size == 5 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">3 分鐘・5 題</a><a class="{% if session_size == 10 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">7 分鐘・10 題</a><a class="{% if session_size == 18 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=18) }}">今日全部</a></nav>
         </header>
         {% if review_cards %}
         <section class="card-stage" data-card-stage data-main-count="{{ review_cards|length }}" data-remaining="{{ remaining_after_session }}">
             {% for item in review_cards %}{% set concept = item.concept_data %}{% set quick = item.quick_review %}
-            <article class="quick-card" data-quick-card data-card-type="{{ concept.card_type }}" data-session-id="{{ item.session_id }}" data-concept-index="{{ item.concept_index }}" data-rate-url="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" {% if not loop.first %}hidden{% endif %}>
+            <article class="quick-card" data-quick-card data-card-type="{{ concept.card_type }}" data-interaction="{{ quick.interaction }}" data-session-id="{{ item.session_id }}" data-concept-index="{{ item.concept_index }}" data-rate-url="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" {% if not loop.first %}hidden{% endif %}>
                 <div class="card-top"><div class="card-tags"><span class="tag subject">{{ item.subject }}</span><span class="tag">{{ concept.topic or item.session_title }}</span></div><span class="card-estimate">約 {{ quick.estimated_seconds }} 秒・{{ '%02d'|format(loop.index) }}</span></div>
-                <div class="phase-rail" aria-label="作答步驟"><span class="phase is-active" data-step="1">先回想</span><span class="phase" data-step="2">看骨架</span><span class="phase" data-step="3">評估</span></div>
+                <div class="phase-rail" aria-label="作答步驟"><span class="phase is-active" data-step="1">作答</span><span class="phase" data-step="2">判分</span><span class="phase" data-step="3">看解析</span></div>
                 <div class="prompt-block"><div class="prompt-meta"><span class="prompt-label" data-question-type>{{ quick.question_type }}</span><span class="prompt-mission" data-question-mission>{{ quick.mission }}</span></div><h2 data-math-content>{{ quick.prompt }}</h2><p class="question-instruction">{{ quick.instruction }}</p><p class="concept-title">來源觀念・{{ concept.concept }}</p></div>
-                <div class="reveal-wrap" data-reveal-wrap><button class="reveal-button" type="button" data-reveal>我回答好了，揭曉答案</button>{% if quick.hint %}<button class="hint-button" type="button" data-hint>給一點提示 <small>H</small></button><div class="hint-box" data-hint-box hidden><strong>提示</strong><span data-math-content>{{ quick.hint }}</span></div>{% endif %}<p class="shortcut">先口述或在腦中回答・空白鍵揭示</p></div>
+                {% if quick.exam_options %}<div class="exam-options" data-exam-options>{% for option in quick.exam_options %}<button class="exam-option" type="button" data-exam-option data-correct="{{ 'true' if option.is_correct else 'false' }}" aria-pressed="false"><span class="option-letter">{{ ['A','B','C','D'][loop.index0] }}</span><span class="option-text" data-math-content>{{ option.text }}</span></button>{% endfor %}</div>{% else %}<div class="written-work"><label for="written-answer-{{ loop.index }}">你的作答（只留在這一頁，不會上傳）</label><textarea id="written-answer-{{ loop.index }}" data-written-answer placeholder="寫下最終答案、公式或關鍵計算步驟…"></textarea></div>{% endif %}
+                <div class="reveal-wrap" data-reveal-wrap><button class="reveal-button" type="button" {% if quick.is_objective %}data-submit-objective disabled{% else %}data-reveal{% endif %}>{% if quick.is_objective %}請先選一個答案{% elif quick.interaction == 'calculation' %}完成作答，查看來源正解{% else %}完成作答，揭曉答案{% endif %}</button>{% if quick.hint %}<button class="hint-button" type="button" data-hint>給一點提示 <small>H</small></button><div class="hint-box" data-hint-box hidden><strong>提示</strong><span data-math-content>{{ quick.hint }}</span></div>{% endif %}<p class="shortcut">{% if quick.is_objective %}數字鍵選項・Enter 確認{% else %}先完成作答・空白鍵揭示{% endif %}</p></div>
                 <div class="answer" data-answer hidden>
-                    <div class="answer-head"><div><span>ANSWER MAP</span><h3>{{ quick.answer_title }}</h3></div><p>對照你的回答，不用逐字相同；核心關係正確最重要。</p></div>
-                    <section class="answer-sheet"><div class="answer-core"><span class="answer-label">核心答案</span><p data-math-content>{{ quick.answer_summary }}</p></div>{% if quick.answer_steps %}<ol class="answer-steps">{% for step in quick.answer_steps %}<li data-math-content>{{ step }}</li>{% endfor %}</ol>{% endif %}</section>
+                    <div class="answer-head"><div><span>OFFICIAL ANSWER</span><h3>{{ quick.answer_title }}</h3></div><p>答案只取自你的筆記內容；計算題請同時核對方法與步驟。</p></div>
+                    <section class="answer-sheet"><div class="answer-core"><span class="answer-label">核心答案</span><p data-math-content>{{ quick.answer_summary }}</p></div>{% if quick.answer_method %}<div class="answer-method"><span class="answer-label">解題方法</span><p data-math-content>{{ quick.answer_method }}</p></div>{% endif %}{% if quick.answer_steps %}<ol class="answer-steps">{% for step in quick.answer_steps %}<li data-math-content>{{ step }}</li>{% endfor %}</ol>{% endif %}</section>
                     {% if quick.pitfall %}<div class="pitfall"><strong>防錯線</strong><span data-math-content>{{ quick.pitfall }}</span></div>{% endif %}
                     {% if quick.explanation or quick.example %}<details class="answer-detail"><summary>還不清楚？展開完整脈絡</summary><div class="answer-detail-body">{% if quick.explanation %}<p data-math-content>{{ quick.explanation }}</p>{% endif %}{% if quick.example %}<p data-math-content><strong>最短例子：</strong>{{ quick.example }}</p>{% endif %}</div></details>{% endif %}
-                    <div class="rating-panel" data-rating-panel><p class="rating-question">揭曉前，你能自己重建到什麼程度？</p><div class="rating-actions"><button class="rating-button forgot" type="button" data-rating="1">忘了<small>幾乎想不起來・1</small></button><button class="rating-button fuzzy" type="button" data-rating="3">模糊<small>方向對但有缺漏・2</small></button><button class="rating-button know" type="button" data-rating="5">記得<small>能完整說清楚・3</small></button></div><div class="rescue-note" data-rescue-note hidden>看完後先移開視線，再把核心答案完整說一次，讓記憶真正接回去。</div><button class="rescue-next" type="button" data-rescue-next hidden>我已重新說完整，完成補強</button><p class="save-status" data-save-status aria-live="polite"></p></div>
+                    <div class="rating-panel" data-rating-panel>{% if quick.is_objective %}<div class="objective-feedback" data-objective-feedback hidden><strong data-objective-title>答對</strong><span data-objective-copy>正確答案已標示，請核對下方解析。</span></div><button class="objective-next" type="button" data-objective-next hidden>看完解析，下一題</button>{% else %}<p class="rating-question">和來源正解相比，你這題完成到什麼程度？</p><div class="rating-actions"><button class="rating-button forgot" type="button" data-rating="1">答錯<small>答案或方法不正確・1</small></button><button class="rating-button fuzzy" type="button" data-rating="3">部分正確<small>方向對但有缺漏・2</small></button><button class="rating-button know" type="button" data-rating="5">完全正確<small>答案與步驟完整・3</small></button></div><div class="rescue-note" data-rescue-note hidden>看完後先移開視線，再把正確答案完整做一次。</div><button class="rescue-next" type="button" data-rescue-next hidden>我已重新作答，完成補強</button>{% endif %}<p class="save-status" data-save-status aria-live="polite"></p></div>
                 </div>
             </article>
             {% endfor %}
-            <section class="completion" data-completion hidden><div><div class="completion-icon">✓</div><h2>記憶已更新</h2><p class="completion-copy" data-completion-copy>這輪結果已存入複習排程。</p><div class="result-grid"><div class="result-item"><strong data-result-know>0</strong><span>記得</span></div><div class="result-item"><strong data-result-fuzzy>0</strong><span>模糊</span></div><div class="result-item"><strong data-result-forgot>0</strong><span>忘了</span></div></div><div class="completion-actions"><a class="primary" data-continue-link href="{{ url_for('admin_study_recall_quick_review', size=session_size) }}">繼續下一輪</a><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></div></section>
+            <section class="completion" data-completion hidden><div><div class="completion-icon">✓</div><h2>本回合完成</h2><p class="completion-copy" data-completion-copy>答題結果已存入複習排程。</p><div class="result-grid"><div class="result-item"><strong data-result-know>0</strong><span>完全正確</span></div><div class="result-item"><strong data-result-fuzzy>0</strong><span>部分正確</span></div><div class="result-item"><strong data-result-forgot>0</strong><span>答錯</span></div></div><div class="completion-actions"><a class="primary" data-continue-link href="{{ url_for('admin_study_recall_quick_review', size=session_size) }}">繼續下一回合</a><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></div></section>
         </section>
-        <footer class="session-foot"><span>H 提示</span><span>空白鍵揭示</span><span>1 忘了</span><span>2 模糊</span><span>3 記得</span></footer>
+        <footer class="session-foot"><span>1–4 選擇</span><span>Enter 確認</span><span>H 提示</span><span>計算題可按空白鍵揭示</span></footer>
         {% else %}<section class="empty-state"><div><div class="completion-icon">✓</div><h2>今天的記憶已清空</h2><p>目前沒有到期卡片。系統會在最值得複習的時間把它們帶回來，不必重複刷已經熟悉的內容。</p><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></section>{% endif %}
     </main>
     <script>
@@ -217,18 +241,43 @@
                 if (rescueMode) { progressLabel.textContent=`補強 ${Math.min(rescueIndex+1,rescueQueue.length)} / ${rescueQueue.length} 題`; progressBar.style.width=`${rescueQueue.length?rescueIndex/rescueQueue.length*100:100}%`; return; }
                 progressLabel.textContent=`第 ${Math.min(completedMain+1,mainCount)} / ${mainCount} 題`; progressBar.style.width=`${mainCount?completedMain/mainCount*100:100}%`;
             };
+            const isObjective = (card) => Boolean(card?.querySelector('[data-submit-objective]'));
             const resetCard = (card,isRescue) => {
                 card.hidden=false; card.classList.remove('is-revealed'); card.dataset.rescue=isRescue?'true':''; card.dataset.hintUsed='';
-                card.querySelector('[data-answer]').hidden=true; card.querySelector('[data-reveal-wrap]').hidden=false; card.querySelector('[data-rating-panel]').hidden=false; card.querySelector('[data-rescue-next]').hidden=true; card.querySelector('[data-rescue-note]').hidden=true; card.querySelector('[data-save-status]').textContent='';
+                card.dataset.objectiveRating=''; card.querySelector('[data-answer]').hidden=true; card.querySelector('[data-reveal-wrap]').hidden=false; card.querySelector('[data-rating-panel]').hidden=false; card.querySelector('[data-save-status]').textContent='';
                 card.querySelectorAll('[data-rating]').forEach((button)=>{ button.hidden=false; button.disabled=false; });
+                card.querySelectorAll('[data-exam-option]').forEach((button)=>{ button.disabled=false; button.setAttribute('aria-pressed','false'); button.classList.remove('is-selected','is-correct','is-wrong'); });
+                const objectiveSubmit=card.querySelector('[data-submit-objective]'); if(objectiveSubmit){objectiveSubmit.disabled=true;objectiveSubmit.textContent='請先選一個答案';}
+                const objectiveFeedback=card.querySelector('[data-objective-feedback]'); if(objectiveFeedback){objectiveFeedback.hidden=true;objectiveFeedback.classList.remove('is-wrong');}
+                const objectiveNext=card.querySelector('[data-objective-next]'); if(objectiveNext){objectiveNext.hidden=true;objectiveNext.dataset.action='next';}
+                const rescueNext=card.querySelector('[data-rescue-next]'); const rescueNote=card.querySelector('[data-rescue-note]'); if(rescueNext)rescueNext.hidden=true; if(rescueNote)rescueNote.hidden=true;
+                const writtenAnswer=card.querySelector('[data-written-answer]'); if(writtenAnswer)writtenAnswer.value='';
                 const hintButton=card.querySelector('[data-hint]'); const hintBox=card.querySelector('[data-hint-box]'); if(hintButton) hintButton.hidden=isRescue; if(hintBox) hintBox.hidden=true;
                 const label=card.querySelector('[data-question-type]'); const mission=card.querySelector('[data-question-mission]'); const revealButton=card.querySelector('[data-reveal]');
                 if(label){ if(!label.dataset.originalText) label.dataset.originalText=label.textContent; label.textContent=isRescue?'立即補強':label.dataset.originalText; }
-                if(mission){ if(!mission.dataset.originalText) mission.dataset.originalText=mission.textContent; mission.textContent=isRescue?'移開答案，再完整說一次':mission.dataset.originalText; }
-                revealButton.textContent=isRescue?'我重新說完了，核對一次':'我回答好了，揭曉答案'; window.scrollTo({top:0,behavior:'smooth'});
+                if(mission){ if(!mission.dataset.originalText) mission.dataset.originalText=mission.textContent; mission.textContent=isRescue?(isObjective(card)?'不看正解，再選一次':'移開正解，再完整做一次'):mission.dataset.originalText; }
+                if(revealButton)revealButton.textContent=isRescue?'我重新作答完了，核對一次':(card.dataset.interaction==='calculation'?'完成作答，查看來源正解':'完成作答，揭曉答案'); window.scrollTo({top:0,behavior:'smooth'});
             };
             const showHint = () => { if(!currentCard||!currentCard.querySelector('[data-answer]').hidden)return; const button=currentCard.querySelector('[data-hint]'); const box=currentCard.querySelector('[data-hint-box]'); if(!button||!box)return; currentCard.dataset.hintUsed='true'; button.hidden=true; box.hidden=false; window.renderQuickMath(); };
-            const reveal = () => { if(!currentCard||!currentCard.querySelector('[data-answer]').hidden)return; currentCard.classList.add('is-revealed'); currentCard.querySelector('[data-answer]').hidden=false; currentCard.querySelector('[data-reveal-wrap]').hidden=true; if(rescueMode){ currentCard.querySelectorAll('[data-rating]').forEach((button)=>{button.hidden=true;}); currentCard.querySelector('[data-rescue-note]').hidden=false; currentCard.querySelector('[data-rescue-next]').hidden=false; } window.renderQuickMath(); };
+            const reveal = () => { if(!currentCard||!currentCard.querySelector('[data-answer]').hidden)return; currentCard.classList.add('is-revealed'); currentCard.querySelector('[data-answer]').hidden=false; currentCard.querySelector('[data-reveal-wrap]').hidden=true; if(rescueMode&&!isObjective(currentCard)){ currentCard.querySelectorAll('[data-rating]').forEach((button)=>{button.hidden=true;}); const note=currentCard.querySelector('[data-rescue-note]'); const next=currentCard.querySelector('[data-rescue-next]'); if(note)note.hidden=false; if(next)next.hidden=false; } window.renderQuickMath(); };
+            const selectObjectiveOption = (button) => {
+                if(!currentCard||busy||!currentCard.querySelector('[data-answer]').hidden||button.disabled)return;
+                currentCard.querySelectorAll('[data-exam-option]').forEach((option)=>{option.classList.remove('is-selected');option.setAttribute('aria-pressed','false');});
+                button.classList.add('is-selected'); button.setAttribute('aria-pressed','true');
+                const submit=currentCard.querySelector('[data-submit-objective]'); submit.disabled=false; submit.textContent='確認答案';
+            };
+            const submitObjective = () => {
+                if(!currentCard||busy||!isObjective(currentCard)||!currentCard.querySelector('[data-answer]').hidden)return;
+                const selected=currentCard.querySelector('[data-exam-option].is-selected'); if(!selected)return;
+                const correct=selected.dataset.correct==='true';
+                currentCard.querySelectorAll('[data-exam-option]').forEach((option)=>{ option.disabled=true; if(option.dataset.correct==='true')option.classList.add('is-correct'); });
+                if(!correct)selected.classList.add('is-wrong');
+                currentCard.dataset.objectiveRating=String(correct?(currentCard.dataset.hintUsed==='true'?3:5):1);
+                const feedback=currentCard.querySelector('[data-objective-feedback]'); const title=feedback.querySelector('[data-objective-title]'); const copy=feedback.querySelector('[data-objective-copy]');
+                feedback.hidden=false; feedback.classList.toggle('is-wrong',!correct); title.textContent=correct?'答對':'答錯'; copy.textContent=correct?'判斷正確，請再核對來源解析與成立條件。':'綠色選項是正確答案；請找出自己判斷失誤的條件。';
+                const next=currentCard.querySelector('[data-objective-next]'); next.hidden=false; next.dataset.action=rescueMode&&!correct?'retry':'next'; next.textContent=rescueMode&&!correct?'再作答一次':(rescueMode?'答對了，完成補強':'看完解析，下一題');
+                reveal();
+            };
             const finish = () => {
                 currentCard=null; cards.forEach((card)=>{card.hidden=true;}); completion.hidden=false; progressBar.style.width='100%'; progressLabel.textContent=rescueQueue.length?`完成 ${mainCount} 題與 ${rescueQueue.length} 題補強`:`已完成 ${mainCount} 題`;
                 document.querySelector('[data-result-know]').textContent=scores[5]; document.querySelector('[data-result-fuzzy]').textContent=scores[3]; document.querySelector('[data-result-forgot]').textContent=scores[1];
@@ -240,8 +289,23 @@
                 try { const response=await fetch(currentCard.dataset.rateUrl,{method:'POST',body:formData,credentials:'same-origin',headers:{'X-E3-Recall-Rating':'1',Accept:'application/json'}}); const result=await response.json().catch(()=>({})); if(!response.ok||!result.ok)throw new Error(result.error||'紀錄失敗，請再試一次。'); scores[rating]+=1; if(rating===1)rescueQueue.push(currentCard); completedMain+=1; showNext(); }
                 catch(error){ status.textContent=error.message||'紀錄失敗，請再試一次。'; buttons.forEach((button)=>{button.disabled=false;}); } finally { busy=false; }
             };
-            stage.addEventListener('click',(event)=>{ if(event.target.closest('[data-hint]')){showHint();return;} if(event.target.closest('[data-reveal]')){reveal();return;} const ratingButton=event.target.closest('[data-rating]'); if(ratingButton){recordRating(Number(ratingButton.dataset.rating));return;} if(event.target.closest('[data-rescue-next]')&&rescueMode){rescueIndex+=1;showNext();} });
-            document.addEventListener('keydown',(event)=>{ if(!currentCard||event.metaKey||event.ctrlKey||event.altKey)return; const target=event.target; if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return; if(event.key.toLowerCase()==='h'){showHint();return;} if(event.code==='Space'){event.preventDefault();reveal();return;} if(currentCard.querySelector('[data-answer]').hidden||rescueMode)return; if(event.key==='1')recordRating(1); if(event.key==='2')recordRating(3); if(event.key==='3')recordRating(5); });
+            stage.addEventListener('click',(event)=>{
+                const option=event.target.closest('[data-exam-option]'); if(option){selectObjectiveOption(option);return;}
+                if(event.target.closest('[data-submit-objective]')){submitObjective();return;}
+                const objectiveNext=event.target.closest('[data-objective-next]'); if(objectiveNext){ if(objectiveNext.dataset.action==='retry'){resetCard(currentCard,true);return;} if(rescueMode){rescueIndex+=1;showNext();return;} recordRating(Number(currentCard.dataset.objectiveRating||1));return; }
+                if(event.target.closest('[data-hint]')){showHint();return;} if(event.target.closest('[data-reveal]')){reveal();return;}
+                const ratingButton=event.target.closest('[data-rating]'); if(ratingButton){recordRating(Number(ratingButton.dataset.rating));return;} if(event.target.closest('[data-rescue-next]')&&rescueMode){rescueIndex+=1;showNext();}
+            });
+            document.addEventListener('keydown',(event)=>{
+                if(!currentCard||event.metaKey||event.ctrlKey||event.altKey)return; const target=event.target; if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return;
+                if(event.key.toLowerCase()==='h'){showHint();return;}
+                const answerHidden=currentCard.querySelector('[data-answer]').hidden;
+                if(answerHidden&&isObjective(currentCard)){ if(/^[1-4]$/.test(event.key)){const option=currentCard.querySelectorAll('[data-exam-option]')[Number(event.key)-1];if(option)selectObjectiveOption(option);} if(event.key==='Enter')submitObjective(); return; }
+                if(answerHidden&&event.code==='Space'){event.preventDefault();reveal();return;}
+                if(isObjective(currentCard)){ if(event.key==='Enter')currentCard.querySelector('[data-objective-next]')?.click(); return; }
+                if(rescueMode){if(event.key==='Enter')currentCard.querySelector('[data-rescue-next]')?.click();return;}
+                if(event.key==='1')recordRating(1); if(event.key==='2')recordRating(3); if(event.key==='3')recordRating(5);
+            });
             updateProgress(); window.renderQuickMath();
         })();
     </script>
