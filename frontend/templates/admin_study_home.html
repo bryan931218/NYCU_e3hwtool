@@ -907,6 +907,12 @@
             .runner-person, .runner-shadow, .calendar-dialog { animation: none; }
         }
     </style>
+    <style>
+        .quick-recall-home { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:15px; margin-bottom:14px; padding:13px 15px; color:#fff; border-radius:16px; background:linear-gradient(135deg,#0f4f91,#087f80); box-shadow:0 12px 28px rgba(15,79,145,.15); }
+        .quick-recall-home strong { display:block; font-size:14px; }.quick-recall-home span { display:block; margin-top:3px; color:rgba(255,255,255,.72); font-size:11px; }.quick-recall-home b { flex:0 0 auto; padding:9px 12px; color:#0c5a75; border-radius:10px; background:#fff; font-size:11px; }
+        .quick-recall-home:hover,.quick-recall-home:focus-visible { transform:translateY(-1px); outline:0; }
+        @media(max-width:620px){.quick-recall-home{align-items:flex-start;flex-direction:column}.quick-recall-home b{width:100%;text-align:center}}
+    </style>
 </head>
 <body>
     <div class="shell">
@@ -932,6 +938,8 @@
                     </a>
                 </div>
             </section>
+
+            {% if recall_widget and recall_widget.due_count %}<a class="quick-recall-home" href="{{ url_for('admin_study_recall_quick_review', size=5) }}"><span><strong>5 分鐘快速回想</strong><span>從 {{ recall_widget.due_count }} 張到期卡中先做 5 張</span></span><b>開始複習</b></a>{% endif %}
 
             <section class="metric-strip" aria-label="學習統計總覽">
                 {% for card in metric_cards %}

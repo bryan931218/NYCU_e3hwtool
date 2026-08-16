@@ -263,6 +263,21 @@
             .nav-links a { padding: 8px 10px; }
         }
     </style>
+    <style>
+        .quick-review-launch { position:relative; min-height:170px; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:24px; padding:25px 27px; overflow:hidden; color:#fff; border:0; border-radius:22px; background:radial-gradient(circle at 88% 10%,rgba(144,222,255,.33),transparent 30%),linear-gradient(135deg,#0e315b 0%,#105a9d 54%,#087f80 100%); box-shadow:0 20px 44px rgba(15,67,112,.2); }
+        .quick-review-launch::after { content:""; position:absolute; right:-50px; bottom:-105px; width:230px; height:230px; border:1px solid rgba(255,255,255,.17); border-radius:50%; box-shadow:0 0 0 28px rgba(255,255,255,.035),0 0 0 58px rgba(255,255,255,.025); pointer-events:none; }
+        .quick-review-launch > * { position:relative; z-index:1; }
+        .quick-review-copy .eyebrow { color:#a8f0e9; }
+        .quick-review-copy h2 { margin:0; font-size:25px; letter-spacing:-.035em; }
+        .quick-review-copy p { max-width:560px; margin:8px 0 0; color:rgba(255,255,255,.76); font-size:13px; line-height:1.65; }
+        .quick-review-actions { display:grid; gap:7px; min-width:158px; }
+        .quick-review-primary,.quick-review-secondary { min-height:44px; display:flex; align-items:center; justify-content:center; padding:0 15px; border-radius:12px; font-size:12px; font-weight:950; }
+        .quick-review-primary { color:#0e4e76; background:#fff; box-shadow:0 8px 22px rgba(4,24,42,.16); }
+        .quick-review-secondary { color:#fff; border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.08); }
+        .quick-review-primary:hover,.quick-review-primary:focus-visible,.quick-review-secondary:hover,.quick-review-secondary:focus-visible { transform:translateY(-1px); outline:0; }
+        .quick-review-done { min-width:158px; padding:12px 14px; color:#d8fff5; border:1px solid rgba(255,255,255,.24); border-radius:12px; background:rgba(255,255,255,.08); text-align:center; font-size:12px; font-weight:900; }
+        @media (max-width:620px) { .quick-review-launch { min-height:0; grid-template-columns:1fr; gap:19px; padding:22px 19px; border-radius:19px; }.quick-review-actions,.quick-review-done { width:100%; min-width:0; }.quick-review-copy h2 { font-size:23px; } }
+    </style>
 </head>
 <body>
     <header class="study-nav" aria-label="學習中心導覽">
@@ -331,6 +346,10 @@
                     <div class="api-note {% if openai_ready %}ready{% endif %}">{% if openai_ready %}AI 整理已啟用；原始圖片會保留在私人筆記中。{% else %}尚未設定 `OPENAI_API_KEY`，目前無法整理筆記。{% endif %}</div>
                         </div>
                     </details>
+                </article>
+                <article class="quick-review-launch" aria-labelledby="quick-review-title">
+                    <div class="quick-review-copy"><p class="eyebrow">5 MIN ACTIVE RECALL</p><h2 id="quick-review-title">先回想，再看答案</h2><p>一次只處理少量到期卡片；忘記的內容會在本輪結尾再補強一次。</p></div>
+                    {% if review_cards %}<div class="quick-review-actions"><a class="quick-review-primary" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">開始 5 張</a><a class="quick-review-secondary" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">挑戰 10 張</a></div>{% else %}<div class="quick-review-done">今天已複習完成</div>{% endif %}
                 </article>
                 <article id="review-zone" class="panel review-zone">
                     {% if review_cards|length > 4 %}<details class="panel-fold review-zone-fold"><summary class="panel-fold-summary"><div><h2>現在需要複習的重點</h2><p class="caption">只顯示今天到期的卡片；每張卡會依這次印象分獨立安排。</p></div><div class="topic-section-tools"><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span><span class="fold-arrow" aria-hidden="true">+</span></div></summary>{% else %}<div class="panel-fold-summary"><div><h2>現在需要複習的重點</h2><p class="caption">只顯示今天到期的卡片；每張卡會依這次印象分獨立安排。</p></div><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span></div>{% endif %}

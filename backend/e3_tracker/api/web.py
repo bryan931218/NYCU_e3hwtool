@@ -123,6 +123,8 @@ PUBLIC_STUDY_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "public_study_progress.html
 PUBLIC_STUDY_TEMPLATE = PUBLIC_STUDY_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_RECALL_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "study_recall.html"
 STUDY_RECALL_TEMPLATE = STUDY_RECALL_TEMPLATE_PATH.read_text(encoding="utf-8")
+STUDY_RECALL_QUICK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "study_recall_quick.html"
+STUDY_RECALL_QUICK_TEMPLATE = STUDY_RECALL_QUICK_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_UPLOAD_TRACKER_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "_study_upload_tracker.html"
 STUDY_UPLOAD_TRACKER_TEMPLATE = STUDY_UPLOAD_TRACKER_TEMPLATE_PATH.read_text(encoding="utf-8")
 
@@ -3605,6 +3607,31 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "due_count": len(cards),
             "cards": cards,
         }
+
+    def _interleave_recall_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Keep the due-date priority while avoiding long same-subject runs."""
+
+        pending = list(cards)
+        interleaved: List[Dict[str, Any]] = []
+        previous_subject = ""
+        while pending:
+            next_index = 0
+            if previous_subject:
+                next_index = next(
+                    (
+                        index
+                        for index, item in enumerate(pending)
+                        if str(item.get("subject") or item.get("session_title") or "")
+                        != previous_subject
+                    ),
+                    0,
+                )
+            selected = pending.pop(next_index)
+            interleaved.append(selected)
+            previous_subject = str(
+                selected.get("subject") or selected.get("session_title") or ""
+            )
+        return interleaved
 
     def _study_plan_minutes(value: Any) -> float:
         try:
@@ -12027,6 +12054,27 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             selected_session=selected_session,
             openai_ready=bool(openai_api_key),
             nav_active="recall",
+        )
+
+    @app.get("/admin/study-recall/quick-review")
+    @admin_required
+    def admin_study_recall_quick_review():
+        user = current_user()
+        try:
+            requested_size = int(request.args.get("size") or 5)
+        except (TypeError, ValueError):
+            requested_size = 5
+        session_size = requested_size if requested_size in {5, 10, 18} else 5
+        recall_context = _build_recall_widget_context()
+        review_cards = _interleave_recall_cards(recall_context["cards"])[:session_size]
+        return render_template_string(
+            STUDY_RECALL_QUICK_TEMPLATE,
+            admin_user=user,
+            today=_study_plan_business_date().isoformat(),
+            review_cards=review_cards,
+            total_due=int(recall_context["due_count"]),
+            session_size=session_size,
+            remaining_after_session=max(0, int(recall_context["due_count"]) - len(review_cards)),
         )
 
     @app.get("/admin/study-recall/search")
