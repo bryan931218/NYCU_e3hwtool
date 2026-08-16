@@ -3633,6 +3633,120 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
         return interleaved
 
+    def _build_quick_review_item(item: Dict[str, Any]) -> Dict[str, Any]:
+        """Turn one grounded note card into a short retrieval-and-transfer drill."""
+
+        prepared = copy.deepcopy(item)
+        concept = prepared.get("concept_data") if isinstance(prepared.get("concept_data"), dict) else {}
+        title = str(concept.get("concept") or "這個觀念").strip()
+        content_kind = str(concept.get("content_kind") or "concept").strip().lower()
+        card_type = "example" if concept.get("card_type") == "example" else "concept"
+        example_problem = str(concept.get("example_problem") or "").strip()
+        example_method = str(concept.get("example_method") or "").strip()
+        core_summary = str(concept.get("core_summary") or "").strip()
+        explanation = str(concept.get("explanation") or "").strip()
+        simple_example = str(concept.get("simple_example") or "").strip()
+        pitfall = str(concept.get("common_confusion") or "").strip()
+        reasoning_steps = [
+            str(step or "").strip()
+            for step in (concept.get("reasoning_steps") or [])[:5]
+            if str(step or "").strip()
+        ]
+        review = concept.get("review") if isinstance(concept.get("review"), dict) else {}
+        try:
+            last_rating = int(review.get("last_rating")) if review.get("last_rating") is not None else None
+        except (TypeError, ValueError):
+            last_rating = None
+
+        estimated_seconds = 45
+        answer_title = "答案骨架"
+        if card_type == "example" and example_problem:
+            question_type = "解題決策"
+            mission = "先選方法，再走步驟"
+            instruction = "先說你為什麼選這個方法，再口述必要步驟；不用算得很漂亮。"
+            prompt = example_problem
+            answer_title = "解題骨架"
+            estimated_seconds = 75
+        elif content_kind in {"procedure", "code"}:
+            question_type = "順序重建"
+            mission = "從起點一路推到結果"
+            instruction = "依順序說出每個關鍵動作，特別留意不能互換的步驟。"
+            prompt = f"不看筆記，你能完整重建「{title}」的流程嗎？"
+            answer_title = "正確順序"
+            estimated_seconds = 60
+        elif content_kind == "comparison":
+            question_type = "邊界辨析"
+            mission = "說清楚差別，避免混用"
+            instruction = "先給判斷準則，再指出最容易混淆的界線。"
+            prompt = f"「{title}」應該怎麼判斷？哪些情況最容易誤用？"
+            answer_title = "判斷準則"
+        elif content_kind == "formula":
+            question_type = "公式重建"
+            mission = "公式、符號、條件都要到位"
+            instruction = "先寫或說出關係式，再解釋每一部分與成立條件。"
+            prompt = f"請從記憶中重建「{title}」的公式，並說明何時能用。"
+            answer_title = "公式與條件"
+            estimated_seconds = 60
+        elif content_kind == "definition":
+            question_type = "定義壓縮"
+            mission = "用自己的話說準確"
+            instruction = "不用逐字背，但必要條件、關係與結論不能漏。"
+            prompt = f"請用一句話定義「{title}」，再補上它成立的必要條件。"
+            answer_title = "定義骨架"
+        elif len(reasoning_steps) >= 2:
+            question_type = "順序重建"
+            mission = "從起點一路推到結果"
+            instruction = "依順序說出每個關鍵動作，特別留意不能互換的步驟。"
+            prompt = f"不看筆記，你能完整重建「{title}」的流程嗎？"
+            answer_title = "正確順序"
+            estimated_seconds = 60
+        elif last_rating is not None and last_rating <= 2:
+            question_type = "弱點修復"
+            mission = "把上次斷掉的記憶接回來"
+            instruction = "先講核心結論，再主動補一個條件或易錯點。"
+            prompt = f"上次這題卡住了：現在你能完整說明「{title}」嗎？"
+            answer_title = "這次要接回的重點"
+        elif pitfall:
+            question_type = "防錯回想"
+            mission = "記住結論，也記住不能怎麼用"
+            instruction = "先回答核心結論，再說一個容易判斷錯的地方。"
+            prompt = f"「{title}」的核心結論是什麼？使用時最需要防哪個錯？"
+            answer_title = "核心與防錯線"
+        elif content_kind == "fact":
+            question_type = "精確回想"
+            mission = "一句話答到關鍵"
+            instruction = "用完整敘述回答，不要只說零散關鍵詞。"
+            prompt = f"「{title}」最需要精確記住的結論是什麼？"
+            answer_title = "精確答案"
+        else:
+            question_type = "30 秒教學"
+            mission = "把觀念講到別人聽得懂"
+            instruction = "先講核心結論，再補上一個條件、關係或用途。"
+            prompt = f"如果只有 30 秒，你會怎麼教別人「{title}」？"
+            answer_title = "最小完整答案"
+
+        answer_summary = example_method if card_type == "example" and example_method else core_summary
+        if not answer_summary:
+            answer_summary = explanation
+        answer_steps = reasoning_steps
+        hint = str(concept.get("recall_cue") or concept.get("memory_hint") or "").strip()
+
+        prepared["quick_review"] = {
+            "question_type": question_type,
+            "mission": mission,
+            "instruction": instruction,
+            "prompt": prompt,
+            "hint": hint,
+            "estimated_seconds": estimated_seconds,
+            "answer_title": answer_title,
+            "answer_summary": answer_summary,
+            "answer_steps": answer_steps,
+            "explanation": explanation if explanation != answer_summary else "",
+            "example": simple_example,
+            "pitfall": pitfall,
+        }
+        return prepared
+
     def _study_plan_minutes(value: Any) -> float:
         try:
             parsed = float(str(value or "0").strip())
@@ -12066,7 +12180,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             requested_size = 5
         session_size = requested_size if requested_size in {5, 10, 18} else 5
         recall_context = _build_recall_widget_context()
-        review_cards = _interleave_recall_cards(recall_context["cards"])[:session_size]
+        review_cards = [
+            _build_quick_review_item(item)
+            for item in _interleave_recall_cards(recall_context["cards"])[:session_size]
+        ]
         return render_template_string(
             STUDY_RECALL_QUICK_TEMPLATE,
             admin_user=user,

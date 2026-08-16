@@ -270,6 +270,8 @@
         .quick-review-copy .eyebrow { color:#a8f0e9; }
         .quick-review-copy h2 { margin:0; font-size:25px; letter-spacing:-.035em; }
         .quick-review-copy p { max-width:560px; margin:8px 0 0; color:rgba(255,255,255,.76); font-size:13px; line-height:1.65; }
+        .quick-review-steps { display:flex; flex-wrap:wrap; gap:6px; margin-top:13px; }
+        .quick-review-steps span { padding:5px 8px; color:rgba(255,255,255,.84); border:1px solid rgba(255,255,255,.19); border-radius:999px; background:rgba(255,255,255,.07); font-size:10px; font-weight:850; }
         .quick-review-actions { display:grid; gap:7px; min-width:158px; }
         .quick-review-primary,.quick-review-secondary { min-height:44px; display:flex; align-items:center; justify-content:center; padding:0 15px; border-radius:12px; font-size:12px; font-weight:950; }
         .quick-review-primary { color:#0e4e76; background:#fff; box-shadow:0 8px 22px rgba(4,24,42,.16); }
@@ -348,8 +350,8 @@
                     </details>
                 </article>
                 <article class="quick-review-launch" aria-labelledby="quick-review-title">
-                    <div class="quick-review-copy"><p class="eyebrow">5 MIN ACTIVE RECALL</p><h2 id="quick-review-title">先回想，再看答案</h2><p>一次只處理少量到期卡片；忘記的內容會在本輪結尾再補強一次。</p></div>
-                    {% if review_cards %}<div class="quick-review-actions"><a class="quick-review-primary" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">開始 5 張</a><a class="quick-review-secondary" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">挑戰 10 張</a></div>{% else %}<div class="quick-review-done">今天已複習完成</div>{% endif %}
+                    <div class="quick-review-copy"><p class="eyebrow">MEMORY SPRINT</p><h2 id="quick-review-title">把記憶叫回來，不只是重看</h2><p>題目會依筆記內容切換成定義、公式、流程、辨析或解題決策；忘記的題目會在本輪結尾立即補強。</p><div class="quick-review-steps" aria-label="記憶衝刺流程"><span>先回想</span><span>看答案骨架</span><span>自評</span><span>短補強</span></div></div>
+                    {% if review_cards %}<div class="quick-review-actions"><a class="quick-review-primary" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">3 分鐘・5 題</a><a class="quick-review-secondary" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">7 分鐘・10 題</a></div>{% else %}<div class="quick-review-done">今天已複習完成</div>{% endif %}
                 </article>
                 <article id="review-zone" class="panel review-zone">
                     {% if review_cards|length > 4 %}<details class="panel-fold review-zone-fold"><summary class="panel-fold-summary"><div><h2>現在需要複習的重點</h2><p class="caption">只顯示今天到期的卡片；每張卡會依這次印象分獨立安排。</p></div><div class="topic-section-tools"><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span><span class="fold-arrow" aria-hidden="true">+</span></div></summary>{% else %}<div class="panel-fold-summary"><div><h2>現在需要複習的重點</h2><p class="caption">只顯示今天到期的卡片；每張卡會依這次印象分獨立安排。</p></div><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span></div>{% endif %}

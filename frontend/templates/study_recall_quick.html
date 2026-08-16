@@ -3,267 +3,194 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>快速回想｜E3 學習中心</title>
+    <title>記憶衝刺｜E3 學習中心</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderQuickMath && window.renderQuickMath()"></script>
     <style>
-        :root {
-            --ink:#102a43;
-            --muted:#63778c;
-            --line:#d8e5f1;
-            --blue:#1463d9;
-            --blue-soft:#eaf3ff;
-            --teal:#087f80;
-            --teal-soft:#e9f8f6;
-            --green:#218653;
-            --green-soft:#eaf7ee;
-            --amber:#a96200;
-            --amber-soft:#fff4de;
-            --red:#b53b47;
-            --red-soft:#fff0f1;
-            font-family:Inter,"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
-        }
+        :root { --ink:#172b3d; --muted:#66788a; --line:#dbe5ed; --blue:#2463eb; --blue-soft:#edf4ff; --mint:#087c72; --mint-soft:#eaf8f5; --green:#1b7d50; --green-soft:#edf8f1; --amber:#9b6207; --amber-soft:#fff7e7; --rose:#ac4051; --rose-soft:#fff1f3; font-family:Inter,"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; }
         * { box-sizing:border-box; }
         [hidden] { display:none!important; }
-        html { min-width:0; background:#f3f8fd; }
-        body {
-            min-width:0;
-            min-height:100vh;
-            margin:0;
-            color:var(--ink);
-            background:
-                radial-gradient(circle at 10% 0%,rgba(173,218,255,.5),transparent 29%),
-                radial-gradient(circle at 92% 4%,rgba(219,210,255,.46),transparent 26%),
-                linear-gradient(180deg,#fbfdff,#f0f6fc);
-        }
+        html { min-width:0; background:#f5f8fb; }
+        body { min-width:0; min-height:100vh; margin:0; color:var(--ink); background:radial-gradient(circle at 6% -4%,rgba(105,174,255,.2),transparent 29%),radial-gradient(circle at 98% 2%,rgba(82,196,174,.16),transparent 25%),#f5f8fb; }
         button,a { font:inherit; }
         a { color:inherit; text-decoration:none; }
         button { -webkit-tap-highlight-color:transparent; }
-        .study-nav {
-            position:sticky;
-            z-index:20;
-            top:0;
-            min-height:68px;
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:18px;
-            padding:10px 30px;
-            border-bottom:1px solid rgba(205,220,235,.78);
-            background:rgba(255,255,255,.88);
-            backdrop-filter:blur(18px) saturate(1.15);
-        }
-        .brand { display:flex; align-items:center; gap:11px; font-size:14px; font-weight:900; white-space:nowrap; }
-        .mark { width:37px; height:37px; display:grid; place-items:center; color:#fff; border-radius:12px; background:linear-gradient(145deg,#1f78ed,#0d4fae); box-shadow:0 8px 18px rgba(20,99,217,.22); }
-        .nav-actions { display:flex; align-items:center; gap:8px; }
-        .nav-link { min-height:38px; display:inline-flex; align-items:center; padding:0 13px; color:#4f657b; border-radius:11px; font-size:12px; font-weight:850; }
-        .nav-link:hover,.nav-link:focus-visible { color:var(--blue); background:var(--blue-soft); outline:0; }
-        .quick-shell { width:min(820px,100%); margin:0 auto; padding:30px 22px 54px; }
-        .session-head { display:grid; gap:14px; margin-bottom:17px; }
+        button:focus-visible,a:focus-visible,summary:focus-visible { outline:3px solid rgba(36,99,235,.16); outline-offset:2px; }
+        .study-nav { position:sticky; z-index:20; top:0; min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 28px; border-bottom:1px solid rgba(211,222,232,.8); background:rgba(255,255,255,.88); backdrop-filter:blur(18px) saturate(1.1); }
+        .brand { display:flex; align-items:center; gap:10px; font-size:13px; font-weight:900; white-space:nowrap; }
+        .mark { width:36px; height:36px; display:grid; place-items:center; color:#fff; border-radius:11px; background:linear-gradient(145deg,#2b75f2,#1749ae); box-shadow:0 8px 17px rgba(36,99,235,.21); }
+        .nav-link { min-height:38px; display:inline-flex; align-items:center; padding:0 13px; color:#506579; border-radius:10px; font-size:12px; font-weight:850; }
+        .nav-link:hover { color:var(--blue); background:var(--blue-soft); }
+        .quick-shell { width:min(930px,100%); margin:0 auto; padding:26px 22px 52px; }
+        .session-head { display:grid; gap:14px; margin-bottom:16px; }
         .session-top { display:flex; align-items:end; justify-content:space-between; gap:18px; }
-        .eyebrow { margin:0 0 7px; color:var(--teal); font-size:10px; font-weight:950; letter-spacing:.14em; }
-        h1 { margin:0; font-size:clamp(30px,6vw,45px); line-height:1; letter-spacing:-.055em; }
-        .session-meta { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-weight:800; }
-        .timer { min-width:62px; padding:8px 10px; text-align:center; border:1px solid rgba(203,220,238,.9); border-radius:999px; background:rgba(255,255,255,.85); font-variant-numeric:tabular-nums; }
+        .eyebrow { margin:0 0 6px; color:var(--mint); font-size:10px; font-weight:950; letter-spacing:.14em; }
+        h1 { margin:0; font-size:clamp(30px,5vw,42px); line-height:1; letter-spacing:-.05em; }
+        .session-copy { margin:8px 0 0; color:var(--muted); font-size:12px; font-weight:700; }
+        .session-meta { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:11px; font-weight:850; }
+        .timer { min-width:62px; padding:8px 10px; text-align:center; border:1px solid var(--line); border-radius:999px; background:rgba(255,255,255,.9); font-variant-numeric:tabular-nums; }
         .progress-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; }
-        .progress-track { height:7px; overflow:hidden; border-radius:999px; background:#dfeaf5; }
-        .progress-bar { width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,#1670e8,#0b9190); transition:width .25s ease; }
+        .progress-track { height:6px; overflow:hidden; border-radius:999px; background:#dfe8f0; }
+        .progress-bar { width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,#2871ed,#0d9488); transition:width .25s ease; }
         .progress-label { color:var(--muted); font-size:11px; font-weight:850; white-space:nowrap; }
-        .mode-picker { display:flex; gap:6px; padding:5px; border:1px solid rgba(210,224,238,.9); border-radius:14px; background:rgba(255,255,255,.8); }
-        .mode-picker a { flex:1; min-height:34px; display:grid; place-items:center; padding:0 10px; color:var(--muted); border-radius:9px; font-size:11px; font-weight:850; white-space:nowrap; }
-        .mode-picker a:hover,.mode-picker a:focus-visible { color:var(--blue); background:var(--blue-soft); outline:0; }
-        .mode-picker a.active { color:#fff; background:var(--blue); box-shadow:0 5px 13px rgba(20,99,217,.2); }
-        .card-stage { position:relative; min-height:440px; }
-        .quick-card {
-            min-height:440px;
-            display:grid;
-            grid-template-rows:auto auto minmax(110px,auto) auto;
-            align-content:start;
-            padding:26px;
-            overflow:hidden;
-            border:1px solid rgba(201,218,235,.96);
-            border-radius:25px;
-            background:rgba(255,255,255,.97);
-            box-shadow:0 24px 60px rgba(16,42,67,.11),inset 0 1px 0 #fff;
-        }
+        .mode-picker { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; padding:5px; border:1px solid var(--line); border-radius:13px; background:rgba(255,255,255,.78); }
+        .mode-picker a { min-height:35px; display:grid; place-items:center; padding:0 10px; color:var(--muted); border-radius:9px; font-size:11px; font-weight:850; white-space:nowrap; }
+        .mode-picker a:hover { color:var(--blue); background:var(--blue-soft); }
+        .mode-picker a.active { color:#fff; background:#245fcf; box-shadow:0 5px 12px rgba(36,95,207,.18); }
+        .card-stage { position:relative; min-height:470px; }
+        .quick-card { min-height:470px; padding:22px; overflow:hidden; border:1px solid rgba(204,217,229,.95); border-radius:23px; background:rgba(255,255,255,.98); box-shadow:0 22px 55px rgba(23,43,61,.09),inset 0 1px 0 #fff; }
         .quick-card[hidden] { display:none; }
-        .card-kicker { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-        .card-tags { display:flex; flex-wrap:wrap; gap:6px; }
-        .tag { padding:5px 8px; color:#4b657d; border:1px solid var(--line); border-radius:999px; background:#f8fbfe; font-size:10px; font-weight:900; }
-        .tag.subject { color:#0b696a; border-color:#b9dedb; background:var(--teal-soft); }
-        .card-number { color:#91a2b4; font-size:11px; font-weight:900; }
-        .prompt-block { padding:30px 4px 24px; text-align:center; }
-        .prompt-label { display:block; margin-bottom:11px; color:var(--teal); font-size:10px; font-weight:950; letter-spacing:.08em; }
-        .prompt-block h2 { max-width:650px; margin:0 auto; font-size:clamp(23px,4.5vw,34px); line-height:1.42; letter-spacing:-.025em; overflow-wrap:anywhere; }
-        .concept-title { margin:12px 0 0; color:var(--muted); font-size:12px; font-weight:800; }
-        .reveal-wrap { display:grid; align-content:end; }
-        .reveal-button { width:100%; min-height:54px; color:#fff; border:0; border-radius:15px; background:linear-gradient(135deg,#1463d9,#0e73ca); box-shadow:0 10px 24px rgba(20,99,217,.2); font-size:14px; font-weight:950; cursor:pointer; }
-        .reveal-button:hover,.reveal-button:focus-visible { transform:translateY(-1px); box-shadow:0 13px 27px rgba(20,99,217,.25); outline:0; }
-        .shortcut { margin:9px 0 0; color:#96a5b5; text-align:center; font-size:10px; font-weight:750; }
-        .answer { display:grid; gap:10px; margin-top:2px; }
-        .answer[hidden] { display:none; }
-        .answer-core { padding:16px 17px; border:1px solid #c8e5d1; border-radius:15px; background:linear-gradient(145deg,#effaf3,#f9fffb); }
-        .answer-core span,.answer-section span { display:block; margin-bottom:6px; color:var(--green); font-size:10px; font-weight:950; }
-        .answer-core p,.answer-section p { margin:0; line-height:1.7; overflow-wrap:anywhere; }
-        .answer-core p { font-size:15px; font-weight:800; }
-        .answer-section { padding:13px 15px; border:1px solid var(--line); border-radius:13px; background:#f8fbfe; }
-        .answer-section span { color:var(--teal); }
-        .answer-section p,.answer-section ol { color:#496077; font-size:13px; }
-        .answer-section ol { margin:0; padding-left:20px; line-height:1.7; }
-        .answer-detail { border:1px solid var(--line); border-radius:12px; background:#fff; }
-        .answer-detail summary { padding:11px 13px; color:var(--muted); font-size:11px; font-weight:850; cursor:pointer; }
-        .answer-detail p { margin:0; padding:0 13px 13px; color:#53697e; font-size:13px; line-height:1.7; }
-        .confusion { color:#79551c; border-color:#f0d6aa; background:var(--amber-soft); }
-        .rating-panel { display:grid; gap:8px; margin-top:16px; }
-        .rating-panel[hidden] { display:none; }
-        .rating-title { margin:0; color:var(--muted); text-align:center; font-size:11px; font-weight:850; }
-        .rating-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-        .rating-button { min-height:52px; display:grid; place-items:center; gap:2px; padding:7px; border:1px solid var(--line); border-radius:13px; background:#fff; font-size:13px; font-weight:950; cursor:pointer; }
-        .rating-button small { font-size:9px; font-weight:800; opacity:.72; }
-        .rating-button.forgot { color:var(--red); border-color:#edc8cc; background:var(--red-soft); }
-        .rating-button.fuzzy { color:var(--amber); border-color:#efd5a6; background:var(--amber-soft); }
-        .rating-button.know { color:var(--green); border-color:#bfe1c9; background:var(--green-soft); }
-        .rating-button:hover,.rating-button:focus-visible { transform:translateY(-1px); filter:saturate(1.08); outline:3px solid rgba(20,99,217,.1); }
-        .rating-button:disabled { opacity:.48; transform:none; cursor:wait; }
-        .save-status { min-height:17px; margin:0; color:var(--red); text-align:center; font-size:11px; }
-        .rescue-next { min-height:52px; color:#fff; border:0; border-radius:13px; background:var(--teal); font-size:13px; font-weight:950; cursor:pointer; }
-        .rescue-next[hidden] { display:none; }
-        .completion {
-            min-height:440px;
-            display:grid;
-            place-items:center;
-            padding:34px;
-            text-align:center;
-            border:1px solid rgba(201,218,235,.96);
-            border-radius:25px;
-            background:rgba(255,255,255,.97);
-            box-shadow:0 24px 60px rgba(16,42,67,.11);
-        }
-        .completion[hidden] { display:none; }
-        .completion-icon { width:68px; height:68px; display:grid; place-items:center; margin:0 auto 18px; color:#fff; border-radius:22px; background:linear-gradient(145deg,#23a16b,#0c7f80); box-shadow:0 13px 28px rgba(24,139,105,.22); font-size:30px; font-weight:950; }
-        .completion h2 { margin:0; font-size:30px; letter-spacing:-.04em; }
-        .completion-copy { margin:9px 0 0; color:var(--muted); font-size:13px; line-height:1.65; }
-        .result-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:23px 0; }
-        .result-item { min-width:86px; padding:12px 10px; border:1px solid var(--line); border-radius:13px; background:#f8fbfe; }
+        .card-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .card-tags { min-width:0; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+        .tag { max-width:260px; overflow:hidden; padding:5px 8px; color:#50677c; text-overflow:ellipsis; white-space:nowrap; border:1px solid var(--line); border-radius:999px; background:#f8fafc; font-size:10px; font-weight:900; }
+        .tag.subject { color:#096b64; border-color:#b9ddd7; background:var(--mint-soft); }
+        .card-estimate { color:#8494a4; font-size:10px; font-weight:850; white-space:nowrap; }
+        .phase-rail { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin:18px 0 0; }
+        .phase { min-width:0; display:flex; align-items:center; gap:7px; color:#93a1af; font-size:10px; font-weight:850; }
+        .phase::before { content:attr(data-step); flex:0 0 auto; width:22px; height:22px; display:grid; place-items:center; border:1px solid #d4dfe8; border-radius:50%; background:#f7f9fb; font-size:9px; }
+        .phase::after { content:""; min-width:8px; height:1px; flex:1; order:2; background:#dfe6ec; }
+        .phase:last-child::after { display:none; }
+        .phase.is-active { color:var(--blue); }
+        .phase.is-active::before { color:#fff; border-color:var(--blue); background:var(--blue); box-shadow:0 4px 10px rgba(36,99,235,.18); }
+        .quick-card.is-revealed .phase:nth-child(2),.quick-card.is-revealed .phase:nth-child(3) { color:var(--blue); }
+        .quick-card.is-revealed .phase:nth-child(2)::before,.quick-card.is-revealed .phase:nth-child(3)::before { color:#fff; border-color:var(--blue); background:var(--blue); }
+        .prompt-block { display:grid; justify-items:start; gap:10px; padding:31px 20px 27px; }
+        .prompt-meta { display:flex; align-items:center; flex-wrap:wrap; gap:7px; }
+        .prompt-label { padding:5px 9px; color:var(--blue); border-radius:7px; background:var(--blue-soft); font-size:10px; font-weight:950; }
+        .prompt-mission { color:#607386; font-size:11px; font-weight:780; }
+        .prompt-block h2 { max-width:800px; margin:0; font-size:clamp(23px,4vw,32px); line-height:1.45; letter-spacing:-.025em; overflow-wrap:anywhere; }
+        .question-instruction { max-width:690px; margin:0; color:var(--muted); font-size:13px; font-weight:700; line-height:1.65; }
+        .concept-title { margin:1px 0 0; color:#96a3af; font-size:10px; font-weight:800; }
+        .reveal-wrap { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:0 2px; }
+        .reveal-button,.hint-button { min-height:51px; border-radius:13px; font-size:13px; font-weight:950; cursor:pointer; }
+        .reveal-button { color:#fff; border:0; background:linear-gradient(135deg,#266be8,#174db4); box-shadow:0 9px 20px rgba(36,99,235,.18); }
+        .hint-button { min-width:116px; padding:0 15px; color:#4c647a; border:1px solid var(--line); background:#f8fafc; }
+        .reveal-button:hover,.hint-button:hover { transform:translateY(-1px); }
+        .hint-box { grid-column:1/-1; display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px; padding:11px 13px; color:#62512f; border:1px solid #ead6a9; border-radius:11px; background:var(--amber-soft); font-size:12px; line-height:1.65; }
+        .hint-box strong { color:var(--amber); }
+        .shortcut { grid-column:1/-1; margin:1px 0 0; color:#9aa7b3; text-align:center; font-size:10px; font-weight:750; }
+        .answer { display:grid; gap:11px; margin-top:9px; }
+        .answer-head { display:flex; align-items:end; justify-content:space-between; gap:16px; padding:0 2px; }
+        .answer-head span { color:var(--green); font-size:9px; font-weight:950; letter-spacing:.13em; }
+        .answer-head h3 { margin:3px 0 0; font-size:20px; letter-spacing:-.025em; }
+        .answer-head p { max-width:350px; margin:0; color:var(--muted); text-align:right; font-size:11px; line-height:1.45; }
+        .answer-sheet { min-width:0; overflow:hidden; border:1px solid #cce2d4; border-radius:17px; background:linear-gradient(145deg,#f6fcf8,#fff); }
+        .answer-core { min-width:0; padding:17px 18px; }
+        .answer-label { display:block; margin-bottom:7px; color:var(--green); font-size:10px; font-weight:950; }
+        .answer-core p { min-width:0; margin:0; color:#244738; font-size:15px; font-weight:760; line-height:1.75; white-space:pre-line; overflow-wrap:anywhere; }
+        .answer-steps { margin:0; padding:0; list-style:none; border-top:1px solid #dcece2; counter-reset:answer-step; }
+        .answer-steps li { min-width:0; display:grid; grid-template-columns:26px minmax(0,1fr); gap:10px; padding:12px 18px; color:#405d50; font-size:13px; line-height:1.68; counter-increment:answer-step; overflow-wrap:anywhere; }
+        .answer-steps li + li { border-top:1px solid #e5efe9; }
+        .answer-steps li::before { content:counter(answer-step); width:24px; height:24px; display:grid; place-items:center; color:var(--green); border:1px solid #bcd9c6; border-radius:8px; background:#fff; font-size:10px; font-weight:950; }
+        .pitfall { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr); gap:9px; padding:12px 14px; color:#6d5221; border:1px solid #ecd4a5; border-radius:12px; background:var(--amber-soft); font-size:12px; line-height:1.65; }
+        .pitfall strong { white-space:nowrap; }
+        .pitfall span { min-width:0; white-space:pre-line; overflow-wrap:anywhere; }
+        .answer-detail { overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#fff; }
+        .answer-detail summary { padding:12px 14px; color:#5f7285; font-size:11px; font-weight:850; cursor:pointer; }
+        .answer-detail-body { display:grid; gap:10px; padding:0 14px 14px; }
+        .answer-detail-body p { min-width:0; margin:0; color:#526a7e; font-size:13px; line-height:1.75; white-space:pre-line; overflow-wrap:anywhere; }
+        .answer-detail-body p + p { padding-top:10px; border-top:1px solid #e7edf2; }
+        [data-math-content] .katex-display { max-width:100%; margin:.65em 0; overflow-x:auto; overflow-y:hidden; padding:3px 0 6px; text-align:left; }
+        .rating-panel { display:grid; gap:9px; margin-top:3px; padding-top:2px; }
+        .rating-question { margin:0; color:#50667a; font-size:12px; font-weight:850; }
+        .rating-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+        .rating-button { min-width:0; min-height:61px; display:grid; align-content:center; gap:3px; padding:7px; border-radius:13px; background:#fff; font-size:13px; font-weight:950; cursor:pointer; }
+        .rating-button small { font-size:9px; font-weight:750; opacity:.72; }
+        .rating-button.forgot { color:var(--rose); border:1px solid #edc7ce; background:var(--rose-soft); }
+        .rating-button.fuzzy { color:var(--amber); border:1px solid #ead19d; background:var(--amber-soft); }
+        .rating-button.know { color:var(--green); border:1px solid #bcdcc8; background:var(--green-soft); }
+        .rating-button:hover { transform:translateY(-1px); filter:saturate(1.08); }
+        .rating-button:disabled { opacity:.52; cursor:wait; transform:none; }
+        .rescue-note { padding:11px 13px; color:#12655e; border:1px solid #b9ddd7; border-radius:11px; background:var(--mint-soft); font-size:12px; line-height:1.6; }
+        .rescue-next { min-height:51px; color:#fff; border:0; border-radius:13px; background:linear-gradient(135deg,#0b8b7e,#07655f); font-size:13px; font-weight:950; cursor:pointer; }
+        .save-status { min-height:16px; margin:0; color:var(--rose); text-align:center; font-size:11px; }
+        .completion,.empty-state { min-height:470px; display:grid; place-items:center; padding:34px; text-align:center; border:1px solid rgba(204,217,229,.95); border-radius:23px; background:#fff; box-shadow:0 22px 55px rgba(23,43,61,.09); }
+        .completion-icon { width:64px; height:64px; display:grid; place-items:center; margin:0 auto 17px; color:#fff; border-radius:20px; background:linear-gradient(145deg,#1d9a68,#087a72); box-shadow:0 12px 25px rgba(16,133,104,.2); font-size:28px; font-weight:950; }
+        .completion h2,.empty-state h2 { margin:0; font-size:29px; letter-spacing:-.04em; }
+        .completion-copy,.empty-state p { max-width:470px; margin:9px auto 0; color:var(--muted); font-size:13px; line-height:1.7; }
+        .result-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin:22px 0; }
+        .result-item { min-width:92px; padding:12px 10px; border:1px solid var(--line); border-radius:12px; background:#f8fafc; }
         .result-item strong { display:block; font-size:22px; }
         .result-item span { display:block; margin-top:3px; color:var(--muted); font-size:10px; font-weight:850; }
         .completion-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:8px; }
-        .completion-actions a { min-height:42px; display:inline-flex; align-items:center; padding:0 15px; border:1px solid var(--line); border-radius:12px; color:#4f657b; background:#fff; font-size:12px; font-weight:900; }
-        .completion-actions a.primary { color:#fff; border-color:var(--blue); background:var(--blue); }
-        .completion-actions a:hover,.completion-actions a:focus-visible { transform:translateY(-1px); outline:0; }
-        .session-foot { display:flex; justify-content:center; gap:14px; margin-top:14px; color:#8798aa; font-size:10px; font-weight:800; }
-        .empty-state { min-height:460px; display:grid; place-items:center; padding:34px; text-align:center; border:1px solid rgba(201,218,235,.96); border-radius:25px; background:rgba(255,255,255,.97); box-shadow:0 24px 60px rgba(16,42,67,.1); }
-        .empty-state h2 { margin:0; font-size:28px; letter-spacing:-.035em; }
-        .empty-state p { max-width:440px; margin:10px auto 22px; color:var(--muted); line-height:1.7; }
-        .empty-state a { min-height:44px; display:inline-flex; align-items:center; padding:0 16px; color:#fff; border-radius:12px; background:var(--blue); font-size:12px; font-weight:900; }
-        @media (max-width:620px) {
-            .study-nav { min-height:60px; padding:9px 13px; }
+        .completion-actions a,.empty-state a { min-height:42px; display:inline-flex; align-items:center; padding:0 15px; border:1px solid var(--line); border-radius:11px; color:#4f6578; background:#fff; font-size:12px; font-weight:900; }
+        .completion-actions a.primary,.empty-state a { color:#fff; border-color:var(--blue); background:var(--blue); }
+        .empty-state p { margin-bottom:21px; }
+        .session-foot { display:flex; justify-content:center; gap:14px; margin-top:13px; color:#8a99a7; font-size:10px; font-weight:800; }
+        @media (max-width:640px) {
+            .study-nav { min-height:58px; padding:8px 12px; }
             .brand span:last-child { display:none; }
-            .mark { width:36px; height:36px; }
-            .nav-link { min-height:36px; padding:0 10px; }
-            .quick-shell { padding:19px 12px 34px; }
+            .nav-link { min-height:36px; padding:0 9px; }
+            .quick-shell { padding:17px 10px 32px; }
             .session-top { align-items:start; }
+            .session-copy { display:none; }
             .session-meta { align-items:flex-end; flex-direction:column; }
-            h1 { font-size:32px; }
-            .mode-picker { overflow-x:auto; }
-            .mode-picker a { min-width:86px; }
-            .card-stage,.quick-card,.completion { min-height:calc(100dvh - 248px); }
-            .quick-card { padding:18px 15px; border-radius:20px; }
-            .prompt-block { padding:24px 0 20px; }
-            .prompt-block h2 { font-size:23px; }
-            .rating-actions { gap:6px; }
-            .rating-button { min-height:56px; padding:6px 3px; font-size:12px; }
-            .completion { padding:25px 16px; border-radius:20px; }
-            .result-grid { width:100%; gap:6px; }
-            .result-item { min-width:0; padding:11px 5px; }
+            h1 { font-size:31px; }
+            .mode-picker { overflow-x:auto; grid-template-columns:repeat(3,minmax(86px,1fr)); }
+            .card-stage,.quick-card,.completion,.empty-state { min-height:calc(100dvh - 231px); }
+            .quick-card { padding:15px 13px; border-radius:19px; }
+            .card-estimate { display:none; }
+            .tag { max-width:150px; }
+            .phase-rail { margin-top:14px; }
+            .phase { gap:5px; font-size:9px; }
+            .phase::before { width:20px; height:20px; }
+            .prompt-block { gap:9px; padding:25px 3px 23px; }
+            .prompt-block h2 { font-size:22px; line-height:1.5; }
+            .question-instruction { font-size:12px; }
+            .reveal-wrap { grid-template-columns:1fr; }
+            .hint-button { min-width:0; min-height:43px; grid-row:2; }
+            .hint-box,.shortcut { grid-column:1; }
+            .answer-head { align-items:start; flex-direction:column; gap:4px; }
+            .answer-head p { text-align:left; }
+            .answer-core { padding:15px 13px; }
+            .answer-core p { font-size:14px; }
+            .answer-steps li { padding:11px 13px; }
+            .rating-actions { gap:5px; }
+            .rating-button { min-height:59px; padding:6px 3px; font-size:12px; }
+            .completion,.empty-state { padding:25px 14px; border-radius:19px; }
+            .result-grid { width:100%; gap:5px; }
+            .result-item { min-width:0; padding:11px 4px; }
             .session-foot { display:none; }
         }
-        @media (prefers-reduced-motion:reduce) {
-            *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; }
-        }
+        @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
     </style>
 </head>
 <body>
-    <header class="study-nav" aria-label="學習中心導覽">
-        <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
-        <nav class="nav-actions"><a class="nav-link" href="{{ url_for('admin_study_recall') }}">離開快速複習</a></nav>
-    </header>
+    <header class="study-nav" aria-label="學習中心導覽"><a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a><a class="nav-link" href="{{ url_for('admin_study_recall') }}">回筆記庫</a></header>
     <main class="quick-shell">
         <header class="session-head">
-            <div class="session-top">
-                <div><p class="eyebrow">ACTIVE RECALL</p><h1>快速回想</h1></div>
-                <div class="session-meta"><span>{{ today }}</span><span class="timer" data-timer>00:00</span></div>
-            </div>
-            <div class="progress-row" {% if not review_cards %}hidden{% endif %}>
-                <div class="progress-track" aria-hidden="true"><div class="progress-bar" data-progress-bar></div></div>
-                <span class="progress-label" data-progress-label>第 1 / {{ review_cards|length }} 張</span>
-            </div>
-            <nav class="mode-picker" aria-label="選擇複習份量">
-                <a class="{% if session_size == 5 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">快速 5 張</a>
-                <a class="{% if session_size == 10 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">標準 10 張</a>
-                <a class="{% if session_size == 18 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=18) }}">今日全部</a>
-            </nav>
+            <div class="session-top"><div><p class="eyebrow">MEMORY SPRINT</p><h1>記憶衝刺</h1><p class="session-copy">每題只做一件事：把答案從腦中叫回來。</p></div><div class="session-meta"><span>{{ today }}</span><span class="timer" data-timer>00:00</span></div></div>
+            <div class="progress-row" {% if not review_cards %}hidden{% endif %}><div class="progress-track" aria-hidden="true"><div class="progress-bar" data-progress-bar></div></div><span class="progress-label" data-progress-label>第 1 / {{ review_cards|length }} 題</span></div>
+            <nav class="mode-picker" aria-label="選擇複習份量"><a class="{% if session_size == 5 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">3 分鐘・5 題</a><a class="{% if session_size == 10 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">7 分鐘・10 題</a><a class="{% if session_size == 18 %}active{% endif %}" href="{{ url_for('admin_study_recall_quick_review', size=18) }}">今日全部</a></nav>
         </header>
         {% if review_cards %}
         <section class="card-stage" data-card-stage data-main-count="{{ review_cards|length }}" data-remaining="{{ remaining_after_session }}">
-            {% for item in review_cards %}{% set concept = item.concept_data %}
+            {% for item in review_cards %}{% set concept = item.concept_data %}{% set quick = item.quick_review %}
             <article class="quick-card" data-quick-card data-card-type="{{ concept.card_type }}" data-session-id="{{ item.session_id }}" data-concept-index="{{ item.concept_index }}" data-rate-url="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" {% if not loop.first %}hidden{% endif %}>
-                <div class="card-kicker">
-                    <div class="card-tags"><span class="tag subject">{{ item.subject }}</span><span class="tag">{{ concept.topic or item.session_title }}</span>{% if concept.card_type == 'example' %}<span class="tag">例題</span>{% endif %}</div>
-                    <span class="card-number" data-card-number>{{ '%02d'|format(loop.index) }}</span>
-                </div>
-                <div class="prompt-block">
-                    <span class="prompt-label">{% if concept.card_type == 'example' %}先想解法{% else %}先在心中回答{% endif %}</span>
-                    <h2 data-math-content>{% if concept.card_type == 'example' and concept.example_problem %}{{ concept.example_problem }}{% else %}{{ concept.recall_cue }}{% endif %}</h2>
-                    <p class="concept-title">{{ concept.concept }}</p>
-                </div>
-                <div class="reveal-wrap" data-reveal-wrap>
-                    <button class="reveal-button" type="button" data-reveal>想好了，查看答案</button>
-                    <p class="shortcut">空白鍵揭示</p>
-                </div>
+                <div class="card-top"><div class="card-tags"><span class="tag subject">{{ item.subject }}</span><span class="tag">{{ concept.topic or item.session_title }}</span></div><span class="card-estimate">約 {{ quick.estimated_seconds }} 秒・{{ '%02d'|format(loop.index) }}</span></div>
+                <div class="phase-rail" aria-label="作答步驟"><span class="phase is-active" data-step="1">先回想</span><span class="phase" data-step="2">看骨架</span><span class="phase" data-step="3">評估</span></div>
+                <div class="prompt-block"><div class="prompt-meta"><span class="prompt-label" data-question-type>{{ quick.question_type }}</span><span class="prompt-mission" data-question-mission>{{ quick.mission }}</span></div><h2 data-math-content>{{ quick.prompt }}</h2><p class="question-instruction">{{ quick.instruction }}</p><p class="concept-title">來源觀念・{{ concept.concept }}</p></div>
+                <div class="reveal-wrap" data-reveal-wrap><button class="reveal-button" type="button" data-reveal>我回答好了，揭曉答案</button>{% if quick.hint %}<button class="hint-button" type="button" data-hint>給一點提示 <small>H</small></button><div class="hint-box" data-hint-box hidden><strong>提示</strong><span data-math-content>{{ quick.hint }}</span></div>{% endif %}<p class="shortcut">先口述或在腦中回答・空白鍵揭示</p></div>
                 <div class="answer" data-answer hidden>
-                    {% if concept.core_summary %}<div class="answer-core"><span>核心答案</span><p data-math-content>{{ concept.core_summary }}</p></div>{% endif %}
-                    {% if concept.card_type == 'example' and concept.example_method %}<div class="answer-section"><span>解題方法</span><p data-math-content>{{ concept.example_method }}</p></div>{% endif %}
-                    {% if concept.reasoning_steps %}<div class="answer-section"><span>{% if concept.card_type == 'example' %}必要步驟{% else %}重建順序{% endif %}</span><ol>{% for step in concept.reasoning_steps %}<li data-math-content>{{ step }}</li>{% endfor %}</ol></div>{% endif %}
-                    {% if concept.simple_example %}<div class="answer-section"><span>最短例子</span><p data-math-content>{{ concept.simple_example }}</p></div>{% endif %}
-                    {% if concept.common_confusion %}<div class="answer-section confusion"><span>易混淆</span><p data-math-content>{{ concept.common_confusion }}</p></div>{% endif %}
-                    <details class="answer-detail"><summary>展開觀念補充</summary><p data-math-content>{{ concept.explanation }}</p></details>
-                    <div class="rating-panel" data-rating-panel>
-                        <p class="rating-title">剛才在揭示前，你實際想起多少？</p>
-                        <div class="rating-actions">
-                            <button class="rating-button forgot" type="button" data-rating="1">忘了<small>1</small></button>
-                            <button class="rating-button fuzzy" type="button" data-rating="3">模糊<small>2</small></button>
-                            <button class="rating-button know" type="button" data-rating="5">記得<small>3</small></button>
-                        </div>
-                        <button class="rescue-next" type="button" data-rescue-next hidden>補強完成，下一張</button>
-                        <p class="save-status" data-save-status aria-live="polite"></p>
-                    </div>
+                    <div class="answer-head"><div><span>ANSWER MAP</span><h3>{{ quick.answer_title }}</h3></div><p>對照你的回答，不用逐字相同；核心關係正確最重要。</p></div>
+                    <section class="answer-sheet"><div class="answer-core"><span class="answer-label">核心答案</span><p data-math-content>{{ quick.answer_summary }}</p></div>{% if quick.answer_steps %}<ol class="answer-steps">{% for step in quick.answer_steps %}<li data-math-content>{{ step }}</li>{% endfor %}</ol>{% endif %}</section>
+                    {% if quick.pitfall %}<div class="pitfall"><strong>防錯線</strong><span data-math-content>{{ quick.pitfall }}</span></div>{% endif %}
+                    {% if quick.explanation or quick.example %}<details class="answer-detail"><summary>還不清楚？展開完整脈絡</summary><div class="answer-detail-body">{% if quick.explanation %}<p data-math-content>{{ quick.explanation }}</p>{% endif %}{% if quick.example %}<p data-math-content><strong>最短例子：</strong>{{ quick.example }}</p>{% endif %}</div></details>{% endif %}
+                    <div class="rating-panel" data-rating-panel><p class="rating-question">揭曉前，你能自己重建到什麼程度？</p><div class="rating-actions"><button class="rating-button forgot" type="button" data-rating="1">忘了<small>幾乎想不起來・1</small></button><button class="rating-button fuzzy" type="button" data-rating="3">模糊<small>方向對但有缺漏・2</small></button><button class="rating-button know" type="button" data-rating="5">記得<small>能完整說清楚・3</small></button></div><div class="rescue-note" data-rescue-note hidden>看完後先移開視線，再把核心答案完整說一次，讓記憶真正接回去。</div><button class="rescue-next" type="button" data-rescue-next hidden>我已重新說完整，完成補強</button><p class="save-status" data-save-status aria-live="polite"></p></div>
                 </div>
             </article>
             {% endfor %}
-            <section class="completion" data-completion hidden>
-                <div><div class="completion-icon">✓</div><h2>這輪完成了</h2><p class="completion-copy" data-completion-copy>今天的回想紀錄已更新，系統會自動安排下次。</p><div class="result-grid"><div class="result-item"><strong data-result-know>0</strong><span>記得</span></div><div class="result-item"><strong data-result-fuzzy>0</strong><span>模糊</span></div><div class="result-item"><strong data-result-forgot>0</strong><span>忘了</span></div></div><div class="completion-actions"><a class="primary" data-continue-link href="{{ url_for('admin_study_recall_quick_review', size=session_size) }}">再來一輪</a><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></div>
-            </section>
+            <section class="completion" data-completion hidden><div><div class="completion-icon">✓</div><h2>記憶已更新</h2><p class="completion-copy" data-completion-copy>這輪結果已存入複習排程。</p><div class="result-grid"><div class="result-item"><strong data-result-know>0</strong><span>記得</span></div><div class="result-item"><strong data-result-fuzzy>0</strong><span>模糊</span></div><div class="result-item"><strong data-result-forgot>0</strong><span>忘了</span></div></div><div class="completion-actions"><a class="primary" data-continue-link href="{{ url_for('admin_study_recall_quick_review', size=session_size) }}">繼續下一輪</a><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></div></section>
         </section>
-        <footer class="session-foot"><span>空白鍵：揭示</span><span>1：忘了</span><span>2：模糊</span><span>3：記得</span></footer>
-        {% else %}
-        <section class="empty-state"><div><div class="completion-icon">✓</div><h2>今天已經複習完成</h2><p>目前沒有到期的重點卡。等排程到期再回來即可，不需要為了維持連續天數重複刷題。</p><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></section>
-        {% endif %}
+        <footer class="session-foot"><span>H 提示</span><span>空白鍵揭示</span><span>1 忘了</span><span>2 模糊</span><span>3 記得</span></footer>
+        {% else %}<section class="empty-state"><div><div class="completion-icon">✓</div><h2>今天的記憶已清空</h2><p>目前沒有到期卡片。系統會在最值得複習的時間把它們帶回來，不必重複刷已經熟悉的內容。</p><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></section>{% endif %}
     </main>
     <script>
         window.renderQuickMath = () => {
             if (typeof window.renderMathInElement !== 'function') return;
             document.querySelectorAll('[data-math-content]:not([data-math-rendered])').forEach((element) => {
-                window.renderMathInElement(element, {
-                    delimiters: [
-                        { left: '\\[', right: '\\]', display: true },
-                        { left: '\\(', right: '\\)', display: false },
-                        { left: '$$', right: '$$', display: true },
-                        { left: '$', right: '$', display: false },
-                    ],
-                    throwOnError: false,
-                });
+                window.renderMathInElement(element, { delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false},{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false });
                 element.dataset.mathRendered = 'true';
             });
         };
@@ -277,145 +204,45 @@
             const progressBar = document.querySelector('[data-progress-bar]');
             const progressLabel = document.querySelector('[data-progress-label]');
             const timer = document.querySelector('[data-timer]');
-            const scores = { 1: 0, 3: 0, 5: 0 };
+            const scores = { 1:0, 3:0, 5:0 };
             let currentCard = cards[0] || null;
             let completedMain = 0;
             let rescueIndex = 0;
             let rescueMode = false;
             let busy = false;
             const startedAt = Date.now();
-
-            const elapsedText = () => {
-                const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-                return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-            };
-            const timerHandle = window.setInterval(() => { timer.textContent = elapsedText(); }, 1000);
-
+            const elapsedText = () => { const seconds = Math.max(0,Math.floor((Date.now()-startedAt)/1000)); return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`; };
+            const timerHandle = window.setInterval(() => { timer.textContent = elapsedText(); },1000);
             const updateProgress = () => {
-                if (rescueMode) {
-                    progressLabel.textContent = `補強 ${Math.min(rescueIndex + 1, rescueQueue.length)} / ${rescueQueue.length} 張`;
-                    progressBar.style.width = `${rescueQueue.length ? rescueIndex / rescueQueue.length * 100 : 100}%`;
-                    return;
-                }
-                progressLabel.textContent = `第 ${Math.min(completedMain + 1, mainCount)} / ${mainCount} 張`;
-                progressBar.style.width = `${mainCount ? completedMain / mainCount * 100 : 100}%`;
+                if (rescueMode) { progressLabel.textContent=`補強 ${Math.min(rescueIndex+1,rescueQueue.length)} / ${rescueQueue.length} 題`; progressBar.style.width=`${rescueQueue.length?rescueIndex/rescueQueue.length*100:100}%`; return; }
+                progressLabel.textContent=`第 ${Math.min(completedMain+1,mainCount)} / ${mainCount} 題`; progressBar.style.width=`${mainCount?completedMain/mainCount*100:100}%`;
             };
-
-            const resetCard = (card, isRescue) => {
-                card.hidden = false;
-                card.dataset.rescue = isRescue ? 'true' : '';
-                card.querySelector('[data-answer]').hidden = true;
-                card.querySelector('[data-reveal-wrap]').hidden = false;
-                card.querySelector('[data-rating-panel]').hidden = false;
-                card.querySelector('[data-rescue-next]').hidden = true;
-                card.querySelector('[data-save-status]').textContent = '';
-                card.querySelectorAll('[data-rating]').forEach((button) => { button.disabled = false; });
-                const label = card.querySelector('.prompt-label');
-                if (label) label.textContent = isRescue ? '短補強・再回想一次' : (card.dataset.cardType === 'example' ? '先想解法' : '先在心中回答');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+            const resetCard = (card,isRescue) => {
+                card.hidden=false; card.classList.remove('is-revealed'); card.dataset.rescue=isRescue?'true':''; card.dataset.hintUsed='';
+                card.querySelector('[data-answer]').hidden=true; card.querySelector('[data-reveal-wrap]').hidden=false; card.querySelector('[data-rating-panel]').hidden=false; card.querySelector('[data-rescue-next]').hidden=true; card.querySelector('[data-rescue-note]').hidden=true; card.querySelector('[data-save-status]').textContent='';
+                card.querySelectorAll('[data-rating]').forEach((button)=>{ button.hidden=false; button.disabled=false; });
+                const hintButton=card.querySelector('[data-hint]'); const hintBox=card.querySelector('[data-hint-box]'); if(hintButton) hintButton.hidden=isRescue; if(hintBox) hintBox.hidden=true;
+                const label=card.querySelector('[data-question-type]'); const mission=card.querySelector('[data-question-mission]'); const revealButton=card.querySelector('[data-reveal]');
+                if(label){ if(!label.dataset.originalText) label.dataset.originalText=label.textContent; label.textContent=isRescue?'立即補強':label.dataset.originalText; }
+                if(mission){ if(!mission.dataset.originalText) mission.dataset.originalText=mission.textContent; mission.textContent=isRescue?'移開答案，再完整說一次':mission.dataset.originalText; }
+                revealButton.textContent=isRescue?'我重新說完了，核對一次':'我回答好了，揭曉答案'; window.scrollTo({top:0,behavior:'smooth'});
             };
-
-            const reveal = () => {
-                if (!currentCard || !currentCard.querySelector('[data-answer]').hidden) return;
-                currentCard.querySelector('[data-answer]').hidden = false;
-                currentCard.querySelector('[data-reveal-wrap]').hidden = true;
-                if (rescueMode) {
-                    currentCard.querySelectorAll('[data-rating]').forEach((button) => { button.hidden = true; });
-                    currentCard.querySelector('[data-rescue-next]').hidden = false;
-                }
-                window.renderQuickMath();
-            };
-
+            const showHint = () => { if(!currentCard||!currentCard.querySelector('[data-answer]').hidden)return; const button=currentCard.querySelector('[data-hint]'); const box=currentCard.querySelector('[data-hint-box]'); if(!button||!box)return; currentCard.dataset.hintUsed='true'; button.hidden=true; box.hidden=false; window.renderQuickMath(); };
+            const reveal = () => { if(!currentCard||!currentCard.querySelector('[data-answer]').hidden)return; currentCard.classList.add('is-revealed'); currentCard.querySelector('[data-answer]').hidden=false; currentCard.querySelector('[data-reveal-wrap]').hidden=true; if(rescueMode){ currentCard.querySelectorAll('[data-rating]').forEach((button)=>{button.hidden=true;}); currentCard.querySelector('[data-rescue-note]').hidden=false; currentCard.querySelector('[data-rescue-next]').hidden=false; } window.renderQuickMath(); };
             const finish = () => {
-                currentCard = null;
-                cards.forEach((card) => { card.hidden = true; });
-                completion.hidden = false;
-                progressBar.style.width = '100%';
-                progressLabel.textContent = rescueQueue.length ? `已完成 ${mainCount} 張與 ${rescueQueue.length} 張補強` : `已完成 ${mainCount} 張`;
-                document.querySelector('[data-result-know]').textContent = scores[5];
-                document.querySelector('[data-result-fuzzy]').textContent = scores[3];
-                document.querySelector('[data-result-forgot]').textContent = scores[1];
-                const remaining = Number(stage.dataset.remaining || 0);
-                const copy = document.querySelector('[data-completion-copy]');
-                copy.textContent = remaining > 0
-                    ? `用時 ${elapsedText()}；今天還有 ${remaining} 張，可休息後再繼續。`
-                    : `用時 ${elapsedText()}；今天的到期卡已處理完成。`;
-                const continueLink = document.querySelector('[data-continue-link]');
-                if (remaining <= 0) continueLink.hidden = true;
-                window.clearInterval(timerHandle);
+                currentCard=null; cards.forEach((card)=>{card.hidden=true;}); completion.hidden=false; progressBar.style.width='100%'; progressLabel.textContent=rescueQueue.length?`完成 ${mainCount} 題與 ${rescueQueue.length} 題補強`:`已完成 ${mainCount} 題`;
+                document.querySelector('[data-result-know]').textContent=scores[5]; document.querySelector('[data-result-fuzzy]').textContent=scores[3]; document.querySelector('[data-result-forgot]').textContent=scores[1];
+                const remaining=Number(stage.dataset.remaining||0); document.querySelector('[data-completion-copy]').textContent=remaining>0?`用時 ${elapsedText()}；今天還有 ${remaining} 題，休息後再繼續也可以。`:`用時 ${elapsedText()}；今天到期的記憶都已處理完成。`; if(remaining<=0) document.querySelector('[data-continue-link]').hidden=true; window.clearInterval(timerHandle);
             };
-
-            const showNext = () => {
-                if (currentCard) currentCard.hidden = true;
-                if (!rescueMode && completedMain < mainCount) {
-                    currentCard = cards[completedMain];
-                    resetCard(currentCard, false);
-                    updateProgress();
-                    return;
-                }
-                if (!rescueMode && rescueQueue.length) {
-                    rescueMode = true;
-                    rescueIndex = 0;
-                }
-                if (rescueMode && rescueIndex < rescueQueue.length) {
-                    currentCard = rescueQueue[rescueIndex];
-                    resetCard(currentCard, true);
-                    updateProgress();
-                    return;
-                }
-                finish();
-            };
-
+            const showNext = () => { if(currentCard)currentCard.hidden=true; if(!rescueMode&&completedMain<mainCount){currentCard=cards[completedMain];resetCard(currentCard,false);updateProgress();return;} if(!rescueMode&&rescueQueue.length){rescueMode=true;rescueIndex=0;} if(rescueMode&&rescueIndex<rescueQueue.length){currentCard=rescueQueue[rescueIndex];resetCard(currentCard,true);updateProgress();return;} finish(); };
             const recordRating = async (rating) => {
-                if (!currentCard || rescueMode || busy) return;
-                busy = true;
-                const status = currentCard.querySelector('[data-save-status]');
-                const buttons = currentCard.querySelectorAll('[data-rating]');
-                buttons.forEach((button) => { button.disabled = true; });
-                const formData = new FormData();
-                formData.set(`rating_${currentCard.dataset.conceptIndex}`, String(rating));
-                try {
-                    const response = await fetch(currentCard.dataset.rateUrl, {
-                        method: 'POST',
-                        body: formData,
-                        credentials: 'same-origin',
-                        headers: { 'X-E3-Recall-Rating': '1', Accept: 'application/json' },
-                    });
-                    const result = await response.json().catch(() => ({}));
-                    if (!response.ok || !result.ok) throw new Error(result.error || '紀錄失敗，請再試一次。');
-                    scores[rating] += 1;
-                    if (rating === 1) rescueQueue.push(currentCard);
-                    completedMain += 1;
-                    showNext();
-                } catch (error) {
-                    status.textContent = error.message || '紀錄失敗，請再試一次。';
-                    buttons.forEach((button) => { button.disabled = false; });
-                } finally {
-                    busy = false;
-                }
+                if(!currentCard||rescueMode||busy||![1,3,5].includes(rating))return; busy=true; const status=currentCard.querySelector('[data-save-status]'); const buttons=currentCard.querySelectorAll('[data-rating]'); buttons.forEach((button)=>{button.disabled=true;}); const formData=new FormData(); formData.set(`rating_${currentCard.dataset.conceptIndex}`,String(rating));
+                try { const response=await fetch(currentCard.dataset.rateUrl,{method:'POST',body:formData,credentials:'same-origin',headers:{'X-E3-Recall-Rating':'1',Accept:'application/json'}}); const result=await response.json().catch(()=>({})); if(!response.ok||!result.ok)throw new Error(result.error||'紀錄失敗，請再試一次。'); scores[rating]+=1; if(rating===1)rescueQueue.push(currentCard); completedMain+=1; showNext(); }
+                catch(error){ status.textContent=error.message||'紀錄失敗，請再試一次。'; buttons.forEach((button)=>{button.disabled=false;}); } finally { busy=false; }
             };
-
-            stage.addEventListener('click', (event) => {
-                if (event.target.closest('[data-reveal]')) { reveal(); return; }
-                const ratingButton = event.target.closest('[data-rating]');
-                if (ratingButton) { recordRating(Number(ratingButton.dataset.rating)); return; }
-                if (event.target.closest('[data-rescue-next]') && rescueMode) {
-                    rescueIndex += 1;
-                    showNext();
-                }
-            });
-            document.addEventListener('keydown', (event) => {
-                if (!currentCard || event.metaKey || event.ctrlKey || event.altKey) return;
-                const target = event.target;
-                if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
-                if (event.code === 'Space') { event.preventDefault(); reveal(); return; }
-                if (currentCard.querySelector('[data-answer]').hidden || rescueMode) return;
-                if (event.key === '1') recordRating(1);
-                if (event.key === '2') recordRating(3);
-                if (event.key === '3') recordRating(5);
-            });
-            updateProgress();
-            window.renderQuickMath();
+            stage.addEventListener('click',(event)=>{ if(event.target.closest('[data-hint]')){showHint();return;} if(event.target.closest('[data-reveal]')){reveal();return;} const ratingButton=event.target.closest('[data-rating]'); if(ratingButton){recordRating(Number(ratingButton.dataset.rating));return;} if(event.target.closest('[data-rescue-next]')&&rescueMode){rescueIndex+=1;showNext();} });
+            document.addEventListener('keydown',(event)=>{ if(!currentCard||event.metaKey||event.ctrlKey||event.altKey)return; const target=event.target; if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return; if(event.key.toLowerCase()==='h'){showHint();return;} if(event.code==='Space'){event.preventDefault();reveal();return;} if(currentCard.querySelector('[data-answer]').hidden||rescueMode)return; if(event.key==='1')recordRating(1); if(event.key==='2')recordRating(3); if(event.key==='3')recordRating(5); });
+            updateProgress(); window.renderQuickMath();
         })();
     </script>
 </body>

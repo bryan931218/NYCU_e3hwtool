@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from bs4 import BeautifulSoup
+
 from e3_tracker.api.web import create_app
 
 
@@ -58,7 +60,7 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
 
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(page.count('data-quick-card data-card-type='), 5)
-                self.assertIn("先回想，再看答案", client.get("/admin/study-recall").get_data(as_text=True))
+                self.assertIn("把記憶叫回來，不只是重看", client.get("/admin/study-recall").get_data(as_text=True))
                 card_sections = page.split('data-quick-card data-card-type=')[1:]
                 rendered_subjects = [
                     "離散數學" if "離散數學" in section[:700] else "資料結構"
@@ -101,6 +103,72 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
                 self.assertEqual(payload["remaining_due_count"], 0)
                 self.assertEqual(session["key_concepts"][0]["review"]["last_rating"], 1)
                 self.assertTrue(session["key_concepts"][0]["review"]["next_review_at"])
+            finally:
+                storage._engine.dispose()
+
+    def test_quick_review_builds_task_specific_questions_and_structured_answers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _app, storage, client = self._build_client(temp_dir)
+            try:
+                cards = [
+                    {
+                        **self._card("演算法", 0),
+                        "concept": "二分搜尋",
+                        "content_kind": "procedure",
+                        "core_summary": "每次排除一半不可能的區間。",
+                        "reasoning_steps": ["比較中點", "依結果縮小左右邊界", "直到找到或區間為空"],
+                    },
+                    {
+                        **self._card("演算法", 1),
+                        "concept": "時間複雜度",
+                        "content_kind": "formula",
+                        "core_summary": r"\(T(n)=T(n/2)+O(1)=O(\log n)\)",
+                        "common_confusion": "只有每輪確實把問題規模減半時才是對數層數。",
+                    },
+                    {
+                        **self._card("演算法", 2),
+                        "concept": "穩定排序",
+                        "content_kind": "definition",
+                        "core_summary": "相同鍵值元素排序後仍維持原本相對順序。",
+                    },
+                    {
+                        **self._card("演算法", 3),
+                        "concept": "最短路徑",
+                        "card_type": "example",
+                        "example_problem": "給定非負權重圖，求起點到所有節點的最短距離。",
+                        "example_method": "使用 Dijkstra，每輪確定目前距離最小的未確定節點。",
+                        "reasoning_steps": ["初始化距離", "挑選最小者", "鬆弛相鄰邊"],
+                    },
+                ]
+                storage.create_study_recall_session(
+                    study_date="2025-01-01",
+                    subject="演算法",
+                    title="演算法觀念整理",
+                    image_filenames=[],
+                    summary="演算法摘要",
+                    key_concepts=cards,
+                )
+
+                response = client.get("/admin/study-recall/quick-review", query_string={"size": 5})
+                page = response.get_data(as_text=True)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("順序重建", page)
+                self.assertIn("公式重建", page)
+                self.assertIn("定義壓縮", page)
+                self.assertIn("解題決策", page)
+                self.assertIn("解題骨架", page)
+                self.assertIn('class="answer-steps"', page)
+                self.assertIn("防錯線", page)
+                self.assertNotIn("data-answer-point", page)
+                document = BeautifulSoup(page, "html.parser")
+                rendered_cards = document.select("[data-quick-card]")
+                self.assertEqual(len(rendered_cards), 4)
+                for rendered_card in rendered_cards:
+                    self.assertIsNotNone(rendered_card.select_one(".answer-sheet .answer-core"))
+                    self.assertEqual(len(rendered_card.select("[data-rating]")), 3)
+                    self.assertTrue(rendered_card.select_one("[data-question-type]").get_text(strip=True))
+                    self.assertTrue(rendered_card.select_one(".answer-core p").get_text(strip=True))
             finally:
                 storage._engine.dispose()
 
