@@ -1311,10 +1311,8 @@
             };
             const renderVideoEndScreen = function () {
                 if (!videoEndList || !videoEndEmpty) return [];
-                const currentId = String(selectedOption() ? selectedOption().value : '');
                 const candidates = todayTaskVideos.filter(function (video) {
-                    return String(video.id || '') !== currentId
-                        && Number(video.completion || 0) < 100;
+                    return Number(video.completion || 0) < 100;
                 });
                 videoEndList.replaceChildren();
                 candidates.forEach(function (video) {
@@ -1693,6 +1691,13 @@
                 const fill = document.querySelector('[data-video-fill="' + result.video_id + '"]');
                 const row = document.querySelector('[data-video-row="' + result.video_id + '"]');
                 const isComplete = Number(result.completion || 0) >= 100;
+                const taskVideo = todayTaskVideos.find(function (video) {
+                    return String(video.id || '') === String(result.video_id || '');
+                });
+                if (taskVideo) {
+                    taskVideo.completion = Math.min(100, Math.max(0, Number(result.completion || 0)));
+                    taskVideo.remaining_minutes = Math.max(0, durationSeconds - watchedSeconds) / 60;
+                }
                 if (watchedCell) watchedCell.textContent = formatMinutes(watchedSeconds);
                 if (completionCell) completionCell.textContent = Math.round(Number(result.completion || 0));
                 if (fill) fill.style.setProperty('--progress', Math.min(100, Number(result.completion || 0)) + '%');

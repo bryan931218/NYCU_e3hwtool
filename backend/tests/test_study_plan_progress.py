@@ -873,6 +873,8 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertTrue(all(float(video["completion"]) < 100 for video in today_task_videos))
             self.assertTrue(all("youtube_video_id" in video for video in today_task_videos))
             self.assertIn("Number(video.completion || 0) < 100", marker_html)
+            self.assertNotIn("String(video.id || '') !== currentId", marker_html)
+            self.assertIn("taskVideo.completion = Math.min(100", marker_html)
             self.assertNotIn("&& Boolean(String(video.youtube_video_id", marker_html)
             self.assertIn("尚未連結 YouTube", marker_html)
             self.assertIn("grid-template-columns:repeat(auto-fit,minmax(158px,1fr))", marker_html)
