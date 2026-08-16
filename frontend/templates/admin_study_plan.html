@@ -164,25 +164,27 @@
         .player-frame { position: relative; align-self: start; width: 100%; aspect-ratio: 16 / 9; min-height: 0; border: 1px solid #c4d3e2; border-radius: 16px; background: #07111d; overflow: hidden; box-shadow: 0 16px 34px rgba(16, 42, 67, .16); }
         .player-frame iframe, #youtube-player { display: block; width: 100%; height: 100%; min-height: 0; border: 0; }
         .player-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9c7d8; text-align: center; line-height: 1.65; }
-        .video-end-screen { position:absolute; z-index:30; inset:0; display:flex; flex-direction:column; gap:12px; padding:clamp(16px,3.5vw,28px); color:#fff; background:linear-gradient(150deg,rgba(2,9,18,.96),rgba(8,24,42,.94) 56%,rgba(6,17,31,.97)); opacity:1; visibility:visible; transition:opacity .2s ease,visibility .2s ease; }
+        .video-end-screen { position:absolute; z-index:30; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:6px; max-height:min(52%,128px); padding:8px; color:#fff; border:1px solid rgba(255,255,255,.16); border-radius:15px; background:linear-gradient(135deg,rgba(6,16,29,.9),rgba(12,29,49,.86)); box-shadow:0 16px 42px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.08); opacity:1; visibility:visible; -webkit-backdrop-filter:blur(18px) saturate(135%); backdrop-filter:blur(18px) saturate(135%); transition:opacity .2s ease,visibility .2s ease,transform .2s ease; }
         .video-end-screen[hidden] { display:none !important; }
         .video-end-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-        .video-end-heading { min-width:0; }
-        .video-end-kicker { margin:0 0 3px; color:#83baff; font-size:10px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
-        .video-end-heading h3 { margin:0; color:#fff; font-size:clamp(17px,2.4vw,24px); letter-spacing:-.025em; }
+        .video-end-heading { min-width:0; display:flex; align-items:baseline; gap:8px; }
+        .video-end-kicker { margin:0; color:#82b9ff; font-size:10px; font-weight:900; letter-spacing:.08em; white-space:nowrap; }
+        .video-end-heading h3 { margin:0; color:#fff; font-size:14px; letter-spacing:-.015em; }
+        .video-end-count { color:rgba(226,239,255,.6); font-size:9px; font-weight:800; white-space:nowrap; }
         .video-end-actions { display:flex; gap:7px; flex:0 0 auto; }
-        .video-end-action { min-height:34px; padding:0 11px; border:1px solid rgba(255,255,255,.2); border-radius:9px; color:#fff; background:rgba(255,255,255,.08); font-size:11px; font-weight:850; cursor:pointer; backdrop-filter:blur(10px); }
+        .video-end-action { min-height:29px; padding:0 9px; border:1px solid rgba(255,255,255,.16); border-radius:8px; color:rgba(255,255,255,.9); background:rgba(255,255,255,.07); font-size:10px; font-weight:850; cursor:pointer; }
         .video-end-action:hover,.video-end-action:focus-visible { border-color:rgba(112,180,255,.65); background:rgba(75,145,224,.25); outline:none; }
-        .video-end-list { min-height:0; display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; overflow:auto; scrollbar-width:thin; }
-        .video-end-card { min-width:0; display:grid; grid-template-rows:minmax(0,1fr) auto; overflow:hidden; padding:0; border:1px solid rgba(255,255,255,.16); border-radius:12px; color:#fff; background:rgba(255,255,255,.07); text-align:left; cursor:pointer; transition:transform .16s ease,border-color .16s ease,background .16s ease; }
-        .video-end-card:hover,.video-end-card:focus-visible { transform:translateY(-2px); border-color:rgba(112,180,255,.72); background:rgba(74,143,220,.18); outline:none; }
-        .video-end-thumb { position:relative; min-height:70px; overflow:hidden; background:linear-gradient(135deg,#16314f,#0a1829); }
+        .video-end-list { min-height:0; display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; padding:1px 1px 4px; scrollbar-width:thin; scrollbar-color:rgba(132,185,255,.48) rgba(255,255,255,.07); overscroll-behavior-inline:contain; scroll-snap-type:x proximity; }
+        .video-end-card { width:clamp(178px,31%,230px); min-width:clamp(178px,31%,230px); height:58px; display:grid; grid-template-columns:88px minmax(0,1fr); overflow:hidden; padding:0; border:1px solid rgba(255,255,255,.13); border-radius:10px; color:#fff; background:rgba(255,255,255,.055); text-align:left; cursor:pointer; scroll-snap-align:start; transition:transform .16s ease,border-color .16s ease,background .16s ease; }
+        .video-end-card:hover,.video-end-card:focus-visible { transform:translateY(-1px); border-color:rgba(112,180,255,.66); background:rgba(74,143,220,.16); outline:none; }
+        .video-end-thumb { position:relative; min-width:0; height:100%; overflow:hidden; background:linear-gradient(135deg,#16314f,#0a1829); }
         .video-end-thumb img { width:100%; height:100%; display:block; object-fit:cover; }
-        .video-end-play { position:absolute; inset:50% auto auto 50%; width:34px; height:34px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.25); border-radius:50%; background:rgba(3,10,18,.78); box-shadow:0 6px 18px rgba(0,0,0,.3); transform:translate(-50%,-50%); }
-        .video-end-copy { min-width:0; padding:9px 10px 10px; }
-        .video-end-title { display:-webkit-box; overflow:hidden; color:#fff; font-size:11px; font-weight:850; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-        .video-end-meta { margin-top:5px; overflow:hidden; color:rgba(226,239,255,.68); font-size:9px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
-        .video-end-empty { flex:1; display:grid; place-items:center; min-height:0; color:rgba(232,241,252,.76); font-size:13px; font-weight:800; text-align:center; }
+        .video-end-play { position:absolute; inset:50% auto auto 50%; width:28px; height:28px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.24); border-radius:50%; background:rgba(3,10,18,.76); box-shadow:0 5px 14px rgba(0,0,0,.28); font-size:10px; transform:translate(-50%,-50%); }
+        .video-end-copy { min-width:0; display:flex; flex-direction:column; justify-content:center; padding:7px 8px; }
+        .video-end-title { display:-webkit-box; overflow:hidden; color:#fff; font-size:10px; font-weight:850; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+        .video-end-meta { margin-top:5px; overflow:hidden; color:rgba(226,239,255,.64); font-size:8px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
+        .video-end-empty { min-height:48px; display:grid; place-items:center; color:rgba(232,241,252,.72); font-size:11px; font-weight:800; text-align:center; }
+        .video-end-empty[hidden] { display:none !important; }
         .focus-launch { position: absolute; z-index: 4; right: 12px; bottom: 12px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.22); border-radius: 9px; color: #fff; background: rgba(7,15,26,.78); box-shadow: 0 6px 18px rgba(0,0,0,.28); cursor: pointer; backdrop-filter: blur(10px); transition: background .16s ease,border-color .16s ease,opacity .16s ease; }
         .focus-launch:hover { border-color: rgba(255,255,255,.5); background: rgba(20,31,45,.94); }
         .focus-launch:active { background: rgba(3,10,18,.96); }
@@ -504,13 +506,15 @@
             .player-copy > .player-title, .player-copy > .player-status, .player-copy > .marker-studio { grid-column: 1; }
             .focus-exit { width: 42px; height: 42px; padding: 0; }
             .focus-toast { max-width: calc(100vw - 86px); white-space: normal; }
-            .video-end-screen { gap:8px; padding:12px; }
-            .video-end-heading h3 { font-size:16px; }
-            .video-end-action { min-height:30px; padding:0 9px; }
-            .video-end-list { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:minmax(145px,72%); gap:8px; overscroll-behavior-inline:contain; scroll-snap-type:x proximity; }
-            .video-end-card { scroll-snap-align:start; }
-            .video-end-thumb { min-height:62px; }
-            .video-end-copy { padding:7px 8px 8px; }
+            .video-end-screen { left:7px; right:7px; bottom:7px; max-height:min(64%,118px); padding:7px; border-radius:12px; }
+            .video-end-heading { gap:5px; }
+            .video-end-heading h3 { font-size:12px; }
+            .video-end-kicker { font-size:8px; }
+            .video-end-count { display:none; }
+            .video-end-action { min-height:26px; padding:0 7px; font-size:9px; }
+            .video-end-list { gap:6px; padding-bottom:2px; }
+            .video-end-card { width:190px; min-width:190px; height:56px; grid-template-columns:82px minmax(0,1fr); border-radius:9px; }
+            .video-end-copy { padding:6px 7px; }
         }
         @media (orientation: landscape) and (max-height: 520px) {
             .focus-exit { top: calc(50% - 47px); width: 40px; height: 40px; }
@@ -657,7 +661,7 @@
                                 <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
                                 <section class="video-end-screen" id="video-end-screen" hidden aria-hidden="true" aria-label="今日任務接著觀看">
                                     <div class="video-end-head">
-                                        <div class="video-end-heading"><p class="video-end-kicker">TODAY'S TASK</p><h3 id="video-end-title">接著觀看</h3></div>
+                                        <div class="video-end-heading"><p class="video-end-kicker">今日任務</p><h3 id="video-end-title">接著觀看</h3><span class="video-end-count" id="video-end-count"></span></div>
                                         <div class="video-end-actions">
                                             <button class="video-end-action" id="video-end-replay" type="button">重播</button>
                                             <button class="video-end-action" id="video-end-close" type="button" aria-label="關閉推薦">✕</button>
@@ -900,6 +904,7 @@
             const focusToast = document.getElementById('focus-toast');
             const videoEndScreen = document.getElementById('video-end-screen');
             const videoEndTitle = document.getElementById('video-end-title');
+            const videoEndCount = document.getElementById('video-end-count');
             const videoEndList = document.getElementById('video-end-list');
             const videoEndEmpty = document.getElementById('video-end-empty');
             const videoEndReplay = document.getElementById('video-end-replay');
@@ -1347,6 +1352,7 @@
                 videoEndList.hidden = candidates.length === 0;
                 videoEndEmpty.hidden = candidates.length > 0;
                 if (videoEndTitle) videoEndTitle.textContent = candidates.length ? '接著觀看' : '今天先到這裡';
+                if (videoEndCount) videoEndCount.textContent = candidates.length ? candidates.length + ' 部待看' : '';
                 return candidates;
             };
             const showVideoEndScreen = function () {

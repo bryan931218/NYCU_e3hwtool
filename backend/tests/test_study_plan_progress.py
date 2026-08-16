@@ -16,6 +16,7 @@ from e3_tracker.api.web import (
     _study_plan_range_credited_seconds,
     _study_plan_schedule_definitions,
     _study_plan_subject_status,
+    _study_plan_task_video_queue,
     _study_plan_credited_video_seconds,
     _study_plan_video_completion,
 )
@@ -23,6 +24,19 @@ from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
+    def test_daily_task_queue_includes_every_unfinished_video_needed(self):
+        videos = [
+            {"id": 1, "duration_seconds": 600, "watched_seconds": 600},
+            {"id": 2, "duration_seconds": 600, "watched_seconds": 300},
+            {"id": 3, "duration_seconds": 600, "watched_seconds": 0},
+            {"id": 4, "duration_seconds": 600, "watched_seconds": 0},
+        ]
+
+        queue = _study_plan_task_video_queue(videos, 800)
+
+        self.assertEqual([video["id"] for video in queue], [2, 3])
+        self.assertNotIn(1, [video["id"] for video in queue])
+
     def test_completed_video_credits_full_duration_despite_player_end_gap(self):
         self.assertEqual(_study_plan_credited_video_seconds(600, 596), 600)
         self.assertEqual(_study_plan_credited_video_seconds(600, 590), 590)

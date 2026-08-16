@@ -388,6 +388,29 @@ def _study_plan_progress_summary(videos: Iterable[Dict[str, Any]]) -> Dict[str, 
     }
 
 
+def _study_plan_task_video_queue(
+    videos: Iterable[Dict[str, Any]],
+    required_seconds: Any,
+) -> List[Dict[str, Any]]:
+    """Return every unfinished sequential video needed to cover a task window."""
+    target = _study_plan_nonnegative_number(required_seconds)
+    queued_seconds = 0.0
+    queue: List[Dict[str, Any]] = []
+    for video in videos:
+        duration = _study_plan_nonnegative_number(video.get("duration_seconds"))
+        watched = min(
+            _study_plan_nonnegative_number(video.get("watched_seconds")),
+            duration,
+        )
+        if duration <= 0 or _study_plan_video_is_complete(duration, watched):
+            continue
+        queue.append(video)
+        queued_seconds += max(0.0, duration - watched)
+        if target <= 0 or queued_seconds >= target:
+            break
+    return queue
+
+
 def _study_plan_progress_week(week_rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     """Return the first scheduled week that the learner has not completed yet."""
     rows = list(week_rows)
@@ -2875,17 +2898,49 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             or [str(current_week.get("subject") or "")]
         )
         suggested_subjects = list(dict.fromkeys([*overdue_subjects, *current_subjects]))
+        today_row = next(
+            (
+                row
+                for row in current_week.get("daily_recommendations", [])
+                if row.get("date") == today.isoformat()
+            ),
+            None,
+        )
+        if today_row is None:
+            today_row = next(
+                (
+                    row
+                    for row in current_week.get("daily_recommendations", [])
+                    if row.get("state") in {"active", "upcoming", "behind"}
+                ),
+                (current_week.get("daily_recommendations") or [{}])[0],
+            )
+        today_allocations = {
+            str(subject): max(0.0, float(seconds or 0))
+            for subject, seconds in dict(today_row.get("allocations") or {}).items()
+        }
+        today_credited = {
+            str(progress.get("name") or ""): max(
+                0.0,
+                float(progress.get("credited_seconds") or 0),
+            )
+            for progress in today_row.get("subject_progress", [])
+        }
         next_videos: List[Dict[str, Any]] = []
         for current_subject in suggested_subjects:
-            for video in videos_by_subject.get(current_subject, []):
+            remaining_task_seconds = max(
+                0.0,
+                today_allocations.get(current_subject, 0.0)
+                - today_credited.get(current_subject, 0.0),
+            )
+            task_queue = _study_plan_task_video_queue(
+                videos_by_subject.get(current_subject, []),
+                remaining_task_seconds,
+            )
+            for video in task_queue:
                 duration = float(video.get("duration_seconds") or 0)
                 watched = min(float(video.get("watched_seconds") or 0), duration)
                 youtube_video_id = str(video.get("youtube_video_id") or "").strip()
-                if (
-                    duration <= 0
-                    or _study_plan_video_is_complete(duration, watched)
-                ):
-                    continue
                 next_videos.append(
                     {
                         "id": int(video.get("id") or 0),
@@ -2897,7 +2952,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "youtube_video_id": youtube_video_id,
                     }
                 )
-                break
         return next_videos
 
     def _build_study_home_context(
