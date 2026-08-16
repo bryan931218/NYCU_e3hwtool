@@ -198,6 +198,90 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
             finally:
                 storage._engine.dispose()
 
+    def test_quick_review_quality_gate_replaces_unclear_calculation_question(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _app, storage, client = self._build_client(temp_dir)
+            try:
+                unclear_example = {
+                    **self._card("線性代數", 0),
+                    "concept": "矩陣運算例題",
+                    "card_type": "example",
+                    "example_problem": "如上圖所示，求出最後答案。",
+                    "core_summary": "先依矩陣乘法規則計算每個位置。",
+                    "example_method": "",
+                    "reasoning_steps": [],
+                }
+                other_cards = [
+                    {
+                        **self._card("線性代數", index),
+                        "concept": f"矩陣觀念 {index}",
+                        "core_summary": f"矩陣觀念 {index} 的明確核心結論。",
+                    }
+                    for index in range(1, 4)
+                ]
+                storage.create_study_recall_session(
+                    study_date="2025-01-01",
+                    subject="線性代數",
+                    title="矩陣題目整理",
+                    image_filenames=[],
+                    summary="矩陣摘要",
+                    key_concepts=[unclear_example, *other_cards],
+                )
+
+                page = client.get("/admin/study-recall/quick-review", query_string={"size": 5}).get_data(as_text=True)
+                document = BeautifulSoup(page, "html.parser")
+                fallback_card = document.select_one('[data-concept-index="0"]')
+
+                self.assertIsNotNone(fallback_card)
+                self.assertEqual(fallback_card.get("data-quality-status"), "fallback")
+                self.assertEqual(fallback_card.get("data-interaction"), "written")
+                self.assertEqual(
+                    fallback_card.select_one("[data-question-type]").get_text(strip=True),
+                    "來源簡答題",
+                )
+                self.assertNotIn("如上圖", fallback_card.select_one(".prompt-block h2").get_text())
+                self.assertTrue(fallback_card.select_one(".answer-core p").get_text(strip=True))
+            finally:
+                storage._engine.dispose()
+
+    def test_quick_review_quality_gate_rejects_overlapping_choice_options(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _app, storage, client = self._build_client(temp_dir)
+            try:
+                summaries = [
+                    "節點數量等於輸入的 n 值。",
+                    "在這個情況下，節點數量等於輸入的 n 值，因此需要線性空間。",
+                    "邊的數量決定鄰接串列的總長度。",
+                    "走訪順序會影響深度優先搜尋產生的樹。",
+                ]
+                cards = [
+                    {
+                        **self._card("資料結構", index),
+                        "concept": f"圖形觀念 {index}",
+                        "core_summary": summary,
+                    }
+                    for index, summary in enumerate(summaries)
+                ]
+                storage.create_study_recall_session(
+                    study_date="2025-01-01",
+                    subject="資料結構",
+                    title="圖形結構整理",
+                    image_filenames=[],
+                    summary="圖形摘要",
+                    key_concepts=cards,
+                )
+
+                page = client.get("/admin/study-recall/quick-review", query_string={"size": 5}).get_data(as_text=True)
+                document = BeautifulSoup(page, "html.parser")
+                first_card = document.select_one('[data-concept-index="0"]')
+
+                self.assertIsNotNone(first_card)
+                self.assertEqual(first_card.get("data-quality-status"), "fallback")
+                self.assertEqual(first_card.get("data-interaction"), "written")
+                self.assertEqual(len(first_card.select("[data-exam-option]")), 0)
+            finally:
+                storage._engine.dispose()
+
 
 if __name__ == "__main__":
     unittest.main()

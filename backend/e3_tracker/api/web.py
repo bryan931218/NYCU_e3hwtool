@@ -3633,6 +3633,113 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
         return interleaved
 
+    def _quick_review_quality_issues(item: Dict[str, Any]) -> List[str]:
+        """Reject unclear or structurally unverifiable questions before display."""
+
+        quick = item.get("quick_review") if isinstance(item.get("quick_review"), dict) else {}
+        concept = item.get("concept_data") if isinstance(item.get("concept_data"), dict) else {}
+
+        def compact(value: Any) -> str:
+            return " ".join(str(value or "").split()).strip()
+
+        def normalized(value: Any) -> str:
+            return re.sub(r"[\s\W_]+", "", str(value or ""), flags=re.UNICODE).casefold()
+
+        issues: List[str] = []
+        prompt = compact(quick.get("prompt"))
+        answer = compact(quick.get("answer_summary"))
+        title = compact(concept.get("concept"))
+        interaction = str(quick.get("interaction") or "written")
+        if len(prompt) < 10:
+            issues.append("prompt-too-short")
+        if len(prompt) > 900:
+            issues.append("prompt-too-long")
+        if not title or title in {"這個觀念", "其他", "綜合重點"}:
+            issues.append("unclear-concept-title")
+        if len(answer) < 2:
+            issues.append("answer-missing")
+        if answer in {"如上", "如圖", "同上", "略", "來源未提供完整解法"}:
+            issues.append("answer-not-verifiable")
+
+        source_answers = {
+            normalized(concept.get("core_summary")),
+            normalized(concept.get("example_method")),
+            normalized(concept.get("explanation")),
+        }
+        source_answers.discard("")
+        if normalized(answer) not in source_answers:
+            issues.append("answer-not-grounded")
+
+        if interaction == "calculation":
+            has_task_signal = bool(
+                re.search(
+                    r"[?？]|(?:求|計算|證明|判斷|找出|解出|求其|試證|determine|calculate|solve|prove)",
+                    prompt,
+                    flags=re.IGNORECASE,
+                )
+            )
+            if not has_task_signal:
+                issues.append("calculation-task-unclear")
+            if re.search(r"(?:如|見|根據|依)(?:上|下|左|右)?(?:圖|表)|(?:上|下|左|右)(?:圖|表)|此圖|該圖|圖中|表中", prompt):
+                issues.append("missing-visual-context")
+            if not compact(quick.get("answer_method")) and not (quick.get("answer_steps") or []):
+                issues.append("calculation-solution-missing")
+
+        options = quick.get("exam_options") if isinstance(quick.get("exam_options"), list) else []
+        if interaction in {"single_choice", "true_false"}:
+            expected_count = 4 if interaction == "single_choice" else 2
+            if len(options) != expected_count:
+                issues.append("option-count-invalid")
+            option_texts = [compact(option.get("text")) for option in options if isinstance(option, dict)]
+            option_keys = [normalized(option_text) for option_text in option_texts]
+            if any(len(option_text) < 2 or len(option_text) > 700 for option_text in option_texts):
+                issues.append("option-text-invalid")
+            if len(set(option_keys)) != len(option_keys):
+                issues.append("duplicate-options")
+            if sum(bool(option.get("is_correct")) for option in options if isinstance(option, dict)) != 1:
+                issues.append("correct-option-not-unique")
+            if interaction == "single_choice":
+                correct_options = [
+                    normalized(option.get("text"))
+                    for option in options
+                    if isinstance(option, dict) and option.get("is_correct")
+                ]
+                if correct_options != [normalized(answer)]:
+                    issues.append("correct-option-answer-mismatch")
+                for left_index, left_key in enumerate(option_keys):
+                    for right_key in option_keys[left_index + 1 :]:
+                        if min(len(left_key), len(right_key)) >= 8 and (
+                            left_key in right_key or right_key in left_key
+                        ):
+                            issues.append("overlapping-options")
+                            break
+        return sorted(set(issues))
+
+    def _fallback_quick_review_to_written(item: Dict[str, Any], issues: List[str]) -> Dict[str, Any]:
+        """Replace a rejected generated format with one clear, source-grounded prompt."""
+
+        prepared = copy.deepcopy(item)
+        concept = prepared.get("concept_data") if isinstance(prepared.get("concept_data"), dict) else {}
+        quick = prepared.get("quick_review") if isinstance(prepared.get("quick_review"), dict) else {}
+        title = str(concept.get("concept") or "").strip()
+        quick.update(
+            {
+                "interaction": "written",
+                "exam_options": [],
+                "is_objective": False,
+                "question_type": "來源簡答題",
+                "mission": "只回答筆記中能被核對的內容",
+                "instruction": "請寫出核心結論，並補上一個成立條件或必要方法。",
+                "prompt": f"依這份筆記，請完整寫出「{title}」的核心結論與成立條件。",
+                "answer_title": "來源正解",
+                "estimated_seconds": 75,
+                "quality_status": "fallback",
+                "quality_issues": issues,
+            }
+        )
+        prepared["quick_review"] = quick
+        return prepared
+
     def _build_quick_review_item(
         item: Dict[str, Any],
         question_pool: Optional[List[Dict[str, Any]]] = None,
@@ -3746,6 +3853,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             ),
         )
         for candidate in prioritized_pool:
+            if str(candidate.get("subject") or "") != str(item.get("subject") or ""):
+                continue
             if (
                 int(candidate.get("session_id") or 0) == int(item.get("session_id") or 0)
                 and int(candidate.get("concept_index") or -1) == int(item.get("concept_index") or -1)
@@ -3828,7 +3937,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "interaction": interaction,
             "exam_options": exam_options,
             "is_objective": bool(exam_options),
+            "quality_status": "passed",
+            "quality_issues": [],
         }
+        quality_issues = _quick_review_quality_issues(prepared)
+        if quality_issues:
+            prepared = _fallback_quick_review_to_written(prepared, quality_issues)
+            fallback_issues = _quick_review_quality_issues(prepared)
+            prepared["quick_review"]["quality_valid"] = not fallback_issues
+            prepared["quick_review"]["quality_issues"] = sorted(
+                set(quality_issues + fallback_issues)
+            )
+        else:
+            prepared["quick_review"]["quality_valid"] = True
         return prepared
 
     def _study_plan_minutes(value: Any) -> float:
@@ -12265,10 +12386,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         session_size = requested_size if requested_size in {5, 10, 18} else 5
         recall_context = _build_recall_widget_context()
         interleaved_cards = _interleave_recall_cards(recall_context["cards"])
-        review_cards = [
+        prepared_review_cards = [
             _build_quick_review_item(item, interleaved_cards)
-            for item in interleaved_cards[:session_size]
+            for item in interleaved_cards
         ]
+        accepted_review_cards = [
+            item
+            for item in prepared_review_cards
+            if bool((item.get("quick_review") or {}).get("quality_valid"))
+        ]
+        review_cards = accepted_review_cards[:session_size]
         return render_template_string(
             STUDY_RECALL_QUICK_TEMPLATE,
             admin_user=user,
@@ -12276,7 +12403,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             review_cards=review_cards,
             total_due=int(recall_context["due_count"]),
             session_size=session_size,
-            remaining_after_session=max(0, int(recall_context["due_count"]) - len(review_cards)),
+            remaining_after_session=max(0, len(accepted_review_cards) - len(review_cards)),
         )
 
     @app.get("/admin/study-recall/search")
