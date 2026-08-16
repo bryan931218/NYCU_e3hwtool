@@ -2144,9 +2144,6 @@
             }
             sortVideoOptions();
             updateDuration();
-            // CODEX_PRODUCTION_PREVIEW_START
-            if (initialParams.get('__codex_preview_end') === '1') window.setTimeout(showVideoEndScreen, 500);
-            // CODEX_PRODUCTION_PREVIEW_END
             const smartReplan = document.getElementById('smart-replan');
             if (smartReplan && window.location.hash === '#smart-replan') smartReplan.open = true;
             focusVideoArea();
