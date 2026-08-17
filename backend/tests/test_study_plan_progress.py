@@ -152,6 +152,78 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertTrue(any(value > 0 for value in later_completions))
             storage._engine.dispose()
 
+    def test_plan_page_defaults_to_last_watched_subject_and_an_unfinished_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+
+            storage = app.extensions["e3_storage"]
+            videos = storage.list_study_plan_videos_with_records()
+            algorithm_videos = sorted(
+                (video for video in videos if video["subject"] == "演算法"),
+                key=lambda video: int(video["sequence"]),
+            )
+            first_video, next_video = algorithm_videos[:2]
+            storage.update_study_plan_video_progress(
+                video_id=int(first_video["id"]),
+                watched_seconds=min(60.0, float(first_video["duration_seconds"]) / 2),
+                expected_version=int(first_video["progress_version"]),
+            )
+
+            token = "study-plan-last-watched-session"
+            storage.save_web_session(token, "test-admin")
+            client = app.test_client()
+            with client.session_transaction() as browser_session:
+                browser_session["username"] = "test-admin"
+                browser_session["session_token"] = token
+                browser_session["is_admin"] = True
+
+            continue_page = client.get("/admin/study-plan")
+            continue_html = continue_page.get_data(as_text=True)
+            self.assertEqual(continue_page.status_code, 200)
+            self.assertIn('<option value="演算法" selected>', continue_html)
+            self.assertRegex(
+                continue_html,
+                rf'<option value="{first_video["id"]}" selected data-sequence=',
+            )
+
+            refreshed_first_video = next(
+                video
+                for video in storage.list_study_plan_videos_with_records()
+                if int(video["id"]) == int(first_video["id"])
+            )
+            storage.update_study_plan_video_progress(
+                video_id=int(refreshed_first_video["id"]),
+                watched_seconds=float(refreshed_first_video["duration_seconds"]),
+                expected_version=int(refreshed_first_video["progress_version"]),
+            )
+
+            next_page = client.get("/admin/study-plan")
+            next_html = next_page.get_data(as_text=True)
+            self.assertIn('<option value="演算法" selected>', next_html)
+            self.assertRegex(
+                next_html,
+                rf'<option value="{next_video["id"]}" selected data-sequence=',
+            )
+
+            explicit_video_page = client.get(
+                f'/admin/study-plan?video_id={first_video["id"]}'
+            )
+            explicit_video_html = explicit_video_page.get_data(as_text=True)
+            self.assertIn('<option value="演算法" selected>', explicit_video_html)
+            self.assertRegex(
+                explicit_video_html,
+                rf'<option value="{first_video["id"]}" selected data-sequence=',
+            )
+            storage._engine.dispose()
+
     def test_progress_summary_does_not_leave_time_behind_for_completed_videos(self):
         summary = _study_plan_progress_summary(
             [

@@ -13459,14 +13459,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         videos = storage.list_study_plan_videos_with_records()
         week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
         current_week = _study_plan_progress_week(week_rows)
-        current_subjects = current_week.get("subjects") or [current_week.get("subject")]
-        default_subject = next(
-            (subject for subject in current_subjects if subject in STUDY_PLAN_SUBJECTS),
-            STUDY_PLAN_SUBJECTS[0],
-        )
-        selected_subject = (request.args.get("subject") or default_subject).strip()
-        if selected_subject not in STUDY_PLAN_SUBJECTS:
-            selected_subject = default_subject
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
         for video in videos:
             video["duration_minutes"] = round(float(video["duration_seconds"]) / 60, 1)
@@ -13476,12 +13468,78 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
             video["completion"] = _study_plan_video_completion(video["duration_seconds"], video["watched_seconds"])
             videos_by_subject.setdefault(video["subject"], []).append(video)
+
+        try:
+            requested_video_id = int(request.args.get("video_id") or 0)
+        except (TypeError, ValueError):
+            requested_video_id = 0
+        requested_video = next(
+            (video for video in videos if int(video.get("id") or 0) == requested_video_id),
+            None,
+        )
+        activity_events = storage.list_study_plan_activity_events(
+            start_day=STUDY_PLAN_START,
+            end_day=_study_plan_business_date().isoformat(),
+        )
+        last_watched_event = next(
+            (
+                event
+                for event in reversed(activity_events)
+                if float(event.get("delta_seconds") or 0) > 0
+            ),
+            None,
+        )
+        last_watched_video_id = int((last_watched_event or {}).get("video_id") or 0)
+        last_watched_subject = str((last_watched_event or {}).get("subject") or "").strip()
+        current_subjects = current_week.get("subjects") or [current_week.get("subject")]
+        plan_default_subject = next(
+            (subject for subject in current_subjects if subject in STUDY_PLAN_SUBJECTS),
+            STUDY_PLAN_SUBJECTS[0],
+        )
+        default_subject = (
+            last_watched_subject
+            if last_watched_subject in STUDY_PLAN_SUBJECTS
+            else plan_default_subject
+        )
+        requested_subject = str(request.args.get("subject") or "").strip()
+        if requested_subject in STUDY_PLAN_SUBJECTS:
+            selected_subject = requested_subject
+        elif requested_video and requested_video.get("subject") in STUDY_PLAN_SUBJECTS:
+            selected_subject = str(requested_video["subject"])
+        else:
+            selected_subject = default_subject
+
         today_task_videos = _study_plan_today_task_videos(
             videos_by_subject,
             week_rows,
             current_week,
         )
         visible_videos = videos_by_subject.get(selected_subject, [])
+        requested_visible_video = next(
+            (video for video in visible_videos if int(video.get("id") or 0) == requested_video_id),
+            None,
+        )
+        last_watched_visible_video = next(
+            (video for video in visible_videos if int(video.get("id") or 0) == last_watched_video_id),
+            None,
+        )
+        unfinished_videos = [
+            video for video in visible_videos if float(video.get("completion") or 0) < 100
+        ]
+        if requested_visible_video:
+            selected_video = requested_visible_video
+        elif (
+            last_watched_visible_video
+            and float(last_watched_visible_video.get("completion") or 0) < 100
+        ):
+            selected_video = last_watched_visible_video
+        elif unfinished_videos:
+            selected_video = unfinished_videos[0]
+        elif last_watched_visible_video:
+            selected_video = last_watched_visible_video
+        else:
+            selected_video = visible_videos[0] if visible_videos else None
+        selected_video_id = int((selected_video or {}).get("id") or 0)
         visible_video_ids = [int(video["id"]) for video in visible_videos]
         video_markers = storage.list_study_plan_video_markers(video_ids=visible_video_ids)
         replan_settings = storage.get_study_plan_replan_settings()
@@ -13502,6 +13560,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             summary=summary,
             subjects=STUDY_PLAN_SUBJECTS,
             selected_subject=selected_subject,
+            selected_video_id=selected_video_id,
             videos=visible_videos,
             today_task_videos=today_task_videos,
             video_count=len(visible_videos),
