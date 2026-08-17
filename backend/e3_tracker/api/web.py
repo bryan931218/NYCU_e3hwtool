@@ -44,6 +44,7 @@ from ..services.youtube_playlists import (
     YoutubePlaylistSyncBusyError,
     sync_known_youtube_playlists,
 )
+from ..services.youtube_frames import YoutubeFrameError, fetch_youtube_storyboard_frame
 from ..shared.config import (
     DEFAULT_OPENAI_MODEL,
     load_env_defaults,
@@ -13620,6 +13621,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             replan_preview=replan_preview,
             study_time_today=study_time_today,
             study_time_sessions=study_time_sessions,
+            openai_ready=bool(openai_api_key),
             replan_defaults={
                 "start_date": next_week_start.isoformat(),
                 "end_date": effective_plan_end,
@@ -13724,6 +13726,117 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             meta={"video_id": video_id, "playback_seconds": round(marker["playback_seconds"], 1)},
         )
         return {"ok": True, "marker": marker}
+
+    @app.post("/admin/study-plan/video-question")
+    @admin_required
+    def admin_study_plan_video_question():
+        if not openai_api_key:
+            return {"ok": False, "error": "尚未設定 OpenAI API 金鑰。"}, 503
+        payload = request.get_json(silent=True) or {}
+        question = " ".join(str(payload.get("question") or "").split()).strip()
+        try:
+            video_id = int(payload.get("video_id") or 0)
+            playback_seconds = float(payload.get("playback_seconds") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "提問資料格式不正確。"}, 400
+        if video_id <= 0 or not math.isfinite(playback_seconds) or playback_seconds < 0:
+            return {"ok": False, "error": "目前的影片或播放時間無效。"}, 400
+        if not question:
+            return {"ok": False, "error": "請先輸入想問的問題。"}, 400
+        if len(question) > 800:
+            return {"ok": False, "error": "問題請控制在 800 字內。"}, 400
+
+        video = next(
+            (
+                item
+                for item in storage.list_study_plan_videos_with_records()
+                if int(item.get("id") or 0) == video_id
+            ),
+            None,
+        )
+        if not video:
+            return {"ok": False, "error": "找不到這部影片。"}, 404
+        youtube_video_id = str(video.get("youtube_video_id") or "").strip()
+        if not youtube_video_id:
+            return {"ok": False, "error": "這部影片尚未對應 YouTube。"}, 400
+        duration_seconds = max(0.0, float(video.get("duration_seconds") or 0))
+        if duration_seconds > 0:
+            playback_seconds = min(playback_seconds, duration_seconds)
+
+        try:
+            frame = fetch_youtube_storyboard_frame(youtube_video_id, playback_seconds)
+        except YoutubeFrameError as exc:
+            return {"ok": False, "error": str(exc)}, 502
+        image_data_url = (
+            f"data:{frame['mime_type']};base64,"
+            + base64.b64encode(frame["bytes"]).decode("ascii")
+        )
+        prompt = (
+            "你是研究所考試課程的即時視覺助教。請直接回答學生針對目前影片畫面的問題。"
+            "附圖是 YouTube 在指定時間附近提供的預覽取樣影格，可能與學生按下提問的時刻相差數秒；"
+            "影片標題與科目只能當背景，畫面中實際可辨識的文字、圖表與公式才是主要依據。"
+            "若影格模糊、關鍵內容被切掉、題目條件不足，或無法單靠這張圖可靠判定，必須明確說明缺少什麼，"
+            "並請學生補充，不可自行猜測畫面內容或答案。回答使用精簡、好理解的繁體中文，控制在 2 至 8 個短段落。"
+            "數學表達式一律使用 LaTeX：行內公式用 \\( ... \\)，獨立公式用 \\[ ... \\]。"
+            "不要輸出 Markdown 標題、粗體標記或程式碼區塊。\n\n"
+            f"科目：{str(video.get('subject') or '')[:48]}\n"
+            f"影片：第 {int(video.get('sequence') or 0):03d} 支・{str(video.get('title') or '')[:180]}\n"
+            f"學生按下提問時間：{playback_seconds:.1f} 秒\n"
+            f"實際取樣影格時間：約 {float(frame['frame_seconds']):.1f} 秒\n"
+            f"學生的問題：{question}"
+        )
+        request_body = {
+            "model": openai_model,
+            "store": False,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": image_data_url,
+                            "detail": "high",
+                        },
+                    ],
+                }
+            ],
+            "reasoning": {
+                "effort": normalize_openai_reasoning_effort(openai_model, "low")
+            },
+            "max_output_tokens": 3200,
+        }
+        try:
+            response_payload = _request_openai_response(
+                name="video frame question",
+                request_body=request_body,
+                timeout=90,
+            )
+            answer = _extract_openai_text(response_payload).strip()[:8000]
+        except requests.HTTPError as exc:
+            error_code, error_type, error_message = _openai_error_details(exc.response)
+            if _is_openai_quota_error(error_code, error_type, error_message):
+                return {"ok": False, "error": "OpenAI API 額度不足，請補充額度後再試。"}, 503
+            return {"ok": False, "error": "AI 暫時無法回答，請稍後再試。"}, 502
+        except (requests.RequestException, ValueError, TypeError):
+            return {"ok": False, "error": "AI 暫時無法回答，請稍後再試。"}, 502
+        if not answer:
+            return {"ok": False, "error": "AI 沒有產生有效回答，請換個方式提問。"}, 502
+        record_ui_event(
+            "study_plan_video_frame_question",
+            meta={
+                "video_id": video_id,
+                "requested_seconds": round(playback_seconds, 1),
+                "frame_seconds": round(float(frame["frame_seconds"]), 1),
+            },
+        )
+        return {
+            "ok": True,
+            "answer": answer,
+            "frame_image": image_data_url,
+            "requested_seconds": round(playback_seconds, 2),
+            "frame_seconds": round(float(frame["frame_seconds"]), 2),
+        }
 
     @app.patch("/admin/study-plan/video-markers/<int:marker_id>")
     @admin_required
