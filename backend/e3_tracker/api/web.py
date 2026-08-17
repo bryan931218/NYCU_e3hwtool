@@ -272,6 +272,57 @@ def _study_plan_video_is_complete(duration_seconds: Any, watched_seconds: Any) -
     return watched >= duration - STUDY_PLAN_COMPLETE_TOLERANCE_SECONDS or watched / duration >= STUDY_PLAN_COMPLETE_RATIO
 
 
+def _study_plan_default_video(
+    videos: Iterable[Dict[str, Any]],
+    *,
+    last_watched_video_id: int = 0,
+    requested_video_id: int = 0,
+    allow_completed_fallback: bool = True,
+) -> Optional[Dict[str, Any]]:
+    ordered_videos = list(videos)
+    requested_video = next(
+        (
+            video
+            for video in ordered_videos
+            if int(video.get("id") or 0) == int(requested_video_id or 0)
+        ),
+        None,
+    )
+    if requested_video:
+        return requested_video
+
+    last_watched_video = next(
+        (
+            video
+            for video in ordered_videos
+            if int(video.get("id") or 0) == int(last_watched_video_id or 0)
+        ),
+        None,
+    )
+    if last_watched_video and not _study_plan_video_is_complete(
+        last_watched_video.get("duration_seconds"),
+        last_watched_video.get("watched_seconds"),
+    ):
+        return last_watched_video
+
+    unfinished_video = next(
+        (
+            video
+            for video in ordered_videos
+            if not _study_plan_video_is_complete(
+                video.get("duration_seconds"),
+                video.get("watched_seconds"),
+            )
+        ),
+        None,
+    )
+    if unfinished_video:
+        return unfinished_video
+    if not allow_completed_fallback:
+        return None
+    return last_watched_video or (ordered_videos[0] if ordered_videos else None)
+
+
 def _study_plan_credited_video_seconds(duration_seconds: Any, watched_seconds: Any) -> float:
     """Credit a completed video at full length so tiny player end gaps do not leak into the schedule."""
     duration = _study_plan_nonnegative_number(duration_seconds)
@@ -3226,34 +3277,49 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             ),
             None,
         )
-        continue_video: Optional[Dict[str, Any]] = None
-        if last_watched_event:
-            last_video_id = int(last_watched_event.get("video_id") or 0)
-            last_video = next(
-                (video for video in videos if int(video.get("id") or 0) == last_video_id),
+        last_video_id = int((last_watched_event or {}).get("video_id") or 0)
+        last_subject = str((last_watched_event or {}).get("subject") or "").strip()
+        continue_source = _study_plan_default_video(
+            videos_by_subject.get(last_subject, []),
+            last_watched_video_id=last_video_id,
+            allow_completed_fallback=False,
+        )
+        if continue_source is None and next_videos:
+            next_video_id = int(next_videos[0].get("id") or 0)
+            continue_source = next(
+                (video for video in videos if int(video.get("id") or 0) == next_video_id),
                 None,
             )
-            if last_video:
-                duration_seconds = max(0.0, float(last_video.get("duration_seconds") or 0))
-                watched_seconds = min(
-                    max(0.0, float(last_video.get("watched_seconds") or 0)),
-                    duration_seconds,
-                )
-                continue_video = {
-                    "id": last_video_id,
-                    "subject": str(last_video.get("subject") or ""),
-                    "sequence": int(last_video.get("sequence") or 0),
-                    "title": str(last_video.get("title") or ""),
-                    "remaining_minutes": round(max(0.0, duration_seconds - watched_seconds) / 60, 1),
-                    "completion": round(
-                        min(100.0, watched_seconds / duration_seconds * 100)
-                        if duration_seconds
-                        else 0.0,
-                        1,
-                    ),
-                }
-        if continue_video is None and next_videos:
-            continue_video = dict(next_videos[0])
+            if continue_source and _study_plan_video_is_complete(
+                continue_source.get("duration_seconds"),
+                continue_source.get("watched_seconds"),
+            ):
+                continue_source = None
+        if continue_source is None:
+            continue_source = _study_plan_default_video(
+                videos,
+                allow_completed_fallback=False,
+            )
+        continue_video: Optional[Dict[str, Any]] = None
+        if continue_source:
+            duration_seconds = max(0.0, float(continue_source.get("duration_seconds") or 0))
+            watched_seconds = min(
+                max(0.0, float(continue_source.get("watched_seconds") or 0)),
+                duration_seconds,
+            )
+            continue_video = {
+                "id": int(continue_source.get("id") or 0),
+                "subject": str(continue_source.get("subject") or ""),
+                "sequence": int(continue_source.get("sequence") or 0),
+                "title": str(continue_source.get("title") or ""),
+                "remaining_minutes": round(max(0.0, duration_seconds - watched_seconds) / 60, 1),
+                "completion": round(
+                    min(100.0, watched_seconds / duration_seconds * 100)
+                    if duration_seconds
+                    else 0.0,
+                    1,
+                ),
+            }
         # Each grouped event stores the first position of its learning day and the
         # final position saved that day. Keep corrections negative so a rewind never
         # leaves an earlier high-water mark in the weekly cumulative calculation.
@@ -13515,30 +13581,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             current_week,
         )
         visible_videos = videos_by_subject.get(selected_subject, [])
-        requested_visible_video = next(
-            (video for video in visible_videos if int(video.get("id") or 0) == requested_video_id),
-            None,
+        selected_video = _study_plan_default_video(
+            visible_videos,
+            last_watched_video_id=last_watched_video_id,
+            requested_video_id=requested_video_id,
         )
-        last_watched_visible_video = next(
-            (video for video in visible_videos if int(video.get("id") or 0) == last_watched_video_id),
-            None,
-        )
-        unfinished_videos = [
-            video for video in visible_videos if float(video.get("completion") or 0) < 100
-        ]
-        if requested_visible_video:
-            selected_video = requested_visible_video
-        elif (
-            last_watched_visible_video
-            and float(last_watched_visible_video.get("completion") or 0) < 100
-        ):
-            selected_video = last_watched_visible_video
-        elif unfinished_videos:
-            selected_video = unfinished_videos[0]
-        elif last_watched_visible_video:
-            selected_video = last_watched_visible_video
-        else:
-            selected_video = visible_videos[0] if visible_videos else None
         selected_video_id = int((selected_video or {}).get("id") or 0)
         visible_video_ids = [int(video["id"]) for video in visible_videos]
         video_markers = storage.list_study_plan_video_markers(video_ids=visible_video_ids)

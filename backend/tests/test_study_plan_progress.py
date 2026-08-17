@@ -193,17 +193,33 @@ class StudyPlanProgressTests(unittest.TestCase):
                 continue_html,
                 rf'<option value="{first_video["id"]}" selected data-sequence=',
             )
+            partial_home = client.get("/admin/study-home")
+            partial_home_html = partial_home.get_data(as_text=True)
+            self.assertEqual(partial_home.status_code, 200)
+            partial_continue_href = re.search(
+                r'<a class="continue-button" href="([^"]+)">',
+                partial_home_html,
+            )
+            self.assertIsNotNone(partial_continue_href)
+            self.assertIn(
+                f'video_id={first_video["id"]}',
+                partial_continue_href.group(1),
+            )
 
             refreshed_first_video = next(
                 video
                 for video in storage.list_study_plan_videos_with_records()
                 if int(video["id"]) == int(first_video["id"])
             )
-            storage.update_study_plan_video_progress(
-                video_id=int(refreshed_first_video["id"]),
-                watched_seconds=float(refreshed_first_video["duration_seconds"]),
-                expected_version=int(refreshed_first_video["progress_version"]),
+            completion_response = client.post(
+                "/admin/study-plan/video-progress",
+                json={
+                    "video_id": int(refreshed_first_video["id"]),
+                    "watched_seconds": float(refreshed_first_video["duration_seconds"]),
+                    "expected_version": int(refreshed_first_video["progress_version"]),
+                },
             )
+            self.assertEqual(completion_response.status_code, 200)
 
             next_page = client.get("/admin/study-plan")
             next_html = next_page.get_data(as_text=True)
@@ -211,6 +227,22 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertRegex(
                 next_html,
                 rf'<option value="{next_video["id"]}" selected data-sequence=',
+            )
+            completed_home = client.get("/admin/study-home")
+            completed_home_html = completed_home.get_data(as_text=True)
+            self.assertEqual(completed_home.status_code, 200)
+            completed_continue_href = re.search(
+                r'<a class="continue-button" href="([^"]+)">',
+                completed_home_html,
+            )
+            self.assertIsNotNone(completed_continue_href)
+            self.assertIn(
+                f'video_id={next_video["id"]}',
+                completed_continue_href.group(1),
+            )
+            self.assertNotIn(
+                f'video_id={first_video["id"]}',
+                completed_continue_href.group(1),
             )
 
             explicit_video_page = client.get(
