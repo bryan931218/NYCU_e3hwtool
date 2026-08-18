@@ -2,7 +2,9 @@ import unittest
 
 from e3_tracker.shared.study_math import (
     is_pure_math_expression,
+    protect_markdown_code,
     repair_math_delimiters,
+    restore_markdown_code,
     wrap_bare_math_candidate,
 )
 
@@ -49,6 +51,33 @@ class StudyMathTests(unittest.TestCase):
             wrap_bare_math_candidate(f"單位矩陣是 {matrix}。"),
             f"單位矩陣是 \\({matrix}\\)。",
         )
+
+    def test_markdown_code_is_protected_from_math_repairs(self):
+        source = (
+            "走訪時呼叫 `push()`：\n"
+            "```cpp\n"
+            "for (int i = 0; i < n; ++i) {\n"
+            "    Node* next = nodes[i]->next;\n"
+            "    cout << next->value << \\\"\\n\\\";\n"
+            "}\n"
+            "```\n"
+            "時間複雜度為 \\(O(n)\\)。"
+        )
+
+        masked, protected = protect_markdown_code(source)
+        repaired = repair_math_delimiters(masked)
+
+        self.assertNotIn("push", masked)
+        self.assertNotIn("nodes[i]", masked)
+        self.assertEqual(restore_markdown_code(repaired, protected), source)
+
+    def test_multiple_code_segments_restore_in_original_order(self):
+        source = "先用 `front()`，再執行：\n```pseudocode\nDEQUEUE(Q)\n```"
+
+        masked, protected = protect_markdown_code(source)
+
+        self.assertEqual(len(protected), 2)
+        self.assertEqual(restore_markdown_code(masked, protected), source)
 
 
 if __name__ == "__main__":

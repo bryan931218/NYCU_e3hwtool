@@ -1,5 +1,5 @@
 import re
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 
 _RELATION_PATTERN = re.compile(r"(?:!=|<=|>=|≠|≤|≥|⇔|↔|→|∈|∉|(?<![<>=!])=(?!=))")
@@ -46,6 +46,35 @@ _STRUCTURED_ENVIRONMENT_PATTERN = re.compile(
     flags=re.DOTALL,
 )
 _MATH_DELIMITER_PATTERN = re.compile(r"(?<!\\)\\([\(\)\[\]])")
+_MARKDOWN_CODE_PATTERN = re.compile(
+    r"(?P<fenced>(?P<fence>```|~~~)[ \t]*(?:[A-Za-z0-9_+#.\-]+)?[ \t]*\n"
+    r".*?\n(?P=fence)[ \t]*(?=\n|$))"
+    r"|(?P<inline>(?<!`)`[^`\n]+`(?!`))",
+    flags=re.DOTALL,
+)
+_MARKDOWN_CODE_PLACEHOLDER = "\ue300E3CODE{index}\ue301"
+
+
+def protect_markdown_code(value: str) -> Tuple[str, List[str]]:
+    """Replace fenced and inline Markdown code so math repair cannot alter it."""
+    protected: List[str] = []
+
+    def replace_code(match: re.Match[str]) -> str:
+        protected.append(match.group(0))
+        return _MARKDOWN_CODE_PLACEHOLDER.format(index=len(protected) - 1)
+
+    return _MARKDOWN_CODE_PATTERN.sub(replace_code, str(value or "")), protected
+
+
+def restore_markdown_code(value: str, protected: List[str]) -> str:
+    """Restore code previously extracted by :func:`protect_markdown_code`."""
+    restored = str(value or "")
+    for index, code in enumerate(protected):
+        restored = restored.replace(
+            _MARKDOWN_CODE_PLACEHOLDER.format(index=index),
+            code,
+        )
+    return restored
 
 
 def _trim_token(token: str) -> str:

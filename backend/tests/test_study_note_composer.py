@@ -127,6 +127,36 @@ class StudyNoteComposerTests(unittest.TestCase):
                 self.assertEqual(card["simple_example"], "")
                 self.assertEqual(card["source_refs"][0]["evidence"], evidence)
 
+    def test_code_block_preserves_language_and_indentation(self):
+        code = (
+            "```cpp\n"
+            "for (int i = 0; i < n; ++i) {\n"
+            "    Node* next = nodes[i]->next;\n"
+            "    cout << next->value;\n"
+            "}\n"
+            "```"
+        )
+        accumulator = self._build_accumulator(code)
+        accumulator.execute(
+            "set_note_overview",
+            {"detected_topic": "鏈結串列走訪", "summary": "依序走訪每個節點。"},
+        )
+        self._add_block(
+            accumulator,
+            block_type="code",
+            title="鏈結串列走訪",
+            evidence=code,
+            key_point="沿著 `next` 逐一走訪節點。",
+            explanation=code,
+        )
+        accumulator.execute("finish_note", {"complete": True, "review_note": None})
+
+        card = accumulator.to_legacy_payload()["key_concepts"][0]
+
+        self.assertEqual(card["content_kind"], "code")
+        self.assertEqual(card["explanation"], code)
+        self.assertIn("    Node* next", card["explanation"])
+
     def test_web_validator_keeps_non_math_blocks_without_forced_examples(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(

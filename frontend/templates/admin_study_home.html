@@ -83,6 +83,15 @@
         .recall-cue { margin-top:9px; padding:9px 10px; color:#40536c; border-left:3px solid var(--blue); background:#f3f7fc; font-size:12px; font-weight:700; line-height:1.55; }.recall-reveal { width:100%; min-height:34px; margin-top:9px; color:var(--blue); border:1px solid #b9d0ed; border-radius:4px; background:#fff; font-size:11px; font-weight:900; cursor:pointer; }.recall-reveal:hover { background:var(--blue-soft); }.recall-answer { margin-top:9px; }.recall-answer[hidden] { display:none; }.recall-core { margin-bottom:7px; padding:8px 9px; color:var(--ink); border-left:3px solid var(--green); background:#edf8f1; font-size:12px; font-weight:750; line-height:1.55; }.recall-example-badge { display:inline-block; margin-left:6px; padding:2px 5px; color:#815000; border:1px solid #e3bd78; border-radius:3px; background:#fff4de; font-size:9px; }.recall-example { margin-bottom:7px; padding:8px 9px; color:#40536c; border-left:3px solid var(--blue); background:#f4f8fd; font-size:12px; line-height:1.55; }.recall-example.method { border-left-color:var(--teal); background:var(--teal-soft); }.recall-example.simple { border-left-color:var(--amber); background:var(--amber-soft); }.recall-example strong { margin-bottom:3px; color:var(--ink); font-size:10px; }
         .recall-empty { display:none; }
         [data-math-content] { min-width:0; max-width:100%; overflow-wrap:anywhere; } [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; } [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:thin; } [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0 auto; overflow:visible; text-align:left; }
+        .study-code-block { width:100%; max-width:100%; margin:9px 0; overflow:hidden; border:1px solid #cbd7e5; border-left:3px solid var(--teal); border-radius:5px; background:#172033; box-shadow:0 5px 14px rgba(23,32,51,.08); text-align:left; }
+        .study-code-head { min-height:32px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:4px 7px 4px 10px; border-bottom:1px solid #dce4ef; background:#f4f7fb; }
+        .study-code-language { min-width:0; overflow:hidden; color:#53657d; font-size:9px; font-weight:900; letter-spacing:.04em; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
+        .study-code-copy { flex:0 0 auto; min-height:23px; padding:2px 6px; color:var(--blue); border:1px solid #bfd0e4; border-radius:3px; background:#fff; font-size:9px; font-weight:850; cursor:pointer; }
+        .study-code-copy:hover,.study-code-copy:focus-visible { color:#fff; border-color:var(--blue); background:var(--blue); outline:0; }
+        .study-code-copy.is-copied { color:var(--green); border-color:#a8d4bb; background:var(--green-soft); }
+        .study-code-block pre { width:100%; max-width:100%; margin:0; padding:11px 12px 13px; overflow:auto; color:#edf4ff; background:#172033; font:11px/1.65 "Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace; tab-size:4; white-space:pre; overscroll-behavior-inline:contain; scrollbar-color:#718096 #172033; }
+        .study-code-block code { color:inherit; font:inherit; letter-spacing:0; }
+        .study-inline-code { display:inline; padding:1px 3px; color:#076b6c; border:1px solid #cee5e3; border-radius:3px; background:#edf8f7; font:600 .9em/1.45 "Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace; overflow-wrap:anywhere; }
 
         .content {
             width: min(1520px, 100%);
@@ -1431,8 +1440,93 @@
             render();
         })();
 
+        const STUDY_CODE_LANGUAGE_LABELS = Object.freeze({
+            c: 'C', cpp: 'C++', 'c++': 'C++', cs: 'C#', csharp: 'C#',
+            py: 'Python', python: 'Python', js: 'JavaScript', javascript: 'JavaScript',
+            ts: 'TypeScript', typescript: 'TypeScript', java: 'Java', sql: 'SQL',
+            pseudocode: '虛擬碼', pseudo: '虛擬碼', text: '程式碼', plaintext: '程式碼',
+        });
+        const appendStudyInlineCode = (fragment, value) => {
+            const pattern = /`([^`\n]+)`/g;
+            let cursor = 0;
+            let match;
+            while ((match = pattern.exec(value)) !== null) {
+                if (match.index > cursor) fragment.append(document.createTextNode(value.slice(cursor, match.index)));
+                const code = document.createElement('code');
+                code.className = 'study-inline-code';
+                code.textContent = match[1];
+                fragment.append(code);
+                cursor = pattern.lastIndex;
+            }
+            if (cursor < value.length) fragment.append(document.createTextNode(value.slice(cursor)));
+        };
+        window.renderStudyCodeBlocks = (element) => {
+            if (!element || element.dataset.studyCodeRendered === 'true') return;
+            const source = element.textContent || '';
+            if (!source.includes('`')) {
+                element.dataset.studyCodeRendered = 'true';
+                return;
+            }
+            const fencePattern = /```[ \t]*([A-Za-z0-9_+#.\-]*)[ \t]*\n([\s\S]*?)```/g;
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+            let match;
+            while ((match = fencePattern.exec(source)) !== null) {
+                appendStudyInlineCode(fragment, source.slice(cursor, match.index));
+                const rawLanguage = (match[1] || 'text').toLowerCase();
+                const block = document.createElement('div');
+                block.className = 'study-code-block';
+                const head = document.createElement('div');
+                head.className = 'study-code-head';
+                const language = document.createElement('span');
+                language.className = 'study-code-language';
+                language.textContent = STUDY_CODE_LANGUAGE_LABELS[rawLanguage] || rawLanguage || '程式碼';
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.className = 'study-code-copy';
+                copy.textContent = '複製';
+                copy.title = '複製程式碼';
+                copy.setAttribute('aria-label', '複製程式碼');
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.dataset.studyCode = '';
+                code.textContent = match[2].replace(/^\n/, '').replace(/\n[ \t]*$/, '');
+                pre.append(code);
+                head.append(language, copy);
+                block.append(head, pre);
+                fragment.append(block);
+                cursor = fencePattern.lastIndex;
+            }
+            appendStudyInlineCode(fragment, source.slice(cursor));
+            element.replaceChildren(fragment);
+            element.dataset.studyCodeRendered = 'true';
+        };
+        document.addEventListener('click', async (event) => {
+            const button = event.target.closest?.('.study-code-copy');
+            if (!button) return;
+            const value = button.closest('.study-code-block')?.querySelector('[data-study-code]')?.textContent || '';
+            try {
+                if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
+                await navigator.clipboard.writeText(value);
+            } catch (_error) {
+                const textarea = document.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.append(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            button.textContent = '已複製';
+            button.classList.add('is-copied');
+            window.setTimeout(() => {
+                button.textContent = '複製';
+                button.classList.remove('is-copied');
+            }, 1400);
+        });
         window.renderStudyMath = (root = document) => {
-            if (!window.renderMathInElement) return;
             const queryAll = (selector) => [
                 ...(root.matches?.(selector) ? [root] : []),
                 ...root.querySelectorAll(selector),
@@ -1451,8 +1545,9 @@
             };
             queryAll('.recall-card-title').forEach((element) => { element.dataset.mathContent = ''; });
             queryAll('[data-math-content]').forEach((element) => {
-                if (element.dataset.mathRendered === 'true') return;
                 if (isDeferred(element)) return;
+                window.renderStudyCodeBlocks(element);
+                if (!window.renderMathInElement || element.dataset.mathRendered === 'true') return;
                 window.renderMathInElement(element, {
                     delimiters: [
                         { left: '$$', right: '$$', display: true },
@@ -1460,6 +1555,7 @@
                         { left: '\\[', right: '\\]', display: true },
                         { left: '\\(', right: '\\)', display: false },
                     ],
+                    ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
                     throwOnError: false,
                     strict: 'ignore',
                 });

@@ -25,6 +25,15 @@
         .example-section.simple { border-left-color:var(--amber); background:var(--amber-soft); }
         .concept:has(> .example-badge) .recall-answer > .concept-detail:not(:has(.reasoning-steps)),.concept:has(> .example-badge) .note-card-sections > .concept-detail:not(:has(.reasoning-steps)) { display:none; }
         [data-math-content] { min-width:0; max-width:100%; overflow-wrap:anywhere; } [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; } [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:thin; } [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0 auto; overflow:visible; text-align:left; }
+        .study-code-block { width:100%; max-width:100%; margin:10px 0; overflow:hidden; border:1px solid #cbd7e5; border-left:3px solid var(--teal); border-radius:5px; background:#172033; box-shadow:0 5px 14px rgba(23,32,51,.08); text-align:left; }
+        .study-code-head { min-height:34px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 8px 5px 11px; border-bottom:1px solid #dce4ef; background:#f4f7fb; }
+        .study-code-language { min-width:0; overflow:hidden; color:#53657d; font-size:10px; font-weight:900; letter-spacing:.04em; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
+        .study-code-copy { flex:0 0 auto; min-height:24px; padding:2px 7px; color:var(--blue); border:1px solid #bfd0e4; border-radius:3px; background:#fff; font-size:10px; font-weight:850; cursor:pointer; }
+        .study-code-copy:hover,.study-code-copy:focus-visible { color:#fff; border-color:var(--blue); background:var(--blue); outline:0; }
+        .study-code-copy.is-copied { color:var(--green); border-color:#a8d4bb; background:var(--green-soft); }
+        .study-code-block pre { width:100%; max-width:100%; margin:0; padding:13px 14px 15px; overflow:auto; color:#edf4ff; background:#172033; font:12px/1.7 "Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace; tab-size:4; white-space:pre; overscroll-behavior-inline:contain; scrollbar-color:#718096 #172033; }
+        .study-code-block code { color:inherit; font:inherit; letter-spacing:0; }
+        .study-inline-code { display:inline; padding:1px 4px; color:#076b6c; border:1px solid #cee5e3; border-radius:3px; background:#edf8f7; font:600 .9em/1.45 "Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace; overflow-wrap:anywhere; }
         .topic-section { padding:16px 20px 4px; }.topic-section + .topic-section { margin-top:12px; border-top:1px solid var(--line); }.topic-section-head { display:flex; align-items:end; justify-content:space-between; gap:12px; }.topic-section-head h3 { margin:3px 0 0; font-size:17px; }.topic-kicker { color:var(--teal); font-size:10px; font-weight:900; }.topic-section .concepts { margin-top:10px; }.related-cards { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:11px; padding-top:10px; border-top:1px dashed var(--line); }.related-label { color:var(--muted); font-size:11px; font-weight:800; }.related-tags { display:flex; min-width:0; flex-wrap:wrap; gap:5px; }.related-tag { max-width:100%; min-height:27px; padding:4px 7px; overflow:hidden; color:var(--blue); border:1px solid #b9d0ed; border-radius:4px; background:#f7faff; font-size:11px; font-weight:850; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }.related-tag:hover,.related-tag:focus-visible { border-color:var(--blue); background:var(--blue-soft); outline:0; }.relation-dialog { width:min(520px,calc(100vw - 28px)); max-height:min(620px,calc(100vh - 40px)); padding:0; color:var(--ink); border:1px solid var(--line); border-radius:7px; background:#fff; box-shadow:0 24px 70px rgba(23,32,51,.22); }.relation-dialog::backdrop { background:rgba(23,32,51,.42); }.relation-dialog-body { display:grid; gap:15px; padding:20px; }.relation-dialog-head { display:grid; grid-template-columns:minmax(0,1fr) 34px; gap:12px; align-items:start; }.relation-dialog-kicker { display:block; margin-bottom:5px; color:var(--teal); font-size:10px; font-weight:900; }.relation-dialog h2 { margin:0; overflow-wrap:anywhere; font-size:19px; }.dialog-close { width:34px; height:34px; display:grid; place-items:center; padding:0; color:var(--muted); border:1px solid var(--line); border-radius:4px; background:#fff; font-size:22px; line-height:1; cursor:pointer; }.dialog-close:hover { color:var(--ink); background:#f5f7fb; }.relation-dialog-content { min-width:0; margin:0; color:var(--muted); font-size:14px; line-height:1.75; overflow-wrap:anywhere; }.relation-dialog-actions { display:flex; justify-content:flex-end; gap:8px; padding-top:2px; }.dialog-secondary { min-height:40px; padding:0 13px; color:var(--muted); border:1px solid var(--line); border-radius:4px; background:#fff; font-weight:800; cursor:pointer; }.relation-dialog-actions .submit { display:inline-flex; align-items:center; }.session-topic { border-bottom:1px solid var(--line); }.session-topic:last-child { border-bottom:0; }.session-topic-head { padding:11px 12px 5px; color:var(--teal); font-size:11px; font-weight:900; }.session-topic .history-note:last-child { border-bottom:0; }
         .source-refs { display:flex; align-items:center; flex-wrap:wrap; gap:5px; margin-top:10px; }.source-label { color:var(--muted); font-size:10px; font-weight:800; }.source-tag { max-width:100%; min-height:25px; display:inline-flex; align-items:center; padding:3px 7px; color:#46627e; border:1px solid #c8d6e5; border-radius:4px; background:#fff; font-size:10px; font-weight:850; white-space:nowrap; cursor:pointer; }.source-tag:hover,.source-tag:focus-visible { color:var(--blue); border-color:var(--blue); outline:0; }.source-localize-button { min-height:27px; padding:3px 8px; color:var(--blue); border:1px solid #b9d0ed; border-radius:4px; background:var(--blue-soft); font-size:11px; font-weight:850; cursor:pointer; }.source-localize-button:disabled { color:var(--muted); background:#f3f5f8; cursor:not-allowed; }.source-localize-status { align-self:center; color:var(--muted); font-size:11px; font-weight:750; }.source-localize-status.error { color:var(--red); }.audit-section { padding:4px 20px 20px; }.audit-page + .audit-page,.audit-record + .audit-record { margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); }.audit-page-head { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; font-weight:850; }.audit-page-head a { color:var(--blue); font-size:11px; }.audit-text { margin:7px 0 0; color:var(--muted); font-size:12px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }.audit-record { color:var(--muted); font-size:12px; line-height:1.65; }.audit-record strong { color:var(--ink); }.audit-record a { color:var(--blue); font-weight:800; }
         .source-locator-dialog { width:min(1120px,calc(100vw - 24px)); height:min(820px,calc(100vh - 24px)); max-width:none; max-height:none; padding:0; color:var(--ink); border:1px solid #b8c5d5; border-radius:7px; background:#fff; box-shadow:0 28px 90px rgba(23,32,51,.28); }.source-locator-dialog::backdrop { background:rgba(23,32,51,.58); }.source-locator-shell { height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr); background:#fff; }.source-locator-head { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); background:#fff; }.source-locator-heading { min-width:0; background:#fff; }.source-locator-kicker { display:block; margin-bottom:3px; color:var(--teal); font-size:10px; font-weight:900; }.source-locator-title { margin:0; overflow:hidden; font-size:17px; text-overflow:ellipsis; white-space:nowrap; }.source-locator-actions { display:flex; align-items:center; gap:6px; background:#fff; }.source-locator-tool { min-width:34px; height:34px; display:grid; place-items:center; padding:0 9px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#fff; font-size:17px; font-weight:850; cursor:pointer; }.source-locator-tool.fit { font-size:11px; }.source-locator-tool:hover,.source-locator-tool:focus-visible { color:var(--blue); border-color:var(--blue); outline:0; }.source-locator-evidence { min-height:38px; margin:0; padding:9px 16px; color:#42536a; border-bottom:1px solid var(--line); background:#f8fafc; font-size:12px; line-height:1.55; overflow-wrap:anywhere; }.source-locator-viewport { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; background:#e8edf3; }.source-locator-canvas { position:relative; margin:16px auto; background:#fff; box-shadow:0 3px 18px rgba(23,32,51,.16); }.source-locator-image { position:absolute; inset:0; width:100%; height:100%; display:block; user-select:none; }.source-locator-highlight { position:absolute; z-index:2; border:4px solid #d7263d; background:rgba(255,222,53,.26); box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 7px rgba(215,38,61,.24); pointer-events:none; animation:source-locator-pulse 1.1s ease-out 2; }.source-locator-highlight span { position:absolute; left:-4px; bottom:calc(100% + 7px); padding:3px 7px; color:#fff; border-radius:3px; background:#d7263d; font-size:11px; font-weight:900; white-space:nowrap; }@keyframes source-locator-pulse { 0% { box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 7px rgba(215,38,61,.38); } 70% { box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 18px rgba(215,38,61,0); } 100% { box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 7px rgba(215,38,61,.24); } }
@@ -84,7 +93,7 @@
         @media (max-width:620px) { .note-search-body { padding:14px; }.note-search-primary { grid-template-columns:minmax(0,1fr) auto; }.note-search-primary .submit { min-width:72px; }.note-search-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }.note-search-support { display:block; }.note-search-history { justify-content:flex-start; margin-top:7px; }.note-search-result { grid-template-columns:1fr; gap:10px; }.note-search-thumb { width:100%; height:180px; }.note-search-result-head { gap:8px; } }
         .source-locator-highlight { border:3px solid rgba(215,38,61,.48); background:transparent; box-shadow:none; animation:none; }
         .source-locator-highlight[hidden] { display:none; }
-        @media (max-width:620px) { .rename-note-form { align-items:stretch; flex-direction:column; }.rename-note-form input,.rename-note-save { width:100%; } }
+        @media (max-width:620px) { .rename-note-form { align-items:stretch; flex-direction:column; }.rename-note-form input,.rename-note-save { width:100%; }.study-code-block pre { padding:11px 12px 13px; font-size:11px; }.study-code-head { padding-left:9px; } }
 </style>
     <style>
         .relation-dialog { width:min(640px,calc(100vw - 28px)); }
@@ -417,8 +426,93 @@
     </section>
     <button id="card-ai-toggle" class="ai-floating-toggle" type="button" aria-controls="card-ai-dialog" aria-expanded="false" aria-label="開啟 AI 助教" title="開啟 AI 助教">AI</button>
     <script>
+        const STUDY_CODE_LANGUAGE_LABELS = Object.freeze({
+            c: 'C', cpp: 'C++', 'c++': 'C++', cs: 'C#', csharp: 'C#',
+            py: 'Python', python: 'Python', js: 'JavaScript', javascript: 'JavaScript',
+            ts: 'TypeScript', typescript: 'TypeScript', java: 'Java', sql: 'SQL',
+            pseudocode: '虛擬碼', pseudo: '虛擬碼', text: '程式碼', plaintext: '程式碼',
+        });
+        const appendStudyInlineCode = (fragment, value) => {
+            const pattern = /`([^`\n]+)`/g;
+            let cursor = 0;
+            let match;
+            while ((match = pattern.exec(value)) !== null) {
+                if (match.index > cursor) fragment.append(document.createTextNode(value.slice(cursor, match.index)));
+                const code = document.createElement('code');
+                code.className = 'study-inline-code';
+                code.textContent = match[1];
+                fragment.append(code);
+                cursor = pattern.lastIndex;
+            }
+            if (cursor < value.length) fragment.append(document.createTextNode(value.slice(cursor)));
+        };
+        window.renderStudyCodeBlocks = (element) => {
+            if (!element || element.dataset.studyCodeRendered === 'true') return;
+            const source = element.textContent || '';
+            if (!source.includes('`')) {
+                element.dataset.studyCodeRendered = 'true';
+                return;
+            }
+            const fencePattern = /```[ \t]*([A-Za-z0-9_+#.\-]*)[ \t]*\n([\s\S]*?)```/g;
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+            let match;
+            while ((match = fencePattern.exec(source)) !== null) {
+                appendStudyInlineCode(fragment, source.slice(cursor, match.index));
+                const rawLanguage = (match[1] || 'text').toLowerCase();
+                const block = document.createElement('div');
+                block.className = 'study-code-block';
+                const head = document.createElement('div');
+                head.className = 'study-code-head';
+                const language = document.createElement('span');
+                language.className = 'study-code-language';
+                language.textContent = STUDY_CODE_LANGUAGE_LABELS[rawLanguage] || rawLanguage || '程式碼';
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.className = 'study-code-copy';
+                copy.textContent = '複製';
+                copy.title = '複製程式碼';
+                copy.setAttribute('aria-label', '複製程式碼');
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.dataset.studyCode = '';
+                code.textContent = match[2].replace(/^\n/, '').replace(/\n[ \t]*$/, '');
+                pre.append(code);
+                head.append(language, copy);
+                block.append(head, pre);
+                fragment.append(block);
+                cursor = fencePattern.lastIndex;
+            }
+            appendStudyInlineCode(fragment, source.slice(cursor));
+            element.replaceChildren(fragment);
+            element.dataset.studyCodeRendered = 'true';
+        };
+        document.addEventListener('click', async (event) => {
+            const button = event.target.closest?.('.study-code-copy');
+            if (!button) return;
+            const value = button.closest('.study-code-block')?.querySelector('[data-study-code]')?.textContent || '';
+            try {
+                if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
+                await navigator.clipboard.writeText(value);
+            } catch (_error) {
+                const textarea = document.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.append(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            button.textContent = '已複製';
+            button.classList.add('is-copied');
+            window.setTimeout(() => {
+                button.textContent = '複製';
+                button.classList.remove('is-copied');
+            }, 1400);
+        });
         window.renderStudyMath = (root = document) => {
-            if (!window.renderMathInElement) return;
             const queryAll = (selector) => [
                 ...(root.matches?.(selector) ? [root] : []),
                 ...root.querySelectorAll(selector),
@@ -437,8 +531,9 @@
             };
             queryAll('.review-card-title > strong, .topic-section .concept .concept-fold-title').forEach((element) => { element.dataset.mathContent = ''; });
             queryAll('[data-math-content]').forEach((element) => {
-                if (element.dataset.mathRendered === 'true') return;
                 if (isDeferred(element)) return;
+                window.renderStudyCodeBlocks(element);
+                if (!window.renderMathInElement || element.dataset.mathRendered === 'true') return;
                 window.renderMathInElement(element, {
                     delimiters: [
                         { left: '$$', right: '$$', display: true },
@@ -446,6 +541,7 @@
                         { left: '\\[', right: '\\]', display: true },
                         { left: '\\(', right: '\\)', display: false },
                     ],
+                    ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
                     throwOnError: false,
                     strict: 'ignore',
                 });
@@ -759,6 +855,7 @@
                 section.hidden = !normalized;
                 element.textContent = normalized;
                 delete element.dataset.mathRendered;
+                delete element.dataset.studyCodeRendered;
             };
             const detailUrlFromJump = (jumpUrl) => {
                 try {
@@ -774,6 +871,7 @@
             const renderCard = (card) => {
                 title.textContent = normalizeMathEscapes(card.title) || '關聯重點卡';
                 delete title.dataset.mathRendered;
+                delete title.dataset.studyCodeRendered;
                 topic.textContent = normalizeMathEscapes(card.topic) || '';
                 setSectionText('summary', summary, card.core_summary);
                 setSectionText('explanation', explanation, card.explanation);
@@ -804,6 +902,8 @@
                 content.textContent = normalizeMathEscapes(trigger.dataset.relatedAssociation) || '這兩張重點卡適合一起複習。';
                 delete title.dataset.mathRendered;
                 delete content.dataset.mathRendered;
+                delete title.dataset.studyCodeRendered;
+                delete content.dataset.studyCodeRendered;
                 jump.href = trigger.dataset.relatedUrl || '#';
                 topic.textContent = '';
                 dialog.querySelectorAll('[data-relation-section]').forEach((section) => { section.hidden = true; });
@@ -940,6 +1040,7 @@
                 evidence.textContent = trigger.dataset.sourceEvidence
                     || (box ? '此框為重點卡所引用的原始筆記位置。' : '顯示完整原始筆記頁面。');
                 delete evidence.dataset.mathRendered;
+                delete evidence.dataset.studyCodeRendered;
                 image.alt = box
                     ? `第 ${imageIndex} 張原始筆記，已框選重點卡出處`
                     : `第 ${imageIndex} 張原始筆記`;
@@ -1210,6 +1311,8 @@
                 heading.dataset.mathContent = '';
                 delete heading.dataset.mathRendered;
                 delete contextTitle.dataset.mathRendered;
+                delete heading.dataset.studyCodeRendered;
+                delete contextTitle.dataset.studyCodeRendered;
                 renderConversation(conversation);
                 setPanelOpen(true);
                 window.setTimeout(() => input.focus(), 0);

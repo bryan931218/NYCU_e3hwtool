@@ -80,7 +80,9 @@ from ..shared.source_localization import (
 )
 from ..shared.study_math import (
     is_pure_math_expression,
+    protect_markdown_code,
     repair_math_delimiters,
+    restore_markdown_code,
     wrap_bare_math_candidate,
 )
 from ..shared.study_note_composer import (
@@ -4472,8 +4474,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "concept、procedure、comparison、formula、code、fact 沒有來源例子時必須傳 null，不得為了填欄位"
             "創造數字、情境或程式。example 區塊則必須在 example 放完整可作答題設或完整案例。pitfall 與 "
             "memory_hint 也只有來源明寫時才填，否則傳 null。\n"
-            "所有公式使用 KaTeX 可渲染的 \\( ... \\) 或 \\[ ... \\]；程式碼保留自然換行，不要把程式碼改成"
-            "數學式。title 與 topic 必須是實際細分內容，不能直接等於六科科目名稱，也不能使用『其他』或"
+            "所有公式使用 KaTeX 可渲染的 \\( ... \\) 或 \\[ ... \\]。程式碼不是數學式：code 區塊的"
+            "完整程式、函式、類別、虛擬碼或連續兩行以上操作，必須放在帶語言名稱的 Markdown fenced "
+            "code block，例如 ```cpp、```python 或 ```pseudocode；未知語言用 ```text。保留自然換行、"
+            "縮排、大小寫、括號、分號、陣列索引、指標、運算子與註解。行內識別字或短指令使用單反引號。"
+            "title 與 topic 必須是實際細分內容，不能直接等於六科科目名稱，也不能使用『其他』或"
             "『綜合重點』。recall_cue 可為 null；系統會安全產生後備提示。\n"
             "每個 sources.evidence 都必須逐字複製對應 transcription 中連續出現的原文；工具會拒絕改寫、"
             "摘要、錯頁或不存在的 evidence。coverage_checklist 中 is_example=true 的項目必須各自建立 "
@@ -4547,11 +4552,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return "control_character"
         if "\ufffd" in text or any(marker in text for marker in ("Ã", "Â", "â€", "ðŸ", "锟斤拷", "ï»¿")):
             return "encoding_corruption"
-        if re.search(r"\\(?:\(|\[)\s*(?:\.{3}|\\cdots|null|undefined|[?？])\s*\\(?:\)|\])", text, re.IGNORECASE):
+        math_validation_text, _protected_code = protect_markdown_code(text)
+        if re.search(r"\\(?:\(|\[)\s*(?:\.{3}|\\cdots|null|undefined|[?？])\s*\\(?:\)|\])", math_validation_text, re.IGNORECASE):
             return "formula_placeholder"
-        if re.search(r"\\\(\s*\\\)|\\\[\s*\\\]", text):
+        if re.search(r"\\\(\s*\\\)|\\\[\s*\\\]", math_validation_text):
             return "empty_formula"
-        latex_issue = _study_latex_markup_issue(text)
+        latex_issue = _study_latex_markup_issue(math_validation_text)
         if latex_issue:
             return latex_issue
 
@@ -4564,7 +4570,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if most_repeated >= 10 and most_repeated / len(compact_lines) >= 0.45:
                 return "repeated_lines"
 
-        inline_atoms = [match.strip() for match in re.findall(r"\\\((.{1,48}?)\\\)", text, flags=re.DOTALL)]
+        inline_atoms = [
+            match.strip()
+            for match in re.findall(r"\\\((.{1,48}?)\\\)", math_validation_text, flags=re.DOTALL)
+        ]
         if inline_atoms:
             atom_counts: Dict[str, int] = {}
             for atom in inline_atoms:
@@ -4648,7 +4657,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     def _normalize_study_math_markup(value: Any) -> str:
         """Make model formula output renderable while leaving ordinary prose alone."""
-        text = _repair_study_decoded_text(value).replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+        text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+        text, protected_code = protect_markdown_code(text)
+        text = _repair_study_decoded_text(text).replace("\t", " ")
         text = re.sub(r"\\n(?=\s|\\[\[(])", "\n", text)
         # Older model output was sometimes JSON-escaped twice, leaving literal
         # ``\\(`` and ``\\beta`` in the browser. Collapse one extra escape only
@@ -4819,7 +4830,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             normalized,
             flags=re.DOTALL,
         )
-        return re.sub(r"\n{3,}", "\n\n", normalized).strip()
+        normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip()
+        return restore_markdown_code(normalized, protected_code)
 
     def _strip_study_process_narration(value: Any) -> str:
         """Remove model workflow narration without rewriting study content."""
@@ -9247,7 +9259,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     f"你是跨學科筆記的忠實轉錄員。這次網站選定科目是「{subject}」，網站允許的科目只有：{ '、'.join(STUDY_PLAN_SUBJECTS) }。"
                     "逐張轉錄看得清楚的標題、敘述、定義、步驟、例子、表格文字、專有名詞與符號，不要整理、解釋、修正知識內容或補充原圖沒有的觀念；只允許依下述規則做最小的字元級上下文補全。例題辨識要逐區塊執行：檢查『例題、範例、算例、反例、練習題、題目、問題、案例、解答』等中文標籤，以及 Example、Ex.、Exercise、Problem、Question、Solution 等英文標籤；也檢查有編號的小題、問號或明確的求解／計算／證明／判斷要求，和題目後接解答或計算過程的版面。每一個獨立題設都要原樣轉錄，不能只記錄最後答案，也不能把相鄰不同題目的數值或解法合併。"
                     "transcription 只能依自然閱讀順序寫入圖片上實際存在的字元；不得用括號或句子描述頁面位置、顏色、圖示、照片、版面或內容大意，例如『頁中列出』『右側原稿示意』『下方有例子』都不屬於轉錄。圖形若沒有可辨識文字就不要替它寫說明。"
-                    "凡是原圖中的數學式、物理量關係、化學方程式、統計式、程式碼片段或其他具有結構的符號表達，請使用可渲染的 LaTeX：行內使用 \\( ... \\)，獨立式使用 \\[ ... \\]；保留等號、條件、上下標、矩陣、反應箭頭與原本順序。普通文字、專有名詞與非公式內容不要硬改成 LaTeX。"
+                    "凡是原圖中的數學式、物理量關係、化學方程式、統計式或其他數學符號表達，請使用可渲染的 LaTeX：行內使用 \\( ... \\)，獨立式使用 \\[ ... \\]；保留等號、條件、上下標、矩陣、反應箭頭與原本順序。普通文字、專有名詞與非公式內容不要硬改成 LaTeX。"
+                    "程式碼不是數學公式，禁止轉成 LaTeX。完整程式、函式、類別、虛擬碼或連續兩行以上的操作必須原樣放入 Markdown fenced code block：第一行使用 ```cpp、```c、```python、```java 或 ```pseudocode 等最符合原圖的語言，最後以 ``` 結束；未知語言使用 ```text。保留縮排、大小寫、括號、分號、運算子與註解。句中的變數名、函式名或單行短指令使用單反引號，例如 `push()`，不要使用數學定界符。"
                     "若局部字元、數字或符號無法直接辨認，先利用同頁前後文、同份筆記重複出現的記號、公式成對結構、表格欄列與相鄰推導判斷。只有候選內容可被這些局部證據唯一決定時才補入 transcription，不可用課本常識延伸整句或補入新觀念。"
                     "每個補全都要在 uncertain_fragments 記錄『已補全｜推定：...｜依據：...｜信心：高／中』；若仍有兩種以上合理結果，才在原位置寫〔無法推定〕，並記錄『未補全｜上下文：...』。補全後的 transcription 直接放可讀文字，不要插入待確認說明。"
                     "所有原文中的具體名稱、數值、單位、變數、符號、版本、日期、條件與例外都必須保留；不得擅自泛化、特例化、翻譯成不同概念或套用其他科目的知識。detected_topic 只能描述這份「{subject}」筆記實際出現的主題，不得建立第七個科目。"
@@ -9825,7 +9838,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "影像中清楚可辨的公式、方程式、反應式、統計式、程式碼或其他關鍵結構都要保留；卡片數量不設上限。由你依複習目標判斷拆分或合併，但不可漏掉來源中的核心內容。coverage_checklist 中每一個 is_example=true 的獨立例題、範例、反例、練習題、題目或英文 Example/Exercise/Problem 都必須各自出現在一張 card_type=example 卡中；不可只把題目塞進 concept 卡的 explanation 或 simple_example，也不可把兩個有不同題設的例題合成一張。題目若只有題設沒有解法，仍要建立例題卡，example_method 誠實填寫『來源未提供完整解法』，不得自行補解。"
                 f"先按頁建立完整內容清單，再依實際資訊量分配卡片。建議總卡數至少約 {audit_card_floor} 張、各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}，但不是固定張數。優先保留每個清楚公式、定義、方法、例題策略與結論；同一觀念的成對定義、同方法例題或同一定理下的緊密內容可由你合併，一張卡若包含不同複習目標則應拆開，不得為湊張數重複寫卡。"
                 f"coverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}。priority=required 的區塊應優先進入卡片；supporting 區塊可在不破壞單一卡片主題的前提下併入 explanation。is_example=true 的區塊是不可合併遺漏的逐題清單，coverage_ids 與 source_refs 必須真實對應，不可虛報。"
-                "所有公式與結構化符號一律使用 \\( ... \\) 或 \\[ ... \\] 包住的 LaTeX；長公式用 aligned 合理換行。矩陣與向量必須使用可渲染的 matrix/bmatrix/pmatrix 環境，欄之間用 &，列之間用 \\\\，不可把多個分量直接黏在同一格。不要使用裸露的 $...$、$$...$$ 或只寫線性純文字公式。普通文字保持自然繁體中文。memory_hint 只有原文存在明確記憶線索時才填寫，否則輸出空字串。"
+                "所有數學公式與數學結構符號一律使用 \\( ... \\) 或 \\[ ... \\] 包住的 LaTeX；長公式用 aligned 合理換行。矩陣與向量必須使用可渲染的 matrix/bmatrix/pmatrix 環境，欄之間用 &，列之間用 \\\\，不可把多個分量直接黏在同一格。不要使用裸露的 $...$、$$...$$ 或只寫線性純文字公式。"
+                "程式碼一律不得轉成 LaTeX。完整程式、函式、類別、虛擬碼或連續兩行以上操作使用 Markdown fenced code block，起始圍欄標明 cpp、c、python、java、javascript、sql 或 pseudocode；不確定時用 text。保留來源縮排、大小寫、括號、分號、陣列索引、指標符號、運算子與註解；不可為了排版改寫程式邏輯。句中的識別字或單行短指令使用單反引號。普通文字保持自然繁體中文。memory_hint 只有原文存在明確記憶線索時才填寫，否則輸出空字串。"
                 "每張卡必須提供 1 至 4 個 source_refs。緊密相關的連續內容可由同一卡引用多段，讓卡片在不混雜不同觀念的前提下保留更多資訊。evidence 必須逐字複製對應頁 transcription 中一段連續、且能直接在原圖看到的文字，連空白與 LaTeX 都不要改，作為可程式比對的來源。evidence 禁止改寫、摘要或描述頁面位置與圖形；不得輸出『頁中列出』『右側原稿示意』『下方有例子』等非原文字句。若卡片跨兩段，分成兩個 source_refs，不可自行寫一段銜接敘述。"
                 "source_pages 的 uncertain_fragments 若標為『已補全』且信心為高或中，代表該缺字已由第二輪模型依局部上下文獨立核對，可將 transcription 中補全後的連續文字正常整理成卡片；標為『未補全』或仍含〔無法推定〕的片段不得作為關鍵事實。不要在卡片正文提到補全過程。"
                 "整理時盡量沿用轉錄稿原本的名詞、短語、變數、條件排列與公式，不要為了流暢改成課本式同義說法。只有字元辨識不清、前後自相矛盾、公式結構不可能成立或可由來源直接驗算出錯時，才做最小必要補全或校正。每張卡的 search_keywords 保留 3 至 8 個最可能被使用者回想起來搜尋的原文詞、專有名詞、縮寫、變數組合或公式名稱；只能取自該卡內容、source_refs 或已完成的高信心校正，不得加入來源外同義詞。"
@@ -9848,7 +9862,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "你是跨學科筆記忠實度審核員。請重新查看隨附原始圖片，逐句核對 draft、source_pages 與圖片，輸出修訂後的完整 JSON。"
                 "圖片是最終依據：先修正 OCR 對係數、正負號、上下標、矩陣分量或 LaTeX 的誤讀，再確認卡片與原圖一致。"
                 "逐一核對名稱、數值、單位、符號、範圍、條件、例外、表格欄位與步驟；一般知識卡的具體內容必須原樣保留，不可改成更一般或更特殊的形式。例題方法卡可以省略非必要題目數值並抽出來源已展示的解題流程，但不得改變方法成立的條件或增加來源沒有的步驟。"
-                "對來源中明確寫出的公式、方程式、反應式、統計式、程式碼或推導做相應的內部一致性檢查；若結果與來源不相容，依原圖修正，原圖本身確實錯誤且允許校正時才建立 correction。不要把數學驗證規則套用到沒有公式的科目。"
+                "對來源中明確寫出的公式、方程式、反應式、統計式、程式碼或推導做相應的內部一致性檢查；若結果與來源不相容，依原圖修正，原圖本身確實錯誤且允許校正時才建立 correction。不要把數學驗證規則套用到沒有公式的科目。程式碼必須維持帶語言名稱的 Markdown fenced code block，禁止改成 LaTeX，並逐字核對縮排、大小寫、括號、分號、陣列索引、指標與運算子。"
                 "刪除任何無法由來源直接支持的句子、卡片、口訣或關聯；不得自行補上更完整的課本知識。"
                 "每個 source_refs.evidence 必須仍是對應 transcription 中逐字連續出現、而且能直接在原圖看到的片段，錯頁或不完全相同就修正引用。evidence 不得以括號描述頁面位置、圖示、照片、顏色、原稿或內容大意；遇到這類非原文字句要改成真正可見的連續文字。已由上下文唯一補全且列有高／中信心紀錄的文字可正常保留；只有仍含〔無法推定〕或沒有可靠來源的卡片才刪除。"
                 "正文與 search_keywords 都應優先保留原筆記實際使用的詞彙、記號和條件順序；不要用外部同義詞取代。search_keywords 只保留能在卡片、source_refs 或高信心校正結果中找到的搜尋詞。"
@@ -9885,6 +9899,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             formula_audit_instruction = (
                 "你是最後一道跨學科內容與忠實度稽核。根據原始圖片、source_pages 與 verified，輸出通過稽核的完整 JSON，不要輸出稽核過程。"
                 "逐卡檢查內容是否能由原圖直接支持，並檢查名稱、數值、單位、條件、範圍、符號、步驟、表格與結論是否一致。原圖有公式、方程式、反應式、統計式或程式碼時，才對其做相應的結構與內部一致性檢查；沒有這些內容時不要自行補公式。"
+                "程式碼與虛擬碼必須保留為帶語言名稱的 Markdown fenced code block，禁止轉成 LaTeX；保留縮排、大小寫、括號、分號、陣列索引、指標、運算子與註解。行內識別字或短指令使用單反引號。"
                 "所有推導、計算、分類、因果或比較都必須符合來源中明示的前提。來源本身清楚但內容有誤，且 allow_corrections=true 時，必須做最小必要修正、保留為正確卡片並記入 correction，不得以刪卡代替校正；只有結果完全沒有來源支持時才能刪除。"
                 "重新對照圖片，OCR 與圖片不同時以圖片為準；這類 OCR、上下文補字、漏字、標點或 LaTeX 排版修復不算筆記內容校正，不得建立 correction。correction 只記錄原圖筆記本身可直接驗證的知識、公式、計算或結論錯誤。若某個文字、數字或符號無法直接辨認，先以同頁前後文、重複記號、公式結構與相鄰推導做最小補全；已被唯一推定且有高／中信心紀錄時保留。仍有多種合理結果時才刪除受影響的卡片，不可在卡片中寫模糊或待確認說明。"
                 "除例題方法卡可從來源已展示的操作整理成可重用步驟外，禁止在具體內容與一般內容之間擅自轉換，禁止加入課本延伸、跨科聯想或來源沒有的教學解釋。方法卡只能描述 source_refs 實際出現的判斷與操作，不得替操作新增來源沒寫的理論名稱、資料結構、演算法、定理、空間分類、證明或另一套解法。"
@@ -10048,6 +10063,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "同一觀念的成對定義、連續推導或同方法例題可以合併成資訊完整的一張卡；不同章節或不同複習目標才拆卡。卡片數量不設上限，由你依來源資訊與複習目標決定。"
                     "source_refs.evidence 必須逐字連續存在於對應頁 transcription，並且能在原圖直接看到，不得用頁面位置、圖示或內容大意取代原文；coverage_ids 只能標記該卡實際整理的區塊，不可用無關卡片虛報。"
                     "例題必須使用 card_type=example，example_problem 要保留可直接作答的具體題設、數值／給定式、條件與要求，並和可重用解法 example_method、操作 reasoning_steps 分欄；simple_example 留空。若來源未提供解法，example_method 填『來源未提供完整解法』，不可臆造。一般卡使用 card_type=concept，兩個 example 欄位留空；simple_example 只有來源明示例子時才填寫，否則留空。"
+                    "來源含程式碼或虛擬碼時，完整程式、函式、類別或連續兩行以上操作保留為帶語言名稱的 Markdown fenced code block，禁止轉成 LaTeX；行內識別字或短指令使用單反引號。"
                     "卡片正文不得出現來源敘事、稽核說明、外部延伸或來源沒有的術語。錯誤只做可由原圖內容直接驗證的最小修正。不可因卡片數量而刪除重點。"
                     f"\nallow_corrections={str(allow_corrections).lower()}"
                     f"\npage_information_targets={json.dumps(coverage_plan['page_quotas'], ensure_ascii=False)}"
@@ -10317,6 +10333,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "逐題重新檢查題設前提、函數或映射輸入、維度、正負號、上下標、代入、算術、等號與結論。若用反例否定性質，必須先確認測試值滿足該性質要求的關係；例如檢查齊次性 f(-u)=-f(u) 時，左側輸入必須真的是 -u。"
                     "內容與公式已由前一階段校正；本次只整理 simple_example、example_problem、example_method 三欄，不可重寫其他卡片內容。"
                     "不得加入來源沒有的定理、術語、公式、數值或另一套解法。數學式使用 KaTeX LaTeX，行內用 \\( ... \\)，獨立式用 \\[ ... \\]。"
+                    "程式碼與虛擬碼不得轉成 LaTeX；完整程式、函式、類別或連續兩行以上操作使用帶語言名稱的 Markdown fenced code block，並保留縮排與所有程式符號。行內識別字或短指令使用單反引號。"
                     "每個指定 concept_index 必須恰好輸出一次。example 卡的 example_problem 與 example_method 必須非空；concept 卡允許 simple_example 為空字串。只輸出 schema JSON。\n\n"
                     f"allow_corrections={str(allow_corrections).lower()}\n"
                     + json.dumps(example_catalog, ensure_ascii=False, separators=(",", ":"))
@@ -10467,9 +10484,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "例題方法不得加入 source_evidence 沒有使用的定理、術語或步驟，也不得替來源中的操作命名新的理論、演算法、資料結構、空間分類或證明方式。每張卡完成後逐一比對名詞：來源只有公式或操作時就直接保留公式或操作，不得補上課本分類名稱；例如來源只有 rank(A)=n 或 rank(A)=m，就不可額外稱為滿列秩、滿行秩或滿柱秩。其他科目也使用相同規則。只有最小反例卡可保留否定性質必需的數值。若任何卡片的前提、定義、計算、矩陣維度、等號或結論錯誤，但可由 source_evidence 中已有的定義、公式或直接計算明確判定，allow_corrections=true 時必須做最小必要修正、輸出正確卡片，不得刪除。"
                 "修正時 correction_applied=true，correction_original 逐字放入來源中最小的錯誤片段，correction_reason 簡述可直接驗證的原因；未修正時 correction_applied=false 且兩個字串留空。OCR 誤讀、上下文補字、漏字、標點、用詞潤飾與 LaTeX 排版修復不算筆記內容錯誤，correction_applied 必須是 false。不得為修正補入來源沒有使用的新觀念、定理或另一套解法。已由前後文唯一補全且有高／中信心紀錄的文字必須正常保留；只有仍含〔無法推定〕的片段才維持略過結果。"
                 "summary 可重新整理成最後保留卡片的核心總結，但不得列出例題的具體答案，也不得加入新知識。concept 改成不含公式、變數、題號或題目數值的簡短純中文名稱，忠實描述原卡核心；topic 可重新整理成科目內精確的細分觀念。recall_cue 只保留來源已有的 2 至 4 個提示關鍵詞，不可使用問號或直接揭露 core_summary。core_summary、explanation、example_problem、example_method、reasoning_steps、common_confusion 與 memory_hint 都只能修正排版，不能補入 source_evidence 沒有的知識；沒有直接來源支持的欄位必須留空。例題維持 card_type=example，將具體可作答的必要題設、可重用解法、操作步驟分欄，simple_example 留空；example_method 只能用 1 至 2 句寫策略，不得包含 1)、2)、『步驟』等逐項內容，也不得重複 reasoning_steps。一般卡維持 concept，example_problem 與 example_method 留空；simple_example 只保留前一階段已有且可由 source_evidence 支持的例子，來源沒有例子時留空。"
-                "每個數學、離散數學、演算法或計算機科學符號表達都必須使用可由 KaTeX 渲染的 LaTeX：行內一律用 \\( ... \\)，獨立式一律用 \\[ ... \\]。矩陣與向量的每個分量必須分格，欄用 &、列用 \\\\，禁止把兩個分量或兩列直接相連。"
+                "每個數學符號表達都必須使用可由 KaTeX 渲染的 LaTeX：行內一律用 \\( ... \\)，獨立式一律用 \\[ ... \\]。矩陣與向量的每個分量必須分格，欄用 &、列用 \\\\，禁止把兩個分量或兩列直接相連。"
                 "包括變數與函數式、集合與邏輯式、上下標、向量、矩陣、映射、等式、不等式、複雜度、機率、求和、遞迴式及所有含運算符的式子。普通中文必須留在 LaTeX 定界符外；禁止輸出 \\(T為線性\\) 這類把中文直接放進數學模式的格式，應寫成 \\(T\\) 為線性。禁止在一組 \\( ... \\) 或 \\[ ... \\] 內再嵌套另一組定界符。"
                 "禁止使用 $ 或 $$；禁止留下像 T(a,b)=...、R^2、x_i、rank(A) 這種沒有分隔符的裸露公式。"
+                "程式碼與虛擬碼是唯一例外：完整程式、函式、類別或連續兩行以上操作必須使用帶語言名稱的 Markdown fenced code block，禁止放進 LaTeX。保留原有縮排、大小寫、括號、分號、陣列索引、指標符號、運算子與註解；行內識別字或短指令使用單反引號。"
                 "topic 必須依全部卡片自然整理成 3 至 8 個單一觀念群組；不得等於任何六科科目名稱、整份筆記標題、其他、綜合重點或課堂筆記，也不得用斜線、頓號或『與』把無直接從屬關係的分類硬併在一起。相同知識脈絡共用 topic，明顯不同的定義、方法或章節分開。"
                 "cards 的數量、順序與 concept_index 必須完全不變。不要在 explanation 或 summary 中提及修正過程，也不要重複 source_evidence。輸出文字禁止出現『筆記給出』『筆記註明』『筆記記載』『根據筆記』『保留來源內容』『如來源所列』或任何描述整理過程與引用來源的套話，直接陳述觀念。只輸出 schema 指定的 JSON。\n\n待整理內容：\n"
                 f"allow_corrections={str(allow_corrections).lower()}。allow_corrections=false 時 correction_applied 必須全部為 false。\n"
@@ -11383,7 +11401,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "它們的觀念關聯在哪，以及複習時可以如何從一張聯想到另一張。說明必須從任一張卡閱讀都成立，形成雙向記憶橋接；"
             "請直接說明具體知識，不可使用『兩者相關』等空泛句子，也不要使用『前者／後者』等依賴輸出順序的代稱。"
             "每一組配對的 association 必須是該配對獨有的內容，不可重複使用同一句或只替換卡片名稱的套版句；若無法說出具體橋接關係，就不要輸出該配對。"
-            "association 中若出現數學、統計、離散數學、演算法或計算機科學符號，必須使用可由 KaTeX 渲染的 LaTeX：行內一律用 \\( ... \\)，獨立公式用 \\[ ... \\]；不要輸出裸露的 Unicode 或純文字公式。"
+            "association 中若出現數學式，必須使用可由 KaTeX 渲染的 LaTeX：行內一律用 \\( ... \\)，獨立公式用 \\[ ... \\]；不要輸出裸露的 Unicode 或純文字公式。程式識別字、函式名或短指令不是數學式，使用單反引號，例如 `push()`，禁止轉成 LaTeX。association 不放多行程式碼。"
             "每個 association 最多 120 個中文字，用 1 至 2 個完整短句寫完，最後必須以『。』『！』或『？』收尾；不可在公式、名詞或句子中途結束。"
             "source_id 與 target_id 只使用清單提供的 id，不得改寫；association 只能使用卡片標題或觀念名稱，絕對不可出現 s6:c6 這類內部 id。\n\n重點卡清單：\n"
             + json.dumps(card_catalog, ensure_ascii=False, separators=(",", ":"))

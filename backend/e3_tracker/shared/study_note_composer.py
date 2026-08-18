@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence, Set
 
+from .study_math import protect_markdown_code, restore_markdown_code
+
 
 CONTENT_KINDS = (
     "definition",
@@ -178,8 +180,10 @@ def _clean_text(value: Any, *, limit: int, required: bool = False) -> str:
 
 def _clean_multiline_text(value: Any, *, limit: int, required: bool = False) -> str:
     text = str(value or "").strip()
+    text, protected_code = protect_markdown_code(text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = restore_markdown_code(text, protected_code)
     if required and not text:
         raise StudyNoteToolError("required text is empty")
     return text[:limit]

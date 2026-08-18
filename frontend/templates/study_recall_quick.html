@@ -139,6 +139,15 @@
         .completion-actions a.primary,.empty-state a { color:#fff; border-color:var(--blue); background:var(--blue); }
         .empty-state p { margin-bottom:21px; }
         .session-foot { display:flex; justify-content:center; gap:14px; margin-top:13px; color:#8a99a7; font-size:10px; font-weight:800; }
+        .study-code-block { width:100%; max-width:100%; margin:10px 0; overflow:hidden; border:1px solid #cbd7e5; border-left:3px solid var(--mint); border-radius:8px; background:#172033; box-shadow:0 5px 14px rgba(23,32,51,.08); text-align:left; }
+        .study-code-head { min-height:34px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 8px 5px 11px; border-bottom:1px solid #dce4ef; background:#f4f7fb; }
+        .study-code-language { min-width:0; overflow:hidden; color:#53657d; font-size:10px; font-weight:900; letter-spacing:.04em; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
+        .study-code-copy { flex:0 0 auto; min-height:24px; padding:2px 7px; color:var(--blue); border:1px solid #bfd0e4; border-radius:4px; background:#fff; font-size:10px; font-weight:850; cursor:pointer; }
+        .study-code-copy:hover,.study-code-copy:focus-visible { color:#fff; border-color:var(--blue); background:var(--blue); outline:0; }
+        .study-code-copy.is-copied { color:var(--green); border-color:#a8d4bb; background:var(--green-soft); }
+        .study-code-block pre { width:100%; max-width:100%; margin:0; padding:13px 14px 15px; overflow:auto; color:#edf4ff; background:#172033; font:12px/1.7 "Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace; tab-size:4; white-space:pre; overscroll-behavior-inline:contain; scrollbar-color:#718096 #172033; }
+        .study-code-block code { color:inherit; font:inherit; letter-spacing:0; }
+        .study-inline-code { display:inline; padding:1px 4px; color:#076b6c; border:1px solid #cee5e3; border-radius:3px; background:#edf8f7; font:600 .9em/1.45 "Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace; overflow-wrap:anywhere; }
         @media (max-width:640px) {
             .study-nav { min-height:58px; padding:8px 12px; }
             .brand span:last-child { display:none; }
@@ -175,6 +184,7 @@
             .result-grid { width:100%; gap:5px; }
             .result-item { min-width:0; padding:11px 4px; }
             .session-foot { display:none; }
+            .study-code-block pre { padding:11px 12px 13px; font-size:11px; }
         }
         @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
     </style>
@@ -211,10 +221,92 @@
         {% else %}<section class="empty-state"><div><div class="completion-icon">✓</div><h2>今天的記憶已清空</h2><p>目前沒有到期卡片。系統會在最值得複習的時間把它們帶回來，不必重複刷已經熟悉的內容。</p><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></section>{% endif %}
     </main>
     <script>
+        const QUICK_CODE_LANGUAGE_LABELS = Object.freeze({ c:'C', cpp:'C++', 'c++':'C++', py:'Python', python:'Python', js:'JavaScript', javascript:'JavaScript', ts:'TypeScript', typescript:'TypeScript', java:'Java', sql:'SQL', pseudocode:'虛擬碼', pseudo:'虛擬碼', text:'程式碼', plaintext:'程式碼' });
+        const appendQuickInlineCode = (fragment, value) => {
+            const pattern = /`([^`\n]+)`/g;
+            let cursor = 0;
+            let match;
+            while ((match = pattern.exec(value)) !== null) {
+                if (match.index > cursor) fragment.append(document.createTextNode(value.slice(cursor, match.index)));
+                const code = document.createElement('code');
+                code.className = 'study-inline-code';
+                code.textContent = match[1];
+                fragment.append(code);
+                cursor = pattern.lastIndex;
+            }
+            if (cursor < value.length) fragment.append(document.createTextNode(value.slice(cursor)));
+        };
+        window.renderStudyCodeBlocks = (element) => {
+            if (!element || element.dataset.studyCodeRendered === 'true') return;
+            const source = element.textContent || '';
+            if (!source.includes('`')) {
+                element.dataset.studyCodeRendered = 'true';
+                return;
+            }
+            const fencePattern = /```[ \t]*([A-Za-z0-9_+#.\-]*)[ \t]*\n([\s\S]*?)```/g;
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+            let match;
+            while ((match = fencePattern.exec(source)) !== null) {
+                appendQuickInlineCode(fragment, source.slice(cursor, match.index));
+                const rawLanguage = (match[1] || 'text').toLowerCase();
+                const block = document.createElement('div');
+                block.className = 'study-code-block';
+                const head = document.createElement('div');
+                head.className = 'study-code-head';
+                const language = document.createElement('span');
+                language.className = 'study-code-language';
+                language.textContent = QUICK_CODE_LANGUAGE_LABELS[rawLanguage] || rawLanguage || '程式碼';
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.className = 'study-code-copy';
+                copy.textContent = '複製';
+                copy.title = '複製程式碼';
+                copy.setAttribute('aria-label', '複製程式碼');
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.dataset.studyCode = '';
+                code.textContent = match[2].replace(/^\n/, '').replace(/\n[ \t]*$/, '');
+                pre.append(code);
+                head.append(language, copy);
+                block.append(head, pre);
+                fragment.append(block);
+                cursor = fencePattern.lastIndex;
+            }
+            appendQuickInlineCode(fragment, source.slice(cursor));
+            element.replaceChildren(fragment);
+            element.dataset.studyCodeRendered = 'true';
+        };
+        document.addEventListener('click', async (event) => {
+            const button = event.target.closest?.('.study-code-copy');
+            if (!button) return;
+            const value = button.closest('.study-code-block')?.querySelector('[data-study-code]')?.textContent || '';
+            try {
+                if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
+                await navigator.clipboard.writeText(value);
+            } catch (_error) {
+                const textarea = document.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.append(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            button.textContent = '已複製';
+            button.classList.add('is-copied');
+            window.setTimeout(() => {
+                button.textContent = '複製';
+                button.classList.remove('is-copied');
+            }, 1400);
+        });
         window.renderQuickMath = () => {
-            if (typeof window.renderMathInElement !== 'function') return;
             document.querySelectorAll('[data-math-content]:not([data-math-rendered])').forEach((element) => {
-                window.renderMathInElement(element, { delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false},{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false });
+                window.renderStudyCodeBlocks(element);
+                if (typeof window.renderMathInElement !== 'function') return;
+                window.renderMathInElement(element, { delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false},{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], ignoredTags:['script','noscript','style','textarea','pre','code'], throwOnError:false });
                 element.dataset.mathRendered = 'true';
             });
         };
