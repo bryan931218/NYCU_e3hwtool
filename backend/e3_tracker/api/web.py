@@ -4882,6 +4882,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         def repair_matrix_rows(match: re.Match[str]) -> str:
             environment = match.group(1)
             body = match.group(2)
+            # Decode duplicated command escapes inside a protected matrix, but
+            # retain exactly two slashes for a matrix row boundary.
+            body = re.sub(r"\\{2,}(?=[A-Za-z])", r"\\", body)
+            body = re.sub(r"(?:\\\\){2,}(?=\s*-?\d)", r"\\\\", body)
             # A single slash followed by a number is never a valid TeX command
             # in these matrix environments; it is a collapsed row separator.
             body = re.sub(r"(?<!\\)\\(?=\s*-?\d)", r"\\\\", body)
@@ -4972,7 +4976,85 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "",
             text,
         ).strip()
-        return _normalize_study_math_markup(text)
+        text = _normalize_study_math_markup(text)
+
+        # Library answers occasionally arrive with one logical equation split
+        # into several adjacent math fragments, for example
+        # ``\[\det\]\(A\)\(=\det\)\(B,\quad \operatorname{tr}\)...``.
+        # KaTeX correctly renders the delimited fragments, but commands left
+        # between them remain visible as raw text.  Rejoin math-only lines and
+        # wrap any remaining TeX island in mixed prose without changing the
+        # surrounding Chinese explanation.
+        math_span = re.compile(
+            r"((?<!\\)\\\[.*?(?<!\\)\\\]|(?<!\\)\\\(.*?(?<!\\)\\\))",
+            re.DOTALL,
+        )
+        delimiter = re.compile(r"(?<!\\)\\[()\[\]]")
+        raw_tex_command = re.compile(
+            r"\\(?:operatorname|mathrm|mathbf|mathbb|mathcal|text|frac|sqrt|"
+            r"det|ker|rank|dim|tr|quad|qquad|neq|ne|leq|geq|lambda|sigma|"
+            r"Delta|begin|end)\b"
+        )
+        prose_boundary = re.compile(r"([\u3400-\u9fff]+)")
+
+        def plain_math_islands(value: str) -> str:
+            pieces = prose_boundary.split(value)
+            repaired: List[str] = []
+            for piece in pieces:
+                if not piece or prose_boundary.fullmatch(piece) or not raw_tex_command.search(piece):
+                    repaired.append(piece)
+                    continue
+                citation_start = piece.find("[", raw_tex_command.search(piece).start())
+                suffix = piece[citation_start:] if citation_start >= 0 else ""
+                candidate = piece[:citation_start] if citation_start >= 0 else piece
+                leading_match = re.match(r"^[\s，。；：、（）!?！？]*", candidate)
+                trailing_match = re.search(r"[\s，。；：、（）!?！？]*$", candidate)
+                leading = leading_match.group(0) if leading_match else ""
+                trailing = trailing_match.group(0) if trailing_match else ""
+                end = len(candidate) - len(trailing) if trailing else len(candidate)
+                body = candidate[len(leading) : end]
+                if body:
+                    repaired.append(f"{leading}\\({body}\\){trailing}{suffix}")
+                else:
+                    repaired.append(piece)
+            return "".join(repaired)
+
+        def flatten_display_math(match: re.Match[str]) -> str:
+            body = re.sub(r"(?<!\\)\\[()]", "", match.group(1)).strip()
+            return f"\\[{body}\\]"
+
+        text = re.sub(
+            r"(?<!\\)\\\[(.*?)(?<!\\)\\\]",
+            flatten_display_math,
+            text,
+            flags=re.DOTALL,
+        )
+
+        repaired_answer_lines: List[str] = []
+        for line in text.split("\n"):
+            stripped = line.strip()
+            math_parts = math_span.findall(line)
+            outside_math = "".join(math_span.split(line)[::2])
+            is_standalone_equation = bool(
+                stripped
+                and "|" not in stripped
+                and not re.match(r"^(?:#{1,4}|[-*]|\d+[.)])\s+", stripped)
+                and len(math_parts) >= 2
+                and not re.search(r"[\u3400-\u9fff]", stripped)
+                and raw_tex_command.search(delimiter.sub("", stripped))
+            )
+            if is_standalone_equation:
+                body = delimiter.sub("", stripped).strip()
+                repaired_answer_lines.append(f"\\[{body}\\]")
+                continue
+            if raw_tex_command.search(outside_math):
+                chunks = math_span.split(line)
+                line = "".join(
+                    chunk if index % 2 else plain_math_islands(chunk)
+                    for index, chunk in enumerate(chunks)
+                )
+            repaired_answer_lines.append(line)
+        return "\n".join(repaired_answer_lines).strip()
 
     def _strip_study_process_narration(value: Any) -> str:
         """Remove model workflow narration without rewriting study content."""

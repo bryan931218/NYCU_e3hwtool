@@ -697,8 +697,48 @@
             const enabled = panel.dataset.aiEnabled === '1';
             let lastAnswer = '';
 
+            const normalizeLibraryMathText = (value) => {
+                let source = String(value || '').replace(/\\_(?=[A-Za-z0-9{])/g, '_');
+                // Responses can be escaped more than once while passing through
+                // the model/API boundary. Keep matrix row separators intact and
+                // collapse only slashes that introduce a TeX command/delimiter.
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                    const repaired = source.replace(
+                        /\\{2,}(?=(?:[()[\]]|operatorname\b|mathrm\b|mathbf\b|mathbb\b|mathcal\b|text\b|frac\b|sqrt\b|det\b|ker\b|rank\b|dim\b|tr\b|quad\b|qquad\b|neq\b|ne\b|leq\b|geq\b|lambda\b|sigma\b|Delta\b|begin\b|end\b))/g,
+                        '\\',
+                    );
+                    if (repaired === source) break;
+                    source = repaired;
+                }
+                const mathSpan = /\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
+                const rawCommand = /\\(?:operatorname|mathrm|mathbf|mathbb|mathcal|text|frac|sqrt|det|ker|rank|dim|tr|quad|qquad|neq|ne|leq|geq|lambda|sigma|Delta|begin|end)\b/;
+                const spans = source.match(mathSpan) || [];
+                const noCjk = !/[\u3400-\u9fff]/.test(source);
+                const markdownLike = /(^|\s)(?:#{1,4}|[-*]|\d+[.)])\s|\|/.test(source);
+                if (spans.length >= 2 && noCjk && !markdownLike && rawCommand.test(source)) {
+                    const body = source.replace(/\\[()[\]]/g, '').trim();
+                    return body ? `\\[${body}\\]` : source;
+                }
+
+                // Last-resort repair for a raw TeX island left next to an
+                // already-renderable formula, such as "\\neq\\{0\\}".
+                const parts = source.split(/(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g);
+                return parts.map((part, index) => {
+                    if (index % 2 || !rawCommand.test(part)) return part;
+                    return part.split(/([\u3400-\u9fff]+)/).map((piece) => {
+                        if (!piece || /[\u3400-\u9fff]/.test(piece) || !rawCommand.test(piece)) return piece;
+                        const commandIndex = piece.search(rawCommand);
+                        const citationIndex = piece.indexOf('[', commandIndex);
+                        const candidate = citationIndex >= 0 ? piece.slice(0, citationIndex) : piece;
+                        const suffix = citationIndex >= 0 ? piece.slice(citationIndex) : '';
+                        const matched = candidate.match(/^([\s，。；：、（）!?！？]*)([\s\S]*?)([\s，。；：、（）!?！？]*)$/);
+                        if (!matched || !matched[2]) return piece;
+                        return `${matched[1]}\\(${matched[2]}\\)${matched[3]}${suffix}`;
+                    }).join('');
+                }).join('');
+            };
             const setTextWithMath = (element, value) => {
-                const source = String(value || '');
+                const source = normalizeLibraryMathText(value);
                 const pattern = /\*\*([^*\n]+)\*\*|\[來源\s*(\d+)\]/g;
                 let cursor = 0;
                 let match;
@@ -920,6 +960,7 @@
                         sourceList.append(link);
                     });
                     resultPanel.hidden = false;
+                    window.renderStudyMath(answerRoot);
                     if (!subject.value && data.inferred?.subject) {
                         subject.value = data.inferred.subject;
                         applySubjectFilter();

@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -182,6 +183,14 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
    \sigma\_i=\sqrt{\lambda\_i}
    ]
 
+\[\det\]\(A\)\(=\det\)\(B,\quad \operatorname{tr}\)\(A\)\(=\operatorname{tr}\)\(B\)
+
+（等價於 \(A-\lambda I\) 不可逆或 \(\ker\)\(A-\lambda I\)\neq\{0\}）[來源 1]
+
+| 塊矩陣 | 結果 |
+|---|---|
+| \\(\\begin{pmatrix}A&0\\\\0&I_n\\end{pmatrix}\\) | \\(\\det(A)\\) |
+
 常見陷阱與判斷線索（考試實用）
 
 - 當 (\sigma\_i>0) 才能使用 (u\_i=\frac{1}{\sigma\_i}Av\_i)。[來源 1]
@@ -207,6 +216,22 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
                 self.assertIn(r"\]", answer)
                 self.assertIn(r"\lambda_i", answer)
                 self.assertNotIn(r"\lambda\_i", answer)
+                self.assertIn(
+                    r"\[\detA=\detB,\quad \operatorname{tr}A=\operatorname{tr}B\]",
+                    answer,
+                )
+                self.assertNotIn(r"\[\(", answer)
+                self.assertNotIn(r"\)\]", answer)
+                self.assertIn(
+                    r"\(\begin{pmatrix}A&0\\0&I_n\end{pmatrix}\)",
+                    answer,
+                )
+                protected_math = re.compile(r"\\\[.*?\\\]|\\\(.*?\\\)", re.DOTALL)
+                outside_math = protected_math.sub("", answer)
+                self.assertNotRegex(
+                    outside_math,
+                    r"\\(?:operatorname|quad|neq|det|ker|lambda)\b",
+                )
                 self.assertFalse(any(line.strip() in {"[", "]"} for line in answer.splitlines()))
                 self.assertNotIn("如需，我可以", answer)
             finally:
