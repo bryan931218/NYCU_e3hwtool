@@ -4836,6 +4836,144 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip()
         return restore_markdown_code(normalized, protected_code)
 
+    def _normalize_study_library_answer_markup(value: Any) -> str:
+        """Repair common model Markdown/LaTeX drift in notebook-wide answers."""
+        text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+
+        # Some model responses drop the backslashes from display delimiters and
+        # emit a line containing only ``[`` / ``]``. Convert only blocks that
+        # contain an unmistakable mathematical signal so ordinary prose lists
+        # are never reinterpreted as formulas.
+        lines = text.split("\n")
+        repaired_lines: List[str] = []
+        line_index = 0
+        display_signal = re.compile(
+            r"(?:\\[A-Za-z]+|[=^_]|\\begin\{|\\end\{|[A-Za-z]\s*[A-Za-z0-9]*\s*[<>+*/-])"
+        )
+        while line_index < len(lines):
+            if lines[line_index].strip() != "[":
+                repaired_lines.append(lines[line_index])
+                line_index += 1
+                continue
+            closing_index = next(
+                (
+                    candidate
+                    for candidate in range(line_index + 1, min(len(lines), line_index + 36))
+                    if lines[candidate].strip() == "]"
+                ),
+                None,
+            )
+            if closing_index is None:
+                repaired_lines.append(lines[line_index])
+                line_index += 1
+                continue
+            display_body = "\n".join(lines[line_index + 1 : closing_index]).strip()
+            if not display_body or not display_signal.search(display_body):
+                repaired_lines.append(lines[line_index])
+                line_index += 1
+                continue
+            repaired_lines.extend((r"\[", display_body, r"\]"))
+            line_index = closing_index + 1
+        text = "\n".join(repaired_lines)
+
+        # Markdown-oriented models often escape subscripts even inside LaTeX.
+        text = re.sub(r"\\_(?=[A-Za-z0-9{])", "_", text)
+
+        def repair_matrix_rows(match: re.Match[str]) -> str:
+            environment = match.group(1)
+            body = match.group(2)
+            # A single slash followed by a number is never a valid TeX command
+            # in these matrix environments; it is a collapsed row separator.
+            body = re.sub(r"(?<!\\)\\(?=\s*-?\d)", r"\\\\", body)
+            return f"\\begin{{{environment}}}{body}\\end{{{environment}}}"
+
+        text = re.sub(
+            r"\\begin\{(matrix|bmatrix|pmatrix|smallmatrix|vmatrix|Vmatrix|array)\}"
+            r"(.*?)\\end\{\1\}",
+            repair_matrix_rows,
+            text,
+            flags=re.DOTALL,
+        )
+
+        # Convert plain ASCII parentheses back into inline math delimiters when
+        # the whole balanced group is mathematical. This handles output such as
+        # ``(A^T A)`` and ``(\sigma_i>0)`` without touching Chinese prose.
+        stack: List[int] = []
+        pairs: List[Tuple[int, int]] = []
+        for character_index, character in enumerate(text):
+            if character == "(" and (character_index == 0 or text[character_index - 1] != "\\"):
+                stack.append(character_index)
+            elif character == ")" and (character_index == 0 or text[character_index - 1] != "\\") and stack:
+                pairs.append((stack.pop(), character_index))
+
+        math_group = re.compile(
+            r"^(?:[A-Za-z]|\\[A-Za-z]+)(?:[A-Za-z0-9\\{}\[\].,'\s_^=<>+*/!-])*$"
+        )
+        candidates: List[Tuple[int, int]] = []
+        for start, end in sorted(pairs, key=lambda pair: (pair[0], -pair[1])):
+            body = text[start + 1 : end].strip()
+            cjk_count = len(re.findall(r"[\u3400-\u9fff]", body))
+            looks_mathematical = bool(
+                cjk_count <= 2
+                and (
+                    re.search(r"\\[A-Za-z]+|[=^_<>]", body)
+                    or math_group.fullmatch(body)
+                )
+            )
+            if not looks_mathematical:
+                continue
+            if any(parent_start <= start and end <= parent_end for parent_start, parent_end in candidates):
+                continue
+            candidates.append((start, end))
+        delimiter_positions = {
+            position: replacement
+            for start, end in candidates
+            for position, replacement in ((start, r"\("), (end, r"\)"))
+        }
+        if delimiter_positions:
+            text = "".join(
+                delimiter_positions.get(index, character)
+                for index, character in enumerate(text)
+            )
+
+        # Turn recognizable section labels into real Markdown headings. This is
+        # deliberately conservative and only targets the answer vocabulary.
+        section_title = re.compile(
+            r"^(步驟總覽|核心結論|重要公式(?:與變數意義)?|公式表(?:格)?|"
+            r"常見陷阱(?:與判斷線索)?|考場判斷|範例核對|"
+            r"建立考試可直接套用的步驟|解題步驟|觀念比較|常考題型)"
+            r"(?:（[^\n]{1,80}）)?[：:]?$"
+        )
+        heading_lines = []
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if not stripped.startswith("#") and section_title.fullmatch(stripped):
+                heading_lines.append(f"## {stripped.rstrip('：:')}")
+            else:
+                heading_lines.append(line)
+        structured_lines: List[str] = []
+        in_step_section = False
+        for line in heading_lines:
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                in_step_section = bool(
+                    re.match(
+                        r"## (?:步驟總覽|建立考試可直接套用的步驟|解題步驟)",
+                        stripped,
+                    )
+                )
+            if in_step_section and re.match(r"^\d+[.)、]\s+", stripped):
+                structured_lines.append(f"### {stripped}")
+            else:
+                structured_lines.append(line)
+        text = "\n".join(structured_lines)
+        text = re.sub(
+            r"\n*如需，我可以[^\n]*(?:\n[^\n]*)?\s*$",
+            "",
+            text,
+        ).strip()
+        return _normalize_study_math_markup(text)
+
     def _strip_study_process_narration(value: Any) -> str:
         """Remove model workflow narration without rewriting study content."""
         text = _normalize_study_math_markup(value)
@@ -12844,7 +12982,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "2. 適合表格的內容使用 Markdown 表格；公式一律用 LaTeX，行內用 \\( ... \\)，獨立公式用 \\[ ... \\]。\n"
             "3. 每個關鍵結論、公式或題型後標註對應的 [來源 N]；來源編號只能使用下方確實存在的編號。\n"
             "4. 以考試實用性為優先，公式要寫適用條件、變數意義與常見陷阱；比較要指出判斷線索；題目要有唯一可核對答案。\n"
-            "5. 可使用簡短 Markdown 標題、表格、項目符號與編號，不要使用 HTML。答案應完整但避免冗長。\n\n"
+            "5. 使用 2 到 4 個以 ## 開頭的清楚 Markdown 區段；步驟名稱用 ###，每一步最多 3 個短項目。不要只用純文字當標題。\n"
+            "6. 同一組步驟或公式只能出現一次；不要再附『簡潔版』重複答案，也不要在結尾邀請使用者提供更多資料。\n"
+            "7. 絕對不可用單獨一行的 [ 與 ] 包公式，也不可把公式寫成普通括號。不要使用 HTML。\n\n"
             f"使用者要求：{question}\n\n"
             f"本次檢索範圍：{scope_label}\n\n"
             "筆記來源：\n" + "\n\n".join(context_sections)
@@ -12862,7 +13002,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 request_body=request_body,
                 timeout=90,
             )
-            answer = _extract_openai_text(response_payload).strip()[:14000]
+            answer = _normalize_study_library_answer_markup(
+                _extract_openai_text(response_payload).strip()[:14000]
+            )
         except requests.HTTPError as exc:
             error_code, error_type, error_message = _openai_error_details(exc.response)
             if _is_openai_quota_error(error_code, error_type, error_message):

@@ -149,6 +149,69 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
             finally:
                 storage._engine.dispose()
 
+    def test_malformed_math_delimiters_and_plain_section_titles_are_repaired(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                session_id = storage.create_study_recall_session(
+                    study_date="2026-08-21",
+                    subject="線性代數",
+                    title="SVD",
+                    image_filenames=["svd.jpg"],
+                    summary="奇異值分解",
+                    source_transcription=[
+                        {"image_index": 1, "transcription": "A^T A 的特徵值平方根為奇異值。"}
+                    ],
+                    key_concepts=[],
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+                malformed_answer = r"""步驟總覽（目標：求 SVD）：
+
+1. 建立 (A^T A)
+
+   - 計算矩陣
+     [
+     A^T A\in\mathbb{R}^{n\times n}
+     ]
+
+2. 取 (\lambda\_i) 的平方根
+
+   [
+   \sigma\_i=\sqrt{\lambda\_i}
+   ]
+
+常見陷阱與判斷線索（考試實用）
+
+- 當 (\sigma\_i>0) 才能使用 (u\_i=\frac{1}{\sigma\_i}Av\_i)。[來源 1]
+
+如需，我可以再提供完整計算。"""
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(malformed_answer),
+                ):
+                    response = client.post(
+                        "/admin/study-recall/library-ask",
+                        json={"question": "整理 SVD", "session_id": session_id},
+                    )
+
+                payload = response.get_json()
+                answer = payload["answer"]
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("## 步驟總覽", answer)
+                self.assertIn("### 1. 建立", answer)
+                self.assertIn("### 2. 取", answer)
+                self.assertIn("## 常見陷阱與判斷線索", answer)
+                self.assertIn(r"\[", answer)
+                self.assertIn(r"\]", answer)
+                self.assertIn(r"\lambda_i", answer)
+                self.assertNotIn(r"\lambda\_i", answer)
+                self.assertFalse(any(line.strip() in {"[", "]"} for line in answer.splitlines()))
+                self.assertNotIn("如需，我可以", answer)
+            finally:
+                storage._engine.dispose()
+
     def test_recall_page_contains_library_assistant_controls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.build_app(temp_dir)

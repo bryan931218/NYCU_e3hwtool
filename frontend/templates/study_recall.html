@@ -328,11 +328,16 @@
         .library-ai-tool { min-height:31px; padding:0 9px; color:#43617f; border:1px solid #c8d7e6; border-radius:8px; background:#fff; font-size:10px; font-weight:850; cursor:pointer; }
         .library-ai-tool:hover,.library-ai-tool:focus-visible { color:var(--blue); border-color:var(--blue); outline:0; }
         .library-ai-answer { min-width:0; padding:18px 17px; color:#263a52; font-size:13px; line-height:1.76; overflow-wrap:anywhere; }
-        .library-ai-answer h3,.library-ai-answer h4 { margin:18px 0 7px; color:var(--ink); letter-spacing:-.015em; }
+        .library-ai-answer h3 { margin:22px 0 10px; padding-bottom:8px; color:#153d66; border-bottom:1px solid #d6e3f0; font-size:16px; letter-spacing:-.015em; }
+        .library-ai-answer h4 { margin:14px 0 7px; padding:9px 11px; color:#194e82; border-left:3px solid #3182df; border-radius:0 9px 9px 0; background:#f0f6fd; font-size:13px; letter-spacing:-.01em; }
         .library-ai-answer h3:first-child,.library-ai-answer h4:first-child { margin-top:0; }
         .library-ai-answer p { margin:8px 0; }
         .library-ai-answer ul,.library-ai-answer ol { margin:8px 0; padding-left:22px; }
         .library-ai-answer li + li { margin-top:4px; }
+        .library-ai-answer > ol { display:grid; gap:8px; padding:0; list-style:none; counter-reset:library-ai-step; }
+        .library-ai-answer > ol > li { position:relative; min-height:42px; margin:0; padding:10px 12px 10px 43px; border:1px solid #d8e4f0; border-radius:11px; background:#fbfdff; counter-increment:library-ai-step; }
+        .library-ai-answer > ol > li::before { content:counter(library-ai-step); position:absolute; top:9px; left:10px; width:24px; height:24px; display:grid; place-items:center; color:#fff; border-radius:8px; background:linear-gradient(145deg,#2679dc,#0c669f); font-size:10px; font-weight:950; }
+        .library-ai-citation { display:inline-flex; align-items:center; margin:0 2px; padding:1px 5px; color:#0b6e71; border:1px solid #b9dfdc; border-radius:999px; background:#edf9f8; font-size:.76em; font-weight:900; vertical-align:middle; white-space:nowrap; }
         .library-ai-table-wrap { width:100%; margin:11px 0; overflow-x:auto; border:1px solid var(--line); border-radius:11px; }
         .library-ai-table { width:100%; min-width:560px; border-collapse:collapse; background:#fff; font-size:12px; }
         .library-ai-table th { padding:9px 10px; color:#284c70; border-bottom:1px solid #cbdced; background:#edf5fd; text-align:left; white-space:nowrap; }
@@ -694,14 +699,21 @@
 
             const setTextWithMath = (element, value) => {
                 const source = String(value || '');
-                const pattern = /\*\*([^*\n]+)\*\*/g;
+                const pattern = /\*\*([^*\n]+)\*\*|\[來源\s*(\d+)\]/g;
                 let cursor = 0;
                 let match;
                 while ((match = pattern.exec(source)) !== null) {
                     if (match.index > cursor) element.append(document.createTextNode(source.slice(cursor, match.index)));
-                    const strong = document.createElement('strong');
-                    strong.textContent = match[1];
-                    element.append(strong);
+                    if (match[1]) {
+                        const strong = document.createElement('strong');
+                        strong.textContent = match[1];
+                        element.append(strong);
+                    } else {
+                        const citation = document.createElement('span');
+                        citation.className = 'library-ai-citation';
+                        citation.textContent = `來源 ${match[2]}`;
+                        element.append(citation);
+                    }
                     cursor = pattern.lastIndex;
                 }
                 if (cursor < source.length) element.append(document.createTextNode(source.slice(cursor)));
@@ -719,8 +731,8 @@
                 const line = lines[index] || '';
                 return !line.trim()
                     || /^#{1,4}\s+/.test(line)
-                    || /^[-*]\s+/.test(line)
-                    || /^\d+[.)]\s+/.test(line)
+                    || /^\s*[-*]\s+/.test(line)
+                    || /^\s*\d+[.)]\s+/.test(line)
                     || line.trim().startsWith('```')
                     || (line.includes('|') && isTableSeparator(lines[index + 1] || ''));
             };
@@ -793,17 +805,18 @@
                     }
                     const headingMatch = line.match(/^#{1,4}\s+(.+)$/);
                     if (headingMatch) {
-                        const heading = document.createElement(line.startsWith('####') ? 'h4' : 'h3');
+                        const level = line.match(/^#+/)[0].length;
+                        const heading = document.createElement(level >= 3 ? 'h4' : 'h3');
                         setTextWithMath(heading, headingMatch[1]);
                         answerRoot.append(heading);
                         index += 1;
                         continue;
                     }
-                    const unordered = /^[-*]\s+/.test(line);
-                    const ordered = /^\d+[.)]\s+/.test(line);
+                    const unordered = /^\s*[-*]\s+/.test(line);
+                    const ordered = /^\s*\d+[.)]\s+/.test(line);
                     if (unordered || ordered) {
                         const list = document.createElement(ordered ? 'ol' : 'ul');
-                        const pattern = ordered ? /^\d+[.)]\s+/ : /^[-*]\s+/;
+                        const pattern = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*]\s+/;
                         while (index < lines.length && pattern.test(lines[index])) {
                             const item = document.createElement('li');
                             setTextWithMath(item, lines[index].replace(pattern, '').trim());
