@@ -1,10 +1,12 @@
-"""Fetch the closest available YouTube storyboard tile for a playback time."""
+"""Fetch a YouTube frame at the requested playback time with storyboard fallback."""
 
 from __future__ import annotations
 
 import io
 import math
 import re
+import shutil
+import subprocess
 import threading
 import time
 from typing import Any, Dict, List, Tuple
@@ -19,12 +21,16 @@ _METADATA_CACHE_TTL_SECONDS = 10 * 60
 _METADATA_CACHE_LIMIT = 32
 _SPRITE_DOWNLOAD_ATTEMPTS = 2
 _MAX_SPRITE_BYTES = 3 * 1024 * 1024
+_EXACT_FRAME_TIMEOUT_SECONDS = 18
+_EXACT_FRAME_MAX_STREAMS = 4
+_MAX_FRAME_WIDTH = 1280
+_MIN_FRAME_WIDTH = 640
 _metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _metadata_lock = threading.Lock()
 
 
 class YoutubeFrameError(RuntimeError):
-    """Raised when a usable YouTube storyboard frame cannot be obtained."""
+    """Raised when a usable YouTube frame cannot be obtained."""
 
 
 def _positive_int(value: Any) -> int:
@@ -45,7 +51,43 @@ def _positive_float(value: Any) -> float:
     return max(0.0, parsed)
 
 
-def _storyboard_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
+def _validate_frame_request(youtube_video_id: str, playback_seconds: float) -> Tuple[str, float]:
+    video_id = str(youtube_video_id or "").strip()
+    if not YOUTUBE_VIDEO_ID_RE.fullmatch(video_id):
+        raise YoutubeFrameError("影片代碼無效。")
+    try:
+        requested_seconds = float(playback_seconds)
+    except (TypeError, ValueError) as exc:
+        raise YoutubeFrameError("播放時間無效。") from exc
+    if not math.isfinite(requested_seconds) or requested_seconds < 0:
+        raise YoutubeFrameError("播放時間無效。")
+    return video_id, requested_seconds
+
+
+def _stream_rank(item: Dict[str, Any]) -> Tuple[int, int, int, int, float]:
+    """Prefer direct 720p-ish streams that are cheap to seek and still readable."""
+    height = _positive_int(item.get("height"))
+    protocol = str(item.get("protocol") or "").lower()
+    ext = str(item.get("ext") or "").lower()
+    acodec = str(item.get("acodec") or "none").lower()
+    direct_http = int(protocol in {"https", "http", "http_dash_segments"})
+    progressive = int(acodec not in {"", "none"})
+    mp4 = int(ext == "mp4")
+    if 1 <= height <= 720:
+        height_score = 10_000 + height
+    elif height > 720:
+        height_score = max(1, 10_000 - (height - 720))
+    else:
+        height_score = 0
+    try:
+        tbr = float(item.get("tbr") or 0)
+    except (TypeError, ValueError):
+        tbr = 0.0
+    return direct_http, height_score, progressive, mp4, -max(0.0, tbr)
+
+
+def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
+    """Return cached storyboard and direct-stream metadata from one yt-dlp lookup."""
     now = time.monotonic()
     if not force_refresh:
         with _metadata_lock:
@@ -60,6 +102,7 @@ def _storyboard_info(video_id: str, *, force_refresh: bool = False) -> Dict[str,
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
+        "noplaylist": True,
         "socket_timeout": 20,
         "retries": 2,
         "extractor_retries": 2,
@@ -68,33 +111,41 @@ def _storyboard_info(video_id: str, *, force_refresh: bool = False) -> Dict[str,
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
     except Exception as exc:
-        raise YoutubeFrameError("目前無法讀取這部影片的預覽影格。") from exc
+        raise YoutubeFrameError("目前無法讀取這部影片的影格資訊。") from exc
     if not isinstance(info, dict):
-        raise YoutubeFrameError("這部影片目前沒有可用的預覽影格。")
+        raise YoutubeFrameError("這部影片目前沒有可用的影格資訊。")
 
-    formats = [
+    raw_formats = [item for item in (info.get("formats") or []) if isinstance(item, dict)]
+    storyboards = [
         item
-        for item in (info.get("formats") or [])
-        if isinstance(item, dict)
-        and str(item.get("protocol") or "") == "mhtml"
+        for item in raw_formats
+        if str(item.get("protocol") or "") == "mhtml"
         and item.get("fragments")
         and _positive_int(item.get("width")) > 0
         and _positive_int(item.get("height")) > 0
         and _positive_int(item.get("rows")) > 0
         and _positive_int(item.get("columns")) > 0
     ]
-    if not formats:
-        raise YoutubeFrameError("這部影片目前沒有可用的預覽影格。")
-    formats.sort(
+    storyboards.sort(
         key=lambda item: _positive_int(item.get("width")) * _positive_int(item.get("height")),
         reverse=True,
     )
+
+    streams = [
+        item
+        for item in raw_formats
+        if str(item.get("vcodec") or "none").lower() not in {"", "none"}
+        and str(item.get("url") or "").startswith(("https://", "http://"))
+        and str(item.get("protocol") or "").lower() != "mhtml"
+        and _positive_int(item.get("height")) > 0
+    ]
+    streams.sort(key=_stream_rank, reverse=True)
+
     result = {
         "duration": _positive_float(info.get("duration")),
-        # Keep ``format`` for compatibility while retaining all storyboard
-        # quality levels for fallback when one CDN sheet is temporarily bad.
-        "format": formats[0],
-        "formats": formats,
+        "format": storyboards[0] if storyboards else None,
+        "formats": storyboards,
+        "streams": streams,
     }
     with _metadata_lock:
         if len(_metadata_cache) >= _METADATA_CACHE_LIMIT:
@@ -102,6 +153,19 @@ def _storyboard_info(video_id: str, *, force_refresh: bool = False) -> Dict[str,
             _metadata_cache.pop(oldest, None)
         _metadata_cache[video_id] = (now, result)
     return result
+
+
+def _storyboard_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
+    """Compatibility wrapper returning the storyboard subset of YouTube metadata."""
+    info = _youtube_info(video_id, force_refresh=force_refresh)
+    formats = [item for item in (info.get("formats") or []) if isinstance(item, dict)]
+    if not formats:
+        raise YoutubeFrameError("這部影片目前沒有可用的預覽影格。")
+    return {
+        "duration": _positive_float(info.get("duration")),
+        "format": formats[0],
+        "formats": formats,
+    }
 
 
 def _storyboard_formats(info: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -127,10 +191,6 @@ def _storyboard_interval(
     if fps > 0:
         return 1.0 / fps
 
-    # yt-dlp normally exposes fps for YouTube storyboards. For older metadata,
-    # derive the interval from a non-final sheet, which is normally full. Using
-    # a short final fragment divided by rows*columns is incorrect because the
-    # final sheet is often only partially populated.
     for fragment in fragments[:-1]:
         fragment_duration = _positive_float(fragment.get("duration"))
         if fragment_duration > 0:
@@ -147,11 +207,7 @@ def _storyboard_location(
     requested_seconds: float,
     duration: float,
 ) -> Tuple[Dict[str, Any], int, int, float]:
-    fragments = [
-        item
-        for item in (storyboard.get("fragments") or [])
-        if isinstance(item, dict)
-    ]
+    fragments = [item for item in (storyboard.get("fragments") or []) if isinstance(item, dict)]
     rows = _positive_int(storyboard.get("rows"))
     columns = _positive_int(storyboard.get("columns"))
     tile_count = rows * columns
@@ -170,9 +226,6 @@ def _storyboard_location(
             break
         sheet_start += candidate_duration
 
-    # The last storyboard sheet commonly has fewer real tiles than rows*columns.
-    # Use fps (or a full-sheet-derived interval) to count actual frames so a
-    # timestamp near the end never points into an empty/out-of-bounds cell.
     expected_tiles = min(
         tile_count,
         max(1, int(math.ceil(fragment_duration / interval - 1e-9))),
@@ -185,17 +238,14 @@ def _storyboard_location(
     return selected_fragment, tile_index, expected_tiles, max(0.0, frame_seconds)
 
 
-def _request_headers(storyboard: Dict[str, Any], fragment: Dict[str, Any]) -> Dict[str, str]:
+def _request_headers(*sources: Any) -> Dict[str, str]:
     headers: Dict[str, str] = {}
-    for source in (storyboard.get("http_headers"), fragment.get("http_headers")):
+    for source in sources:
         if not isinstance(source, dict):
             continue
         for key, value in source.items():
             if value is not None and str(key).strip():
                 headers[str(key)] = str(value)
-
-    # yt-dlp can supply a storyboard-specific User-Agent and Referer. Preserve
-    # them exactly; only add normal image-request defaults when absent.
     headers.setdefault(
         "User-Agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -214,7 +264,7 @@ def _download_storyboard_sprite(
     timeout: int,
 ) -> bytes:
     last_error: Exception | None = None
-    headers = _request_headers(storyboard, fragment)
+    headers = _request_headers(storyboard.get("http_headers"), fragment.get("http_headers"))
     for attempt in range(_SPRITE_DOWNLOAD_ATTEMPTS):
         try:
             response = requests.get(image_url, timeout=timeout, headers=headers)
@@ -231,6 +281,29 @@ def _download_storyboard_sprite(
             if attempt + 1 < _SPRITE_DOWNLOAD_ATTEMPTS:
                 time.sleep(0.12 * (attempt + 1))
     raise YoutubeFrameError("目前無法下載這部影片的預覽影格。") from last_error
+
+
+def _normalize_frame_image(image_bytes: bytes) -> Tuple[bytes, int, int]:
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as source:
+            source.load()
+            frame = source.convert("RGB")
+    except Exception as exc:
+        raise YoutubeFrameError("影片影格格式異常。") from exc
+
+    if frame.width > _MAX_FRAME_WIDTH:
+        frame = frame.resize(
+            (_MAX_FRAME_WIDTH, max(1, round(frame.height * _MAX_FRAME_WIDTH / frame.width))),
+            Image.Resampling.LANCZOS,
+        )
+    elif frame.width < _MIN_FRAME_WIDTH:
+        frame = frame.resize(
+            (_MIN_FRAME_WIDTH, max(1, round(frame.height * _MIN_FRAME_WIDTH / frame.width))),
+            Image.Resampling.LANCZOS,
+        )
+    output = io.BytesIO()
+    frame.save(output, format="JPEG", quality=90, optimize=True)
+    return output.getvalue(), frame.width, frame.height
 
 
 def _frame_from_storyboard(
@@ -271,9 +344,6 @@ def _frame_from_storyboard(
         actual_rows = min(rows, sprite.height // tile_height)
         if actual_columns <= 0 or actual_rows <= 0:
             raise YoutubeFrameError("影片預覽影格格式異常。")
-
-        # A partial final sheet may physically contain fewer rows. Cap to what
-        # both the metadata timing and the downloaded image can actually hold.
         geometry_tiles = actual_rows * actual_columns
         available_tiles = min(expected_tiles, geometry_tiles)
         if available_tiles <= 0:
@@ -283,59 +353,169 @@ def _frame_from_storyboard(
         row = tile_index // columns
         left = column * tile_width
         top = row * tile_height
-        if (
-            column >= actual_columns
-            or left + tile_width > sprite.width
-            or top + tile_height > sprite.height
-        ):
+        if column >= actual_columns or left + tile_width > sprite.width or top + tile_height > sprite.height:
             raise YoutubeFrameError("影片預覽影格格式異常。")
-
-        frame = sprite.crop((left, top, left + tile_width, top + tile_height))
-        if frame.width < 640:
-            frame = frame.resize(
-                (640, max(1, round(frame.height * 640 / frame.width))),
-                Image.Resampling.LANCZOS,
-            )
-        output = io.BytesIO()
-        frame.save(output, format="JPEG", quality=90, optimize=True)
+        cropped = sprite.crop((left, top, left + tile_width, top + tile_height))
+        temporary = io.BytesIO()
+        cropped.save(temporary, format="PNG")
+        frame_bytes, width, height = _normalize_frame_image(temporary.getvalue())
     except YoutubeFrameError:
         raise
     except Exception as exc:
         raise YoutubeFrameError("影片預覽影格格式異常。") from exc
 
     return {
-        "bytes": output.getvalue(),
+        "bytes": frame_bytes,
         "mime_type": "image/jpeg",
         "requested_seconds": requested_seconds,
         "frame_seconds": max(0.0, frame_seconds),
-        "width": frame.width,
-        "height": frame.height,
+        "width": width,
+        "height": height,
+        "source": "storyboard",
     }
 
 
-def fetch_youtube_storyboard_frame(
+def _ffmpeg_executable() -> str:
+    try:
+        import imageio_ffmpeg
+
+        executable = str(imageio_ffmpeg.get_ffmpeg_exe() or "").strip()
+        if executable:
+            return executable
+    except Exception:
+        pass
+    return str(shutil.which("ffmpeg") or "")
+
+
+def _ffmpeg_http_args(headers: Dict[str, str]) -> List[str]:
+    args: List[str] = []
+    extra_lines: List[str] = []
+    for key, value in headers.items():
+        lowered = key.lower()
+        if lowered == "user-agent":
+            args.extend(["-user_agent", value])
+        elif lowered == "referer":
+            args.extend(["-referer", value])
+        elif lowered not in {"accept-encoding", "content-length", "host"}:
+            extra_lines.append(f"{key}: {value}")
+    if extra_lines:
+        args.extend(["-headers", "\r\n".join(extra_lines) + "\r\n"])
+    return args
+
+
+def _frame_from_stream(
+    stream: Dict[str, Any],
+    requested_seconds: float,
+    duration: float,
+    *,
+    timeout: int,
+) -> Dict[str, Any]:
+    ffmpeg = _ffmpeg_executable()
+    if not ffmpeg:
+        raise YoutubeFrameError("伺服器目前沒有可用的影片影格擷取器。")
+    stream_url = str(stream.get("url") or "").strip()
+    if not stream_url.startswith(("https://", "http://")):
+        raise YoutubeFrameError("影片串流網址無效。")
+
+    sample_seconds = requested_seconds
+    if duration > 0:
+        sample_seconds = min(sample_seconds, max(0.0, duration - 0.05))
+
+    headers = _request_headers(stream.get("http_headers"))
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-rw_timeout",
+        str(max(1, int(timeout)) * 1_000_000),
+        *_ffmpeg_http_args(headers),
+        "-ss",
+        f"{sample_seconds:.3f}",
+        "-accurate_seek",
+        "-i",
+        stream_url,
+        "-map",
+        "0:v:0",
+        "-frames:v",
+        "1",
+        "-an",
+        "-sn",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "pipe:1",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=max(5, int(timeout) + 4),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise YoutubeFrameError("目前無法精確擷取這一幕。") from exc
+    if completed.returncode != 0 or not completed.stdout:
+        raise YoutubeFrameError("目前無法精確擷取這一幕。")
+
+    frame_bytes, width, height = _normalize_frame_image(completed.stdout)
+    return {
+        "bytes": frame_bytes,
+        "mime_type": "image/jpeg",
+        "requested_seconds": requested_seconds,
+        "frame_seconds": max(0.0, sample_seconds),
+        "width": width,
+        "height": height,
+        "source": "exact",
+    }
+
+
+def fetch_youtube_precise_frame(
+    youtube_video_id: str,
+    playback_seconds: float,
+    *,
+    timeout: int = _EXACT_FRAME_TIMEOUT_SECONDS,
+) -> Dict[str, Any]:
+    """Decode the video stream at the requested time instead of using a thumbnail."""
+    video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
+    last_error: YoutubeFrameError | None = None
+    for metadata_attempt in range(2):
+        try:
+            info = _youtube_info(video_id, force_refresh=metadata_attempt > 0)
+        except YoutubeFrameError as exc:
+            last_error = exc
+            continue
+        duration = _positive_float(info.get("duration"))
+        streams = [item for item in (info.get("streams") or []) if isinstance(item, dict)]
+        if not streams:
+            last_error = YoutubeFrameError("這部影片目前沒有可用的精確影格串流。")
+            continue
+        for stream in streams[:_EXACT_FRAME_MAX_STREAMS]:
+            try:
+                return _frame_from_stream(
+                    stream,
+                    requested_seconds,
+                    duration,
+                    timeout=timeout,
+                )
+            except YoutubeFrameError as exc:
+                last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise YoutubeFrameError("目前無法精確擷取這一幕。")
+
+
+def _fetch_youtube_storyboard_frame(
     youtube_video_id: str,
     playback_seconds: float,
     *,
     timeout: int = 25,
 ) -> Dict[str, Any]:
-    """Return a JPEG of the storyboard tile closest to ``playback_seconds``.
-
-    The highest-quality storyboard is attempted first. If its signed URL,
-    geometry, or sprite is temporarily unusable, lower-resolution storyboard
-    levels are tried before metadata is refreshed once and the sequence retried.
-    """
-
-    video_id = str(youtube_video_id or "").strip()
-    if not YOUTUBE_VIDEO_ID_RE.fullmatch(video_id):
-        raise YoutubeFrameError("影片代碼無效。")
-    try:
-        requested_seconds = float(playback_seconds)
-    except (TypeError, ValueError) as exc:
-        raise YoutubeFrameError("播放時間無效。") from exc
-    if not math.isfinite(requested_seconds) or requested_seconds < 0:
-        raise YoutubeFrameError("播放時間無效。")
-
+    """Return the closest available YouTube storyboard tile."""
+    video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
     last_error: YoutubeFrameError | None = None
     for metadata_attempt in range(2):
         try:
@@ -350,7 +530,6 @@ def fetch_youtube_storyboard_frame(
         if not formats:
             last_error = YoutubeFrameError("這部影片目前沒有可用的預覽影格。")
             continue
-
         for storyboard in formats:
             try:
                 return _frame_from_storyboard(
@@ -365,3 +544,31 @@ def fetch_youtube_storyboard_frame(
     if last_error is not None:
         raise last_error
     raise YoutubeFrameError("目前無法讀取這部影片的預覽影格。")
+
+
+def fetch_youtube_storyboard_frame(
+    youtube_video_id: str,
+    playback_seconds: float,
+    *,
+    timeout: int = 25,
+) -> Dict[str, Any]:
+    """Fetch the actual playback frame first, falling back to a storyboard tile.
+
+    The public function name is retained for compatibility with the existing
+    study-plan route. Precise stream decoding is preferred; the robust
+    storyboard path remains a transparent fallback when YouTube blocks or does
+    not expose a seekable stream.
+    """
+    precise_timeout = min(max(6, int(timeout)), _EXACT_FRAME_TIMEOUT_SECONDS)
+    try:
+        return fetch_youtube_precise_frame(
+            youtube_video_id,
+            playback_seconds,
+            timeout=precise_timeout,
+        )
+    except YoutubeFrameError:
+        return _fetch_youtube_storyboard_frame(
+            youtube_video_id,
+            playback_seconds,
+            timeout=timeout,
+        )
