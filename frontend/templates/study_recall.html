@@ -710,6 +710,41 @@
                     if (repaired === source) break;
                     source = repaired;
                 }
+                const flattenNestedDelimiters = (input) => {
+                    const output = [];
+                    const delimiter = /\\([()[\]])/g;
+                    const closer = { '(': ')', '[': ']' };
+                    const nested = [];
+                    let outer = '';
+                    let cursor = 0;
+                    let match;
+                    while ((match = delimiter.exec(input)) !== null) {
+                        output.push(input.slice(cursor, match.index));
+                        const marker = match[1];
+                        if (!outer) {
+                            output.push(match[0]);
+                            if (closer[marker]) outer = marker;
+                        } else if (closer[marker]) {
+                            nested.push(marker);
+                            if (marker === '(') output.push('(');
+                        } else if (nested.length && closer[nested[nested.length - 1]] === marker) {
+                            if (nested[nested.length - 1] === '(') output.push(')');
+                            nested.pop();
+                        } else if (!nested.length && closer[outer] === marker) {
+                            output.push(match[0]);
+                            outer = '';
+                        }
+                        cursor = delimiter.lastIndex;
+                    }
+                    output.push(input.slice(cursor));
+                    return output.join('');
+                };
+                const sanitizeFormulaBody = (body) => body.trim()
+                    .replace(/\\left(?=\s*\\(?:frac|sqrt|sum|prod|int|operatorname|[A-Za-z]+))/g, '\\left(')
+                    .replace(/\\right(?=\s*(?:[_^]|[,.;:]|$))/g, '\\right)');
+                source = flattenNestedDelimiters(source)
+                    .replace(/\\\[([\s\S]*?)\\\]/g, (_match, body) => `\\[${sanitizeFormulaBody(body)}\\]`)
+                    .replace(/\\\(([\s\S]*?)\\\)/g, (_match, body) => `\\(${sanitizeFormulaBody(body)}\\)`);
                 const mathSpan = /\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
                 const rawCommand = /\\(?:operatorname|mathrm|mathbf|mathbb|mathcal|text|frac|sqrt|det|ker|rank|dim|tr|quad|qquad|neq|ne|leq|geq|lambda|sigma|Delta|begin|end)\b/;
                 const spans = source.match(mathSpan) || [];

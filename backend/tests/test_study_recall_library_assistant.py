@@ -105,6 +105,11 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
                 self.assertNotIn("UNIQUE_PAGE_11", request_prompt)
                 self.assertNotIn("UNIQUE_PAGE_17", request_prompt)
                 self.assertNotIn("DATA_STRUCTURE_ONLY", request_prompt)
+                self.assertIn("全文約 700 到 1000 個中文字", request_prompt)
+                self.assertEqual(
+                    openai_post.call_args.kwargs["json"]["max_output_tokens"],
+                    1800,
+                )
             finally:
                 storage._engine.dispose()
 
@@ -187,6 +192,12 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
 
 （等價於 \(A-\lambda I\) 不可逆或 \(\ker\)\(A-\lambda I\)\neq\{0\}）[來源 1]
 
+\[
+n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
+\]
+
+\(\[\sum_{i=1}^n \frac{i^2\(i^2+1\)}{2}=\Theta n^5\]\)
+
 | 塊矩陣 | 結果 |
 |---|---|
 | \\(\\begin{pmatrix}A&0\\\\0&I_n\\end{pmatrix}\\) | \\(\\det(A)\\) |
@@ -222,6 +233,16 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
                 )
                 self.assertNotIn(r"\[\(", answer)
                 self.assertNotIn(r"\)\]", answer)
+                self.assertNotIn(r"\(\[", answer)
+                self.assertNotIn(r"\]\)", answer)
+                self.assertIn(
+                    r"\left(\frac{n!}{2}\right)^{n/2}",
+                    answer,
+                )
+                self.assertIn(
+                    r"\(\sum_{i=1}^n \frac{i^2(i^2+1)}{2}=\Theta n^5\)",
+                    answer,
+                )
                 self.assertIn(
                     r"\(\begin{pmatrix}A&0\\0&I_n\end{pmatrix}\)",
                     answer,
