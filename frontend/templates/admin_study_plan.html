@@ -504,6 +504,8 @@
         .frame-question-status.is-error { color:#a53d48; }
         .frame-question-foot { display:flex; align-items:center; justify-content:flex-end; gap:9px; padding:11px 17px 14px; border-top:1px solid #e2eaf2; background:#fbfdff; }
         .frame-question-cancel, .frame-question-submit { min-height:38px; padding:0 14px; border-radius:10px; font-size:11px; font-weight:880; cursor:pointer; }
+        .frame-question-upload { min-height:38px; display:inline-flex; align-items:center; margin-right:auto; padding:0 12px; border:1px solid #c9d9e9; border-radius:10px; color:#315e88; background:#f4f9ff; font-size:11px; font-weight:850; cursor:pointer; }
+        .frame-question-upload:hover { border-color:#99bbe0; background:#eaf5ff; }
         .frame-question-cancel { color:var(--muted); border:1px solid #d4dfe9; background:#fff; }
         .frame-question-submit { color:#fff; border:0; background:linear-gradient(135deg,#1463d9,#177fbd); box-shadow:0 8px 18px rgba(20,99,217,.2); }
         .frame-question-submit:disabled { opacity:.55; cursor:wait; box-shadow:none; }
@@ -745,6 +747,7 @@
                                             <div class="frame-question-answer" id="frame-question-answer" data-math-content hidden></div>
                                         </div>
                                         <footer class="frame-question-foot">
+                                            <label class="frame-question-upload" for="frame-question-upload">選擇截圖<input id="frame-question-upload" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
                                             <button class="frame-question-cancel" id="frame-question-cancel" type="button">取消</button>
                                             <button class="frame-question-submit" id="frame-question-submit" type="submit">送出問題</button>
                                         </footer>
@@ -982,6 +985,7 @@
             const frameQuestionImage = document.getElementById('frame-question-image');
             const frameQuestionSampleTime = document.getElementById('frame-question-sample-time');
             const frameQuestionAnswer = document.getElementById('frame-question-answer');
+            const frameQuestionUpload = document.getElementById('frame-question-upload');
             const focusVideoTitle = document.getElementById('focus-video-title');
             const focusToast = document.getElementById('focus-toast');
             const videoEndScreen = document.getElementById('video-end-screen');
@@ -1536,6 +1540,7 @@
                     ? Math.max(0, Number(player.getCurrentTime() || 0))
                     : Math.max(0, Number(option.dataset.playbackSeconds || 0));
                 resetFrameQuestionResult();
+                if (frameQuestionUpload) frameQuestionUpload.value = '';
                 let capturedImage = null;
                 let captureNotice = '';
                 try {
@@ -1573,6 +1578,31 @@
                 }
                 window.setTimeout(function () { frameQuestionInput.focus({ preventScroll: true }); }, 30);
             };
+            if (frameQuestionUpload) frameQuestionUpload.addEventListener('change', function () {
+                const file = frameQuestionUpload.files && frameQuestionUpload.files[0];
+                if (!file || !frameQuestionContext) return;
+                if (!/^image\/(jpeg|png|webp)$/i.test(file.type || '') || file.size > 5 * 1024 * 1024) {
+                    if (frameQuestionStatus) {
+                        frameQuestionStatus.textContent = '請選擇 5MB 以內的 JPG、PNG 或 WebP 截圖。';
+                        frameQuestionStatus.classList.add('is-error');
+                    }
+                    frameQuestionUpload.value = '';
+                    return;
+                }
+                const reader = new FileReader();
+                reader.addEventListener('load', function () {
+                    if (!frameQuestionContext || typeof reader.result !== 'string') return;
+                    frameQuestionContext.frameImage = reader.result;
+                    if (frameQuestionImage) frameQuestionImage.src = reader.result;
+                    if (frameQuestionPreview) frameQuestionPreview.hidden = false;
+                    if (frameQuestionSampleTime) frameQuestionSampleTime.textContent = '已選擇目前畫面截圖';
+                    if (frameQuestionStatus) {
+                        frameQuestionStatus.textContent = '截圖已就緒，送出後可直接分析。';
+                        frameQuestionStatus.classList.remove('is-error');
+                    }
+                }, { once:true });
+                reader.readAsDataURL(file);
+            });
             const submitFrameQuestion = async function () {
                 if (frameQuestionSubmitting || !frameQuestionContext || !frameQuestionInput) return;
                 const question = frameQuestionInput.value.trim();

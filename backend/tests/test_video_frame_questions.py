@@ -149,6 +149,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn("/admin/study-plan/video-question", html)
         self.assertIn("getDisplayMedia", html)
         self.assertIn("frame_image: frameQuestionContext.frameImage", html)
+        self.assertIn('id="frame-question-upload"', html)
 
 
 if __name__ == "__main__":
