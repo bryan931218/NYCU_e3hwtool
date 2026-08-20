@@ -6,7 +6,12 @@ import requests
 from PIL import Image, ImageDraw
 
 from e3_tracker.services import youtube_frames
-from e3_tracker.services.youtube_frames import YoutubeFrameError, fetch_youtube_storyboard_frame
+from e3_tracker.services.youtube_frames import (
+    YoutubeFrameError,
+    _fetch_youtube_storyboard_frame,
+    fetch_youtube_precise_frame,
+    fetch_youtube_storyboard_frame,
+)
 
 
 class YoutubeStoryboardFrameTests(unittest.TestCase):
@@ -26,6 +31,13 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         response.content = content
         response.raise_for_status.return_value = None
         return response
+
+    @staticmethod
+    def _frame_bytes(color=(20, 60, 120), size=(960, 540)):
+        frame = Image.new("RGB", size, color)
+        output = io.BytesIO()
+        frame.save(output, format="JPEG")
+        return output.getvalue()
 
     def test_fetches_tile_matching_playback_time(self):
         sprite = Image.new("RGB", (960, 540), "black")
@@ -63,9 +75,10 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         with patch.object(youtube_frames, "_storyboard_info", return_value=storyboard), patch.object(
             youtube_frames.requests, "get", return_value=response
         ):
-            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 25.0)
+            result = _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 25.0)
 
         self.assertAlmostEqual(result["frame_seconds"], 20.0)
+        self.assertEqual(result["source"], "storyboard")
         self.assertEqual((result["width"], result["height"]), (640, 360))
         with Image.open(io.BytesIO(result["bytes"])) as frame:
             red, green, blue = frame.resize((1, 1)).getpixel((0, 0))
@@ -96,7 +109,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         with patch.object(youtube_frames, "_storyboard_info", return_value=storyboard), patch.object(
             youtube_frames.requests, "get", return_value=response
         ) as get:
-            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 95.0)
+            result = _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 95.0)
 
         self.assertAlmostEqual(result["frame_seconds"], 90.0)
         self.assertIn("s2.jpg", get.call_args.args[0])
@@ -123,7 +136,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
             "_storyboard_info",
             return_value={"duration": 10.0, "format": storyboard_format, "formats": [storyboard_format]},
         ), patch.object(youtube_frames.requests, "get", return_value=response) as get:
-            fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 4.0)
+            _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 4.0)
 
         headers = get.call_args.kwargs["headers"]
         self.assertEqual(headers["User-Agent"], "googlebot")
@@ -162,7 +175,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
             "_storyboard_info",
             return_value={"duration": 10.0, "format": high, "formats": [high, low]},
         ), patch.object(youtube_frames.requests, "get", side_effect=get) as request_get:
-            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 4.0)
+            result = _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 4.0)
 
         self.assertEqual((result["width"], result["height"]), (640, 360))
         self.assertTrue(any("low.jpg" in call.args[0] for call in request_get.call_args_list))
@@ -197,18 +210,110 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
                 {"duration": 10.0, "format": fresh, "formats": [fresh]},
             ],
         ) as storyboard_info, patch.object(youtube_frames.requests, "get", side_effect=get):
-            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 4.0)
+            result = _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 4.0)
 
         self.assertEqual((result["width"], result["height"]), (640, 360))
         self.assertEqual(storyboard_info.call_count, 2)
         self.assertFalse(storyboard_info.call_args_list[0].kwargs["force_refresh"])
         self.assertTrue(storyboard_info.call_args_list[1].kwargs["force_refresh"])
 
+    def test_precise_frame_seeks_to_requested_timestamp_and_forwards_headers(self):
+        stream = {
+            "url": "https://example.test/video.mp4",
+            "protocol": "https",
+            "height": 720,
+            "vcodec": "avc1",
+            "acodec": "mp4a",
+            "ext": "mp4",
+            "http_headers": {
+                "User-Agent": "test-agent",
+                "Referer": "https://www.youtube.com/",
+                "Accept-Language": "zh-TW",
+            },
+        }
+        completed = Mock(returncode=0, stdout=self._frame_bytes(), stderr=b"")
+        with patch.object(
+            youtube_frames,
+            "_youtube_info",
+            return_value={"duration": 500.0, "streams": [stream], "formats": []},
+        ), patch.object(youtube_frames, "_ffmpeg_executable", return_value="/fake/ffmpeg"), patch.object(
+            youtube_frames.subprocess, "run", return_value=completed
+        ) as run:
+            result = fetch_youtube_precise_frame("9dXuhVJ-L5k", 123.456)
+
+        command = run.call_args.args[0]
+        self.assertEqual(result["source"], "exact")
+        self.assertAlmostEqual(result["frame_seconds"], 123.456, places=3)
+        self.assertIn("-ss", command)
+        self.assertEqual(command[command.index("-ss") + 1], "123.456")
+        self.assertIn("https://example.test/video.mp4", command)
+        self.assertIn("-user_agent", command)
+        self.assertEqual(command[command.index("-user_agent") + 1], "test-agent")
+        self.assertIn("-referer", command)
+        self.assertIn("Accept-Language: zh-TW", command[command.index("-headers") + 1])
+
+    def test_precise_frame_tries_another_stream_when_first_fails(self):
+        streams = [
+            {"url": "https://example.test/a.mp4", "protocol": "https", "height": 720, "vcodec": "avc1"},
+            {"url": "https://example.test/b.mp4", "protocol": "https", "height": 480, "vcodec": "avc1"},
+        ]
+        failed = Mock(returncode=1, stdout=b"", stderr=b"403")
+        success = Mock(returncode=0, stdout=self._frame_bytes(), stderr=b"")
+        with patch.object(
+            youtube_frames,
+            "_youtube_info",
+            return_value={"duration": 500.0, "streams": streams, "formats": []},
+        ), patch.object(youtube_frames, "_ffmpeg_executable", return_value="/fake/ffmpeg"), patch.object(
+            youtube_frames.subprocess, "run", side_effect=[failed, success]
+        ) as run:
+            result = fetch_youtube_precise_frame("9dXuhVJ-L5k", 45.0)
+
+        self.assertEqual(result["source"], "exact")
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("b.mp4", run.call_args_list[1].args[0][run.call_args_list[1].args[0].index("-i") + 1])
+
+    def test_public_fetch_prefers_precise_frame(self):
+        exact = {
+            "bytes": self._frame_bytes(),
+            "mime_type": "image/jpeg",
+            "requested_seconds": 33.3,
+            "frame_seconds": 33.3,
+            "width": 960,
+            "height": 540,
+            "source": "exact",
+        }
+        with patch.object(youtube_frames, "fetch_youtube_precise_frame", return_value=exact) as precise, patch.object(
+            youtube_frames, "_fetch_youtube_storyboard_frame"
+        ) as storyboard:
+            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
+        self.assertEqual(result["source"], "exact")
+        precise.assert_called_once()
+        storyboard.assert_not_called()
+
+    def test_public_fetch_falls_back_to_storyboard(self):
+        fallback = {
+            "bytes": self._frame_bytes(),
+            "mime_type": "image/jpeg",
+            "requested_seconds": 33.3,
+            "frame_seconds": 30.0,
+            "width": 960,
+            "height": 540,
+            "source": "storyboard",
+        }
+        with patch.object(
+            youtube_frames,
+            "fetch_youtube_precise_frame",
+            side_effect=YoutubeFrameError("precise unavailable"),
+        ), patch.object(youtube_frames, "_fetch_youtube_storyboard_frame", return_value=fallback) as storyboard:
+            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
+        self.assertEqual(result["source"], "storyboard")
+        storyboard.assert_called_once()
+
     def test_rejects_invalid_video_id_without_network(self):
-        with patch.object(youtube_frames, "_storyboard_info") as storyboard_info:
+        with patch.object(youtube_frames, "_youtube_info") as youtube_info:
             with self.assertRaises(YoutubeFrameError):
-                fetch_youtube_storyboard_frame("bad", 10)
-        storyboard_info.assert_not_called()
+                fetch_youtube_precise_frame("bad", 10)
+        youtube_info.assert_not_called()
 
     def test_reports_missing_storyboard(self):
         fake_ydl = Mock()
@@ -217,7 +322,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         fake_ydl.extract_info.return_value = {"duration": 100, "formats": []}
         with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=fake_ydl):
             with self.assertRaisesRegex(YoutubeFrameError, "沒有可用"):
-                fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 10)
+                _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 10)
 
 
 if __name__ == "__main__":
