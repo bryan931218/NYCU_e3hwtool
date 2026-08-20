@@ -1544,6 +1544,13 @@
                     focusPlayerFrame.classList.remove('is-frame-capturing');
                     captureVideo.pause();
                     captureVideo.srcObject = null;
+                    // Chrome's mandatory sharing indicator reduces the page
+                    // viewport while a track is live. One frame is all we
+                    // need, so stop immediately and restore the layout before
+                    // showing the question UI again.
+                    stopFrameQuestionCapture();
+                    updateFocusMode();
+                    await waitForPlayerLayout();
                 }
             };
             const setFrameQuestionBusy = function (busy) {
@@ -1613,7 +1620,7 @@
                     if (frameQuestionImage) frameQuestionImage.src = capturedImage;
                     if (frameQuestionPreview) frameQuestionPreview.hidden = false;
                     if (frameQuestionSampleTime) frameQuestionSampleTime.textContent = '已精準擷取 ' + formatClock(currentSeconds);
-                    if (frameQuestionStatus) frameQuestionStatus.textContent = '已取得目前畫面，送出後可直接分析。';
+                    if (frameQuestionStatus) frameQuestionStatus.textContent = '畫面已擷取，分享已自動停止。';
                 } else if (captureNotice && frameQuestionStatus) {
                     frameQuestionStatus.textContent = captureNotice;
                 }
@@ -1637,7 +1644,7 @@
                     if (frameQuestionSampleTime) {
                         frameQuestionSampleTime.textContent = '已精準擷取 ' + formatClock(frameQuestionContext.playbackSeconds);
                     }
-                    if (frameQuestionStatus) frameQuestionStatus.textContent = '已取得目前畫面，送出後可直接分析。';
+                    if (frameQuestionStatus) frameQuestionStatus.textContent = '畫面已擷取，分享已自動停止。';
                 } catch (error) {
                     stopFrameQuestionCapture();
                     if (frameQuestionStatus) {

@@ -153,6 +153,8 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn('id="frame-question-capture"', html)
         self.assertIn("leaveFullscreenBeforeCapturePrompt", html)
         self.assertIn("目前分頁畫面啟動逾時", html)
+        self.assertIn("畫面已擷取，分享已自動停止", html)
+        self.assertIn("One frame is all we", html)
         self.assertNotIn("RestrictionTarget", html)
         self.assertNotIn("restrictTo(", html)
 
