@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import io
 import logging
 import math
@@ -26,9 +28,13 @@ _EXACT_FRAME_TIMEOUT_SECONDS = 18
 _EXACT_FRAME_MAX_STREAMS = 4
 _MAX_FRAME_WIDTH = 1280
 _MIN_FRAME_WIDTH = 640
+_MAX_BROWSER_FRAME_BYTES = 5 * 1024 * 1024
+_BROWSER_FRAME_DATA_RE = re.compile(
+    r"^data:image/(?P<format>jpeg|jpg|png|webp);base64,(?P<data>[A-Za-z0-9+/=\r\n]+)$",
+    re.IGNORECASE,
+)
 _EXTRACTOR_STRATEGIES = (
     None,
-    ("web", "android_vr"),
     ("android_vr",),
 )
 _metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
@@ -39,6 +45,10 @@ _logger = logging.getLogger(__name__)
 
 class YoutubeFrameError(RuntimeError):
     """Raised when a usable YouTube frame cannot be obtained."""
+
+
+class YoutubeMetadataError(YoutubeFrameError):
+    """Raised when YouTube blocks every metadata extraction strategy."""
 
 
 def _positive_int(value: Any) -> int:
@@ -59,16 +69,21 @@ def _positive_float(value: Any) -> float:
     return max(0.0, parsed)
 
 
-def _validate_frame_request(youtube_video_id: str, playback_seconds: float) -> Tuple[str, float]:
-    video_id = str(youtube_video_id or "").strip()
-    if not YOUTUBE_VIDEO_ID_RE.fullmatch(video_id):
-        raise YoutubeFrameError("影片代碼無效。")
+def _validate_playback_seconds(playback_seconds: float) -> float:
     try:
         requested_seconds = float(playback_seconds)
     except (TypeError, ValueError) as exc:
         raise YoutubeFrameError("播放時間無效。") from exc
     if not math.isfinite(requested_seconds) or requested_seconds < 0:
         raise YoutubeFrameError("播放時間無效。")
+    return requested_seconds
+
+
+def _validate_frame_request(youtube_video_id: str, playback_seconds: float) -> Tuple[str, float]:
+    video_id = str(youtube_video_id or "").strip()
+    if not YOUTUBE_VIDEO_ID_RE.fullmatch(video_id):
+        raise YoutubeFrameError("影片代碼無效。")
+    requested_seconds = _validate_playback_seconds(playback_seconds)
     return video_id, requested_seconds
 
 
@@ -112,9 +127,12 @@ def _youtube_dl_options(player_clients: Tuple[str, ...] | None) -> Dict[str, Any
         # when the selected client exposes no playable A/V stream.
         "ignore_no_formats_error": True,
         "noplaylist": True,
-        "socket_timeout": 20,
-        "retries": 3,
-        "extractor_retries": 3,
+        # The browser-captured frame is the primary path. Keep this server-side
+        # fallback bounded so a blocked Railway IP does not make the user wait
+        # through several minute-long retries.
+        "socket_timeout": 8,
+        "retries": 1,
+        "extractor_retries": 1,
     }
     available_runtimes = {
         runtime: {}
@@ -169,8 +187,8 @@ def _extract_youtube_info(video_id: str) -> Dict[str, Any]:
             )
         if strategy_index + 1 < len(_EXTRACTOR_STRATEGIES):
             time.sleep(0.25 * (strategy_index + 1))
-    raise YoutubeFrameError(
-        "目前無法讀取這部影片的影格資訊，系統已自動重試，請稍後再試。"
+    raise YoutubeMetadataError(
+        "YouTube 暫時拒絕伺服器讀取影片資訊，請改用目前分頁畫面擷取。"
     ) from last_error
 
 
@@ -385,6 +403,41 @@ def _normalize_frame_image(image_bytes: bytes) -> Tuple[bytes, int, int]:
     return output.getvalue(), frame.width, frame.height
 
 
+def frame_from_browser_capture(
+    image_data_url: str,
+    playback_seconds: float,
+) -> Dict[str, Any]:
+    """Validate and normalize a browser-captured player frame.
+
+    Capturing in the signed-in browser avoids asking Railway to retrieve the
+    YouTube stream from a data-centre IP, which YouTube frequently throttles.
+    """
+    requested_seconds = _validate_playback_seconds(playback_seconds)
+    encoded = str(image_data_url or "").strip()
+    match = _BROWSER_FRAME_DATA_RE.fullmatch(encoded)
+    if not match:
+        raise YoutubeFrameError("目前分頁的畫面格式無效。")
+    payload = "".join(match.group("data").split())
+    if not payload or len(payload) > ((_MAX_BROWSER_FRAME_BYTES + 2) // 3) * 4 + 4:
+        raise YoutubeFrameError("目前分頁的畫面過大，請重新擷取。")
+    try:
+        image_bytes = base64.b64decode(payload, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise YoutubeFrameError("目前分頁的畫面格式無效。") from exc
+    if not image_bytes or len(image_bytes) > _MAX_BROWSER_FRAME_BYTES:
+        raise YoutubeFrameError("目前分頁的畫面過大，請重新擷取。")
+    frame_bytes, width, height = _normalize_frame_image(image_bytes)
+    return {
+        "bytes": frame_bytes,
+        "mime_type": "image/jpeg",
+        "requested_seconds": requested_seconds,
+        "frame_seconds": requested_seconds,
+        "width": width,
+        "height": height,
+        "source": "browser",
+    }
+
+
 def _frame_from_storyboard(
     storyboard: Dict[str, Any],
     requested_seconds: float,
@@ -564,6 +617,8 @@ def fetch_youtube_precise_frame(
     for metadata_attempt in range(2):
         try:
             info = _youtube_info(video_id, force_refresh=metadata_attempt > 0)
+        except YoutubeMetadataError:
+            raise
         except YoutubeFrameError as exc:
             last_error = exc
             continue
@@ -599,6 +654,8 @@ def _fetch_youtube_storyboard_frame(
     for metadata_attempt in range(2):
         try:
             info = _storyboard_info(video_id, force_refresh=metadata_attempt > 0)
+        except YoutubeMetadataError:
+            raise
         except YoutubeFrameError as exc:
             last_error = exc
             continue
@@ -631,23 +688,25 @@ def fetch_youtube_storyboard_frame(
     *,
     timeout: int = 25,
 ) -> Dict[str, Any]:
-    """Fetch the actual playback frame first, falling back to a storyboard tile.
+    """Fetch a quick storyboard frame, falling back to exact stream decoding.
 
     The public function name is retained for compatibility with the existing
-    study-plan route. Precise stream decoding is preferred; the robust
-    storyboard path remains a transparent fallback when YouTube blocks or does
-    not expose a seekable stream.
+    study-plan route. Browser capture is the primary exact-frame path. For the
+    server fallback, a storyboard normally arrives much faster than starting
+    FFmpeg and is sufficiently close to the requested playback time.
     """
     precise_timeout = min(max(6, int(timeout)), _EXACT_FRAME_TIMEOUT_SECONDS)
     try:
+        return _fetch_youtube_storyboard_frame(
+            youtube_video_id,
+            playback_seconds,
+            timeout=min(10, max(4, int(timeout))),
+        )
+    except YoutubeMetadataError:
+        raise
+    except YoutubeFrameError:
         return fetch_youtube_precise_frame(
             youtube_video_id,
             playback_seconds,
             timeout=precise_timeout,
-        )
-    except YoutubeFrameError:
-        return _fetch_youtube_storyboard_frame(
-            youtube_video_id,
-            playback_seconds,
-            timeout=timeout,
         )

@@ -1,3 +1,4 @@
+import base64
 import io
 import os
 import tempfile
@@ -90,6 +91,38 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertTrue(content[1]["image_url"].startswith("data:image/jpeg;base64,"))
         self.assertIn("這一步為什麼成立", content[0]["text"])
 
+    def test_browser_capture_skips_youtube_and_uses_exact_question_frame(self):
+        captured = self._frame()["bytes"]
+        frame_image = "data:image/jpeg;base64," + base64.b64encode(captured).decode("ascii")
+        openai_response = Mock()
+        openai_response.raise_for_status.return_value = None
+        openai_response.json.return_value = {
+            "status": "completed",
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "這是瀏覽器擷取的精準畫面。"}]}
+            ],
+        }
+        with patch(
+            "e3_tracker.api.web.fetch_youtube_storyboard_frame"
+        ) as fetch_frame, patch("e3_tracker.api.web.requests.post", return_value=openai_response) as post:
+            response = self.client.post(
+                "/admin/study-plan/video-question",
+                json={
+                    "video_id": self.video["id"],
+                    "playback_seconds": 77.2,
+                    "question": "這一幕在說什麼？",
+                    "frame_image": frame_image,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()
+        self.assertEqual(result["frame_source"], "browser")
+        self.assertEqual(result["frame_seconds"], 77.2)
+        fetch_frame.assert_not_called()
+        prompt = post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
+        self.assertIn("瀏覽器直接擷取", prompt)
+
     def test_validates_question_and_video(self):
         missing_question = self.client.post(
             "/admin/study-plan/video-question",
@@ -114,6 +147,8 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn("Q 問這一幕", html)
         self.assertIn("max-height:calc(100dvh - 18px)", html)
         self.assertIn("/admin/study-plan/video-question", html)
+        self.assertIn("getDisplayMedia", html)
+        self.assertIn("frame_image: frameQuestionContext.frameImage", html)
 
 
 if __name__ == "__main__":

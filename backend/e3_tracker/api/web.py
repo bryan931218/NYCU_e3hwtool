@@ -44,7 +44,11 @@ from ..services.youtube_playlists import (
     YoutubePlaylistSyncBusyError,
     sync_known_youtube_playlists,
 )
-from ..services.youtube_frames import YoutubeFrameError, fetch_youtube_storyboard_frame
+from ..services.youtube_frames import (
+    YoutubeFrameError,
+    fetch_youtube_storyboard_frame,
+    frame_from_browser_capture,
+)
 from ..shared.config import (
     DEFAULT_OPENAI_MODEL,
     load_env_defaults,
@@ -13781,17 +13785,34 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if duration_seconds > 0:
             playback_seconds = min(playback_seconds, duration_seconds)
 
+        browser_frame = str(payload.get("frame_image") or "").strip()
         try:
-            frame = fetch_youtube_storyboard_frame(youtube_video_id, playback_seconds)
+            frame = (
+                frame_from_browser_capture(browser_frame, playback_seconds)
+                if browser_frame
+                else fetch_youtube_storyboard_frame(youtube_video_id, playback_seconds)
+            )
         except YoutubeFrameError as exc:
             return {"ok": False, "error": str(exc)}, 502
         image_data_url = (
             f"data:{frame['mime_type']};base64,"
             + base64.b64encode(frame["bytes"]).decode("ascii")
         )
+        frame_source = str(frame.get("source") or "storyboard")
+        if frame_source == "browser":
+            frame_context = (
+                "附圖是學生按下提問時，由瀏覽器直接擷取的播放器畫面；"
+                "它是本題最重要且時間最準確的依據。"
+            )
+        elif frame_source == "exact":
+            frame_context = "附圖是伺服器在指定時間解碼的影片影格，時間可能有極小誤差。"
+        else:
+            frame_context = (
+                "附圖是 YouTube 在指定時間附近提供的預覽取樣影格，可能與學生按下提問的時刻相差數秒。"
+            )
         prompt = (
             "你是研究所考試課程的即時視覺助教。請直接回答學生針對目前影片畫面的問題。"
-            "附圖是 YouTube 在指定時間附近提供的預覽取樣影格，可能與學生按下提問的時刻相差數秒；"
+            f"{frame_context}"
             "影片標題與科目只能當背景，畫面中實際可辨識的文字、圖表與公式才是主要依據。"
             "若影格模糊、關鍵內容被切掉、題目條件不足，或無法單靠這張圖可靠判定，必須明確說明缺少什麼，"
             "並請學生補充，不可自行猜測畫面內容或答案。回答使用精簡、好理解的繁體中文，控制在 2 至 8 個短段落。"
@@ -13822,7 +13843,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "reasoning": {
                 "effort": normalize_openai_reasoning_effort(openai_model, "low")
             },
-            "max_output_tokens": 3200,
+            "max_output_tokens": 1800,
         }
         try:
             response_payload = _request_openai_response(
@@ -13846,6 +13867,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "video_id": video_id,
                 "requested_seconds": round(playback_seconds, 1),
                 "frame_seconds": round(float(frame["frame_seconds"]), 1),
+                "frame_source": frame_source,
             },
         )
         return {
@@ -13854,6 +13876,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "frame_image": image_data_url,
             "requested_seconds": round(playback_seconds, 2),
             "frame_seconds": round(float(frame["frame_seconds"]), 2),
+            "frame_source": frame_source,
         }
 
     @app.patch("/admin/study-plan/video-markers/<int:marker_id>")

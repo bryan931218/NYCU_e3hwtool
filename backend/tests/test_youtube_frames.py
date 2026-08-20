@@ -1,3 +1,4 @@
+import base64
 import io
 import unittest
 from unittest.mock import Mock, patch
@@ -11,6 +12,7 @@ from e3_tracker.services.youtube_frames import (
     _fetch_youtube_storyboard_frame,
     fetch_youtube_precise_frame,
     fetch_youtube_storyboard_frame,
+    frame_from_browser_capture,
 )
 
 
@@ -273,7 +275,25 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertIn("b.mp4", run.call_args_list[1].args[0][run.call_args_list[1].args[0].index("-i") + 1])
 
-    def test_public_fetch_prefers_precise_frame(self):
+    def test_public_fetch_prefers_fast_storyboard_frame(self):
+        storyboard_frame = {
+            "bytes": self._frame_bytes(),
+            "mime_type": "image/jpeg",
+            "requested_seconds": 33.3,
+            "frame_seconds": 30.0,
+            "width": 960,
+            "height": 540,
+            "source": "storyboard",
+        }
+        with patch.object(youtube_frames, "_fetch_youtube_storyboard_frame", return_value=storyboard_frame) as storyboard, patch.object(
+            youtube_frames, "fetch_youtube_precise_frame"
+        ) as precise:
+            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
+        self.assertEqual(result["source"], "storyboard")
+        storyboard.assert_called_once()
+        precise.assert_not_called()
+
+    def test_public_fetch_falls_back_to_precise_frame(self):
         exact = {
             "bytes": self._frame_bytes(),
             "mime_type": "image/jpeg",
@@ -283,32 +303,26 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
             "height": 540,
             "source": "exact",
         }
-        with patch.object(youtube_frames, "fetch_youtube_precise_frame", return_value=exact) as precise, patch.object(
-            youtube_frames, "_fetch_youtube_storyboard_frame"
-        ) as storyboard:
+        with patch.object(
+            youtube_frames,
+            "_fetch_youtube_storyboard_frame",
+            side_effect=YoutubeFrameError("storyboard unavailable"),
+        ), patch.object(youtube_frames, "fetch_youtube_precise_frame", return_value=exact) as precise:
             result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
         self.assertEqual(result["source"], "exact")
         precise.assert_called_once()
-        storyboard.assert_not_called()
 
-    def test_public_fetch_falls_back_to_storyboard(self):
-        fallback = {
-            "bytes": self._frame_bytes(),
-            "mime_type": "image/jpeg",
-            "requested_seconds": 33.3,
-            "frame_seconds": 30.0,
-            "width": 960,
-            "height": 540,
-            "source": "storyboard",
-        }
-        with patch.object(
-            youtube_frames,
-            "fetch_youtube_precise_frame",
-            side_effect=YoutubeFrameError("precise unavailable"),
-        ), patch.object(youtube_frames, "_fetch_youtube_storyboard_frame", return_value=fallback) as storyboard:
-            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
-        self.assertEqual(result["source"], "storyboard")
-        storyboard.assert_called_once()
+    def test_normalizes_browser_capture_without_youtube_network(self):
+        encoded = base64.b64encode(self._frame_bytes()).decode("ascii")
+        result = frame_from_browser_capture("data:image/jpeg;base64," + encoded, 42.5)
+
+        self.assertEqual(result["source"], "browser")
+        self.assertEqual(result["frame_seconds"], 42.5)
+        self.assertGreaterEqual(result["width"], 640)
+
+    def test_rejects_invalid_browser_capture(self):
+        with self.assertRaisesRegex(YoutubeFrameError, "格式無效"):
+            frame_from_browser_capture("data:text/plain;base64,SGVsbG8=", 10)
 
     def test_rejects_invalid_video_id_without_network(self):
         with patch.object(youtube_frames, "_youtube_info") as youtube_info:
@@ -356,7 +370,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         fallback_options = youtube_dl.call_args_list[1].args[0]
         self.assertEqual(
             fallback_options["extractor_args"]["youtube"]["player_client"],
-            ["web", "android_vr"],
+            ["android_vr"],
         )
 
     def test_metadata_retries_when_first_response_has_no_frame_formats(self):
@@ -394,7 +408,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         fake_ydl.__exit__ = Mock(return_value=False)
         fake_ydl.extract_info.return_value = {"duration": 100, "formats": []}
         with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=fake_ydl):
-            with self.assertRaisesRegex(YoutubeFrameError, "已自動重試"):
+            with self.assertRaisesRegex(YoutubeFrameError, "YouTube 暫時拒絕"):
                 _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 10)
 
 
