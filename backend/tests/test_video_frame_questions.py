@@ -150,6 +150,11 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn("getDisplayMedia", html)
         self.assertIn("frame_image: frameQuestionContext.frameImage", html)
         self.assertIn('id="frame-question-upload"', html)
+        self.assertIn('id="frame-question-capture"', html)
+        self.assertIn("leaveFullscreenBeforeCapturePrompt", html)
+        self.assertIn("目前分頁畫面啟動逾時", html)
+        self.assertNotIn("RestrictionTarget", html)
+        self.assertNotIn("restrictTo(", html)
 
 
 if __name__ == "__main__":

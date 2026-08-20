@@ -504,8 +504,13 @@
         .frame-question-status.is-error { color:#a53d48; }
         .frame-question-foot { display:flex; align-items:center; justify-content:flex-end; gap:9px; padding:11px 17px 14px; border-top:1px solid #e2eaf2; background:#fbfdff; }
         .frame-question-cancel, .frame-question-submit { min-height:38px; padding:0 14px; border-radius:10px; font-size:11px; font-weight:880; cursor:pointer; }
-        .frame-question-upload { min-height:38px; display:inline-flex; align-items:center; margin-right:auto; padding:0 12px; border:1px solid #c9d9e9; border-radius:10px; color:#315e88; background:#f4f9ff; font-size:11px; font-weight:850; cursor:pointer; }
-        .frame-question-upload:hover { border-color:#99bbe0; background:#eaf5ff; }
+        .frame-question-capture, .frame-question-upload { min-height:38px; display:inline-flex; align-items:center; padding:0 12px; border:1px solid #c9d9e9; border-radius:10px; color:#315e88; background:#f4f9ff; font-size:11px; font-weight:850; cursor:pointer; }
+        .frame-question-capture { margin-right:0; }
+        .frame-question-upload { margin-right:auto; }
+        .frame-question-capture:hover, .frame-question-upload:hover { border-color:#99bbe0; background:#eaf5ff; }
+        .frame-question-capture:disabled { opacity:.55; cursor:wait; }
+        .frame-question-dialog.is-capturing-frame { visibility:hidden; }
+        .frame-question-dialog.is-capturing-frame::backdrop { background:transparent; backdrop-filter:none; }
         .frame-question-cancel { color:var(--muted); border:1px solid #d4dfe9; background:#fff; }
         .frame-question-submit { color:#fff; border:0; background:linear-gradient(135deg,#1463d9,#177fbd); box-shadow:0 8px 18px rgba(20,99,217,.2); }
         .frame-question-submit:disabled { opacity:.55; cursor:wait; box-shadow:none; }
@@ -561,6 +566,7 @@
             .frame-question-preview { grid-template-columns:104px minmax(0,1fr); gap:9px; }
             .frame-question-preview img { width:104px; }
             .frame-question-foot { padding:10px 14px 12px; }
+            .frame-question-capture, .frame-question-upload { padding:0 9px; }
         }
         @media (orientation: landscape) and (max-height: 520px) {
             .focus-exit { top: calc(50% - 47px); width: 40px; height: 40px; }
@@ -747,6 +753,7 @@
                                             <div class="frame-question-answer" id="frame-question-answer" data-math-content hidden></div>
                                         </div>
                                         <footer class="frame-question-foot">
+                                            <button class="frame-question-capture" id="frame-question-capture" type="button">擷取畫面</button>
                                             <label class="frame-question-upload" for="frame-question-upload">選擇截圖<input id="frame-question-upload" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
                                             <button class="frame-question-cancel" id="frame-question-cancel" type="button">取消</button>
                                             <button class="frame-question-submit" id="frame-question-submit" type="submit">送出問題</button>
@@ -985,6 +992,7 @@
             const frameQuestionImage = document.getElementById('frame-question-image');
             const frameQuestionSampleTime = document.getElementById('frame-question-sample-time');
             const frameQuestionAnswer = document.getElementById('frame-question-answer');
+            const frameQuestionCapture = document.getElementById('frame-question-capture');
             const frameQuestionUpload = document.getElementById('frame-question-upload');
             const focusVideoTitle = document.getElementById('focus-video-title');
             const focusToast = document.getElementById('focus-toast');
@@ -1013,7 +1021,6 @@
             let frameQuestionContext = null;
             let frameQuestionTrigger = null;
             let frameQuestionCaptureStream = null;
-            let frameQuestionCaptureRestricted = false;
             let markerSavedTimer = null;
             let focusToastTimer = null;
             let theaterScrollY = 0;
@@ -1391,7 +1398,6 @@
                 if (!frameQuestionCaptureStream) return;
                 frameQuestionCaptureStream.getTracks().forEach(function (track) { track.stop(); });
                 frameQuestionCaptureStream = null;
-                frameQuestionCaptureRestricted = false;
             };
             const liveFrameQuestionCapture = function () {
                 if (!frameQuestionCaptureStream) return null;
@@ -1424,6 +1430,49 @@
                     }
                 });
             };
+            const waitForPlayerLayout = function () {
+                return new Promise(function (resolve) {
+                    window.requestAnimationFrame(function () {
+                        window.requestAnimationFrame(resolve);
+                    });
+                });
+            };
+            const promiseWithTimeout = function (promise, timeoutMs, message) {
+                return Promise.race([
+                    promise,
+                    new Promise(function (_, reject) {
+                        window.setTimeout(function () { reject(new Error(message)); }, timeoutMs);
+                    })
+                ]);
+            };
+            const playerHasFullscreenPresentation = function () {
+                if (!focusPlayerFrame) return false;
+                let matchesFullscreen = false;
+                try { matchesFullscreen = focusPlayerFrame.matches(':fullscreen'); } catch (error) {}
+                return Boolean(
+                    document.fullscreenElement
+                    || document.webkitFullscreenElement
+                    || matchesFullscreen
+                    || focusPlayerFrame.classList.contains('is-theater')
+                    || focusPlayerFrame.classList.contains('is-focus-mode')
+                );
+            };
+            const leaveFullscreenBeforeCapturePrompt = async function () {
+                if (!focusPlayerFrame || !playerHasFullscreenPresentation()) return;
+                const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFullscreen) {
+                    try {
+                        const result = exitFullscreen.call(document);
+                        if (result && typeof result.then === 'function') {
+                            await promiseWithTimeout(result, 1200, 'fullscreen_exit_timeout');
+                        }
+                    } catch (error) {}
+                }
+                focusPlayerFrame.classList.remove('is-theater', 'is-focus-mode');
+                document.body.classList.remove('has-focus-theater');
+                await waitForPlayerLayout();
+                updateFocusMode();
+            };
             const captureCurrentPlayerFrame = async function () {
                 if (!focusPlayerFrame || !navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
                     return null;
@@ -1450,28 +1499,13 @@
                     if (track) track.addEventListener('ended', function () {
                         if (frameQuestionCaptureStream === stream) {
                             frameQuestionCaptureStream = null;
-                            frameQuestionCaptureRestricted = false;
                         }
                     }, { once:true });
+                    updateFocusMode();
+                    await waitForPlayerLayout();
                 }
 
                 const playerElement = document.getElementById('youtube-player') || focusPlayerFrame;
-                const videoTrack = stream.getVideoTracks()[0];
-                if (
-                    !frameQuestionCaptureRestricted
-                    && videoTrack
-                    && typeof videoTrack.restrictTo === 'function'
-                    && window.RestrictionTarget
-                    && typeof window.RestrictionTarget.fromElement === 'function'
-                ) {
-                    try {
-                        const restriction = await window.RestrictionTarget.fromElement(playerElement);
-                        await videoTrack.restrictTo(restriction);
-                        frameQuestionCaptureRestricted = true;
-                    } catch (error) {
-                        frameQuestionCaptureRestricted = false;
-                    }
-                }
                 const rect = playerElement.getBoundingClientRect();
                 if (rect.width < 2 || rect.height < 2) throw new Error('目前播放器不在可擷取範圍內。');
                 const captureVideo = document.createElement('video');
@@ -1480,18 +1514,18 @@
                 captureVideo.srcObject = stream;
                 focusPlayerFrame.classList.add('is-frame-capturing');
                 try {
-                    await captureVideo.play();
+                    await promiseWithTimeout(
+                        Promise.resolve(captureVideo.play()),
+                        2500,
+                        '目前分頁畫面啟動逾時，請再試一次。'
+                    );
                     await waitForCapturedVideoFrame(captureVideo);
                     const scaleX = captureVideo.videoWidth / Math.max(1, window.innerWidth);
                     const scaleY = captureVideo.videoHeight / Math.max(1, window.innerHeight);
-                    const sourceX = frameQuestionCaptureRestricted ? 0 : Math.max(0, Math.round(rect.left * scaleX));
-                    const sourceY = frameQuestionCaptureRestricted ? 0 : Math.max(0, Math.round(rect.top * scaleY));
-                    const sourceWidth = frameQuestionCaptureRestricted
-                        ? captureVideo.videoWidth
-                        : Math.min(captureVideo.videoWidth - sourceX, Math.max(1, Math.round(rect.width * scaleX)));
-                    const sourceHeight = frameQuestionCaptureRestricted
-                        ? captureVideo.videoHeight
-                        : Math.min(captureVideo.videoHeight - sourceY, Math.max(1, Math.round(rect.height * scaleY)));
+                    const sourceX = Math.max(0, Math.round(rect.left * scaleX));
+                    const sourceY = Math.max(0, Math.round(rect.top * scaleY));
+                    const sourceWidth = Math.min(captureVideo.videoWidth - sourceX, Math.max(1, Math.round(rect.width * scaleX)));
+                    const sourceHeight = Math.min(captureVideo.videoHeight - sourceY, Math.max(1, Math.round(rect.height * scaleY)));
                     if (sourceWidth < 2 || sourceHeight < 2) throw new Error('目前播放器不在可擷取範圍內。');
                     const outputWidth = Math.min(1280, sourceWidth);
                     const outputHeight = Math.max(1, Math.round(sourceHeight * outputWidth / sourceWidth));
@@ -1543,12 +1577,19 @@
                 if (frameQuestionUpload) frameQuestionUpload.value = '';
                 let capturedImage = null;
                 let captureNotice = '';
-                try {
-                    capturedImage = await captureCurrentPlayerFrame();
-                } catch (error) {
-                    captureNotice = error && error.name === 'NotAllowedError'
-                        ? '未授權目前分頁畫面，將改用 YouTube 預覽影格。'
-                        : (error.message || '目前分頁畫面擷取失敗，將改用 YouTube 預覽影格。');
+                const hasLiveCapture = Boolean(liveFrameQuestionCapture());
+                if (!hasLiveCapture && playerHasFullscreenPresentation()) {
+                    await leaveFullscreenBeforeCapturePrompt();
+                    captureNotice = '已安全離開全螢幕；按「擷取畫面」後選擇目前分頁。';
+                } else {
+                    try {
+                        capturedImage = await captureCurrentPlayerFrame();
+                    } catch (error) {
+                        stopFrameQuestionCapture();
+                        captureNotice = error && error.name === 'NotAllowedError'
+                            ? '未授權目前分頁畫面，可按「擷取畫面」重試或選擇截圖。'
+                            : (error.message || '目前分頁畫面擷取失敗，可選擇截圖。');
+                    }
                 }
                 frameQuestionContext = {
                     videoId: Number(option.value),
@@ -1578,6 +1619,40 @@
                 }
                 window.setTimeout(function () { frameQuestionInput.focus({ preventScroll: true }); }, 30);
             };
+            if (frameQuestionCapture) frameQuestionCapture.addEventListener('click', async function () {
+                if (!frameQuestionContext || frameQuestionSubmitting || frameQuestionCapture.disabled) return;
+                frameQuestionCapture.disabled = true;
+                frameQuestionCapture.textContent = '擷取中…';
+                if (frameQuestionStatus) {
+                    frameQuestionStatus.textContent = '請在瀏覽器視窗選擇「目前分頁」。';
+                    frameQuestionStatus.classList.remove('is-error');
+                }
+                frameQuestionDialog.classList.add('is-capturing-frame');
+                try {
+                    const capturedImage = await captureCurrentPlayerFrame();
+                    if (!capturedImage || !frameQuestionContext) throw new Error('此瀏覽器不支援分頁擷取，請選擇截圖。');
+                    frameQuestionContext.frameImage = capturedImage;
+                    if (frameQuestionImage) frameQuestionImage.src = capturedImage;
+                    if (frameQuestionPreview) frameQuestionPreview.hidden = false;
+                    if (frameQuestionSampleTime) {
+                        frameQuestionSampleTime.textContent = '已精準擷取 ' + formatClock(frameQuestionContext.playbackSeconds);
+                    }
+                    if (frameQuestionStatus) frameQuestionStatus.textContent = '已取得目前畫面，送出後可直接分析。';
+                } catch (error) {
+                    stopFrameQuestionCapture();
+                    if (frameQuestionStatus) {
+                        frameQuestionStatus.textContent = error && error.name === 'NotAllowedError'
+                            ? '未授權目前分頁畫面，可重新擷取或選擇截圖。'
+                            : (error.message || '畫面擷取失敗，請選擇截圖。');
+                        frameQuestionStatus.classList.add('is-error');
+                    }
+                } finally {
+                    frameQuestionDialog.classList.remove('is-capturing-frame');
+                    frameQuestionCapture.disabled = false;
+                    frameQuestionCapture.textContent = '擷取畫面';
+                    window.setTimeout(function () { frameQuestionInput.focus({ preventScroll:true }); }, 30);
+                }
+            });
             if (frameQuestionUpload) frameQuestionUpload.addEventListener('change', function () {
                 const file = frameQuestionUpload.files && frameQuestionUpload.files[0];
                 if (!file || !frameQuestionContext) return;
@@ -2354,7 +2429,14 @@
                 return document.fullscreenElement || document.webkitFullscreenElement || null;
             };
             const isFocusMode = function () {
-                return Boolean(focusPlayerFrame && (fullscreenElement() === focusPlayerFrame || focusPlayerFrame.classList.contains('is-theater')));
+                if (!focusPlayerFrame) return false;
+                let matchesFullscreen = false;
+                try { matchesFullscreen = focusPlayerFrame.matches(':fullscreen'); } catch (error) {}
+                return Boolean(
+                    fullscreenElement() === focusPlayerFrame
+                    || matchesFullscreen
+                    || focusPlayerFrame.classList.contains('is-theater')
+                );
             };
             const updateFocusMode = function () {
                 if (!focusPlayerFrame) return;
@@ -2417,12 +2499,15 @@
                     return;
                 }
                 const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
-                if (fullscreenElement() && exitFullscreen) {
+                if (playerHasFullscreenPresentation() && exitFullscreen) {
                     try {
                         const result = exitFullscreen.call(document);
-                        if (result && typeof result.catch === 'function') result.catch(function () {});
+                        if (result && typeof result.finally === 'function') {
+                            result.catch(function () {}).finally(updateFocusMode);
+                        }
                     } catch (error) {}
                 }
+                window.setTimeout(updateFocusMode, 120);
             };
             const playerCanReceiveShortcuts = function () {
                 return Boolean(player && typeof player.getCurrentTime === 'function');
@@ -2525,8 +2610,10 @@
                 endSpaceBoost();
             });
             window.addEventListener('blur', endSpaceBoost);
+            window.addEventListener('resize', updateFocusMode);
             document.addEventListener('visibilitychange', function () {
                 if (document.hidden) endSpaceBoost();
+                else updateFocusMode();
             });
             document.querySelectorAll('[data-select-video]').forEach(function (button) {
                 button.addEventListener('click', function () {
