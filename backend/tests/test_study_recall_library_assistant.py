@@ -1,0 +1,183 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from e3_tracker.api.web import create_app
+
+
+class StudyRecallLibraryAssistantTests(unittest.TestCase):
+    def build_app(self, temp_dir: str):
+        with patch.dict(
+            os.environ,
+            {
+                "E3_CACHE_DIR": temp_dir,
+                "E3_DATABASE_URL": "",
+                "E3_SESSION_COOKIE_SECURE": "0",
+                "OPENAI_API_KEY": "test-key",
+            },
+        ):
+            return create_app()
+
+    @staticmethod
+    def login_admin(app, client):
+        storage = app.extensions["e3_storage"]
+        token = "library-assistant-test-session"
+        storage.save_web_session(token, "test-admin")
+        with client.session_transaction() as browser_session:
+            browser_session["username"] = "test-admin"
+            browser_session["session_token"] = token
+            browser_session["is_admin"] = True
+
+    @staticmethod
+    def openai_response(answer: str):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": answer}],
+                }
+            ],
+        }
+        return response
+
+    def test_natural_language_subject_and_page_range_use_only_requested_pages(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                storage.create_study_recall_session(
+                    study_date="2026-08-20",
+                    subject="離散數學",
+                    title="排列組合完整筆記",
+                    image_filenames=[f"page-{index}.jpg" for index in range(1, 21)],
+                    summary="箱子分堆與排列組合",
+                    source_transcription=[
+                        {
+                            "image_index": index,
+                            "transcription": f"UNIQUE_PAGE_{index}：第 {index} 頁的箱子分堆公式。",
+                        }
+                        for index in range(1, 21)
+                    ],
+                    key_concepts=[],
+                )
+                storage.create_study_recall_session(
+                    study_date="2026-08-20",
+                    subject="資料結構",
+                    title="樹與圖",
+                    image_filenames=["tree.jpg"],
+                    summary="樹",
+                    source_transcription=[{"image_index": 1, "transcription": "DATA_STRUCTURE_ONLY"}],
+                    key_concepts=[],
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(
+                        "| 公式 | 條件 |\n|---|---|\n| \\(n!\\) | 相異物件 [來源 1] |"
+                    ),
+                ) as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/library-ask",
+                        json={
+                            "question": "請根據我離散數學筆記的第12~16頁整理出箱子分堆問題的公式表格。"
+                        },
+                    )
+
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["inferred"]["subject"], "離散數學")
+                self.assertTrue(payload["inferred"]["page_range"])
+                self.assertEqual([source["page"] for source in payload["sources"]], [12, 13, 14, 15, 16])
+                self.assertEqual(payload["scope"], "離散數學・排列組合完整筆記・第 12–16 頁")
+
+                request_prompt = openai_post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
+                self.assertIn("UNIQUE_PAGE_12", request_prompt)
+                self.assertIn("UNIQUE_PAGE_16", request_prompt)
+                self.assertNotIn("UNIQUE_PAGE_11", request_prompt)
+                self.assertNotIn("UNIQUE_PAGE_17", request_prompt)
+                self.assertNotIn("DATA_STRUCTURE_ONLY", request_prompt)
+            finally:
+                storage._engine.dispose()
+
+    def test_explicit_note_scope_and_page_limit_are_validated(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                session_id = storage.create_study_recall_session(
+                    study_date="2026-08-20",
+                    subject="線性代數",
+                    title="矩陣",
+                    image_filenames=["matrix.jpg"],
+                    summary="矩陣",
+                    source_transcription=[{"image_index": 1, "transcription": "矩陣乘法"}],
+                    key_concepts=[],
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+
+                too_wide = client.post(
+                    "/admin/study-recall/library-ask",
+                    json={
+                        "question": "整理公式",
+                        "session_id": session_id,
+                        "page_start": 1,
+                        "page_end": 30,
+                    },
+                )
+                wrong_subject = client.post(
+                    "/admin/study-recall/library-ask",
+                    json={
+                        "question": "整理公式",
+                        "session_id": session_id,
+                        "subject": "離散數學",
+                    },
+                )
+
+                self.assertEqual(too_wide.status_code, 400)
+                self.assertIn("最多分析 24 頁", too_wide.get_json()["error"])
+                self.assertEqual(wrong_subject.status_code, 400)
+                self.assertIn("不屬於所選科目", wrong_subject.get_json()["error"])
+            finally:
+                storage._engine.dispose()
+
+    def test_recall_page_contains_library_assistant_controls(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                storage.create_study_recall_session(
+                    study_date="2026-08-20",
+                    subject="演算法",
+                    title="動態規劃",
+                    image_filenames=["dp.jpg"],
+                    summary="DP",
+                    source_transcription=[{"image_index": 1, "transcription": "最佳子結構"}],
+                    key_concepts=[],
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+
+                response = client.get("/admin/study-recall")
+                html = response.get_data(as_text=True)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('id="note-library-assistant"', html)
+                self.assertIn("問整個筆記庫", html)
+                self.assertIn("公式表", html)
+                self.assertIn("動態規劃", html)
+                self.assertIn("data-library-ai-answer", html)
+            finally:
+                storage._engine.dispose()
+
+
+if __name__ == "__main__":
+    unittest.main()

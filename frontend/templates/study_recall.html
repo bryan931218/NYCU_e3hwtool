@@ -289,6 +289,63 @@
         .quick-review-done { min-width:158px; padding:12px 14px; color:#d8fff5; border:1px solid rgba(255,255,255,.24); border-radius:12px; background:rgba(255,255,255,.08); text-align:center; font-size:12px; font-weight:900; }
         @media (max-width:620px) { .quick-review-launch { min-height:0; grid-template-columns:1fr; gap:19px; padding:22px 19px; border-radius:19px; }.quick-review-actions,.quick-review-done { width:100%; min-width:0; }.quick-review-copy h2 { font-size:23px; } }
     </style>
+    <style>
+        .library-ai { position:relative; overflow:hidden; border-color:#b7d5f5; background:linear-gradient(145deg,#f9fcff 0%,#fff 50%,#f2fbfa 100%); }
+        .library-ai::before { content:""; position:absolute; top:-115px; right:-90px; width:270px; height:270px; border-radius:50%; background:radial-gradient(circle,rgba(42,136,235,.13),transparent 68%); pointer-events:none; }
+        .library-ai-head { position:relative; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:24px 24px 0; }
+        .library-ai-title { display:flex; align-items:flex-start; gap:13px; }
+        .library-ai-mark { flex:0 0 auto; width:43px; height:43px; display:grid; place-items:center; color:#fff; border-radius:14px; background:linear-gradient(145deg,#1a74e6,#087f80); box-shadow:0 10px 24px rgba(17,105,180,.22); font-size:20px; font-weight:950; }
+        .library-ai-title h2 { margin:1px 0 0; font-size:21px; }
+        .library-ai-badge { flex:0 0 auto; padding:6px 9px; color:#087577; border:1px solid #b9dfdc; border-radius:999px; background:rgba(232,248,247,.9); font-size:10px; font-weight:900; }
+        .library-ai-body { position:relative; padding:18px 24px 24px; }
+        .library-ai-quick { display:flex; gap:7px; margin-bottom:13px; overflow-x:auto; scrollbar-width:none; }
+        .library-ai-quick::-webkit-scrollbar { display:none; }
+        .library-ai-quick button { flex:0 0 auto; min-height:32px; padding:0 10px; color:#38617e; border:1px solid #cad9e8; border-radius:999px; background:rgba(255,255,255,.9); font-size:11px; font-weight:850; cursor:pointer; }
+        .library-ai-quick button:hover,.library-ai-quick button:focus-visible { color:var(--blue); border-color:#8fbbed; background:var(--blue-soft); outline:0; }
+        .library-ai-textarea { width:100%; min-height:106px; resize:vertical; padding:14px 15px; color:var(--ink); border:1px solid #bdcfe2; border-radius:14px; background:rgba(255,255,255,.96); outline:0; line-height:1.65; box-shadow:inset 0 1px 2px rgba(16,42,67,.025); }
+        .library-ai-textarea:focus { border-color:#5b9be8; box-shadow:0 0 0 4px rgba(23,105,216,.11); }
+        .library-ai-scope { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr) 82px 16px 82px; align-items:end; gap:8px; margin-top:10px; }
+        .library-ai-field { min-width:0; display:grid; gap:5px; }
+        .library-ai-field label { color:#52677d; font-size:10px; font-weight:900; }
+        .library-ai-field select,.library-ai-field input { width:100%; min-width:0; min-height:40px; padding:8px 10px; color:var(--ink); border:1px solid #c8d7e6; border-radius:10px; background:#fff; outline:0; }
+        .library-ai-field select:focus,.library-ai-field input:focus { border-color:#70a7ec; box-shadow:0 0 0 3px rgba(20,99,217,.1); }
+        .library-ai-range-separator { align-self:end; height:40px; display:grid; place-items:center; color:var(--muted); font-size:12px; }
+        .library-ai-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:13px; }
+        .library-ai-hint { min-width:0; margin:0; color:var(--muted); font-size:11px; line-height:1.5; }
+        .library-ai-submit { flex:0 0 auto; min-width:118px; }
+        .library-ai-submit .running-label { display:none; }
+        .library-ai-form.is-pending .library-ai-submit .default-label { display:none; }
+        .library-ai-form.is-pending .library-ai-submit .running-label { display:inline; }
+        .library-ai-status { min-height:18px; margin:9px 0 0; color:var(--muted); font-size:12px; font-weight:750; }
+        .library-ai-status.error { color:var(--red); }
+        .library-ai-result { margin-top:17px; overflow:hidden; border:1px solid #c9daeb; border-radius:16px; background:#fff; box-shadow:0 12px 30px rgba(16,42,67,.06); }
+        .library-ai-result[hidden] { display:none; }
+        .library-ai-result-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:13px 15px; border-bottom:1px solid var(--line); background:#f6faff; }
+        .library-ai-result-meta { min-width:0; }
+        .library-ai-result-meta strong { display:block; font-size:13px; }
+        .library-ai-result-meta span { display:block; margin-top:3px; overflow:hidden; color:var(--muted); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+        .library-ai-result-actions { display:flex; gap:6px; }
+        .library-ai-tool { min-height:31px; padding:0 9px; color:#43617f; border:1px solid #c8d7e6; border-radius:8px; background:#fff; font-size:10px; font-weight:850; cursor:pointer; }
+        .library-ai-tool:hover,.library-ai-tool:focus-visible { color:var(--blue); border-color:var(--blue); outline:0; }
+        .library-ai-answer { min-width:0; padding:18px 17px; color:#263a52; font-size:13px; line-height:1.76; overflow-wrap:anywhere; }
+        .library-ai-answer h3,.library-ai-answer h4 { margin:18px 0 7px; color:var(--ink); letter-spacing:-.015em; }
+        .library-ai-answer h3:first-child,.library-ai-answer h4:first-child { margin-top:0; }
+        .library-ai-answer p { margin:8px 0; }
+        .library-ai-answer ul,.library-ai-answer ol { margin:8px 0; padding-left:22px; }
+        .library-ai-answer li + li { margin-top:4px; }
+        .library-ai-table-wrap { width:100%; margin:11px 0; overflow-x:auto; border:1px solid var(--line); border-radius:11px; }
+        .library-ai-table { width:100%; min-width:560px; border-collapse:collapse; background:#fff; font-size:12px; }
+        .library-ai-table th { padding:9px 10px; color:#284c70; border-bottom:1px solid #cbdced; background:#edf5fd; text-align:left; white-space:nowrap; }
+        .library-ai-table td { padding:9px 10px; border-top:1px solid #e3eaf2; vertical-align:top; }
+        .library-ai-table tr:nth-child(even) td { background:#fbfdff; }
+        .library-ai-sources { padding:13px 15px 15px; border-top:1px solid var(--line); background:#fbfdff; }
+        .library-ai-sources > span { display:block; margin-bottom:7px; color:var(--muted); font-size:10px; font-weight:900; }
+        .library-ai-source-list { display:flex; flex-wrap:wrap; gap:6px; }
+        .library-ai-source { max-width:100%; min-height:30px; display:inline-flex; align-items:center; gap:5px; padding:4px 8px; overflow:hidden; color:#325c83; border:1px solid #c7d9ea; border-radius:9px; background:#fff; font-size:10px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+        .library-ai-source:hover,.library-ai-source:focus-visible { color:var(--blue); border-color:var(--blue); background:var(--blue-soft); outline:0; }
+        @media (max-width:760px) { .library-ai-scope { grid-template-columns:1fr 1fr; }.library-ai-field.note { grid-column:1 / -1; }.library-ai-range-separator { display:none; } }
+        @media (max-width:620px) { .library-ai-head { padding:19px 16px 0; }.library-ai-body { padding:15px 16px 18px; }.library-ai-badge { display:none; }.library-ai-title { gap:10px; }.library-ai-mark { width:38px; height:38px; border-radius:12px; }.library-ai-title h2 { font-size:19px; }.library-ai-scope { grid-template-columns:1fr 1fr; }.library-ai-field.subject,.library-ai-field.note { grid-column:1 / -1; }.library-ai-actions { align-items:stretch; flex-direction:column; }.library-ai-submit { width:100%; }.library-ai-result-head { align-items:flex-start; }.library-ai-result-meta span { white-space:normal; }.library-ai-answer { padding:16px 14px; }.library-ai-source-list { display:grid; grid-template-columns:1fr; }.library-ai-source { width:100%; } }
+    </style>
 </head>
 <body>
     <header class="study-nav" aria-label="學習中心導覽">
@@ -311,10 +368,43 @@
             <div class="main-stack">
                 <nav class="recall-shortcuts" aria-label="筆記彙整快速導覽">
                     <a href="#review-zone">今日複習 <strong data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</strong></a>
+                    <a href="#note-library-assistant">AI 助手</a>
                     <a href="#note-library-search">搜尋筆記</a>
                     <a href="#new-note">新增筆記</a>
                     {% if selected_session %}<a href="#note-review">目前筆記</a>{% endif %}
                 </nav>
+                <article id="note-library-assistant" class="panel library-ai" data-library-ai data-ask-url="{{ url_for('admin_study_recall_library_ask') }}" data-ai-enabled="{{ '1' if openai_ready else '0' }}">
+                    <header class="library-ai-head">
+                        <div class="library-ai-title"><span class="library-ai-mark" aria-hidden="true">✦</span><div><p class="eyebrow">NOTE INTELLIGENCE</p><h2>問整個筆記庫</h2><p class="caption">指定科目、筆記或頁碼，答案會附上可回查的原始頁面。</p></div></div>
+                        <span class="library-ai-badge">根據你的筆記回答</span>
+                    </header>
+                    <div class="library-ai-body">
+                        <div class="library-ai-quick" aria-label="常用筆記任務">
+                            <button type="button" data-library-ai-prompt="請整理成公式表，包含適用條件、公式、變數意義與常見陷阱。">公式表</button>
+                            <button type="button" data-library-ai-prompt="請比較容易混淆的觀念，整理判斷線索、差異與常見錯法。">觀念比較</button>
+                            <button type="button" data-library-ai-prompt="請整理研究所考試常見題型、辨識線索與標準解題步驟。">常考題型</button>
+                            <button type="button" data-library-ai-prompt="請依筆記出 5 題有唯一正解的選擇、是非或計算題，並附答案與精簡解析。">快速測驗</button>
+                            <button type="button" data-library-ai-prompt="請找出最容易失分的觀念、陷阱與考前必記提醒。">失分陷阱</button>
+                        </div>
+                        <form class="library-ai-form" data-library-ai-form>
+                            <textarea class="library-ai-textarea" name="question" maxlength="1200" rows="4" placeholder="例如：請根據我離散數學筆記的第 12～16 頁，整理箱子分堆問題的公式表格。" aria-label="交代 AI 筆記助手的任務" required></textarea>
+                            <div class="library-ai-scope">
+                                <div class="library-ai-field subject"><label for="library-ai-subject">科目</label><select id="library-ai-subject" name="subject"><option value="">自動判斷／全部</option>{% for subject in subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}</select></div>
+                                <div class="library-ai-field note"><label for="library-ai-session">筆記</label><select id="library-ai-session" name="session_id"><option value="">自動搜尋所有筆記</option>{% for item in assistant_sessions %}<option value="{{ item.id }}" data-subject="{{ item.subject }}">{{ item.subject }}・{{ item.title }}</option>{% endfor %}</select></div>
+                                <div class="library-ai-field"><label for="library-ai-page-start">起始頁</label><input id="library-ai-page-start" name="page_start" type="number" min="1" inputmode="numeric" placeholder="選填"></div>
+                                <span class="library-ai-range-separator" aria-hidden="true">至</span>
+                                <div class="library-ai-field"><label for="library-ai-page-end">結束頁</label><input id="library-ai-page-end" name="page_end" type="number" min="1" inputmode="numeric" placeholder="選填"></div>
+                            </div>
+                            <div class="library-ai-actions"><p class="library-ai-hint">不設定範圍時，會自動從所有筆記找出最相關頁面。</p><button class="submit library-ai-submit" type="submit" {% if not openai_ready %}disabled title="需先設定 OPENAI_API_KEY"{% endif %}><span class="default-label">開始整理</span><span class="running-label">整理中…</span></button></div>
+                            <p class="library-ai-status" data-library-ai-status aria-live="polite">{% if not openai_ready %}AI 筆記助手尚未啟用。{% endif %}</p>
+                        </form>
+                        <section class="library-ai-result" data-library-ai-result aria-live="polite" hidden>
+                            <header class="library-ai-result-head"><div class="library-ai-result-meta"><strong>整理結果</strong><span data-library-ai-scope></span></div><div class="library-ai-result-actions"><button class="library-ai-tool" type="button" data-library-ai-copy>複製</button><button class="library-ai-tool" type="button" data-library-ai-clear>清除</button></div></header>
+                            <div class="library-ai-answer" data-library-ai-answer></div>
+                            <footer class="library-ai-sources"><span>筆記來源</span><div class="library-ai-source-list" data-library-ai-sources></div></footer>
+                        </section>
+                    </div>
+                </article>
                 <article id="note-library-search" class="panel">
                     <div class="panel-static-head"><h2>搜尋筆記庫</h2><p class="caption">輸入關鍵字、公式或問題，直接找出最相關的筆記頁面。</p></div>
                         <div class="panel-static-content note-search-body">
@@ -377,7 +467,7 @@
                     <div class="rename-note-panel"><form class="rename-note-form" method="post" action="{{ url_for('admin_study_recall_rename', session_id=selected_session.id) }}"><input name="title" type="text" value="{{ selected_session.title }}" maxlength="120" aria-label="筆記名稱" required><button class="rename-note-save" type="submit">儲存名稱</button></form></div>
                     <nav class="topic-index" aria-label="目前筆記的觀念主題">{% for group in selected_session.concept_groups %}<a href="#concept-{{ group.concepts[0].display_index }}">{{ group.topic }} <span>{{ group.concepts|length }} 張</span></a>{% endfor %}</nav>
                     {% for group in selected_session.concept_groups %}<details class="topic-section" data-recall-fold="topic"><summary class="topic-section-head"><div><span class="topic-kicker">觀念主題</span><h3>{{ group.topic }}</h3></div><div class="topic-section-tools"><span class="chip">{{ group.concepts|length }} 張</span><span class="fold-arrow" aria-hidden="true">+</span></div></summary><div class="topic-section-body"><div class="concepts">{% for concept in group.concepts %}<details id="concept-{{ concept.display_index }}" class="concept concept-fold" data-recall-fold="concept"><summary class="concept-fold-head"><span class="concept-fold-title">{{ concept.concept }}</span><span class="concept-fold-actions">{% if concept.card_type == 'example' %}<span class="example-badge">例題</span>{% endif %}<span class="fold-arrow" aria-hidden="true">+</span></span></summary><div class="concept-fold-body"><div class="note-card-sections">{% if concept.card_type == 'example' and concept.example_problem %}<div class="example-section"><span class="concept-section-label">具體題目示例</span><p data-math-content>{{ concept.example_problem }}</p></div>{% endif %}{% if concept.card_type == 'example' and concept.example_method %}<div class="example-section method"><span class="concept-section-label">解題方法</span><p data-math-content>{{ concept.example_method }}</p></div>{% endif %}{% if concept.card_type != 'example' and concept.simple_example %}<div class="example-section simple"><span class="concept-section-label">簡單例子</span><p data-math-content>{{ concept.simple_example }}</p></div>{% endif %}{% if concept.core_summary %}<div class="core-summary"><span class="concept-section-label">重點總結</span><p data-math-content>{{ concept.core_summary }}</p></div>{% endif %}<div class="concept-detail"><span class="concept-section-label">{% if concept.card_type == 'example' %}觀念補充{% else %}觀念說明{% endif %}</span><p data-math-content>{{ concept.explanation }}</p></div>{% if concept.reasoning_steps %}<div class="concept-detail"><span class="concept-section-label">{% if concept.card_type == 'example' %}解題步驟{% else %}必要步驟{% endif %}</span><ol class="reasoning-steps">{% for step in concept.reasoning_steps %}<li data-math-content>{{ step }}</li>{% endfor %}</ol></div>{% endif %}{% if concept.common_confusion %}<div class="common-confusion" data-math-content><strong>易混淆：</strong>{{ concept.common_confusion }}</div>{% endif %}</div>{% if concept.memory_hint %}<div class="hint" data-math-content>記憶線索：{{ concept.memory_hint }}</div>{% endif %}{% if concept.source_refs %}<div class="source-refs"><span class="source-label">原文</span>{% for source in concept.source_refs %}{% if source.bbox %}<button class="source-tag" type="button" data-source-locator data-source-image-url="{{ source.image_url }}" data-source-image-index="{{ source.image_index }}" data-source-evidence="{{ source.evidence }}" data-source-left="{{ source.bbox.left }}" data-source-top="{{ source.bbox.top }}" data-source-right="{{ source.bbox.right }}" data-source-bottom="{{ source.bbox.bottom }}" title="在原始筆記中定位">定位第 {{ source.image_index }} 張</button>{% else %}<a class="source-tag" href="{{ source.image_url }}" target="_blank" rel="noopener" title="{{ source.evidence }}">查看第 {{ source.image_index }} 張</a>{% endif %}{% endfor %}</div>{% endif %}{% if concept.related_cards %}<div class="related-cards"><span class="related-label">關聯</span><div class="related-tags">{% for related in concept.related_cards %}<button class="related-tag" type="button" data-math-content data-related-card data-related-title="{{ related.title }}" data-related-association="{{ related.association }}" data-related-url="{{ url_for('admin_study_recall', session_id=related.session_id) }}#concept-{{ related.index }}">{{ related.title }}</button>{% endfor %}</div></div>{% endif %}<div class="card-review">{% if concept.review.history %}<div class="review-meta"><span>上次複習 {{ concept.review.history[-1].created_at[:10] }}</span><strong>下次複習 {{ concept.review.next_review_at }}</strong>{% if concept.review.stability_label %}<span>{{ concept.review.stability_label }}</span>{% endif %}{% if concept.review.trend_label %}<span>{{ concept.review.trend_label }}</span>{% endif %}</div>{% else %}<div class="review-meta"><span>尚未複習</span><span>完成首次自評後會安排日期</span></div>{% endif %}<div class="curve"><span class="curve-label">印象曲線<br>{{ concept.review.history_label }}</span>{% if concept.review.history %}<svg viewBox="0 0 100 42" role="img" aria-label="{{ concept.concept }} 的印象曲線"><line x1="0" y1="36" x2="100" y2="36"></line>{% if concept.review.history|length > 1 %}<polyline points="{{ concept.review.curve_points }}"></polyline>{% endif %}<circle cx="{% if concept.review.history|length > 1 %}94{% else %}50{% endif %}" cy="{{ concept.review.latest_curve_y }}" r="3"></circle></svg>{% else %}<span class="curve-label">尚未建立記憶曲線</span>{% endif %}</div></div></div></details>{% endfor %}</div></div></details>{% endfor %}
-                    <section class="summary-section"><h3>重點總結</h3><p class="summary" data-math-content>{{ selected_session.summary }}</p></section><section class="audit-section">{% if selected_session.source_transcription %}<details class="note-fold"><summary>忠實轉錄與來源核對（{{ selected_session.source_transcription|length }} 頁）</summary><div>{% for page in selected_session.source_transcription %}<section class="audit-page"><div class="audit-page-head"><span>第 {{ page.image_index }} 張</span>{% if page.image_url %}<a href="{{ page.image_url }}" target="_blank" rel="noopener">查看原圖</a>{% endif %}</div><p class="audit-text" data-math-content>{{ page.transcription }}</p></section>{% endfor %}</div></details>{% endif %}{% if selected_session.correction_records %}<details class="note-fold"><summary>高信心校正（{{ selected_session.correction_records|length }} 處）</summary><div>{% for record in selected_session.correction_records %}<div class="audit-record"><strong>{{ record.concept }}</strong>：<span data-math-content>{{ record.original }} → {{ record.corrected }}</span><br>{{ record.reason }}{% if record.image_url %}・<a href="{{ record.image_url }}" target="_blank" rel="noopener">第 {{ record.image_index }} 張原圖</a>{% endif %}</div>{% endfor %}</div></details>{% endif %}{% if selected_session.uncertain_fragments %}<details class="note-fold"><summary>上下文補全與未解片段（{{ selected_session.uncertain_fragments|length }} 處）</summary><div>{% for record in selected_session.uncertain_fragments %}<div class="audit-record">第 {{ record.image_index }} 張：{{ record.text }}{% if record.image_url %}・<a href="{{ record.image_url }}" target="_blank" rel="noopener">查看原圖</a>{% endif %}</div>{% endfor %}</div></details>{% endif %}<details class="note-fold"><summary>原始筆記圖片（{{ selected_session.image_urls|length }} 張）</summary><div class="note-images">{% for image_url in selected_session.image_urls %}<a href="{{ image_url }}" target="_blank" rel="noopener"><img src="{{ image_url }}" alt="{{ selected_session.title }} 原始筆記 {{ loop.index }}" loading="lazy"></a>{% endfor %}</div></details></section>
+                    <section class="summary-section"><h3>重點總結</h3><p class="summary" data-math-content>{{ selected_session.summary }}</p></section><section class="audit-section">{% if selected_session.source_transcription %}<details class="note-fold"><summary>忠實轉錄與來源核對（{{ selected_session.source_transcription|length }} 頁）</summary><div>{% for page in selected_session.source_transcription %}<section id="source-page-{{ page.image_index }}" class="audit-page"><div class="audit-page-head"><span>第 {{ page.image_index }} 頁</span>{% if page.image_url %}<a href="{{ page.image_url }}" target="_blank" rel="noopener">查看原圖</a>{% endif %}</div><p class="audit-text" data-math-content>{{ page.transcription }}</p></section>{% endfor %}</div></details>{% endif %}{% if selected_session.correction_records %}<details class="note-fold"><summary>高信心校正（{{ selected_session.correction_records|length }} 處）</summary><div>{% for record in selected_session.correction_records %}<div class="audit-record"><strong>{{ record.concept }}</strong>：<span data-math-content>{{ record.original }} → {{ record.corrected }}</span><br>{{ record.reason }}{% if record.image_url %}・<a href="{{ record.image_url }}" target="_blank" rel="noopener">第 {{ record.image_index }} 張原圖</a>{% endif %}</div>{% endfor %}</div></details>{% endif %}{% if selected_session.uncertain_fragments %}<details class="note-fold"><summary>上下文補全與未解片段（{{ selected_session.uncertain_fragments|length }} 處）</summary><div>{% for record in selected_session.uncertain_fragments %}<div class="audit-record">第 {{ record.image_index }} 張：{{ record.text }}{% if record.image_url %}・<a href="{{ record.image_url }}" target="_blank" rel="noopener">查看原圖</a>{% endif %}</div>{% endfor %}</div></details>{% endif %}<details class="note-fold"><summary>原始筆記圖片（{{ selected_session.image_urls|length }} 張）</summary><div class="note-images">{% for image_url in selected_session.image_urls %}<a href="{{ image_url }}" target="_blank" rel="noopener"><img src="{{ image_url }}" alt="{{ selected_session.title }} 原始筆記 {{ loop.index }}" loading="lazy"></a>{% endfor %}</div></details></section>
                 </article>
                 {% else %}<article class="panel empty">上傳第一份筆記後，重點卡與各卡的複習安排會顯示在這裡。</article>{% endif %}
             </div>
@@ -564,6 +654,7 @@
                 if (!target) return;
                 target.closest('details.topic-section')?.setAttribute('open', '');
                 target.closest('details.concept-fold')?.setAttribute('open', '');
+                target.closest('details.note-fold')?.setAttribute('open', '');
                 if (shouldScroll) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
             };
             document.querySelectorAll('[data-fold-action][data-fold-scope]').forEach((button) => {
@@ -582,6 +673,283 @@
             });
             window.addEventListener('hashchange', () => openTarget(window.location.hash, true));
             if (window.location.hash) window.setTimeout(() => openTarget(window.location.hash), 0);
+        })();
+        (() => {
+            const panel = document.querySelector('[data-library-ai]');
+            if (!panel) return;
+            const form = panel.querySelector('[data-library-ai-form]');
+            const question = form.elements.question;
+            const subject = form.elements.subject;
+            const sessionSelect = form.elements.session_id;
+            const pageStart = form.elements.page_start;
+            const pageEnd = form.elements.page_end;
+            const submit = form.querySelector('button[type="submit"]');
+            const status = panel.querySelector('[data-library-ai-status]');
+            const resultPanel = panel.querySelector('[data-library-ai-result]');
+            const answerRoot = panel.querySelector('[data-library-ai-answer]');
+            const scope = panel.querySelector('[data-library-ai-scope]');
+            const sourceList = panel.querySelector('[data-library-ai-sources]');
+            const enabled = panel.dataset.aiEnabled === '1';
+            let lastAnswer = '';
+
+            const setTextWithMath = (element, value) => {
+                const source = String(value || '');
+                const pattern = /\*\*([^*\n]+)\*\*/g;
+                let cursor = 0;
+                let match;
+                while ((match = pattern.exec(source)) !== null) {
+                    if (match.index > cursor) element.append(document.createTextNode(source.slice(cursor, match.index)));
+                    const strong = document.createElement('strong');
+                    strong.textContent = match[1];
+                    element.append(strong);
+                    cursor = pattern.lastIndex;
+                }
+                if (cursor < source.length) element.append(document.createTextNode(source.slice(cursor)));
+                element.dataset.mathContent = '';
+            };
+            const markdownCells = (line) => {
+                const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+                return trimmed.split('|').map((cell) => cell.trim());
+            };
+            const isTableSeparator = (line) => {
+                const cells = markdownCells(line);
+                return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+            };
+            const isSpecialLine = (lines, index) => {
+                const line = lines[index] || '';
+                return !line.trim()
+                    || /^#{1,4}\s+/.test(line)
+                    || /^[-*]\s+/.test(line)
+                    || /^\d+[.)]\s+/.test(line)
+                    || line.trim().startsWith('```')
+                    || (line.includes('|') && isTableSeparator(lines[index + 1] || ''));
+            };
+            const renderAnswer = (markdown) => {
+                answerRoot.replaceChildren();
+                const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
+                let index = 0;
+                while (index < lines.length) {
+                    const line = lines[index];
+                    if (!line.trim()) { index += 1; continue; }
+                    if (line.trim().startsWith('```')) {
+                        const language = line.trim().slice(3).trim();
+                        const values = [];
+                        index += 1;
+                        while (index < lines.length && !lines[index].trim().startsWith('```')) {
+                            values.push(lines[index]);
+                            index += 1;
+                        }
+                        if (index < lines.length) index += 1;
+                        const block = document.createElement('div');
+                        block.className = 'study-code-block';
+                        const head = document.createElement('div');
+                        head.className = 'study-code-head';
+                        const label = document.createElement('span');
+                        label.className = 'study-code-language';
+                        label.textContent = STUDY_CODE_LANGUAGE_LABELS[language.toLowerCase()] || language || '程式碼';
+                        const pre = document.createElement('pre');
+                        const code = document.createElement('code');
+                        code.textContent = values.join('\n');
+                        pre.append(code);
+                        head.append(label);
+                        block.append(head, pre);
+                        answerRoot.append(block);
+                        continue;
+                    }
+                    if (line.includes('|') && isTableSeparator(lines[index + 1] || '')) {
+                        const headers = markdownCells(line);
+                        index += 2;
+                        const rows = [];
+                        while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+                            rows.push(markdownCells(lines[index]));
+                            index += 1;
+                        }
+                        const wrap = document.createElement('div');
+                        wrap.className = 'library-ai-table-wrap';
+                        const table = document.createElement('table');
+                        table.className = 'library-ai-table';
+                        const thead = document.createElement('thead');
+                        const headerRow = document.createElement('tr');
+                        headers.forEach((value) => {
+                            const cell = document.createElement('th');
+                            setTextWithMath(cell, value);
+                            headerRow.append(cell);
+                        });
+                        thead.append(headerRow);
+                        const tbody = document.createElement('tbody');
+                        rows.forEach((values) => {
+                            const row = document.createElement('tr');
+                            headers.forEach((_header, cellIndex) => {
+                                const cell = document.createElement('td');
+                                setTextWithMath(cell, values[cellIndex] || '');
+                                row.append(cell);
+                            });
+                            tbody.append(row);
+                        });
+                        table.append(thead, tbody);
+                        wrap.append(table);
+                        answerRoot.append(wrap);
+                        continue;
+                    }
+                    const headingMatch = line.match(/^#{1,4}\s+(.+)$/);
+                    if (headingMatch) {
+                        const heading = document.createElement(line.startsWith('####') ? 'h4' : 'h3');
+                        setTextWithMath(heading, headingMatch[1]);
+                        answerRoot.append(heading);
+                        index += 1;
+                        continue;
+                    }
+                    const unordered = /^[-*]\s+/.test(line);
+                    const ordered = /^\d+[.)]\s+/.test(line);
+                    if (unordered || ordered) {
+                        const list = document.createElement(ordered ? 'ol' : 'ul');
+                        const pattern = ordered ? /^\d+[.)]\s+/ : /^[-*]\s+/;
+                        while (index < lines.length && pattern.test(lines[index])) {
+                            const item = document.createElement('li');
+                            setTextWithMath(item, lines[index].replace(pattern, '').trim());
+                            list.append(item);
+                            index += 1;
+                        }
+                        answerRoot.append(list);
+                        continue;
+                    }
+                    const paragraphLines = [line.trim()];
+                    index += 1;
+                    while (index < lines.length && !isSpecialLine(lines, index)) {
+                        paragraphLines.push(lines[index].trim());
+                        index += 1;
+                    }
+                    const paragraph = document.createElement('p');
+                    setTextWithMath(paragraph, paragraphLines.join('\n'));
+                    answerRoot.append(paragraph);
+                }
+                window.renderStudyMath(answerRoot);
+            };
+            const applySubjectFilter = () => {
+                const selectedSubject = subject.value;
+                let selectedStillVisible = !sessionSelect.value;
+                Array.from(sessionSelect.options).forEach((option, index) => {
+                    if (index === 0) return;
+                    const visible = !selectedSubject || option.dataset.subject === selectedSubject;
+                    option.hidden = !visible;
+                    option.disabled = !visible;
+                    if (option.selected && visible) selectedStillVisible = true;
+                });
+                if (!selectedStillVisible) sessionSelect.value = '';
+            };
+            subject.addEventListener('change', applySubjectFilter);
+            sessionSelect.addEventListener('change', () => {
+                const selectedOption = sessionSelect.selectedOptions[0];
+                if (selectedOption?.dataset.subject) {
+                    subject.value = selectedOption.dataset.subject;
+                    applySubjectFilter();
+                }
+            });
+            panel.querySelectorAll('[data-library-ai-prompt]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    question.value = button.dataset.libraryAiPrompt || '';
+                    question.focus();
+                    question.setSelectionRange(question.value.length, question.value.length);
+                });
+            });
+            question.addEventListener('keydown', (event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    form.requestSubmit();
+                }
+            });
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (!enabled || form.classList.contains('is-pending')) return;
+                const task = question.value.trim();
+                if (!task) {
+                    status.textContent = '請先輸入想整理的內容。';
+                    status.className = 'library-ai-status error';
+                    question.focus();
+                    return;
+                }
+                const startValue = pageStart.value ? Number(pageStart.value) : null;
+                const endValue = pageEnd.value ? Number(pageEnd.value) : null;
+                if (startValue && endValue && Math.abs(endValue - startValue) + 1 > 24) {
+                    status.textContent = '一次最多分析 24 頁，請縮小頁碼範圍。';
+                    status.className = 'library-ai-status error';
+                    return;
+                }
+                form.classList.add('is-pending');
+                submit.disabled = true;
+                status.textContent = '正在搜尋相關筆記並核對頁面…';
+                status.className = 'library-ai-status';
+                try {
+                    const response = await fetch(panel.dataset.askUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({
+                            question: task,
+                            subject: subject.value,
+                            session_id: sessionSelect.value,
+                            page_start: pageStart.value,
+                            page_end: pageEnd.value,
+                        }),
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.ok) throw new Error(data.error || 'AI 筆記助手暫時無法回答。');
+                    lastAnswer = data.answer || '';
+                    renderAnswer(lastAnswer);
+                    scope.textContent = data.scope || '筆記庫相關頁面';
+                    sourceList.replaceChildren();
+                    (data.sources || []).forEach((source) => {
+                        const link = document.createElement('a');
+                        link.className = 'library-ai-source';
+                        link.href = source.note_url;
+                        link.textContent = `[${source.number}] ${source.title}・第 ${source.page} 頁`;
+                        link.title = `${source.subject}・${source.title}・第 ${source.page} 頁`;
+                        sourceList.append(link);
+                    });
+                    resultPanel.hidden = false;
+                    if (!subject.value && data.inferred?.subject) {
+                        subject.value = data.inferred.subject;
+                        applySubjectFilter();
+                    }
+                    status.textContent = data.truncated
+                        ? '已完成；範圍較大，本次優先使用最相關的頁面。'
+                        : '已完成，所有引用都可從下方來源回查。';
+                    status.className = 'library-ai-status';
+                    resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } catch (error) {
+                    status.textContent = error.message || 'AI 筆記助手暫時無法回答。';
+                    status.className = 'library-ai-status error';
+                } finally {
+                    form.classList.remove('is-pending');
+                    submit.disabled = !enabled;
+                }
+            });
+            panel.querySelector('[data-library-ai-copy]').addEventListener('click', async (event) => {
+                if (!lastAnswer) return;
+                const button = event.currentTarget;
+                try {
+                    await navigator.clipboard.writeText(lastAnswer);
+                } catch (_error) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = lastAnswer;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.append(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    textarea.remove();
+                }
+                button.textContent = '已複製';
+                window.setTimeout(() => { button.textContent = '複製'; }, 1300);
+            });
+            panel.querySelector('[data-library-ai-clear]').addEventListener('click', () => {
+                resultPanel.hidden = true;
+                answerRoot.replaceChildren();
+                sourceList.replaceChildren();
+                lastAnswer = '';
+                status.textContent = '';
+            });
+            applySubjectFilter();
         })();
         (() => {
             const form = document.querySelector('[data-note-search-form]');
