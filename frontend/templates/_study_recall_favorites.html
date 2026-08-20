@@ -1,0 +1,344 @@
+<style>
+    .favorite-heart { width:30px; height:30px; display:grid; place-items:center; flex:0 0 auto; padding:0; color:#8a96a8; border:1px solid var(--line); border-radius:50%; background:#fff; font-size:18px; line-height:1; cursor:pointer; transition:transform .14s ease,color .14s ease,border-color .14s ease,background .14s ease; }
+    .favorite-heart:hover,.favorite-heart:focus-visible { color:#d94d6a; border-color:#e8aebb; background:#fff6f8; outline:0; transform:scale(1.06); }
+    .favorite-heart.is-favorite { color:#d9345b; border-color:#efb2c0; background:#fff1f5; }
+    .favorite-heart.is-saving { opacity:.55; cursor:wait; }
+    .favorite-heart-icon { transform:translateY(-1px); }
+    .favorite-zone .panel-head { padding-bottom:16px; border-bottom:1px solid var(--line); }
+    .favorite-zone-head-actions { display:flex; align-items:center; gap:8px; }
+    .favorite-count-chip { min-width:34px; text-align:center; }
+    .favorite-body { padding:16px 20px 20px; }
+    .favorite-toolbar { display:grid; gap:10px; margin-bottom:14px; }
+    .favorite-search { position:relative; }
+    .favorite-search input { width:100%; min-height:42px; padding:9px 36px 9px 11px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#fff; outline:0; }
+    .favorite-search input:focus { border-color:#9cc0eb; box-shadow:0 0 0 3px rgba(23,105,216,.10); }
+    .favorite-search-clear { position:absolute; top:50%; right:7px; width:28px; height:28px; display:grid; place-items:center; padding:0; transform:translateY(-50%); color:var(--muted); border:0; border-radius:4px; background:transparent; cursor:pointer; font-size:17px; }
+    .favorite-search-clear:hover { color:var(--blue); background:var(--blue-soft); }
+    .favorite-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+    .favorite-filter { display:grid; gap:4px; }
+    .favorite-filter span { color:var(--muted); font-size:10px; font-weight:850; }
+    .favorite-filter select { width:100%; min-width:0; min-height:36px; padding:6px 8px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#fff; font-size:11px; }
+    .favorite-result-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted); font-size:11px; }
+    .favorite-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .favorite-card { min-width:0; display:grid; align-content:start; gap:9px; padding:13px 14px; border:1px solid var(--line); border-radius:6px; background:#fbfdff; }
+    .favorite-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .favorite-card-title-wrap { min-width:0; }
+    .favorite-card-title { margin:0; overflow-wrap:anywhere; color:var(--ink); font-size:14px; line-height:1.45; }
+    .favorite-card-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+    .favorite-card-chip { padding:3px 6px; color:var(--muted); border:1px solid var(--line); border-radius:4px; background:#fff; font-size:10px; font-weight:800; }
+    .favorite-card-chip.subject { color:var(--teal); border-color:#b8dfdc; background:var(--teal-soft); }
+    .favorite-card-note { color:#40536c; font-size:11px; line-height:1.55; }
+    .favorite-card-note a { color:var(--blue); font-weight:850; }
+    .favorite-card-excerpt { margin:0; display:-webkit-box; overflow:hidden; color:var(--muted); font-size:12px; line-height:1.65; -webkit-box-orient:vertical; -webkit-line-clamp:4; }
+    .favorite-card-hint { padding:7px 8px; color:#4d6379; border-left:3px solid var(--teal); background:#f1f8f8; font-size:11px; line-height:1.5; }
+    .favorite-card-actions { display:flex; justify-content:flex-end; margin-top:auto; padding-top:2px; }
+    .favorite-open { min-height:31px; display:inline-flex; align-items:center; padding:0 9px; color:var(--blue); border:1px solid #b9d0ed; border-radius:4px; background:#fff; font-size:11px; font-weight:850; }
+    .favorite-open:hover,.favorite-open:focus-visible { border-color:var(--blue); background:var(--blue-soft); outline:0; }
+    .favorite-empty { padding:24px 10px; color:var(--muted); text-align:center; font-size:13px; line-height:1.65; }
+    .favorite-empty[hidden],.favorite-list[hidden] { display:none; }
+    .favorite-shortcut-heart { color:#d9345b; }
+    @media (max-width:760px) { .favorite-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }.favorite-list { grid-template-columns:1fr; }.favorite-body { padding:14px; } }
+</style>
+<script>
+(() => {
+    if (window.__e3StudyRecallFavoritesInstalled) return;
+    window.__e3StudyRecallFavoritesInstalled = true;
+
+    const listEndpoint = '/admin/study-recall/favorites.json';
+    const mainStack = document.querySelector('.main-stack');
+    if (!mainStack) return;
+
+    let favoriteCards = [];
+    let favoriteKeys = new Set();
+    let panel = null;
+    let shortcutCount = null;
+    let observerQueued = false;
+
+    const favoriteKey = (sessionId, conceptIndex) => `${Number(sessionId)}:${Number(conceptIndex)}`;
+    const escapeHtml = (value) => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
+    const currentSessionId = () => Number(new URL(window.location.href).searchParams.get('session_id') || 0);
+
+    const cardIdentity = (card) => {
+        if (!card) return null;
+        if (card.matches('[data-recall-card]')) {
+            const form = card.querySelector('form[data-recall-rating-form]');
+            const radio = form?.querySelector('input[type="radio"][name^="rating_"]');
+            if (!form || !radio) return null;
+            const action = new URL(form.action, window.location.origin).pathname;
+            const sessionMatch = action.match(/\/admin\/study-recall\/(\d+)\/rate-cards\/?$/);
+            const conceptMatch = radio.name.match(/^rating_(\d+)$/);
+            if (!sessionMatch || !conceptMatch) return null;
+            return { sessionId:Number(sessionMatch[1]), conceptIndex:Number(conceptMatch[1]) };
+        }
+        if (card.matches('.concept-fold[id^="concept-"]')) {
+            const sessionId = currentSessionId();
+            const conceptIndex = Number(card.id.replace('concept-', ''));
+            if (sessionId > 0 && Number.isInteger(conceptIndex) && conceptIndex >= 0) {
+                return { sessionId, conceptIndex };
+            }
+        }
+        return null;
+    };
+
+    const setHeartState = (button, favorite) => {
+        button.classList.toggle('is-favorite', favorite);
+        button.setAttribute('aria-pressed', favorite ? 'true' : 'false');
+        button.setAttribute('aria-label', favorite ? '取消收藏這張重點卡' : '收藏這張重點卡');
+        button.title = favorite ? '取消收藏' : '收藏';
+        const icon = button.querySelector('.favorite-heart-icon');
+        if (icon) icon.textContent = favorite ? '♥' : '♡';
+    };
+
+    const syncHeartButtons = () => {
+        document.querySelectorAll('[data-favorite-heart]').forEach((button) => {
+            const key = favoriteKey(button.dataset.sessionId, button.dataset.conceptIndex);
+            setHeartState(button, favoriteKeys.has(key));
+        });
+    };
+
+    const toggleFavorite = async (sessionId, conceptIndex, desired, button) => {
+        if (button?.classList.contains('is-saving')) return;
+        button?.classList.add('is-saving');
+        try {
+            const response = await fetch(
+                `/admin/study-recall/favorites/${encodeURIComponent(sessionId)}/${encodeURIComponent(conceptIndex)}`,
+                {
+                    method:'POST',
+                    credentials:'same-origin',
+                    cache:'no-store',
+                    headers:{ 'Content-Type':'application/json', Accept:'application/json' },
+                    body:JSON.stringify({ favorite:Boolean(desired) }),
+                },
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.ok) throw new Error(payload.error || '收藏更新失敗');
+            await loadFavorites();
+        } catch (error) {
+            console.warn('Favorite update failed', error);
+        } finally {
+            button?.classList.remove('is-saving');
+        }
+    };
+
+    const makeHeart = (identity) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'favorite-heart';
+        button.dataset.favoriteHeart = '';
+        button.dataset.sessionId = String(identity.sessionId);
+        button.dataset.conceptIndex = String(identity.conceptIndex);
+        button.innerHTML = '<span class="favorite-heart-icon" aria-hidden="true">♡</span>';
+        setHeartState(button, favoriteKeys.has(favoriteKey(identity.sessionId, identity.conceptIndex)));
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const desired = button.getAttribute('aria-pressed') !== 'true';
+            toggleFavorite(identity.sessionId, identity.conceptIndex, desired, button);
+        });
+        return button;
+    };
+
+    const installCardHearts = () => {
+        document.querySelectorAll('[data-recall-card], .topic-section .concept-fold[id^="concept-"]').forEach((card) => {
+            const identity = cardIdentity(card);
+            if (!identity) return;
+            const key = favoriteKey(identity.sessionId, identity.conceptIndex);
+            const existing = card.querySelector(`[data-favorite-heart][data-session-id="${identity.sessionId}"][data-concept-index="${identity.conceptIndex}"]`);
+            if (existing) {
+                setHeartState(existing, favoriteKeys.has(key));
+                return;
+            }
+            const heart = makeHeart(identity);
+            if (card.matches('[data-recall-card]')) {
+                const title = card.querySelector('.review-card-title');
+                if (title) title.appendChild(heart);
+            } else {
+                const actions = card.querySelector(':scope > summary .concept-fold-actions');
+                if (actions) actions.prepend(heart);
+            }
+        });
+    };
+
+    const ensureShortcut = () => {
+        const shortcuts = document.querySelector('.recall-shortcuts');
+        if (!shortcuts) return;
+        let link = shortcuts.querySelector('[data-favorite-shortcut]');
+        if (!link) {
+            link = document.createElement('a');
+            link.href = '#favorite-cards-panel';
+            link.dataset.favoriteShortcut = '';
+            link.innerHTML = '<span class="favorite-shortcut-heart">♥</span> 收藏重點 <strong data-favorite-shortcut-count>0</strong>';
+            shortcuts.appendChild(link);
+        }
+        shortcutCount = link.querySelector('[data-favorite-shortcut-count]');
+    };
+
+    const ensurePanel = () => {
+        if (panel?.isConnected) return panel;
+        panel = document.createElement('article');
+        panel.id = 'favorite-cards-panel';
+        panel.className = 'panel favorite-zone';
+        panel.innerHTML = [
+            '<div class="panel-head">',
+            '  <div><h2>收藏重點</h2><p class="caption">把容易忘、常考或想反覆看的卡片集中在這裡。</p></div>',
+            '  <div class="favorite-zone-head-actions"><span class="chip favorite-count-chip" data-favorite-count>0 張</span></div>',
+            '</div>',
+            '<div class="favorite-body">',
+            '  <div class="favorite-toolbar">',
+            '    <div class="favorite-search"><input type="search" data-favorite-search placeholder="搜尋觀念、公式、解釋、筆記名稱…" aria-label="搜尋收藏重點"><button class="favorite-search-clear" type="button" data-favorite-search-clear aria-label="清除搜尋">×</button></div>',
+            '    <div class="favorite-filters">',
+            '      <label class="favorite-filter"><span>科目</span><select data-favorite-subject><option value="">全部科目</option></select></label>',
+            '      <label class="favorite-filter"><span>來源筆記</span><select data-favorite-note><option value="">全部筆記</option></select></label>',
+            '      <label class="favorite-filter"><span>類型</span><select data-favorite-type><option value="">全部類型</option><option value="concept">觀念</option><option value="example">例題</option></select></label>',
+            '      <label class="favorite-filter"><span>排序</span><select data-favorite-sort><option value="favorite">最近收藏</option><option value="subject">依科目</option><option value="date">筆記日期</option><option value="title">觀念名稱</option></select></label>',
+            '    </div>',
+            '    <div class="favorite-result-meta"><span data-favorite-result>載入中…</span><span>點愛心即可取消收藏</span></div>',
+            '  </div>',
+            '  <div class="favorite-list" data-favorite-list></div>',
+            '  <div class="favorite-empty" data-favorite-empty hidden>目前沒有符合條件的收藏。</div>',
+            '</div>',
+        ].join('');
+        const reviewZone = document.getElementById('review-zone');
+        if (reviewZone?.parentElement === mainStack) reviewZone.insertAdjacentElement('afterend', panel);
+        else mainStack.prepend(panel);
+
+        panel.querySelector('[data-favorite-search]').addEventListener('input', renderFavorites);
+        panel.querySelector('[data-favorite-subject]').addEventListener('change', renderFavorites);
+        panel.querySelector('[data-favorite-note]').addEventListener('change', renderFavorites);
+        panel.querySelector('[data-favorite-type]').addEventListener('change', renderFavorites);
+        panel.querySelector('[data-favorite-sort]').addEventListener('change', renderFavorites);
+        panel.querySelector('[data-favorite-search-clear]').addEventListener('click', () => {
+            const input = panel.querySelector('[data-favorite-search]');
+            input.value = '';
+            input.focus();
+            renderFavorites();
+        });
+        panel.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-favorite-panel-toggle]');
+            if (!button) return;
+            toggleFavorite(Number(button.dataset.sessionId), Number(button.dataset.conceptIndex), false, button);
+        });
+        return panel;
+    };
+
+    const fillFilterOptions = () => {
+        const node = ensurePanel();
+        const subjectSelect = node.querySelector('[data-favorite-subject]');
+        const noteSelect = node.querySelector('[data-favorite-note]');
+        const selectedSubject = subjectSelect.value;
+        const selectedNote = noteSelect.value;
+        const subjects = [...new Set(favoriteCards.map((card) => card.subject).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'zh-Hant'));
+        const notes = [...new Map(favoriteCards.map((card) => [String(card.session_id), card])).values()]
+            .sort((a,b) => String(b.study_date || '').localeCompare(String(a.study_date || '')) || String(a.session_title || '').localeCompare(String(b.session_title || ''), 'zh-Hant'));
+        subjectSelect.innerHTML = '<option value="">全部科目</option>' + subjects.map((subject) => `<option value="${escapeHtml(subject)}">${escapeHtml(subject)}</option>`).join('');
+        noteSelect.innerHTML = '<option value="">全部筆記</option>' + notes.map((card) => `<option value="${card.session_id}">${escapeHtml(card.session_title)}${card.study_date ? `・${escapeHtml(card.study_date)}` : ''}</option>`).join('');
+        if (subjects.includes(selectedSubject)) subjectSelect.value = selectedSubject;
+        if (notes.some((card) => String(card.session_id) === selectedNote)) noteSelect.value = selectedNote;
+    };
+
+    const searchableText = (card) => [
+        card.title, card.topic, card.subject, card.session_title, card.study_date,
+        card.recall_cue, card.core_summary, card.explanation, card.memory_hint,
+        card.common_confusion, card.simple_example,
+    ].filter(Boolean).join(' ').toLocaleLowerCase('zh-Hant');
+
+    const renderFavorites = () => {
+        const node = ensurePanel();
+        const query = String(node.querySelector('[data-favorite-search]').value || '').trim().toLocaleLowerCase('zh-Hant');
+        const subject = node.querySelector('[data-favorite-subject]').value;
+        const note = node.querySelector('[data-favorite-note]').value;
+        const type = node.querySelector('[data-favorite-type]').value;
+        const sort = node.querySelector('[data-favorite-sort]').value;
+        const list = node.querySelector('[data-favorite-list]');
+        const empty = node.querySelector('[data-favorite-empty]');
+        const result = node.querySelector('[data-favorite-result]');
+        const count = node.querySelector('[data-favorite-count]');
+
+        let cards = favoriteCards.filter((card) => (
+            (!query || searchableText(card).includes(query))
+            && (!subject || card.subject === subject)
+            && (!note || String(card.session_id) === note)
+            && (!type || card.card_type === type)
+        ));
+        cards = [...cards].sort((a,b) => {
+            if (sort === 'subject') return String(a.subject).localeCompare(String(b.subject), 'zh-Hant') || String(a.title).localeCompare(String(b.title), 'zh-Hant');
+            if (sort === 'date') return String(b.study_date || '').localeCompare(String(a.study_date || '')) || String(a.title).localeCompare(String(b.title), 'zh-Hant');
+            if (sort === 'title') return String(a.title).localeCompare(String(b.title), 'zh-Hant');
+            return String(b.favorite_at || '').localeCompare(String(a.favorite_at || ''));
+        });
+
+        count.textContent = `${favoriteCards.length} 張`;
+        if (shortcutCount) shortcutCount.textContent = String(favoriteCards.length);
+        result.textContent = query || subject || note || type
+            ? `顯示 ${cards.length} / ${favoriteCards.length} 張收藏`
+            : `共 ${favoriteCards.length} 張收藏`;
+
+        list.innerHTML = cards.map((card) => {
+            const excerpt = card.core_summary || card.explanation || card.recall_cue || '沒有摘要內容';
+            return [
+                `<article class="favorite-card" data-favorite-key="${escapeHtml(card.key)}">`,
+                '  <div class="favorite-card-head">',
+                '    <div class="favorite-card-title-wrap">',
+                `      <h3 class="favorite-card-title" data-math-content>${escapeHtml(card.title)}</h3>`,
+                '      <div class="favorite-card-chips">',
+                `        <span class="favorite-card-chip subject">${escapeHtml(card.subject || '未分類')}</span>`,
+                card.topic ? `        <span class="favorite-card-chip">${escapeHtml(card.topic)}</span>` : '',
+                `        <span class="favorite-card-chip">${escapeHtml(card.card_type_label || '觀念')}</span>`,
+                '      </div>',
+                '    </div>',
+                `    <button class="favorite-heart is-favorite" type="button" data-favorite-panel-toggle data-session-id="${card.session_id}" data-concept-index="${card.concept_index}" aria-label="取消收藏這張重點卡" aria-pressed="true" title="取消收藏"><span class="favorite-heart-icon" aria-hidden="true">♥</span></button>`,
+                '  </div>',
+                `  <div class="favorite-card-note"><a href="${escapeHtml(card.url)}">${escapeHtml(card.session_title)}</a>${card.study_date ? `・${escapeHtml(card.study_date)}` : ''}</div>`,
+                `  <p class="favorite-card-excerpt" data-math-content>${escapeHtml(excerpt)}</p>`,
+                card.memory_hint ? `  <div class="favorite-card-hint" data-math-content>記憶線索：${escapeHtml(card.memory_hint)}</div>` : '',
+                `  <div class="favorite-card-actions"><a class="favorite-open" href="${escapeHtml(card.url)}">查看原卡</a></div>`,
+                '</article>',
+            ].filter(Boolean).join('');
+        }).join('');
+        list.hidden = cards.length === 0;
+        empty.hidden = cards.length !== 0;
+        if (window.renderStudyMath) window.renderStudyMath();
+    };
+
+    const loadFavorites = async () => {
+        try {
+            const response = await fetch(listEndpoint, { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.ok) throw new Error(payload.error || 'favorite_load_failed');
+            favoriteCards = Array.isArray(payload.cards) ? payload.cards : [];
+            favoriteKeys = new Set(favoriteCards.map((card) => String(card.key || favoriteKey(card.session_id, card.concept_index))));
+            ensureShortcut();
+            ensurePanel();
+            fillFilterOptions();
+            renderFavorites();
+            installCardHearts();
+            syncHeartButtons();
+        } catch (error) {
+            const node = ensurePanel();
+            node.querySelector('[data-favorite-result]').textContent = '收藏載入失敗，稍後重新整理即可重試。';
+            console.warn('Favorite load failed', error);
+        }
+    };
+
+    const queueInstall = () => {
+        if (observerQueued) return;
+        observerQueued = true;
+        window.requestAnimationFrame(() => {
+            observerQueued = false;
+            installCardHearts();
+        });
+    };
+
+    new MutationObserver(queueInstall).observe(mainStack, { childList:true, subtree:true });
+    ensureShortcut();
+    ensurePanel();
+    installCardHearts();
+    loadFavorites();
+})();
+</script>
