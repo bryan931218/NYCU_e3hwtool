@@ -1,4 +1,3 @@
-import base64
 import io
 import os
 import tempfile
@@ -67,7 +66,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
             ],
         }
         with patch(
-            "e3_tracker.api.web.fetch_youtube_storyboard_frame", return_value=self._frame()
+            "e3_tracker.api.web.fetch_youtube_cached_frame", return_value=self._frame()
         ) as fetch_frame, patch("e3_tracker.api.web.requests.post", return_value=openai_response) as post:
             response = self.client.post(
                 "/admin/study-plan/video-question",
@@ -91,37 +90,23 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertTrue(content[1]["image_url"].startswith("data:image/jpeg;base64,"))
         self.assertIn("這一步為什麼成立", content[0]["text"])
 
-    def test_browser_capture_skips_youtube_and_uses_exact_question_frame(self):
-        captured = self._frame()["bytes"]
-        frame_image = "data:image/jpeg;base64," + base64.b64encode(captured).decode("ascii")
-        openai_response = Mock()
-        openai_response.raise_for_status.return_value = None
-        openai_response.json.return_value = {
-            "status": "completed",
-            "output": [
-                {"type": "message", "content": [{"type": "output_text", "text": "這是瀏覽器擷取的精準畫面。"}]}
-            ],
-        }
+    def test_prefetches_frame_without_calling_openai(self):
+        frame = self._frame()
+        frame["source"] = "exact"
         with patch(
-            "e3_tracker.api.web.fetch_youtube_storyboard_frame"
-        ) as fetch_frame, patch("e3_tracker.api.web.requests.post", return_value=openai_response) as post:
+            "e3_tracker.api.web.fetch_youtube_cached_frame", return_value=frame
+        ) as fetch_frame, patch("e3_tracker.api.web.requests.post") as post:
             response = self.client.post(
-                "/admin/study-plan/video-question",
-                json={
-                    "video_id": self.video["id"],
-                    "playback_seconds": 77.2,
-                    "question": "這一幕在說什麼？",
-                    "frame_image": frame_image,
-                },
+                "/admin/study-plan/video-frame",
+                json={"video_id": self.video["id"], "playback_seconds": 123.4},
             )
 
         self.assertEqual(response.status_code, 200)
         result = response.get_json()
-        self.assertEqual(result["frame_source"], "browser")
-        self.assertEqual(result["frame_seconds"], 77.2)
-        fetch_frame.assert_not_called()
-        prompt = post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
-        self.assertIn("瀏覽器直接擷取", prompt)
+        self.assertTrue(result["frame_image"].startswith("data:image/jpeg;base64,"))
+        self.assertEqual(result["frame_source"], "exact")
+        fetch_frame.assert_called_once_with(self.video["youtube_video_id"], 123.4)
+        post.assert_not_called()
 
     def test_validates_question_and_video(self):
         missing_question = self.client.post(
@@ -147,14 +132,15 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn("Q 問這一幕", html)
         self.assertIn("max-height:calc(100dvh - 18px)", html)
         self.assertIn("/admin/study-plan/video-question", html)
-        self.assertIn("getDisplayMedia", html)
-        self.assertIn("frame_image: frameQuestionContext.frameImage", html)
-        self.assertIn('id="frame-question-upload"', html)
-        self.assertIn('id="frame-question-capture"', html)
-        self.assertIn("leaveFullscreenBeforeCapturePrompt", html)
-        self.assertIn("目前分頁畫面啟動逾時", html)
-        self.assertIn("畫面已擷取，分享已自動停止", html)
-        self.assertIn("One frame is all we", html)
+        self.assertIn("/admin/study-plan/video-frame", html)
+        self.assertIn("prefetchFrameQuestionImage", html)
+        self.assertIn("正在背景準備這一幕", html)
+        self.assertNotIn("getDisplayMedia", html)
+        self.assertNotIn("frame_image: frameQuestionContext.frameImage", html)
+        self.assertNotIn('id="frame-question-upload"', html)
+        self.assertNotIn('id="frame-question-capture"', html)
+        self.assertNotIn("leaveFullscreenBeforeCapturePrompt", html)
+        self.assertNotIn("分享已自動停止", html)
         self.assertNotIn("RestrictionTarget", html)
         self.assertNotIn("restrictTo(", html)
 

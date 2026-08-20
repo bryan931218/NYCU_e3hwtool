@@ -504,13 +504,6 @@
         .frame-question-status.is-error { color:#a53d48; }
         .frame-question-foot { display:flex; align-items:center; justify-content:flex-end; gap:9px; padding:11px 17px 14px; border-top:1px solid #e2eaf2; background:#fbfdff; }
         .frame-question-cancel, .frame-question-submit { min-height:38px; padding:0 14px; border-radius:10px; font-size:11px; font-weight:880; cursor:pointer; }
-        .frame-question-capture, .frame-question-upload { min-height:38px; display:inline-flex; align-items:center; padding:0 12px; border:1px solid #c9d9e9; border-radius:10px; color:#315e88; background:#f4f9ff; font-size:11px; font-weight:850; cursor:pointer; }
-        .frame-question-capture { margin-right:0; }
-        .frame-question-upload { margin-right:auto; }
-        .frame-question-capture:hover, .frame-question-upload:hover { border-color:#99bbe0; background:#eaf5ff; }
-        .frame-question-capture:disabled { opacity:.55; cursor:wait; }
-        .frame-question-dialog.is-capturing-frame { visibility:hidden; }
-        .frame-question-dialog.is-capturing-frame::backdrop { background:transparent; backdrop-filter:none; }
         .frame-question-cancel { color:var(--muted); border:1px solid #d4dfe9; background:#fff; }
         .frame-question-submit { color:#fff; border:0; background:linear-gradient(135deg,#1463d9,#177fbd); box-shadow:0 8px 18px rgba(20,99,217,.2); }
         .frame-question-submit:disabled { opacity:.55; cursor:wait; box-shadow:none; }
@@ -566,7 +559,6 @@
             .frame-question-preview { grid-template-columns:104px minmax(0,1fr); gap:9px; }
             .frame-question-preview img { width:104px; }
             .frame-question-foot { padding:10px 14px 12px; }
-            .frame-question-capture, .frame-question-upload { padding:0 9px; }
         }
         @media (orientation: landscape) and (max-height: 520px) {
             .focus-exit { top: calc(50% - 47px); width: 40px; height: 40px; }
@@ -753,8 +745,6 @@
                                             <div class="frame-question-answer" id="frame-question-answer" data-math-content hidden></div>
                                         </div>
                                         <footer class="frame-question-foot">
-                                            <button class="frame-question-capture" id="frame-question-capture" type="button">擷取畫面</button>
-                                            <label class="frame-question-upload" for="frame-question-upload">選擇截圖<input id="frame-question-upload" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
                                             <button class="frame-question-cancel" id="frame-question-cancel" type="button">取消</button>
                                             <button class="frame-question-submit" id="frame-question-submit" type="submit">送出問題</button>
                                         </footer>
@@ -992,8 +982,6 @@
             const frameQuestionImage = document.getElementById('frame-question-image');
             const frameQuestionSampleTime = document.getElementById('frame-question-sample-time');
             const frameQuestionAnswer = document.getElementById('frame-question-answer');
-            const frameQuestionCapture = document.getElementById('frame-question-capture');
-            const frameQuestionUpload = document.getElementById('frame-question-upload');
             const focusVideoTitle = document.getElementById('focus-video-title');
             const focusToast = document.getElementById('focus-toast');
             const videoEndScreen = document.getElementById('video-end-screen');
@@ -1020,7 +1008,7 @@
             let frameQuestionRequestId = 0;
             let frameQuestionContext = null;
             let frameQuestionTrigger = null;
-            let frameQuestionCaptureStream = null;
+            let frameQuestionPrefetch = null;
             let markerSavedTimer = null;
             let focusToastTimer = null;
             let theaterScrollY = 0;
@@ -1394,57 +1382,6 @@
                     frameQuestionStatus.classList.remove('is-error');
                 }
             };
-            const stopFrameQuestionCapture = function () {
-                if (!frameQuestionCaptureStream) return;
-                frameQuestionCaptureStream.getTracks().forEach(function (track) { track.stop(); });
-                frameQuestionCaptureStream = null;
-            };
-            const liveFrameQuestionCapture = function () {
-                if (!frameQuestionCaptureStream) return null;
-                const track = frameQuestionCaptureStream.getVideoTracks()[0];
-                if (!track || track.readyState !== 'live') {
-                    stopFrameQuestionCapture();
-                    return null;
-                }
-                return frameQuestionCaptureStream;
-            };
-            const waitForCapturedVideoFrame = function (video) {
-                return new Promise(function (resolve, reject) {
-                    let finished = false;
-                    const timeoutId = window.setTimeout(function () {
-                        if (finished) return;
-                        finished = true;
-                        reject(new Error('capture_timeout'));
-                    }, 2500);
-                    const done = function () {
-                        if (finished) return;
-                        finished = true;
-                        window.clearTimeout(timeoutId);
-                        resolve();
-                    };
-                    if (typeof video.requestVideoFrameCallback === 'function') {
-                        video.requestVideoFrameCallback(done);
-                    } else {
-                        video.addEventListener('loadeddata', done, { once:true });
-                        if (video.readyState >= 2) window.setTimeout(done, 50);
-                    }
-                });
-            };
-            const waitForPlayerLayout = function () {
-                return new Promise(function (resolve) {
-                    window.requestAnimationFrame(function () {
-                        window.requestAnimationFrame(resolve);
-                    });
-                });
-            };
-            const promiseWithTimeout = function (promise, timeoutMs, message) {
-                return Promise.race([
-                    promise,
-                    new Promise(function (_, reject) {
-                        window.setTimeout(function () { reject(new Error(message)); }, timeoutMs);
-                    })
-                ]);
-            };
             const playerHasFullscreenPresentation = function () {
                 if (!focusPlayerFrame) return false;
                 let matchesFullscreen = false;
@@ -1457,101 +1394,42 @@
                     || focusPlayerFrame.classList.contains('is-focus-mode')
                 );
             };
-            const leaveFullscreenBeforeCapturePrompt = async function () {
-                if (!focusPlayerFrame || !playerHasFullscreenPresentation()) return;
-                const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
-                if (exitFullscreen) {
-                    try {
-                        const result = exitFullscreen.call(document);
-                        if (result && typeof result.then === 'function') {
-                            await promiseWithTimeout(result, 1200, 'fullscreen_exit_timeout');
+            const prefetchFrameQuestionImage = function (context) {
+                if (!context) return Promise.resolve(null);
+                if (frameQuestionStatus) {
+                    frameQuestionStatus.textContent = '正在背景準備這一幕…';
+                    frameQuestionStatus.classList.remove('is-error');
+                }
+                return fetch('{{ url_for("admin_study_plan_video_frame") }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({
+                        video_id: context.videoId,
+                        playback_seconds: context.playbackSeconds
+                    })
+                }).then(function (response) {
+                    return response.json().catch(function () { return {}; }).then(function (result) {
+                        if (!response.ok || !result.ok) throw new Error(result.error || '暫時無法預先讀取這一幕。');
+                        if (frameQuestionContext !== context) return result;
+                        context.frameReady = true;
+                        context.frameSource = result.frame_source || 'storyboard';
+                        context.frameSeconds = Number(result.frame_seconds || context.playbackSeconds);
+                        if (frameQuestionImage && result.frame_image) frameQuestionImage.src = result.frame_image;
+                        if (frameQuestionPreview) frameQuestionPreview.hidden = false;
+                        if (frameQuestionSampleTime) {
+                            const label = context.frameSource === 'exact' ? '精準影格' : '預覽影格';
+                            frameQuestionSampleTime.textContent = label + '・' + formatClock(context.frameSeconds);
                         }
-                    } catch (error) {}
-                }
-                focusPlayerFrame.classList.remove('is-theater', 'is-focus-mode');
-                document.body.classList.remove('has-focus-theater');
-                await waitForPlayerLayout();
-                updateFocusMode();
-            };
-            const captureCurrentPlayerFrame = async function () {
-                if (!focusPlayerFrame || !navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
-                    return null;
-                }
-                let stream = liveFrameQuestionCapture();
-                if (!stream) {
-                    showFocusToast('第一次請選擇「目前分頁」');
-                    stream = await navigator.mediaDevices.getDisplayMedia({
-                        video: { frameRate: { ideal:5, max:10 } },
-                        audio: false,
-                        preferCurrentTab: true,
-                        selfBrowserSurface: 'include',
-                        surfaceSwitching: 'exclude'
+                        if (frameQuestionStatus) frameQuestionStatus.textContent = '這一幕已準備完成。';
+                        return result;
                     });
-                    const track = stream.getVideoTracks()[0];
-                    const surface = track && typeof track.getSettings === 'function'
-                        ? String(track.getSettings().displaySurface || '')
-                        : '';
-                    if (surface && surface !== 'browser') {
-                        stream.getTracks().forEach(function (item) { item.stop(); });
-                        throw new Error('請選擇「目前分頁」，才能準確擷取播放器畫面。');
+                }).catch(function (error) {
+                    if (frameQuestionContext === context && frameQuestionStatus) {
+                        frameQuestionStatus.textContent = '送出時會自動重新讀取這一幕。';
                     }
-                    frameQuestionCaptureStream = stream;
-                    if (track) track.addEventListener('ended', function () {
-                        if (frameQuestionCaptureStream === stream) {
-                            frameQuestionCaptureStream = null;
-                        }
-                    }, { once:true });
-                    updateFocusMode();
-                    await waitForPlayerLayout();
-                }
-
-                const playerElement = document.getElementById('youtube-player') || focusPlayerFrame;
-                const rect = playerElement.getBoundingClientRect();
-                if (rect.width < 2 || rect.height < 2) throw new Error('目前播放器不在可擷取範圍內。');
-                const captureVideo = document.createElement('video');
-                captureVideo.muted = true;
-                captureVideo.playsInline = true;
-                captureVideo.srcObject = stream;
-                focusPlayerFrame.classList.add('is-frame-capturing');
-                try {
-                    await promiseWithTimeout(
-                        Promise.resolve(captureVideo.play()),
-                        2500,
-                        '目前分頁畫面啟動逾時，請再試一次。'
-                    );
-                    await waitForCapturedVideoFrame(captureVideo);
-                    const scaleX = captureVideo.videoWidth / Math.max(1, window.innerWidth);
-                    const scaleY = captureVideo.videoHeight / Math.max(1, window.innerHeight);
-                    const sourceX = Math.max(0, Math.round(rect.left * scaleX));
-                    const sourceY = Math.max(0, Math.round(rect.top * scaleY));
-                    const sourceWidth = Math.min(captureVideo.videoWidth - sourceX, Math.max(1, Math.round(rect.width * scaleX)));
-                    const sourceHeight = Math.min(captureVideo.videoHeight - sourceY, Math.max(1, Math.round(rect.height * scaleY)));
-                    if (sourceWidth < 2 || sourceHeight < 2) throw new Error('目前播放器不在可擷取範圍內。');
-                    const outputWidth = Math.min(1280, sourceWidth);
-                    const outputHeight = Math.max(1, Math.round(sourceHeight * outputWidth / sourceWidth));
-                    const canvas = document.createElement('canvas');
-                    canvas.width = outputWidth;
-                    canvas.height = outputHeight;
-                    const context = canvas.getContext('2d', { alpha:false });
-                    if (!context) throw new Error('瀏覽器無法建立畫面擷取器。');
-                    context.drawImage(
-                        captureVideo,
-                        sourceX, sourceY, sourceWidth, sourceHeight,
-                        0, 0, outputWidth, outputHeight
-                    );
-                    return canvas.toDataURL('image/jpeg', .88);
-                } finally {
-                    focusPlayerFrame.classList.remove('is-frame-capturing');
-                    captureVideo.pause();
-                    captureVideo.srcObject = null;
-                    // Chrome's mandatory sharing indicator reduces the page
-                    // viewport while a track is live. One frame is all we
-                    // need, so stop immediately and restore the layout before
-                    // showing the question UI again.
-                    stopFrameQuestionCapture();
-                    updateFocusMode();
-                    await waitForPlayerLayout();
-                }
+                    return null;
+                });
             };
             const setFrameQuestionBusy = function (busy) {
                 frameQuestionSubmitting = Boolean(busy);
@@ -1568,7 +1446,7 @@
                     frameQuestionDialog.removeAttribute('open');
                 }
             };
-            const openFrameQuestion = async function (trigger) {
+            const openFrameQuestion = function (trigger) {
                 const option = selectedOption();
                 if (!option || !option.dataset.youtubeVideoId) {
                     if (markerStatus) markerStatus.textContent = '請先選擇可播放的影片。';
@@ -1581,29 +1459,13 @@
                     ? Math.max(0, Number(player.getCurrentTime() || 0))
                     : Math.max(0, Number(option.dataset.playbackSeconds || 0));
                 resetFrameQuestionResult();
-                if (frameQuestionUpload) frameQuestionUpload.value = '';
-                let capturedImage = null;
-                let captureNotice = '';
-                const hasLiveCapture = Boolean(liveFrameQuestionCapture());
-                if (!hasLiveCapture && playerHasFullscreenPresentation()) {
-                    await leaveFullscreenBeforeCapturePrompt();
-                    captureNotice = '已安全離開全螢幕；按「擷取畫面」後選擇目前分頁。';
-                } else {
-                    try {
-                        capturedImage = await captureCurrentPlayerFrame();
-                    } catch (error) {
-                        stopFrameQuestionCapture();
-                        captureNotice = error && error.name === 'NotAllowedError'
-                            ? '未授權目前分頁畫面，可按「擷取畫面」重試或選擇截圖。'
-                            : (error.message || '目前分頁畫面擷取失敗，可選擇截圖。');
-                    }
-                }
                 frameQuestionContext = {
                     videoId: Number(option.value),
                     playbackSeconds: currentSeconds,
                     title: option.dataset.title || '目前影片',
-                    frameImage: capturedImage
+                    frameReady: false
                 };
+                const context = frameQuestionContext;
                 frameQuestionTrigger = trigger || frameQuestionOpen || focusFrameQuestion;
                 hideVideoEndScreen(false);
                 setFrameQuestionBusy(false);
@@ -1616,75 +1478,9 @@
                 } else {
                     frameQuestionDialog.setAttribute('open', '');
                 }
-                if (capturedImage) {
-                    if (frameQuestionImage) frameQuestionImage.src = capturedImage;
-                    if (frameQuestionPreview) frameQuestionPreview.hidden = false;
-                    if (frameQuestionSampleTime) frameQuestionSampleTime.textContent = '已精準擷取 ' + formatClock(currentSeconds);
-                    if (frameQuestionStatus) frameQuestionStatus.textContent = '畫面已擷取，分享已自動停止。';
-                } else if (captureNotice && frameQuestionStatus) {
-                    frameQuestionStatus.textContent = captureNotice;
-                }
                 window.setTimeout(function () { frameQuestionInput.focus({ preventScroll: true }); }, 30);
+                frameQuestionPrefetch = prefetchFrameQuestionImage(context);
             };
-            if (frameQuestionCapture) frameQuestionCapture.addEventListener('click', async function () {
-                if (!frameQuestionContext || frameQuestionSubmitting || frameQuestionCapture.disabled) return;
-                frameQuestionCapture.disabled = true;
-                frameQuestionCapture.textContent = '擷取中…';
-                if (frameQuestionStatus) {
-                    frameQuestionStatus.textContent = '請在瀏覽器視窗選擇「目前分頁」。';
-                    frameQuestionStatus.classList.remove('is-error');
-                }
-                frameQuestionDialog.classList.add('is-capturing-frame');
-                try {
-                    const capturedImage = await captureCurrentPlayerFrame();
-                    if (!capturedImage || !frameQuestionContext) throw new Error('此瀏覽器不支援分頁擷取，請選擇截圖。');
-                    frameQuestionContext.frameImage = capturedImage;
-                    if (frameQuestionImage) frameQuestionImage.src = capturedImage;
-                    if (frameQuestionPreview) frameQuestionPreview.hidden = false;
-                    if (frameQuestionSampleTime) {
-                        frameQuestionSampleTime.textContent = '已精準擷取 ' + formatClock(frameQuestionContext.playbackSeconds);
-                    }
-                    if (frameQuestionStatus) frameQuestionStatus.textContent = '畫面已擷取，分享已自動停止。';
-                } catch (error) {
-                    stopFrameQuestionCapture();
-                    if (frameQuestionStatus) {
-                        frameQuestionStatus.textContent = error && error.name === 'NotAllowedError'
-                            ? '未授權目前分頁畫面，可重新擷取或選擇截圖。'
-                            : (error.message || '畫面擷取失敗，請選擇截圖。');
-                        frameQuestionStatus.classList.add('is-error');
-                    }
-                } finally {
-                    frameQuestionDialog.classList.remove('is-capturing-frame');
-                    frameQuestionCapture.disabled = false;
-                    frameQuestionCapture.textContent = '擷取畫面';
-                    window.setTimeout(function () { frameQuestionInput.focus({ preventScroll:true }); }, 30);
-                }
-            });
-            if (frameQuestionUpload) frameQuestionUpload.addEventListener('change', function () {
-                const file = frameQuestionUpload.files && frameQuestionUpload.files[0];
-                if (!file || !frameQuestionContext) return;
-                if (!/^image\/(jpeg|png|webp)$/i.test(file.type || '') || file.size > 5 * 1024 * 1024) {
-                    if (frameQuestionStatus) {
-                        frameQuestionStatus.textContent = '請選擇 5MB 以內的 JPG、PNG 或 WebP 截圖。';
-                        frameQuestionStatus.classList.add('is-error');
-                    }
-                    frameQuestionUpload.value = '';
-                    return;
-                }
-                const reader = new FileReader();
-                reader.addEventListener('load', function () {
-                    if (!frameQuestionContext || typeof reader.result !== 'string') return;
-                    frameQuestionContext.frameImage = reader.result;
-                    if (frameQuestionImage) frameQuestionImage.src = reader.result;
-                    if (frameQuestionPreview) frameQuestionPreview.hidden = false;
-                    if (frameQuestionSampleTime) frameQuestionSampleTime.textContent = '已選擇目前畫面截圖';
-                    if (frameQuestionStatus) {
-                        frameQuestionStatus.textContent = '截圖已就緒，送出後可直接分析。';
-                        frameQuestionStatus.classList.remove('is-error');
-                    }
-                }, { once:true });
-                reader.readAsDataURL(file);
-            });
             const submitFrameQuestion = async function () {
                 if (frameQuestionSubmitting || !frameQuestionContext || !frameQuestionInput) return;
                 const question = frameQuestionInput.value.trim();
@@ -1698,6 +1494,11 @@
                 }
                 setFrameQuestionBusy(true);
                 const requestId = ++frameQuestionRequestId;
+                if (frameQuestionPrefetch && !frameQuestionContext.frameReady) {
+                    if (frameQuestionStatus) frameQuestionStatus.textContent = '正在完成這一幕的取樣…';
+                    await frameQuestionPrefetch;
+                    if (requestId !== frameQuestionRequestId) return;
+                }
                 if (frameQuestionStatus) {
                     frameQuestionStatus.textContent = '正在讀取這一幕並分析…';
                     frameQuestionStatus.classList.remove('is-error');
@@ -1711,8 +1512,7 @@
                         body: JSON.stringify({
                             video_id: frameQuestionContext.videoId,
                             playback_seconds: frameQuestionContext.playbackSeconds,
-                            question: question,
-                            frame_image: frameQuestionContext.frameImage || null
+                            question: question
                         })
                     });
                     const result = await response.json().catch(function () { return {}; });
@@ -1721,9 +1521,9 @@
                     if (frameQuestionImage && result.frame_image) frameQuestionImage.src = result.frame_image;
                     if (frameQuestionPreview) frameQuestionPreview.hidden = false;
                     if (frameQuestionSampleTime) {
-                        frameQuestionSampleTime.textContent = result.frame_source === 'browser'
-                            ? '精準畫面・' + formatClock(result.frame_seconds)
-                            : '按下 ' + formatClock(result.requested_seconds) + '・取樣約 ' + formatClock(result.frame_seconds);
+                        const label = result.frame_source === 'exact' ? '精準影格' : '預覽影格';
+                        frameQuestionSampleTime.textContent = label + '・按下 ' + formatClock(result.requested_seconds)
+                            + '・取樣 ' + formatClock(result.frame_seconds);
                     }
                     if (frameQuestionAnswer) {
                         frameQuestionAnswer.textContent = result.answer || '';
@@ -1731,9 +1531,9 @@
                         frameQuestionAnswer.removeAttribute('data-math-rendered');
                         if (window.renderStudyMath) window.renderStudyMath(frameQuestionAnswer);
                     }
-                    if (frameQuestionStatus) frameQuestionStatus.textContent = result.frame_source === 'browser'
-                        ? '已根據你按下 Q 的畫面回答。'
-                        : '已根據 YouTube 預覽影格回答。';
+                    if (frameQuestionStatus) frameQuestionStatus.textContent = result.frame_source === 'exact'
+                        ? '已根據指定秒數的精準影格回答。'
+                        : '已根據最接近指定秒數的預覽影格回答。';
                 } catch (error) {
                     if (requestId !== frameQuestionRequestId) return;
                     if (frameQuestionStatus) {
@@ -2637,7 +2437,6 @@
                 });
             });
             window.addEventListener('beforeunload', function () {
-                stopFrameQuestionCapture();
                 saveProgress('leave', true);
                 if (videoStudySession) postStudyTime(videoStudySession, false, true);
                 if (practiceTimer) {

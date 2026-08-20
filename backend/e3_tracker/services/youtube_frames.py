@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import io
 import logging
 import math
@@ -22,17 +20,14 @@ from PIL import Image
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _METADATA_CACHE_TTL_SECONDS = 10 * 60
 _METADATA_CACHE_LIMIT = 32
+_FRAME_CACHE_TTL_SECONDS = 5 * 60
+_FRAME_CACHE_LIMIT = 64
 _SPRITE_DOWNLOAD_ATTEMPTS = 2
 _MAX_SPRITE_BYTES = 3 * 1024 * 1024
 _EXACT_FRAME_TIMEOUT_SECONDS = 18
 _EXACT_FRAME_MAX_STREAMS = 4
 _MAX_FRAME_WIDTH = 1280
 _MIN_FRAME_WIDTH = 640
-_MAX_BROWSER_FRAME_BYTES = 5 * 1024 * 1024
-_BROWSER_FRAME_DATA_RE = re.compile(
-    r"^data:image/(?P<format>jpeg|jpg|png|webp);base64,(?P<data>[A-Za-z0-9+/=\r\n]+)$",
-    re.IGNORECASE,
-)
 _EXTRACTOR_STRATEGIES = (
     None,
     ("android_vr",),
@@ -40,6 +35,9 @@ _EXTRACTOR_STRATEGIES = (
 _metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _metadata_video_locks: Dict[str, threading.Lock] = {}
 _metadata_lock = threading.Lock()
+_frame_cache: Dict[Tuple[str, float], Tuple[float, Dict[str, Any]]] = {}
+_frame_video_locks: Dict[Tuple[str, float], threading.Lock] = {}
+_frame_lock = threading.Lock()
 _logger = logging.getLogger(__name__)
 
 
@@ -127,9 +125,8 @@ def _youtube_dl_options(player_clients: Tuple[str, ...] | None) -> Dict[str, Any
         # when the selected client exposes no playable A/V stream.
         "ignore_no_formats_error": True,
         "noplaylist": True,
-        # The browser-captured frame is the primary path. Keep this server-side
-        # fallback bounded so a blocked Railway IP does not make the user wait
-        # through several minute-long retries.
+        # Keep server-side retries bounded so a blocked data-centre IP does not
+        # make the user wait through several minute-long retries.
         "socket_timeout": 8,
         "retries": 1,
         "extractor_retries": 1,
@@ -187,9 +184,7 @@ def _extract_youtube_info(video_id: str) -> Dict[str, Any]:
             )
         if strategy_index + 1 < len(_EXTRACTOR_STRATEGIES):
             time.sleep(0.25 * (strategy_index + 1))
-    raise YoutubeMetadataError(
-        "YouTube 暫時拒絕伺服器讀取影片資訊，請改用目前分頁畫面擷取。"
-    ) from last_error
+    raise YoutubeMetadataError("YouTube 暫時無法提供這部影片的影格資訊，請稍後再試。") from last_error
 
 
 def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
@@ -403,41 +398,6 @@ def _normalize_frame_image(image_bytes: bytes) -> Tuple[bytes, int, int]:
     return output.getvalue(), frame.width, frame.height
 
 
-def frame_from_browser_capture(
-    image_data_url: str,
-    playback_seconds: float,
-) -> Dict[str, Any]:
-    """Validate and normalize a browser-captured player frame.
-
-    Capturing in the signed-in browser avoids asking Railway to retrieve the
-    YouTube stream from a data-centre IP, which YouTube frequently throttles.
-    """
-    requested_seconds = _validate_playback_seconds(playback_seconds)
-    encoded = str(image_data_url or "").strip()
-    match = _BROWSER_FRAME_DATA_RE.fullmatch(encoded)
-    if not match:
-        raise YoutubeFrameError("目前分頁的畫面格式無效。")
-    payload = "".join(match.group("data").split())
-    if not payload or len(payload) > ((_MAX_BROWSER_FRAME_BYTES + 2) // 3) * 4 + 4:
-        raise YoutubeFrameError("目前分頁的畫面過大，請重新擷取。")
-    try:
-        image_bytes = base64.b64decode(payload, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise YoutubeFrameError("目前分頁的畫面格式無效。") from exc
-    if not image_bytes or len(image_bytes) > _MAX_BROWSER_FRAME_BYTES:
-        raise YoutubeFrameError("目前分頁的畫面過大，請重新擷取。")
-    frame_bytes, width, height = _normalize_frame_image(image_bytes)
-    return {
-        "bytes": frame_bytes,
-        "mime_type": "image/jpeg",
-        "requested_seconds": requested_seconds,
-        "frame_seconds": requested_seconds,
-        "width": width,
-        "height": height,
-        "source": "browser",
-    }
-
-
 def _frame_from_storyboard(
     storyboard: Dict[str, Any],
     requested_seconds: float,
@@ -586,7 +546,7 @@ def _frame_from_stream(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
-            timeout=max(5, int(timeout) + 4),
+            timeout=max(3, int(timeout) + 2),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise YoutubeFrameError("目前無法精確擷取這一幕。") from exc
@@ -613,8 +573,11 @@ def fetch_youtube_precise_frame(
 ) -> Dict[str, Any]:
     """Decode the video stream at the requested time instead of using a thumbnail."""
     video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
+    deadline = time.monotonic() + max(6, int(timeout))
     last_error: YoutubeFrameError | None = None
     for metadata_attempt in range(2):
+        if metadata_attempt > 0 and time.monotonic() >= deadline:
+            break
         try:
             info = _youtube_info(video_id, force_refresh=metadata_attempt > 0)
         except YoutubeMetadataError:
@@ -628,12 +591,16 @@ def fetch_youtube_precise_frame(
             last_error = YoutubeFrameError("這部影片目前沒有可用的精確影格串流。")
             continue
         for stream in streams[:_EXACT_FRAME_MAX_STREAMS]:
+            remaining = deadline - time.monotonic()
+            if remaining < 1:
+                last_error = YoutubeFrameError("精準影格取樣逾時，已切換預覽影格。")
+                break
             try:
                 return _frame_from_stream(
                     stream,
                     requested_seconds,
                     duration,
-                    timeout=timeout,
+                    timeout=max(1, min(6, int(math.ceil(remaining)))),
                 )
             except YoutubeFrameError as exc:
                 last_error = exc
@@ -688,25 +655,54 @@ def fetch_youtube_storyboard_frame(
     *,
     timeout: int = 25,
 ) -> Dict[str, Any]:
-    """Fetch a quick storyboard frame, falling back to exact stream decoding.
+    """Fetch the requested stream frame, falling back to a storyboard tile.
 
     The public function name is retained for compatibility with the existing
-    study-plan route. Browser capture is the primary exact-frame path. For the
-    server fallback, a storyboard normally arrives much faster than starting
-    FFmpeg and is sufficiently close to the requested playback time.
+    study-plan route. Exact decoding is attempted first for timestamp accuracy;
+    YouTube's nearest storyboard tile remains the cross-device fallback.
     """
     precise_timeout = min(max(6, int(timeout)), _EXACT_FRAME_TIMEOUT_SECONDS)
     try:
-        return _fetch_youtube_storyboard_frame(
-            youtube_video_id,
-            playback_seconds,
-            timeout=min(10, max(4, int(timeout))),
-        )
-    except YoutubeMetadataError:
-        raise
-    except YoutubeFrameError:
         return fetch_youtube_precise_frame(
             youtube_video_id,
             playback_seconds,
             timeout=precise_timeout,
         )
+    except YoutubeFrameError:
+        return _fetch_youtube_storyboard_frame(
+            youtube_video_id,
+            playback_seconds,
+            timeout=min(10, max(4, int(timeout))),
+        )
+
+
+def fetch_youtube_cached_frame(
+    youtube_video_id: str,
+    playback_seconds: float,
+    *,
+    timeout: int = 18,
+) -> Dict[str, Any]:
+    """Reuse a recently prefetched frame for the matching video timestamp."""
+    video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
+    key = (video_id, round(requested_seconds, 3))
+    now = time.monotonic()
+    with _frame_lock:
+        cached = _frame_cache.get(key)
+        if cached and now - cached[0] < _FRAME_CACHE_TTL_SECONDS:
+            return cached[1]
+        lock = _frame_video_locks.setdefault(key, threading.Lock())
+
+    with lock:
+        now = time.monotonic()
+        with _frame_lock:
+            cached = _frame_cache.get(key)
+            if cached and now - cached[0] < _FRAME_CACHE_TTL_SECONDS:
+                return cached[1]
+        frame = fetch_youtube_storyboard_frame(video_id, requested_seconds, timeout=timeout)
+        with _frame_lock:
+            if len(_frame_cache) >= _FRAME_CACHE_LIMIT:
+                oldest = min(_frame_cache, key=lambda item: _frame_cache[item][0])
+                _frame_cache.pop(oldest, None)
+                _frame_video_locks.pop(oldest, None)
+            _frame_cache[key] = (time.monotonic(), frame)
+        return frame

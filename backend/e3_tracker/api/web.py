@@ -46,8 +46,7 @@ from ..services.youtube_playlists import (
 )
 from ..services.youtube_frames import (
     YoutubeFrameError,
-    fetch_youtube_storyboard_frame,
-    frame_from_browser_capture,
+    fetch_youtube_cached_frame,
 )
 from ..shared.config import (
     DEFAULT_OPENAI_MODEL,
@@ -13785,13 +13784,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if duration_seconds > 0:
             playback_seconds = min(playback_seconds, duration_seconds)
 
-        browser_frame = str(payload.get("frame_image") or "").strip()
         try:
-            frame = (
-                frame_from_browser_capture(browser_frame, playback_seconds)
-                if browser_frame
-                else fetch_youtube_storyboard_frame(youtube_video_id, playback_seconds)
-            )
+            frame = fetch_youtube_cached_frame(youtube_video_id, playback_seconds)
         except YoutubeFrameError as exc:
             return {"ok": False, "error": str(exc)}, 502
         image_data_url = (
@@ -13799,12 +13793,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             + base64.b64encode(frame["bytes"]).decode("ascii")
         )
         frame_source = str(frame.get("source") or "storyboard")
-        if frame_source == "browser":
-            frame_context = (
-                "附圖是學生按下提問時，由瀏覽器直接擷取的播放器畫面；"
-                "它是本題最重要且時間最準確的依據。"
-            )
-        elif frame_source == "exact":
+        if frame_source == "exact":
             frame_context = "附圖是伺服器在指定時間解碼的影片影格，時間可能有極小誤差。"
         else:
             frame_context = (
@@ -13877,6 +13866,48 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "requested_seconds": round(playback_seconds, 2),
             "frame_seconds": round(float(frame["frame_seconds"]), 2),
             "frame_source": frame_source,
+        }
+
+    @app.post("/admin/study-plan/video-frame")
+    @admin_required
+    def admin_study_plan_video_frame():
+        payload = request.get_json(silent=True) or {}
+        try:
+            video_id = int(payload.get("video_id") or 0)
+            playback_seconds = float(payload.get("playback_seconds") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "取樣資料格式不正確。"}, 400
+        if video_id <= 0 or not math.isfinite(playback_seconds) or playback_seconds < 0:
+            return {"ok": False, "error": "目前的影片或播放時間無效。"}, 400
+        video = next(
+            (
+                item
+                for item in storage.list_study_plan_videos_with_records()
+                if int(item.get("id") or 0) == video_id
+            ),
+            None,
+        )
+        if not video:
+            return {"ok": False, "error": "找不到這部影片。"}, 404
+        youtube_video_id = str(video.get("youtube_video_id") or "").strip()
+        if not youtube_video_id:
+            return {"ok": False, "error": "這部影片尚未對應 YouTube。"}, 400
+        duration_seconds = max(0.0, float(video.get("duration_seconds") or 0))
+        if duration_seconds > 0:
+            playback_seconds = min(playback_seconds, duration_seconds)
+        try:
+            frame = fetch_youtube_cached_frame(youtube_video_id, playback_seconds)
+        except YoutubeFrameError as exc:
+            return {"ok": False, "error": str(exc)}, 502
+        return {
+            "ok": True,
+            "frame_image": (
+                f"data:{frame['mime_type']};base64,"
+                + base64.b64encode(frame["bytes"]).decode("ascii")
+            ),
+            "requested_seconds": round(playback_seconds, 2),
+            "frame_seconds": round(float(frame["frame_seconds"]), 2),
+            "frame_source": str(frame.get("source") or "storyboard"),
         }
 
     @app.patch("/admin/study-plan/video-markers/<int:marker_id>")
