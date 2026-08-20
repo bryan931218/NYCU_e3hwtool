@@ -17,6 +17,7 @@ from e3_tracker.services.youtube_frames import (
 class YoutubeStoryboardFrameTests(unittest.TestCase):
     def setUp(self):
         youtube_frames._metadata_cache.clear()
+        youtube_frames._metadata_video_locks.clear()
 
     @staticmethod
     def _sprite_bytes(width, height, color=(25, 60, 225)):
@@ -315,13 +316,85 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
                 fetch_youtube_precise_frame("bad", 10)
         youtube_info.assert_not_called()
 
+    def test_extractor_allows_storyboard_only_responses(self):
+        options = youtube_frames._youtube_dl_options(None)
+
+        self.assertTrue(options["ignore_no_formats_error"])
+        self.assertTrue(options["skip_download"])
+        self.assertTrue(options["noplaylist"])
+
+    def test_metadata_retries_with_an_alternate_youtube_client(self):
+        failed_ydl = Mock()
+        failed_ydl.__enter__ = Mock(return_value=failed_ydl)
+        failed_ydl.__exit__ = Mock(return_value=False)
+        failed_ydl.extract_info.side_effect = RuntimeError("temporary failure")
+        working_ydl = Mock()
+        working_ydl.__enter__ = Mock(return_value=working_ydl)
+        working_ydl.__exit__ = Mock(return_value=False)
+        working_ydl.extract_info.return_value = {
+            "duration": 90,
+            "formats": [
+                {
+                    "protocol": "mhtml",
+                    "width": 320,
+                    "height": 180,
+                    "rows": 1,
+                    "columns": 1,
+                    "fragments": [{"url": "https://example.test/sprite", "duration": 10}],
+                }
+            ],
+        }
+        with patch.object(
+            youtube_frames.yt_dlp,
+            "YoutubeDL",
+            side_effect=[failed_ydl, working_ydl],
+        ) as youtube_dl, patch.object(youtube_frames.time, "sleep"):
+            result = youtube_frames._extract_youtube_info("9dXuhVJ-L5k")
+
+        self.assertEqual(result["duration"], 90)
+        self.assertEqual(youtube_dl.call_count, 2)
+        fallback_options = youtube_dl.call_args_list[1].args[0]
+        self.assertEqual(
+            fallback_options["extractor_args"]["youtube"]["player_client"],
+            ["web", "android_vr"],
+        )
+
+    def test_metadata_retries_when_first_response_has_no_frame_formats(self):
+        empty_ydl = Mock()
+        empty_ydl.__enter__ = Mock(return_value=empty_ydl)
+        empty_ydl.__exit__ = Mock(return_value=False)
+        empty_ydl.extract_info.return_value = {"duration": 90, "formats": []}
+        working_ydl = Mock()
+        working_ydl.__enter__ = Mock(return_value=working_ydl)
+        working_ydl.__exit__ = Mock(return_value=False)
+        working_ydl.extract_info.return_value = {
+            "duration": 90,
+            "formats": [
+                {
+                    "url": "https://example.test/video.mp4",
+                    "protocol": "https",
+                    "height": 720,
+                    "vcodec": "avc1",
+                }
+            ],
+        }
+        with patch.object(
+            youtube_frames.yt_dlp,
+            "YoutubeDL",
+            side_effect=[empty_ydl, working_ydl],
+        ) as youtube_dl, patch.object(youtube_frames.time, "sleep"):
+            result = youtube_frames._extract_youtube_info("9dXuhVJ-L5k")
+
+        self.assertEqual(result["formats"][0]["height"], 720)
+        self.assertEqual(youtube_dl.call_count, 2)
+
     def test_reports_missing_storyboard(self):
         fake_ydl = Mock()
         fake_ydl.__enter__ = Mock(return_value=fake_ydl)
         fake_ydl.__exit__ = Mock(return_value=False)
         fake_ydl.extract_info.return_value = {"duration": 100, "formats": []}
         with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=fake_ydl):
-            with self.assertRaisesRegex(YoutubeFrameError, "沒有可用"):
+            with self.assertRaisesRegex(YoutubeFrameError, "已自動重試"):
                 _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 10)
 
 

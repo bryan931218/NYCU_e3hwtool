@@ -11,5 +11,5 @@ SQLAlchemy>=2.0.0
 PyMySQL>=1.1.0
 psycopg[binary]>=3.1.0
 fsrs>=6.3,<7
-yt-dlp>=2025.1.15
+yt-dlp[default]>=2026.7.4
 imageio-ffmpeg>=0.5.1,<0.7

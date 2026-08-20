@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import math
 import re
 import shutil
@@ -25,8 +26,15 @@ _EXACT_FRAME_TIMEOUT_SECONDS = 18
 _EXACT_FRAME_MAX_STREAMS = 4
 _MAX_FRAME_WIDTH = 1280
 _MIN_FRAME_WIDTH = 640
+_EXTRACTOR_STRATEGIES = (
+    None,
+    ("web", "android_vr"),
+    ("android_vr",),
+)
 _metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_metadata_video_locks: Dict[str, threading.Lock] = {}
 _metadata_lock = threading.Lock()
+_logger = logging.getLogger(__name__)
 
 
 class YoutubeFrameError(RuntimeError):
@@ -86,6 +94,86 @@ def _stream_rank(item: Dict[str, Any]) -> Tuple[int, int, int, int, float]:
     return direct_http, height_score, progressive, mp4, -max(0.0, tbr)
 
 
+def _video_metadata_lock(video_id: str) -> threading.Lock:
+    with _metadata_lock:
+        lock = _metadata_video_locks.get(video_id)
+        if lock is None:
+            lock = threading.Lock()
+            _metadata_video_locks[video_id] = lock
+        return lock
+
+
+def _youtube_dl_options(player_clients: Tuple[str, ...] | None) -> Dict[str, Any]:
+    options: Dict[str, Any] = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        # A storyboard is an image-only format. YouTube may return it even
+        # when the selected client exposes no playable A/V stream.
+        "ignore_no_formats_error": True,
+        "noplaylist": True,
+        "socket_timeout": 20,
+        "retries": 3,
+        "extractor_retries": 3,
+    }
+    available_runtimes = {
+        runtime: {}
+        for runtime in ("node", "deno")
+        if shutil.which(runtime)
+    }
+    if available_runtimes:
+        options["js_runtimes"] = available_runtimes
+    if player_clients:
+        options["extractor_args"] = {
+            "youtube": {"player_client": list(player_clients)}
+        }
+    return options
+
+
+def _has_frame_formats(info: Dict[str, Any]) -> bool:
+    for item in info.get("formats") or []:
+        if not isinstance(item, dict):
+            continue
+        if (
+            str(item.get("protocol") or "") == "mhtml"
+            and item.get("fragments")
+            and _positive_int(item.get("width")) > 0
+            and _positive_int(item.get("height")) > 0
+        ):
+            return True
+        if (
+            str(item.get("vcodec") or "none").lower() not in {"", "none"}
+            and str(item.get("url") or "").startswith(("https://", "http://"))
+        ):
+            return True
+    return False
+
+
+def _extract_youtube_info(video_id: str) -> Dict[str, Any]:
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    last_error: BaseException | None = None
+    for strategy_index, player_clients in enumerate(_EXTRACTOR_STRATEGIES):
+        try:
+            with yt_dlp.YoutubeDL(_youtube_dl_options(player_clients)) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if isinstance(info, dict) and _has_frame_formats(info):
+                return info
+            last_error = ValueError("frame formats missing")
+        except Exception as exc:
+            last_error = exc
+            _logger.warning(
+                "YouTube frame metadata attempt %s failed for %s: %s",
+                strategy_index + 1,
+                video_id,
+                type(exc).__name__,
+            )
+        if strategy_index + 1 < len(_EXTRACTOR_STRATEGIES):
+            time.sleep(0.25 * (strategy_index + 1))
+    raise YoutubeFrameError(
+        "目前無法讀取這部影片的影格資訊，系統已自動重試，請稍後再試。"
+    ) from last_error
+
+
 def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
     """Return cached storyboard and direct-stream metadata from one yt-dlp lookup."""
     now = time.monotonic()
@@ -94,65 +182,56 @@ def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, An
             cached = _metadata_cache.get(video_id)
             if cached and now - cached[0] < _METADATA_CACHE_TTL_SECONDS:
                 return cached[1]
-    else:
+    with _video_metadata_lock(video_id):
+        now = time.monotonic()
+        if not force_refresh:
+            with _metadata_lock:
+                cached = _metadata_cache.get(video_id)
+                if cached and now - cached[0] < _METADATA_CACHE_TTL_SECONDS:
+                    return cached[1]
+        else:
+            with _metadata_lock:
+                _metadata_cache.pop(video_id, None)
+
+        info = _extract_youtube_info(video_id)
+        raw_formats = [item for item in (info.get("formats") or []) if isinstance(item, dict)]
+        storyboards = [
+            item
+            for item in raw_formats
+            if str(item.get("protocol") or "") == "mhtml"
+            and item.get("fragments")
+            and _positive_int(item.get("width")) > 0
+            and _positive_int(item.get("height")) > 0
+            and _positive_int(item.get("rows")) > 0
+            and _positive_int(item.get("columns")) > 0
+        ]
+        storyboards.sort(
+            key=lambda item: _positive_int(item.get("width")) * _positive_int(item.get("height")),
+            reverse=True,
+        )
+
+        streams = [
+            item
+            for item in raw_formats
+            if str(item.get("vcodec") or "none").lower() not in {"", "none"}
+            and str(item.get("url") or "").startswith(("https://", "http://"))
+            and str(item.get("protocol") or "").lower() != "mhtml"
+            and _positive_int(item.get("height")) > 0
+        ]
+        streams.sort(key=_stream_rank, reverse=True)
+
+        result = {
+            "duration": _positive_float(info.get("duration")),
+            "format": storyboards[0] if storyboards else None,
+            "formats": storyboards,
+            "streams": streams,
+        }
         with _metadata_lock:
-            _metadata_cache.pop(video_id, None)
-
-    options = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "noplaylist": True,
-        "socket_timeout": 20,
-        "retries": 2,
-        "extractor_retries": 2,
-    }
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-    except Exception as exc:
-        raise YoutubeFrameError("目前無法讀取這部影片的影格資訊。") from exc
-    if not isinstance(info, dict):
-        raise YoutubeFrameError("這部影片目前沒有可用的影格資訊。")
-
-    raw_formats = [item for item in (info.get("formats") or []) if isinstance(item, dict)]
-    storyboards = [
-        item
-        for item in raw_formats
-        if str(item.get("protocol") or "") == "mhtml"
-        and item.get("fragments")
-        and _positive_int(item.get("width")) > 0
-        and _positive_int(item.get("height")) > 0
-        and _positive_int(item.get("rows")) > 0
-        and _positive_int(item.get("columns")) > 0
-    ]
-    storyboards.sort(
-        key=lambda item: _positive_int(item.get("width")) * _positive_int(item.get("height")),
-        reverse=True,
-    )
-
-    streams = [
-        item
-        for item in raw_formats
-        if str(item.get("vcodec") or "none").lower() not in {"", "none"}
-        and str(item.get("url") or "").startswith(("https://", "http://"))
-        and str(item.get("protocol") or "").lower() != "mhtml"
-        and _positive_int(item.get("height")) > 0
-    ]
-    streams.sort(key=_stream_rank, reverse=True)
-
-    result = {
-        "duration": _positive_float(info.get("duration")),
-        "format": storyboards[0] if storyboards else None,
-        "formats": storyboards,
-        "streams": streams,
-    }
-    with _metadata_lock:
-        if len(_metadata_cache) >= _METADATA_CACHE_LIMIT:
-            oldest = min(_metadata_cache, key=lambda key: _metadata_cache[key][0])
-            _metadata_cache.pop(oldest, None)
-        _metadata_cache[video_id] = (now, result)
-    return result
+            if len(_metadata_cache) >= _METADATA_CACHE_LIMIT:
+                oldest = min(_metadata_cache, key=lambda key: _metadata_cache[key][0])
+                _metadata_cache.pop(oldest, None)
+            _metadata_cache[video_id] = (time.monotonic(), result)
+        return result
 
 
 def _storyboard_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
