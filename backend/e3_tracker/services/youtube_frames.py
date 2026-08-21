@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import math
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -30,6 +31,9 @@ _EXACT_FRAME_TIMEOUT_SECONDS = 18
 _EXACT_FRAME_MAX_STREAMS = 4
 _MAX_FRAME_WIDTH = 1280
 _MIN_FRAME_WIDTH = 640
+_STORYBOARD_CATALOG_PATH = (
+    Path(__file__).resolve().parents[1] / "shared" / "youtube_storyboard_catalog.json"
+)
 _EXTRACTOR_STRATEGIES = (
     None,
     ("android_vr",),
@@ -41,6 +45,8 @@ _metadata_lock = threading.Lock()
 _frame_cache: Dict[Tuple[str, float], Tuple[float, Dict[str, Any]]] = {}
 _frame_video_locks: Dict[Tuple[str, float], threading.Lock] = {}
 _frame_lock = threading.Lock()
+_storyboard_catalog: Dict[str, Dict[str, Any]] | None = None
+_storyboard_catalog_lock = threading.Lock()
 _logger = logging.getLogger(__name__)
 
 
@@ -241,6 +247,48 @@ def _storyboard_formats_from_spec(
     return formats
 
 
+def _load_storyboard_catalog() -> Dict[str, Dict[str, Any]]:
+    """Load pre-resolved metadata for the course videos shipped with the app."""
+    global _storyboard_catalog
+    if _storyboard_catalog is not None:
+        return _storyboard_catalog
+    with _storyboard_catalog_lock:
+        if _storyboard_catalog is not None:
+            return _storyboard_catalog
+        catalog: Dict[str, Dict[str, Any]] = {}
+        try:
+            raw = json.loads(_STORYBOARD_CATALOG_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                catalog = {
+                    str(video_id): item
+                    for video_id, item in raw.items()
+                    if YOUTUBE_VIDEO_ID_RE.fullmatch(str(video_id))
+                    and isinstance(item, dict)
+                }
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            _logger.warning("Bundled YouTube storyboard catalog is unavailable")
+        _storyboard_catalog = catalog
+        return catalog
+
+
+def _bundled_storyboard_info(video_id: str) -> Dict[str, Any] | None:
+    item = _load_storyboard_catalog().get(video_id)
+    if not item:
+        return None
+    duration = _positive_float(item.get("duration"))
+    formats = _storyboard_formats_from_spec(
+        str(item.get("spec") or ""),
+        duration=duration,
+    )
+    if not formats:
+        return None
+    return {
+        "duration": duration,
+        "formats": formats,
+        "_metadata_source": "bundled_catalog",
+    }
+
+
 def _extract_watch_page_storyboards(video_id: str) -> Dict[str, Any]:
     """Extract public storyboard metadata without relying on yt-dlp clients."""
     last_error: BaseException | None = None
@@ -318,6 +366,14 @@ def _extract_youtube_info(video_id: str) -> Dict[str, Any]:
                 video_id,
                 type(exc).__name__,
             )
+        # Course video IDs are known ahead of time. If the normal extractor is
+        # blocked by a data-centre IP, use the shipped metadata immediately
+        # instead of repeating the same YouTube challenge for several seconds.
+        if strategy_index == 0:
+            bundled_info = _bundled_storyboard_info(video_id)
+            if bundled_info and _has_frame_formats(bundled_info):
+                _logger.info("Using bundled YouTube storyboard metadata for %s", video_id)
+                return bundled_info
         if strategy_index + 1 < len(_EXTRACTOR_STRATEGIES):
             time.sleep(0.25 * (strategy_index + 1))
     try:
@@ -747,7 +803,7 @@ def fetch_youtube_precise_frame(
         streams = [item for item in (info.get("streams") or []) if isinstance(item, dict)]
         if not streams:
             last_error = YoutubeFrameError("這部影片目前沒有可用的精確影格串流。")
-            if str(info.get("metadata_source") or "") == "watch_page":
+            if str(info.get("metadata_source") or "") in {"watch_page", "bundled_catalog"}:
                 break
             continue
         for stream in streams[:_EXACT_FRAME_MAX_STREAMS]:

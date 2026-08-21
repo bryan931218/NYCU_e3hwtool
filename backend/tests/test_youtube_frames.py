@@ -22,6 +22,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         youtube_frames._metadata_video_locks.clear()
         youtube_frames._frame_cache.clear()
         youtube_frames._frame_video_locks.clear()
+        youtube_frames._storyboard_catalog = None
 
     @staticmethod
     def _sprite_bytes(width, height, color=(25, 60, 225)):
@@ -397,12 +398,61 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
             ],
         }
         with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=failed_ydl), patch.object(
+            youtube_frames, "_bundled_storyboard_info", return_value=None
+        ), patch.object(
             youtube_frames, "_extract_watch_page_storyboards", return_value=fallback
         ) as watch_page, patch.object(youtube_frames.time, "sleep"):
             result = youtube_frames._extract_youtube_info("9dXuhVJ-L5k")
 
         self.assertEqual(result, fallback)
         watch_page.assert_called_once_with("9dXuhVJ-L5k")
+
+    def test_metadata_uses_bundled_catalog_when_network_extractors_fail(self):
+        failed_ydl = Mock()
+        failed_ydl.__enter__ = Mock(return_value=failed_ydl)
+        failed_ydl.__exit__ = Mock(return_value=False)
+        failed_ydl.extract_info.side_effect = RuntimeError("blocked")
+        bundled = {
+            "duration": 90,
+            "formats": [
+                {
+                    "protocol": "mhtml",
+                    "width": 320,
+                    "height": 180,
+                    "rows": 1,
+                    "columns": 1,
+                    "fragments": [{"url": "https://example.test/sprite", "duration": 10}],
+                }
+            ],
+            "_metadata_source": "bundled_catalog",
+        }
+        with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=failed_ydl), patch.object(
+            youtube_frames,
+            "_extract_watch_page_storyboards",
+            side_effect=YoutubeFrameError("watch page unavailable"),
+        ), patch.object(youtube_frames, "_bundled_storyboard_info", return_value=bundled), patch.object(
+            youtube_frames.time, "sleep"
+        ):
+            result = youtube_frames._extract_youtube_info("9dXuhVJ-L5k")
+
+        self.assertEqual(result, bundled)
+
+    def test_bundled_catalog_expands_compact_storyboard_spec(self):
+        youtube_frames._storyboard_catalog = {
+            "9dXuhVJ-L5k": {
+                "duration": 100,
+                "spec": (
+                    "https://i.ytimg.com/sb/9dXuhVJ-L5k/storyboard3_L$L/$N.jpg?x=1"
+                    "|320#180#10#3#3#10000#M$M#signature"
+                ),
+            }
+        }
+
+        result = youtube_frames._bundled_storyboard_info("9dXuhVJ-L5k")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["_metadata_source"], "bundled_catalog")
+        self.assertIn("sigh=signature", result["formats"][0]["fragments"][0]["url"])
 
     def test_metadata_refresh_failure_reuses_recent_stale_storyboard(self):
         cached = {
@@ -449,7 +499,9 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
             youtube_frames.yt_dlp,
             "YoutubeDL",
             side_effect=[failed_ydl, working_ydl],
-        ) as youtube_dl, patch.object(youtube_frames.time, "sleep"):
+        ) as youtube_dl, patch.object(
+            youtube_frames, "_bundled_storyboard_info", return_value=None
+        ), patch.object(youtube_frames.time, "sleep"):
             result = youtube_frames._extract_youtube_info("9dXuhVJ-L5k")
 
         self.assertEqual(result["duration"], 90)
@@ -483,7 +535,9 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
             youtube_frames.yt_dlp,
             "YoutubeDL",
             side_effect=[empty_ydl, working_ydl],
-        ) as youtube_dl, patch.object(youtube_frames.time, "sleep"):
+        ) as youtube_dl, patch.object(
+            youtube_frames, "_bundled_storyboard_info", return_value=None
+        ), patch.object(youtube_frames.time, "sleep"):
             result = youtube_frames._extract_youtube_info("9dXuhVJ-L5k")
 
         self.assertEqual(result["formats"][0]["height"], 720)
@@ -495,6 +549,10 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         fake_ydl.__exit__ = Mock(return_value=False)
         fake_ydl.extract_info.return_value = {"duration": 100, "formats": []}
         with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=fake_ydl), patch.object(
+            youtube_frames,
+            "_bundled_storyboard_info",
+            return_value=None,
+        ), patch.object(
             youtube_frames,
             "_extract_watch_page_storyboards",
             side_effect=YoutubeFrameError("watch page unavailable"),
