@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import math
 import re
@@ -19,6 +20,7 @@ from PIL import Image
 
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _METADATA_CACHE_TTL_SECONDS = 10 * 60
+_METADATA_STALE_TTL_SECONDS = 6 * 60 * 60
 _METADATA_CACHE_LIMIT = 32
 _FRAME_CACHE_TTL_SECONDS = 5 * 60
 _FRAME_CACHE_LIMIT = 64
@@ -31,6 +33,7 @@ _MIN_FRAME_WIDTH = 640
 _EXTRACTOR_STRATEGIES = (
     None,
     ("android_vr",),
+    ("web_embedded", "web_safari"),
 )
 _metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _metadata_video_locks: Dict[str, threading.Lock] = {}
@@ -138,11 +141,144 @@ def _youtube_dl_options(player_clients: Tuple[str, ...] | None) -> Dict[str, Any
     }
     if available_runtimes:
         options["js_runtimes"] = available_runtimes
+        # Current YouTube playback responses can require an external JS
+        # challenge solver. The Python API does not enable remote components
+        # unless explicitly requested.
+        options["remote_components"] = {"ejs:github"}
     if player_clients:
         options["extractor_args"] = {
             "youtube": {"player_client": list(player_clients)}
         }
     return options
+
+
+def _watch_page_headers() -> Dict[str, str]:
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+
+def _initial_player_response(html: str) -> Dict[str, Any]:
+    marker = re.search(r"(?:var\s+)?ytInitialPlayerResponse\s*=\s*", html)
+    if not marker:
+        raise YoutubeMetadataError("YouTube 播放頁沒有可用的影格資訊。")
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(html[marker.end() :].lstrip())
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise YoutubeMetadataError("YouTube 播放頁的影格資訊格式異常。") from exc
+    if not isinstance(payload, dict):
+        raise YoutubeMetadataError("YouTube 播放頁沒有可用的影格資訊。")
+    return payload
+
+
+def _storyboard_formats_from_spec(
+    spec: str,
+    *,
+    duration: float,
+) -> List[Dict[str, Any]]:
+    parts = str(spec or "").split("|")
+    if len(parts) < 2 or not parts[0].startswith(("https://", "http://")):
+        return []
+    template = parts[0]
+    formats: List[Dict[str, Any]] = []
+    for level, raw_level in enumerate(parts[1:]):
+        fields = raw_level.split("#")
+        if len(fields) < 8:
+            continue
+        width = _positive_int(fields[0])
+        height = _positive_int(fields[1])
+        frame_count = _positive_int(fields[2])
+        columns = _positive_int(fields[3])
+        rows = _positive_int(fields[4])
+        interval_ms = _positive_float(fields[5])
+        filename_template = str(fields[6] or "default")
+        signature = str(fields[7] or "").strip()
+        tile_count = columns * rows
+        if not all((width, height, frame_count, tile_count)):
+            continue
+        interval = (
+            duration / frame_count
+            if duration > 0
+            else max(0.001, interval_ms / 1000 if interval_ms > 0 else 1.0)
+        )
+        fragment_count = max(1, int(math.ceil(frame_count / tile_count)))
+        fragment_duration = max(0.001, interval * tile_count)
+        fragments: List[Dict[str, Any]] = []
+        for fragment_index in range(fragment_count):
+            filename = filename_template.replace("$M", str(fragment_index))
+            image_url = (
+                template.replace("$L", str(level)).replace("$N", filename)
+            )
+            if signature:
+                separator = "&" if "?" in image_url else "?"
+                image_url = f"{image_url}{separator}sigh={signature}"
+            fragments.append(
+                {
+                    "url": image_url,
+                    "duration": fragment_duration,
+                    "http_headers": _watch_page_headers(),
+                }
+            )
+        formats.append(
+            {
+                "format_id": f"watch-sb{level}",
+                "protocol": "mhtml",
+                "ext": "mhtml",
+                "width": width,
+                "height": height,
+                "columns": columns,
+                "rows": rows,
+                "fps": 1.0 / interval,
+                "fragments": fragments,
+                "http_headers": _watch_page_headers(),
+            }
+        )
+    return formats
+
+
+def _extract_watch_page_storyboards(video_id: str) -> Dict[str, Any]:
+    """Extract public storyboard metadata without relying on yt-dlp clients."""
+    last_error: BaseException | None = None
+    for host in ("www.youtube.com", "m.youtube.com"):
+        try:
+            response = requests.get(
+                f"https://{host}/watch?v={video_id}",
+                params={"hl": "en", "bpctr": "9999999999", "has_verified": "1"},
+                headers=_watch_page_headers(),
+                timeout=8,
+            )
+            response.raise_for_status()
+            if len(response.content) > 2_500_000:
+                raise YoutubeMetadataError("YouTube 播放頁內容過大。")
+            payload = _initial_player_response(response.text)
+            duration = _positive_float(
+                (payload.get("videoDetails") or {}).get("lengthSeconds")
+            )
+            storyboards = payload.get("storyboards") or {}
+            renderer = (
+                storyboards.get("playerStoryboardSpecRenderer")
+                or storyboards.get("playerLiveStoryboardSpecRenderer")
+                or {}
+            )
+            formats = _storyboard_formats_from_spec(
+                str(renderer.get("spec") or ""),
+                duration=duration,
+            )
+            if formats:
+                return {
+                    "duration": duration,
+                    "formats": formats,
+                    "_metadata_source": "watch_page",
+                }
+            last_error = YoutubeMetadataError("YouTube 播放頁沒有可用的預覽影格。")
+        except (requests.RequestException, YoutubeMetadataError) as exc:
+            last_error = exc
+    raise YoutubeMetadataError("YouTube 播放頁沒有可用的預覽影格。") from last_error
 
 
 def _has_frame_formats(info: Dict[str, Any]) -> bool:
@@ -184,6 +320,18 @@ def _extract_youtube_info(video_id: str) -> Dict[str, Any]:
             )
         if strategy_index + 1 < len(_EXTRACTOR_STRATEGIES):
             time.sleep(0.25 * (strategy_index + 1))
+    try:
+        watch_info = _extract_watch_page_storyboards(video_id)
+        if _has_frame_formats(watch_info):
+            _logger.info("Using direct YouTube watch-page storyboard metadata for %s", video_id)
+            return watch_info
+    except Exception as exc:
+        last_error = exc
+        _logger.warning(
+            "YouTube watch-page storyboard fallback failed for %s: %s",
+            video_id,
+            type(exc).__name__,
+        )
     raise YoutubeMetadataError("YouTube 暫時無法提供這部影片的影格資訊，請稍後再試。") from last_error
 
 
@@ -197,6 +345,9 @@ def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, An
                 return cached[1]
     with _video_metadata_lock(video_id):
         now = time.monotonic()
+        stale: Tuple[float, Dict[str, Any]] | None = None
+        with _metadata_lock:
+            stale = _metadata_cache.get(video_id)
         if not force_refresh:
             with _metadata_lock:
                 cached = _metadata_cache.get(video_id)
@@ -206,7 +357,13 @@ def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, An
             with _metadata_lock:
                 _metadata_cache.pop(video_id, None)
 
-        info = _extract_youtube_info(video_id)
+        try:
+            info = _extract_youtube_info(video_id)
+        except YoutubeMetadataError:
+            if stale and now - stale[0] < _METADATA_STALE_TTL_SECONDS:
+                _logger.info("Using stale YouTube frame metadata for %s", video_id)
+                return stale[1]
+            raise
         raw_formats = [item for item in (info.get("formats") or []) if isinstance(item, dict)]
         storyboards = [
             item
@@ -238,6 +395,7 @@ def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, An
             "format": storyboards[0] if storyboards else None,
             "formats": storyboards,
             "streams": streams,
+            "metadata_source": str(info.get("_metadata_source") or "yt_dlp"),
         }
         with _metadata_lock:
             if len(_metadata_cache) >= _METADATA_CACHE_LIMIT:
@@ -589,6 +747,8 @@ def fetch_youtube_precise_frame(
         streams = [item for item in (info.get("streams") or []) if isinstance(item, dict)]
         if not streams:
             last_error = YoutubeFrameError("這部影片目前沒有可用的精確影格串流。")
+            if str(info.get("metadata_source") or "") == "watch_page":
+                break
             continue
         for stream in streams[:_EXACT_FRAME_MAX_STREAMS]:
             remaining = deadline - time.monotonic()

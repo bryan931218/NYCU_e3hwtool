@@ -1,4 +1,5 @@
 import io
+import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -19,6 +20,8 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
     def setUp(self):
         youtube_frames._metadata_cache.clear()
         youtube_frames._metadata_video_locks.clear()
+        youtube_frames._frame_cache.clear()
+        youtube_frames._frame_video_locks.clear()
 
     @staticmethod
     def _sprite_bytes(width, height, color=(25, 60, 225)):
@@ -340,6 +343,87 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         self.assertTrue(options["skip_download"])
         self.assertTrue(options["noplaylist"])
 
+    def test_extractor_enables_ejs_remote_component_when_node_is_available(self):
+        with patch.object(youtube_frames.shutil, "which", side_effect=lambda name: "/usr/bin/node" if name == "node" else None):
+            options = youtube_frames._youtube_dl_options(None)
+
+        self.assertEqual(options["js_runtimes"], {"node": {}})
+        self.assertEqual(options["remote_components"], {"ejs:github"})
+
+    def test_extracts_storyboard_metadata_directly_from_watch_page(self):
+        player_response = {
+            "videoDetails": {"lengthSeconds": "100"},
+            "storyboards": {
+                "playerStoryboardSpecRenderer": {
+                    "spec": (
+                        "https://i.ytimg.com/sb/9dXuhVJ-L5k/storyboard3_L$L/$N.jpg?x=1"
+                        "|320#180#10#3#3#10000#M$M#signature"
+                    )
+                }
+            },
+        }
+        html = f"<script>var ytInitialPlayerResponse = {json.dumps(player_response)};</script>"
+        response = Mock(
+            content=html.encode("utf-8"),
+            text=html,
+        )
+        response.raise_for_status.return_value = None
+        with patch.object(youtube_frames.requests, "get", return_value=response):
+            result = youtube_frames._extract_watch_page_storyboards("9dXuhVJ-L5k")
+
+        storyboard = result["formats"][0]
+        self.assertEqual(result["duration"], 100.0)
+        self.assertEqual((storyboard["width"], storyboard["height"]), (320, 180))
+        self.assertEqual(len(storyboard["fragments"]), 2)
+        self.assertIn("storyboard3_L0/M0.jpg", storyboard["fragments"][0]["url"])
+        self.assertIn("sigh=signature", storyboard["fragments"][0]["url"])
+
+    def test_metadata_uses_watch_page_when_all_yt_dlp_clients_fail(self):
+        failed_ydl = Mock()
+        failed_ydl.__enter__ = Mock(return_value=failed_ydl)
+        failed_ydl.__exit__ = Mock(return_value=False)
+        failed_ydl.extract_info.side_effect = RuntimeError("blocked")
+        fallback = {
+            "duration": 90,
+            "formats": [
+                {
+                    "protocol": "mhtml",
+                    "width": 320,
+                    "height": 180,
+                    "rows": 1,
+                    "columns": 1,
+                    "fragments": [{"url": "https://example.test/sprite", "duration": 10}],
+                }
+            ],
+        }
+        with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=failed_ydl), patch.object(
+            youtube_frames, "_extract_watch_page_storyboards", return_value=fallback
+        ) as watch_page, patch.object(youtube_frames.time, "sleep"):
+            result = youtube_frames._extract_youtube_info("9dXuhVJ-L5k")
+
+        self.assertEqual(result, fallback)
+        watch_page.assert_called_once_with("9dXuhVJ-L5k")
+
+    def test_metadata_refresh_failure_reuses_recent_stale_storyboard(self):
+        cached = {
+            "duration": 90.0,
+            "format": None,
+            "formats": [{"protocol": "mhtml", "fragments": []}],
+            "streams": [],
+        }
+        youtube_frames._metadata_cache["9dXuhVJ-L5k"] = (
+            youtube_frames.time.monotonic() - youtube_frames._METADATA_CACHE_TTL_SECONDS - 1,
+            cached,
+        )
+        with patch.object(
+            youtube_frames,
+            "_extract_youtube_info",
+            side_effect=youtube_frames.YoutubeMetadataError("temporarily blocked"),
+        ):
+            result = youtube_frames._youtube_info("9dXuhVJ-L5k", force_refresh=True)
+
+        self.assertIs(result, cached)
+
     def test_metadata_retries_with_an_alternate_youtube_client(self):
         failed_ydl = Mock()
         failed_ydl.__enter__ = Mock(return_value=failed_ydl)
@@ -410,7 +494,11 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         fake_ydl.__enter__ = Mock(return_value=fake_ydl)
         fake_ydl.__exit__ = Mock(return_value=False)
         fake_ydl.extract_info.return_value = {"duration": 100, "formats": []}
-        with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=fake_ydl):
+        with patch.object(youtube_frames.yt_dlp, "YoutubeDL", return_value=fake_ydl), patch.object(
+            youtube_frames,
+            "_extract_watch_page_storyboards",
+            side_effect=YoutubeFrameError("watch page unavailable"),
+        ):
             with self.assertRaisesRegex(YoutubeFrameError, "YouTube 暫時無法提供"):
                 _fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 10)
 
