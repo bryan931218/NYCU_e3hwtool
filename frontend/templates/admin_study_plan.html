@@ -164,18 +164,19 @@
         .player-frame { position: relative; align-self: start; width: 100%; aspect-ratio: 16 / 9; min-height: 0; border: 1px solid #c4d3e2; border-radius: 16px; background: #07111d; overflow: hidden; box-shadow: 0 16px 34px rgba(16, 42, 67, .16); }
         .player-frame iframe, #youtube-player { display: block; width: 100%; height: 100%; min-height: 0; border: 0; }
         .player-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9c7d8; text-align: center; line-height: 1.65; }
-        .video-end-screen { position:absolute; z-index:30; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:7px; max-height:calc(100% - 24px); padding:8px; color:#fff; border:1px solid rgba(255,255,255,.16); border-radius:15px; background:linear-gradient(135deg,rgba(6,16,29,.9),rgba(12,29,49,.86)); box-shadow:0 16px 42px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.08); opacity:1; visibility:visible; -webkit-backdrop-filter:blur(18px) saturate(135%); backdrop-filter:blur(18px) saturate(135%); transition:opacity .2s ease,visibility .2s ease,transform .2s ease; }
+        .video-end-screen { position:absolute; z-index:30; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:9px; max-height:calc(100% - 24px); padding:11px; color:#fff; border:1px solid rgba(255,255,255,.18); border-radius:8px; background:linear-gradient(135deg,rgba(6,16,29,.94),rgba(12,29,49,.92)); box-shadow:0 16px 42px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.08); opacity:1; visibility:visible; -webkit-backdrop-filter:blur(18px) saturate(135%); backdrop-filter:blur(18px) saturate(135%); animation:video-end-reveal .24s ease-out; transition:opacity .2s ease,visibility .2s ease,transform .2s ease; }
         .video-end-screen[hidden] { display:none !important; }
         .video-end-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-        .video-end-heading { min-width:0; display:flex; align-items:baseline; gap:8px; }
+        .video-end-heading { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:baseline; gap:8px; }
         .video-end-kicker { margin:0; color:#82b9ff; font-size:10px; font-weight:900; letter-spacing:.08em; white-space:nowrap; }
-        .video-end-heading h3 { margin:0; color:#fff; font-size:14px; letter-spacing:-.015em; }
+        .video-end-heading h3 { margin:0; color:#fff; font-size:15px; }
         .video-end-count { color:rgba(226,239,255,.6); font-size:9px; font-weight:800; white-space:nowrap; }
+        .video-end-subtitle { display:none; margin:0; color:rgba(222,235,250,.72); font-size:12px; line-height:1.5; }
         .video-end-actions { display:flex; gap:7px; flex:0 0 auto; }
         .video-end-action { min-height:29px; padding:0 9px; border:1px solid rgba(255,255,255,.16); border-radius:8px; color:rgba(255,255,255,.9); background:rgba(255,255,255,.07); font-size:10px; font-weight:850; cursor:pointer; }
         .video-end-action:hover,.video-end-action:focus-visible { border-color:rgba(112,180,255,.65); background:rgba(75,145,224,.25); outline:none; }
         .video-end-list { min-height:0; display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:7px; overflow-x:hidden; overflow-y:auto; padding:1px; scrollbar-width:thin; scrollbar-color:rgba(132,185,255,.48) rgba(255,255,255,.07); overscroll-behavior:contain; }
-        .video-end-card { width:100%; min-width:0; height:54px; display:grid; grid-template-columns:76px minmax(0,1fr); overflow:hidden; padding:0; border:1px solid rgba(255,255,255,.13); border-radius:10px; color:#fff; background:rgba(255,255,255,.055); text-align:left; cursor:pointer; transition:transform .16s ease,border-color .16s ease,background .16s ease; }
+        .video-end-card { width:100%; min-width:0; height:54px; display:grid; grid-template-columns:76px minmax(0,1fr); overflow:hidden; padding:0; border:1px solid rgba(255,255,255,.13); border-radius:8px; color:#fff; background:rgba(255,255,255,.055); text-align:left; cursor:pointer; transition:transform .16s ease,border-color .16s ease,background .16s ease; }
         .video-end-card:hover,.video-end-card:focus-visible { transform:translateY(-1px); border-color:rgba(112,180,255,.66); background:rgba(74,143,220,.16); outline:none; }
         .video-end-thumb { position:relative; min-width:0; height:100%; overflow:hidden; background:linear-gradient(135deg,#16314f,#0a1829); }
         .video-end-thumb img { width:100%; height:100%; display:block; object-fit:cover; }
@@ -185,6 +186,8 @@
         .video-end-copy { min-width:0; display:flex; flex-direction:column; justify-content:center; padding:7px 8px; }
         .video-end-title { display:-webkit-box; overflow:hidden; color:#fff; font-size:10px; font-weight:850; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
         .video-end-meta { margin-top:5px; overflow:hidden; color:#9bc8ff; font-size:8px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+        .video-end-cta { display:none; align-items:center; gap:6px; margin-top:13px; color:#fff; font-size:12px; font-weight:900; }
+        .video-end-cta-icon { width:23px; height:23px; display:grid; place-items:center; border-radius:50%; color:#07111d; background:#fff; font-size:9px; }
         .video-end-empty { min-height:48px; display:grid; place-items:center; color:rgba(232,241,252,.72); font-size:11px; font-weight:800; text-align:center; }
         .video-end-empty[hidden] { display:none !important; }
         .focus-launch { position: absolute; z-index: 4; right: 12px; bottom: 12px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.22); border-radius: 9px; color: #fff; background: rgba(7,15,26,.78); box-shadow: 0 6px 18px rgba(0,0,0,.28); cursor: pointer; backdrop-filter: blur(10px); transition: background .16s ease,border-color .16s ease,opacity .16s ease; }
@@ -219,9 +222,29 @@
         .focus-toast.is-error { color: #ffe2e4; border-color: rgba(255,153,162,.4); background: rgba(89,20,28,.92); }
         .player-frame:fullscreen, .player-frame:-webkit-full-screen, .player-frame.is-theater { width: 100vw; height: 100vh; height: 100dvh; aspect-ratio: auto; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; background: #000; box-shadow: none; }
         .player-frame:fullscreen iframe, .player-frame:fullscreen #youtube-player, .player-frame:-webkit-full-screen iframe, .player-frame:-webkit-full-screen #youtube-player, .player-frame.is-theater iframe, .player-frame.is-theater #youtube-player { width: 100%; height: 100%; min-height: 100%; }
+        .player-frame:fullscreen .video-end-screen, .player-frame:-webkit-full-screen .video-end-screen, .player-frame.is-theater .video-end-screen { left:50%; right:auto; top:50%; bottom:auto; width:min(1040px,calc(100vw - 96px)); max-height:min(78vh,720px); gap:18px; padding:24px; border-color:rgba(151,197,249,.28); background:linear-gradient(135deg,rgba(5,15,27,.97),rgba(11,32,54,.96)); box-shadow:0 0 0 100vmax rgba(0,7,16,.58),0 30px 90px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.1); transform:translate(-50%,-50%); }
+        .player-frame:fullscreen .video-end-head, .player-frame:-webkit-full-screen .video-end-head, .player-frame.is-theater .video-end-head { align-items:flex-start; }
+        .player-frame:fullscreen .video-end-heading, .player-frame:-webkit-full-screen .video-end-heading, .player-frame.is-theater .video-end-heading { grid-template-columns:1fr auto; gap:4px 12px; }
+        .player-frame:fullscreen .video-end-kicker, .player-frame:-webkit-full-screen .video-end-kicker, .player-frame.is-theater .video-end-kicker { grid-column:1 / -1; font-size:12px; }
+        .player-frame:fullscreen .video-end-heading h3, .player-frame:-webkit-full-screen .video-end-heading h3, .player-frame.is-theater .video-end-heading h3 { font-size:28px; line-height:1.25; }
+        .player-frame:fullscreen .video-end-count, .player-frame:-webkit-full-screen .video-end-count, .player-frame.is-theater .video-end-count { align-self:center; font-size:12px; }
+        .player-frame:fullscreen .video-end-subtitle, .player-frame:-webkit-full-screen .video-end-subtitle, .player-frame.is-theater .video-end-subtitle { display:block; }
+        .player-frame:fullscreen .video-end-action, .player-frame:-webkit-full-screen .video-end-action, .player-frame.is-theater .video-end-action { min-height:42px; padding:0 14px; font-size:12px; }
+        .player-frame:fullscreen .video-end-list, .player-frame:-webkit-full-screen .video-end-list, .player-frame.is-theater .video-end-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+        .player-frame:fullscreen .video-end-card, .player-frame:-webkit-full-screen .video-end-card, .player-frame.is-theater .video-end-card { height:82px; grid-template-columns:128px minmax(0,1fr); }
+        .player-frame:fullscreen .video-end-card.is-primary, .player-frame:-webkit-full-screen .video-end-card.is-primary, .player-frame.is-theater .video-end-card.is-primary { grid-column:1 / -1; height:166px; grid-template-columns:278px minmax(0,1fr); border-color:rgba(101,174,255,.58); background:rgba(30,91,159,.24); box-shadow:0 12px 32px rgba(0,0,0,.24); }
+        .player-frame:fullscreen .video-end-card.is-primary .video-end-copy, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-copy, .player-frame.is-theater .video-end-card.is-primary .video-end-copy { padding:20px 24px; }
+        .player-frame:fullscreen .video-end-card.is-primary .video-end-title, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-title, .player-frame.is-theater .video-end-card.is-primary .video-end-title { font-size:21px; line-height:1.4; }
+        .player-frame:fullscreen .video-end-card.is-primary .video-end-meta, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-meta, .player-frame.is-theater .video-end-card.is-primary .video-end-meta { margin-top:8px; font-size:12px; }
+        .player-frame:fullscreen .video-end-card.is-primary .video-end-play, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-play, .player-frame.is-theater .video-end-card.is-primary .video-end-play { width:52px; height:52px; font-size:16px; }
+        .player-frame:fullscreen .video-end-card.is-primary .video-end-cta, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-cta, .player-frame.is-theater .video-end-card.is-primary .video-end-cta { display:flex; }
+        .player-frame:fullscreen .video-end-title, .player-frame:-webkit-full-screen .video-end-title, .player-frame.is-theater .video-end-title { font-size:13px; }
+        .player-frame:fullscreen .video-end-meta, .player-frame:-webkit-full-screen .video-end-meta, .player-frame.is-theater .video-end-meta { font-size:10px; }
+        .player-frame:fullscreen .video-end-empty, .player-frame:-webkit-full-screen .video-end-empty, .player-frame.is-theater .video-end-empty { min-height:170px; font-size:16px; }
         .player-frame.is-theater { position: fixed; z-index: 10000; inset: 0; }
         body.has-focus-theater { overflow: hidden; overscroll-behavior: none; touch-action: none; }
         @keyframes focus-marker-pop { 0% { transform: scale(.94); } 58% { transform: scale(1.045); } 100% { transform: scale(1); } }
+        @keyframes video-end-reveal { from { opacity:0; } to { opacity:1; } }
         .player-copy { height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: auto auto minmax(0,1fr); align-content: stretch; gap: 8px; padding: 10px; border: 1px solid #d6e2ee; border-radius: 16px; background: rgba(255,255,255,.92); box-shadow: 0 10px 28px rgba(34,62,92,.08); }
         .player-kicker { color: #c4302b; font-size: 12px; font-weight: 820; letter-spacing: .04em; text-transform: uppercase; }
         .player-title { grid-column: 1; display: -webkit-box; margin: 0; overflow: hidden; color: var(--ink); font-size: 14px; line-height: 1.35; letter-spacing: -.02em; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -543,15 +566,26 @@
             .player-copy > .player-title, .player-copy > .player-status, .player-copy > .marker-studio { grid-column: 1; }
             .focus-exit { width: 42px; height: 42px; padding: 0; }
             .focus-toast { max-width: calc(100vw - 86px); white-space: normal; }
-            .video-end-screen { left:7px; right:7px; bottom:7px; max-height:calc(100% - 14px); padding:7px; border-radius:12px; }
+            .video-end-screen { left:7px; right:7px; bottom:7px; max-height:calc(100% - 14px); padding:7px; }
             .video-end-heading { gap:5px; }
             .video-end-heading h3 { font-size:12px; }
             .video-end-kicker { font-size:8px; }
             .video-end-count { font-size:8px; }
             .video-end-action { min-height:26px; padding:0 7px; font-size:9px; }
             .video-end-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
-            .video-end-card { height:48px; grid-template-columns:60px minmax(0,1fr); border-radius:9px; }
+            .video-end-card { height:48px; grid-template-columns:60px minmax(0,1fr); }
             .video-end-copy { padding:6px 7px; }
+            .player-frame:fullscreen .video-end-screen, .player-frame:-webkit-full-screen .video-end-screen, .player-frame.is-theater .video-end-screen { width:calc(100vw - 24px); max-height:calc(100dvh - 32px); gap:10px; padding:12px; }
+            .player-frame:fullscreen .video-end-heading h3, .player-frame:-webkit-full-screen .video-end-heading h3, .player-frame.is-theater .video-end-heading h3 { font-size:21px; }
+            .player-frame:fullscreen .video-end-subtitle, .player-frame:-webkit-full-screen .video-end-subtitle, .player-frame.is-theater .video-end-subtitle { display:none; }
+            .player-frame:fullscreen .video-end-action, .player-frame:-webkit-full-screen .video-end-action, .player-frame.is-theater .video-end-action { min-height:36px; padding:0 10px; }
+            .player-frame:fullscreen .video-end-list, .player-frame:-webkit-full-screen .video-end-list, .player-frame.is-theater .video-end-list { grid-template-columns:1fr; gap:8px; }
+            .player-frame:fullscreen .video-end-card, .player-frame:-webkit-full-screen .video-end-card, .player-frame.is-theater .video-end-card { height:68px; grid-template-columns:102px minmax(0,1fr); }
+            .player-frame:fullscreen .video-end-card.is-primary, .player-frame:-webkit-full-screen .video-end-card.is-primary, .player-frame.is-theater .video-end-card.is-primary { grid-column:1; height:188px; grid-template-columns:1fr; grid-template-rows:98px minmax(0,1fr); }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-copy, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-copy, .player-frame.is-theater .video-end-card.is-primary .video-end-copy { padding:10px 12px; }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-title, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-title, .player-frame.is-theater .video-end-card.is-primary .video-end-title { font-size:15px; line-height:1.35; }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-meta, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-meta, .player-frame.is-theater .video-end-card.is-primary .video-end-meta { margin-top:4px; font-size:10px; }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-cta, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-cta, .player-frame.is-theater .video-end-card.is-primary .video-end-cta { margin-top:7px; font-size:11px; }
             .frame-question-dialog { width:calc(100vw - 18px); max-height:calc(100dvh - 18px); border-radius:16px; }
             .frame-question-shell { max-height:calc(100dvh - 18px); }
             .frame-question-head { padding:13px 14px 11px; }
@@ -564,9 +598,20 @@
             .focus-exit { top: calc(50% - 47px); width: 40px; height: 40px; }
             .focus-marker { top: calc(50% + 3px); width: 40px; min-width: 40px; height: 40px; min-height: 40px; border-radius: 12px; }
             .focus-question { top:calc(50% + 53px); width:40px; height:40px; border-radius:12px; }
+            .player-frame:fullscreen .video-end-screen, .player-frame:-webkit-full-screen .video-end-screen, .player-frame.is-theater .video-end-screen { width:calc(100vw - 88px); max-height:calc(100dvh - 28px); gap:8px; padding:12px; }
+            .player-frame:fullscreen .video-end-subtitle, .player-frame:-webkit-full-screen .video-end-subtitle, .player-frame.is-theater .video-end-subtitle { display:none; }
+            .player-frame:fullscreen .video-end-heading h3, .player-frame:-webkit-full-screen .video-end-heading h3, .player-frame.is-theater .video-end-heading h3 { font-size:19px; }
+            .player-frame:fullscreen .video-end-action, .player-frame:-webkit-full-screen .video-end-action, .player-frame.is-theater .video-end-action { min-height:34px; }
+            .player-frame:fullscreen .video-end-list, .player-frame:-webkit-full-screen .video-end-list, .player-frame.is-theater .video-end-list { grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+            .player-frame:fullscreen .video-end-card, .player-frame:-webkit-full-screen .video-end-card, .player-frame.is-theater .video-end-card { height:66px; grid-template-columns:84px minmax(0,1fr); }
+            .player-frame:fullscreen .video-end-card.is-primary, .player-frame:-webkit-full-screen .video-end-card.is-primary, .player-frame.is-theater .video-end-card.is-primary { grid-column:span 2; height:100px; grid-template-columns:160px minmax(0,1fr); grid-template-rows:1fr; }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-copy, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-copy, .player-frame.is-theater .video-end-card.is-primary .video-end-copy { padding:10px 13px; }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-title, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-title, .player-frame.is-theater .video-end-card.is-primary .video-end-title { font-size:14px; }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-meta, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-meta, .player-frame.is-theater .video-end-card.is-primary .video-end-meta { margin-top:4px; font-size:9px; }
+            .player-frame:fullscreen .video-end-card.is-primary .video-end-cta, .player-frame:-webkit-full-screen .video-end-card.is-primary .video-end-cta, .player-frame.is-theater .video-end-card.is-primary .video-end-cta { margin-top:6px; font-size:10px; }
         }
         @media (prefers-reduced-motion: reduce) {
-            .focus-layer, .focus-launch, .focus-marker, .focus-question, .focus-toast, .video-end-screen, .video-end-card { transition: none; }
+            .focus-layer, .focus-launch, .focus-marker, .focus-question, .focus-toast, .video-end-screen, .video-end-card { animation:none; transition:none; }
         }
     </style>
 </head>
@@ -706,9 +751,9 @@
                                 <div id="player-empty" class="player-empty">請先在下方選擇已對應 YouTube 的影片，才會載入播放器並自動紀錄進度。</div>
                                 <section class="video-end-screen" id="video-end-screen" hidden aria-hidden="true" aria-label="今日任務接著觀看">
                                     <div class="video-end-head">
-                                        <div class="video-end-heading"><p class="video-end-kicker">今日任務</p><h3 id="video-end-title">接著觀看</h3><span class="video-end-count" id="video-end-count"></span></div>
+                                        <div class="video-end-heading"><p class="video-end-kicker">影片播放完畢</p><h3 id="video-end-title">接著觀看</h3><span class="video-end-count" id="video-end-count"></span><p class="video-end-subtitle">選一部接著完成今天的觀看進度</p></div>
                                         <div class="video-end-actions">
-                                            <button class="video-end-action" id="video-end-replay" type="button">重播</button>
+                                            <button class="video-end-action" id="video-end-replay" type="button">重播這部</button>
                                             <button class="video-end-action" id="video-end-close" type="button" aria-label="關閉推薦">✕</button>
                                         </div>
                                     </div>
@@ -1578,10 +1623,10 @@
                         : Number(video.completion || 0) < 100;
                 });
                 videoEndList.replaceChildren();
-                candidates.forEach(function (video) {
+                candidates.forEach(function (video, index) {
                     const card = document.createElement('button');
                     card.type = 'button';
-                    card.className = 'video-end-card';
+                    card.className = 'video-end-card' + (index === 0 ? ' is-primary' : '');
                     card.dataset.videoId = String(video.id || '');
                     card.setAttribute('aria-label', '播放 ' + String(video.title || '今日任務影片'));
 
@@ -1621,7 +1666,16 @@
                             ? '剩餘 ' + Number(video.remaining_minutes || 0).toFixed(1) + ' 分'
                             : '尚未連結 YouTube'
                     );
-                    copy.append(title, meta);
+                    const callToAction = document.createElement('span');
+                    callToAction.className = 'video-end-cta';
+                    const callToActionIcon = document.createElement('span');
+                    callToActionIcon.className = 'video-end-cta-icon';
+                    callToActionIcon.setAttribute('aria-hidden', 'true');
+                    callToActionIcon.textContent = '▶';
+                    const callToActionLabel = document.createElement('span');
+                    callToActionLabel.textContent = youtubeVideoId ? '播放下一部' : '選擇此影片';
+                    callToAction.append(callToActionIcon, callToActionLabel);
+                    copy.append(title, meta, callToAction);
                     card.append(thumb, copy);
                     card.addEventListener('click', function () { playTodayTaskVideo(video); });
                     videoEndList.appendChild(card);

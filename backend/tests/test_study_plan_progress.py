@@ -1061,7 +1061,10 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("尚未連結 YouTube", marker_html)
             self.assertIn("grid-template-columns:repeat(auto-fit,minmax(158px,1fr))", marker_html)
             self.assertNotIn(".video-end-list { min-height:0; display:flex", marker_html)
-            self.assertIn("candidates.forEach(function (video)", marker_html)
+            self.assertIn("candidates.forEach(function (video, index)", marker_html)
+            self.assertIn("index === 0 ? ' is-primary' : ''", marker_html)
+            self.assertIn("播放下一部", marker_html)
+            self.assertIn(".player-frame:fullscreen .video-end-card.is-primary", marker_html)
 
             completed_candidate = today_task_videos[0]
             completed_video = next(
