@@ -172,20 +172,25 @@
         .race-actual-marker { position: absolute; z-index: 5; top: 54px; left: clamp(24px, var(--runner-position), calc(100% - 24px)); height: 40px; transform: translateX(-50%); border-left: 2px solid var(--blue); }
         .pace-panel.early .race-actual-marker { border-left-color: var(--teal); }
         .race-scale { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 30px; color: var(--muted); font-size: 10px; font-weight: 850; }
-        .pace-history { margin-top: 10px; padding-top: 16px; border-top: 1px solid rgba(174,191,208,.52); }
-        .pace-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+        .pace-history { margin-top: 10px; padding-top: 14px; border-top: 1px solid rgba(174,191,208,.52); }
+        .pace-history-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
         .pace-history-head h3 { margin: 0; color: var(--ink-2); font-size: 16px; letter-spacing: 0; }
-        .pace-history-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
-        .pace-history-current { flex: 0 0 auto; min-width: 98px; padding: 8px 10px; border: 1px solid #b9d2f3; border-radius: 6px; color: var(--blue); background: #edf5ff; text-align: right; }
+        .pace-history-summary { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px 12px; flex-wrap: wrap; }
+        .pace-history-current { flex: 0 0 auto; min-height: 32px; display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 9px; border: 1px solid #b9d2f3; border-radius: 6px; color: var(--blue); background: #edf5ff; }
         .pace-history-current.early { color: #087979; border-color: #9bdcdd; background: #ecfbf9; }
         .pace-history-current.behind { color: #9a6200; border-color: #edcf93; background: #fff8e7; }
-        .pace-history-current span { display: block; font-size: 10px; font-weight: 850; }
-        .pace-history-current strong { display: block; margin-top: 2px; font-size: 18px; font-variant-numeric: tabular-nums; }
-        .pace-history-scroll { margin-top: 10px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-color: #a8bbce transparent; }
-        .pace-history-chart { display: block; width: 100%; min-width: 680px; height: auto; }
+        .pace-history-current span { font-size: 10px; font-weight: 850; }
+        .pace-history-current strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+        .pace-history-trend { color: var(--ink-2); font-size: 11px; font-weight: 850; }
+        .pace-history-range { color: var(--muted); font-size: 11px; font-weight: 760; }
+        .pace-history-scroll { margin: 0; padding: 0 8px; overflow-x: auto; overscroll-behavior-inline: contain; border-radius: 8px; background: rgba(245,249,253,.72); scrollbar-color: #a8bbce transparent; }
+        .pace-history-chart { display: block; width: 100%; min-width: 760px; height: auto; }
         .pace-history-grid { stroke: #dce6ef; stroke-width: 1; }
         .pace-history-zero { stroke: #8195aa; stroke-width: 1.5; stroke-dasharray: 6 5; }
         .pace-history-guide { stroke: rgba(174,191,208,.23); stroke-width: 1; }
+        .pace-history-area { fill: rgba(20,99,217,.08); }
+        .pace-panel.behind .pace-history-area { fill: rgba(196,125,8,.09); }
+        .pace-panel.early .pace-history-area { fill: rgba(8,121,121,.09); }
         .pace-history-line { fill: none; stroke: #1463d9; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
         .pace-history-point { fill: #1463d9; stroke: #fff; stroke-width: 2; }
         .pace-history-point.early { fill: var(--teal); }
@@ -197,20 +202,6 @@
         .pace-history-value.behind { fill: #9a6200; }
         .pace-history-date { fill: var(--muted); font-size: 10px; font-weight: 800; }
         .pace-history-date.today { fill: var(--ink-2); font-weight: 950; }
-        .pace-history-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; font-weight: 760; }
-        .pace-history-foot strong { color: var(--ink-2); }
-        @media (min-width: 981px) {
-            .pace-history { display: grid; grid-template-columns: minmax(190px, 230px) minmax(0, 760px); grid-template-rows: auto auto; column-gap: 24px; row-gap: 10px; align-items: center; justify-content: space-between; }
-            .pace-history-head { grid-column: 1; grid-row: 1; display: block; }
-            .pace-history-head p { max-width: 28ch; }
-            .pace-history-current { width: fit-content; min-width: 112px; margin-top: 12px; padding: 6px 9px; text-align: left; }
-            .pace-history-current span, .pace-history-current strong { display: inline; }
-            .pace-history-current strong { margin: 0 0 0 6px; font-size: 16px; }
-            .pace-history-scroll { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: 760px; margin: 0; padding: 4px 8px 0; border-radius: 8px; background: rgba(245,249,253,.72); overflow: hidden; }
-            .pace-history-chart { min-width: 0; }
-            .pace-history-foot { grid-column: 1; grid-row: 2; display: grid; align-self: end; justify-content: stretch; gap: 3px; }
-            .pace-history-foot strong { line-height: 1.45; }
-        }
         @keyframes runner-stride { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
         @keyframes runner-shadow { 0%,100% { opacity: .2; transform: translateX(-50%) scaleX(1); } 50% { opacity: .1; transform: translateX(-50%) scaleX(.72); } }
         .today-log-panel { margin-top: 18px; padding: 22px; border-radius: 12px; }
@@ -333,8 +324,8 @@
             .pace-panel { padding: 18px 14px; border-radius: 12px; }
             .pace-message { max-width: 30ch; }
             .pace-topline { flex-direction: column; }
-            .pace-history-head, .pace-history-foot { align-items: flex-start; flex-direction: column; }
-            .pace-history-current { text-align: left; }
+            .pace-history-head { align-items: flex-start; flex-direction: column; }
+            .pace-history-summary { justify-content: flex-start; }
             .race-course { padding-left: 0; padding-right: 0; }
             .today-log-panel { padding: 18px 14px; border-radius: 12px; }
             .today-log-grid { grid-template-columns: 1fr; }
@@ -417,7 +408,6 @@
             <div class="hero-main">
                 <div class="hero-kicker">GRADUATE EXAM JOURNEY</div>
                 <h1>研究所備考進度</h1>
-                <p class="lead">透明記錄每一天的投入，把長期目標拆成看得見的進步。</p>
                 <div class="hero-meta">
                     <span class="meta-pill">{{ plan_start }} → {{ plan_end }}</span>
                     <span class="meta-pill">目前第 {{ current_week.number }} 週・{{ current_week.subject }}</span>
@@ -508,37 +498,32 @@
                     {% if pace_history.rows %}
                     <div class="pace-history" aria-labelledby="pace-history-title">
                         <div class="pace-history-head">
-                            <div>
-                                <h3 id="pace-history-title">每日領先／落後曲線</h3>
-                                <p>每日累計觀看時間 − 截至當日應看時間；正值代表領先，負值代表落後。</p>
-                            </div>
-                            <div class="pace-history-current {{ pace_history.latest_state }}">
-                                <span>目前差距</span>
-                                <strong>{{ pace_history.latest_label }}</strong>
+                            <h3 id="pace-history-title">每日領先／落後曲線</h3>
+                            <div class="pace-history-summary">
+                                <span class="pace-history-current {{ pace_history.latest_state }}"><span>目前差距</span><strong>{{ pace_history.latest_label }}</strong></span>
+                                <span class="pace-history-trend">{{ pace_history.trend_label }}</span>
+                                <span class="pace-history-range">{{ pace_history.range_label }}</span>
                             </div>
                         </div>
                         <div class="pace-history-scroll">
-                            <svg class="pace-history-chart" viewBox="0 0 720 214" role="img" aria-label="{{ pace_history.range_label }} 每日進度領先落後程度曲線">
-                                <line class="pace-history-grid" x1="52" y1="34" x2="680" y2="34"></line>
-                                <line class="pace-history-zero" x1="52" y1="100" x2="680" y2="100"></line>
-                                <line class="pace-history-grid" x1="52" y1="166" x2="680" y2="166"></line>
-                                <text class="pace-history-axis" x="4" y="38">+{{ pace_history.scale_label }}</text>
-                                <text class="pace-history-axis" x="25" y="104">0</text>
-                                <text class="pace-history-axis" x="4" y="170">-{{ pace_history.scale_label }}</text>
+                            <svg class="pace-history-chart" viewBox="0 0 1000 174" role="img" aria-label="{{ pace_history.range_label }} 每日進度領先落後程度曲線">
+                                <line class="pace-history-grid" x1="64" y1="30" x2="980" y2="30"></line>
+                                <line class="pace-history-zero" x1="64" y1="78" x2="980" y2="78"></line>
+                                <line class="pace-history-grid" x1="64" y1="126" x2="980" y2="126"></line>
+                                <text class="pace-history-axis" x="4" y="34">+{{ pace_history.scale_label }}</text>
+                                <text class="pace-history-axis" x="39" y="82">0</text>
+                                <text class="pace-history-axis" x="4" y="130">-{{ pace_history.scale_label }}</text>
                                 {% for row in pace_history.rows %}
-                                <line class="pace-history-guide" x1="{{ row.x }}" y1="34" x2="{{ row.x }}" y2="166"></line>
+                                <line class="pace-history-guide" x1="{{ row.x }}" y1="30" x2="{{ row.x }}" y2="126"></line>
                                 {% endfor %}
+                                {% if pace_history.rows|length > 1 %}<polygon class="pace-history-area" points="64,78 {{ pace_history.points }} 980,78"></polygon>{% endif %}
                                 {% if pace_history.rows|length > 1 %}<polyline class="pace-history-line" points="{{ pace_history.points }}"></polyline>{% endif %}
                                 {% for row in pace_history.rows %}
                                 <circle class="pace-history-point {{ row.state }}{% if row.is_today %} today{% endif %}" cx="{{ row.x }}" cy="{{ row.y }}" r="{% if row.is_today %}5.5{% else %}4{% endif %}"><title>{{ row.accessible_label }}</title></circle>
                                 <text class="pace-history-value {{ row.state }}" x="{{ row.x }}" y="{{ row.value_y }}" text-anchor="middle">{{ row.value_label }}</text>
-                                <text class="pace-history-date{% if row.is_today %} today{% endif %}" x="{{ row.x }}" y="202" text-anchor="middle">{{ row.short_date }}</text>
+                                <text class="pace-history-date{% if row.is_today %} today{% endif %}" x="{{ row.x }}" y="166" text-anchor="middle">{{ row.short_date }}</text>
                                 {% endfor %}
                             </svg>
-                        </div>
-                        <div class="pace-history-foot">
-                            <span>{{ pace_history.range_label }}・最近 {{ pace_history.rows|length }} 天</span>
-                            <strong>{{ pace_history.trend_label }}</strong>
                         </div>
                     </div>
                     {% endif %}
@@ -550,7 +535,6 @@
             <div class="panel-head" style="padding:0;">
                 <div>
                     <h2 class="panel-title">今日學習紀錄</h2>
-                    <div class="caption">以早上 8:00 作為每日切割點，計算每支影片相較前一日增加的觀看進度。</div>
                 </div>
             </div>
             <div class="today-log-grid">
@@ -652,7 +636,6 @@
                     <div class="panel-head">
                         <div>
                             <h2 class="panel-title">本週軌跡</h2>
-                            <div class="caption">藍線為本週所有影片的淨觀看進度（含補看與回退），灰線為本週計畫目標。</div>
                         </div>
                     </div>
                     <div class="week-chart-wrap">

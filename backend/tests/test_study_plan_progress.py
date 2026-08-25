@@ -732,7 +732,16 @@ class StudyPlanProgressTests(unittest.TestCase):
                     page = response.get_data(as_text=True)
                     self.assertEqual(response.status_code, 200)
                     self.assertIn("每日領先／落後曲線", page)
-                    self.assertIn("每日累計觀看時間", page)
+                    for redundant_copy in (
+                        "每日累計觀看時間",
+                        "以早上 8:00 作為每日切割點",
+                        "藍線為本週所有影片的淨觀看進度",
+                        "以影片觀看時間統計，不含練習與複習時間",
+                        "透明記錄每一天的投入",
+                        "先完成今天安排",
+                        "以每日影片觀看進度換算",
+                    ):
+                        self.assertNotIn(redundant_copy, page)
                     self.assertIn('class="pace-history-chart"', page)
                     self.assertIn("目前差距", page)
             finally:

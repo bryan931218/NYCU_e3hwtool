@@ -742,7 +742,7 @@ def _study_plan_pace_history(
 
     max_absolute = max(1.0, max(abs(float(row["delta_hours"])) for row in display_rows))
     scale_hours = math.ceil(max_absolute * 2) / 2
-    left, right, zero_y, amplitude = 52.0, 680.0, 100.0, 66.0
+    left, right, zero_y, amplitude = 64.0, 980.0, 78.0, 48.0
     denominator = max(1, len(display_rows) - 1)
     for index, row in enumerate(display_rows):
         x = left + ((right - left) * index / denominator)
@@ -750,7 +750,7 @@ def _study_plan_pace_history(
         y = zero_y - normalized * amplitude
         row["x"] = round(x, 1)
         row["y"] = round(y, 1)
-        row["value_y"] = round(max(18.0, y - 11) if normalized >= 0 else min(184.0, y + 18), 1)
+        row["value_y"] = round(max(16.0, y - 9) if normalized >= 0 else min(143.0, y + 15), 1)
     first = display_rows[0]
     latest = display_rows[-1]
     trend_hours = float(latest["delta_hours"]) - float(first["delta_hours"])
