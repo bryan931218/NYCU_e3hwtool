@@ -172,6 +172,33 @@
         .race-actual-marker { position: absolute; z-index: 5; top: 54px; left: clamp(24px, var(--runner-position), calc(100% - 24px)); height: 40px; transform: translateX(-50%); border-left: 2px solid var(--blue); }
         .pace-panel.early .race-actual-marker { border-left-color: var(--teal); }
         .race-scale { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 30px; color: var(--muted); font-size: 10px; font-weight: 850; }
+        .pace-history { margin-top: 10px; padding-top: 18px; border-top: 1px solid rgba(174,191,208,.52); }
+        .pace-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+        .pace-history-head h3 { margin: 0; color: var(--ink-2); font-size: 16px; letter-spacing: 0; }
+        .pace-history-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+        .pace-history-current { flex: 0 0 auto; min-width: 98px; padding: 8px 10px; border: 1px solid #b9d2f3; border-radius: 6px; color: var(--blue); background: #edf5ff; text-align: right; }
+        .pace-history-current.early { color: #087979; border-color: #9bdcdd; background: #ecfbf9; }
+        .pace-history-current.behind { color: #9a6200; border-color: #edcf93; background: #fff8e7; }
+        .pace-history-current span { display: block; font-size: 10px; font-weight: 850; }
+        .pace-history-current strong { display: block; margin-top: 2px; font-size: 18px; font-variant-numeric: tabular-nums; }
+        .pace-history-scroll { margin-top: 10px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-color: #a8bbce transparent; }
+        .pace-history-chart { display: block; width: 100%; min-width: 680px; height: auto; }
+        .pace-history-grid { stroke: #dce6ef; stroke-width: 1; }
+        .pace-history-zero { stroke: #8195aa; stroke-width: 1.5; stroke-dasharray: 6 5; }
+        .pace-history-guide { stroke: rgba(174,191,208,.23); stroke-width: 1; }
+        .pace-history-line { fill: none; stroke: #1463d9; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+        .pace-history-point { fill: #1463d9; stroke: #fff; stroke-width: 2; }
+        .pace-history-point.early { fill: var(--teal); }
+        .pace-history-point.behind { fill: var(--amber); }
+        .pace-history-point.today { stroke-width: 3; }
+        .pace-history-axis { fill: var(--muted); font-size: 10px; font-weight: 800; }
+        .pace-history-value { fill: #0c53b9; font-size: 10px; font-weight: 900; font-variant-numeric: tabular-nums; }
+        .pace-history-value.early { fill: #087979; }
+        .pace-history-value.behind { fill: #9a6200; }
+        .pace-history-date { fill: var(--muted); font-size: 10px; font-weight: 800; }
+        .pace-history-date.today { fill: var(--ink-2); font-weight: 950; }
+        .pace-history-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; font-weight: 760; }
+        .pace-history-foot strong { color: var(--ink-2); }
         @keyframes runner-stride { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
         @keyframes runner-shadow { 0%,100% { opacity: .2; transform: translateX(-50%) scaleX(1); } 50% { opacity: .1; transform: translateX(-50%) scaleX(.72); } }
         .today-log-panel { margin-top: 18px; padding: 22px; border-radius: 12px; }
@@ -294,6 +321,8 @@
             .pace-panel { padding: 18px 14px; border-radius: 12px; }
             .pace-message { max-width: 30ch; }
             .pace-topline { flex-direction: column; }
+            .pace-history-head, .pace-history-foot { align-items: flex-start; flex-direction: column; }
+            .pace-history-current { text-align: left; }
             .race-course { padding-left: 0; padding-right: 0; }
             .today-log-panel { padding: 18px 14px; border-radius: 12px; }
             .today-log-grid { grid-template-columns: 1fr; }
@@ -464,6 +493,43 @@
                         </div>
                         <div class="race-scale"><span>開始</span><span>完成</span></div>
                     </div>
+                    {% if pace_history.rows %}
+                    <div class="pace-history" aria-labelledby="pace-history-title">
+                        <div class="pace-history-head">
+                            <div>
+                                <h3 id="pace-history-title">每日領先／落後曲線</h3>
+                                <p>每日累計觀看時間 − 截至當日應看時間；正值代表領先，負值代表落後。</p>
+                            </div>
+                            <div class="pace-history-current {{ pace_history.latest_state }}">
+                                <span>目前差距</span>
+                                <strong>{{ pace_history.latest_label }}</strong>
+                            </div>
+                        </div>
+                        <div class="pace-history-scroll">
+                            <svg class="pace-history-chart" viewBox="0 0 720 214" role="img" aria-label="{{ pace_history.range_label }} 每日進度領先落後程度曲線">
+                                <line class="pace-history-grid" x1="52" y1="34" x2="680" y2="34"></line>
+                                <line class="pace-history-zero" x1="52" y1="100" x2="680" y2="100"></line>
+                                <line class="pace-history-grid" x1="52" y1="166" x2="680" y2="166"></line>
+                                <text class="pace-history-axis" x="4" y="38">+{{ pace_history.scale_label }}</text>
+                                <text class="pace-history-axis" x="25" y="104">0</text>
+                                <text class="pace-history-axis" x="4" y="170">-{{ pace_history.scale_label }}</text>
+                                {% for row in pace_history.rows %}
+                                <line class="pace-history-guide" x1="{{ row.x }}" y1="34" x2="{{ row.x }}" y2="166"></line>
+                                {% endfor %}
+                                {% if pace_history.rows|length > 1 %}<polyline class="pace-history-line" points="{{ pace_history.points }}"></polyline>{% endif %}
+                                {% for row in pace_history.rows %}
+                                <circle class="pace-history-point {{ row.state }}{% if row.is_today %} today{% endif %}" cx="{{ row.x }}" cy="{{ row.y }}" r="{% if row.is_today %}5.5{% else %}4{% endif %}"><title>{{ row.accessible_label }}</title></circle>
+                                <text class="pace-history-value {{ row.state }}" x="{{ row.x }}" y="{{ row.value_y }}" text-anchor="middle">{{ row.value_label }}</text>
+                                <text class="pace-history-date{% if row.is_today %} today{% endif %}" x="{{ row.x }}" y="202" text-anchor="middle">{{ row.short_date }}</text>
+                                {% endfor %}
+                            </svg>
+                        </div>
+                        <div class="pace-history-foot">
+                            <span>{{ pace_history.range_label }}・最近 {{ pace_history.rows|length }} 天</span>
+                            <strong>{{ pace_history.trend_label }}</strong>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </section>

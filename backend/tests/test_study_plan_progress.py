@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from e3_tracker.api.web import (
     create_app,
+    _study_plan_pace_history,
     _study_plan_today_progress_days,
     _study_plan_progress_race,
     _study_plan_progress_summary,
@@ -655,6 +656,87 @@ class StudyPlanProgressTests(unittest.TestCase):
         self.assertEqual(finish["state"], "active")
         self.assertEqual(finish["status_label"], "與計畫同步")
         self.assertEqual(finish["gap_width"], 0)
+
+    def test_pace_history_reports_daily_signed_cumulative_hour_delta(self):
+        week_rows = [
+            {
+                "daily_recommendations": [
+                    {"date": "2026-08-01", "target_seconds": 3600},
+                    {"date": "2026-08-02", "target_seconds": 3600},
+                    {"date": "2026-08-03", "target_seconds": 3600},
+                ]
+            }
+        ]
+        snapshots = [
+            {"day": "2026-08-01", "total_watched_seconds": 4 * 3600},
+            {"day": "2026-08-02", "total_watched_seconds": 4 * 3600},
+        ]
+
+        history = _study_plan_pace_history(
+            week_rows,
+            snapshots,
+            today=date(2026, 8, 3),
+            current_watched_minutes=2 * 60,
+        )
+
+        self.assertEqual([row["delta_hours"] for row in history["rows"]], [3.0, 2.0, -1.0])
+        self.assertEqual([row["value_label"] for row in history["rows"]], ["+3.0", "+2.0", "-1.0"])
+        self.assertEqual(history["latest_state"], "behind")
+        self.assertEqual(history["trend_label"], "相較 8/1 惡化 4.0 小時")
+
+    def test_pace_history_carries_last_snapshot_across_days_without_updates(self):
+        history = _study_plan_pace_history(
+            [
+                {
+                    "daily_recommendations": [
+                        {"date": "2026-08-01", "target_seconds": 3600},
+                        {"date": "2026-08-02", "target_seconds": 3600},
+                        {"date": "2026-08-03", "target_seconds": 3600},
+                    ]
+                }
+            ],
+            [{"day": "2026-08-01", "total_watched_seconds": 4 * 3600}],
+            today=date(2026, 8, 3),
+            current_watched_minutes=4 * 60,
+        )
+
+        self.assertEqual([row["delta_hours"] for row in history["rows"]], [3.0, 2.0, 1.0])
+        self.assertTrue(history["rows"][-1]["is_today"])
+
+    def test_study_pages_render_daily_pace_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ), patch(
+                "e3_tracker.api.web._study_plan_business_date",
+                return_value=date(2026, 8, 3),
+            ):
+                app = create_app()
+            storage = app.extensions["e3_storage"]
+            try:
+                token = "pace-history-test-session"
+                storage.save_web_session(token, "test-admin")
+                client = app.test_client()
+                with client.session_transaction() as browser_session:
+                    browser_session["username"] = "test-admin"
+                    browser_session["session_token"] = token
+                    browser_session["is_admin"] = True
+
+                for path in ("/study-progress", "/admin/study-home"):
+                    response = client.get(path)
+                    page = response.get_data(as_text=True)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn("每日領先／落後曲線", page)
+                    self.assertIn("每日累計觀看時間", page)
+                    self.assertIn('class="pace-history-chart"', page)
+                    self.assertIn("目前差距", page)
+            finally:
+                storage._engine.dispose()
 
     def test_incomplete_subject_with_an_overdue_week_is_behind(self):
         state, label = _study_plan_subject_status(

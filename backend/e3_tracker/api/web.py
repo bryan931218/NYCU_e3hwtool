@@ -655,6 +655,122 @@ def _study_plan_progress_race(
     }
 
 
+def _study_plan_pace_history(
+    week_rows: Iterable[Dict[str, Any]],
+    daily_snapshots: Iterable[Dict[str, Any]],
+    *,
+    today: date,
+    current_watched_minutes: Any,
+    limit: int = 14,
+) -> Dict[str, Any]:
+    """Build a daily cumulative watched-vs-plan delta series in hours."""
+    today_key = today.isoformat()
+    daily_targets: Dict[str, float] = {}
+    candidate_days = {today_key}
+    for week in week_rows:
+        for item in week.get("daily_recommendations") or []:
+            day_key = str(item.get("date") or "")
+            if not day_key or day_key > today_key:
+                continue
+            daily_targets[day_key] = daily_targets.get(day_key, 0.0) + _study_plan_nonnegative_number(
+                item.get("target_seconds")
+            )
+            candidate_days.add(day_key)
+
+    snapshots_by_day: Dict[str, float] = {}
+    for item in daily_snapshots:
+        day_key = str(item.get("day") or "")
+        if not day_key or day_key > today_key:
+            continue
+        snapshots_by_day[day_key] = _study_plan_nonnegative_number(item.get("total_watched_seconds"))
+        candidate_days.add(day_key)
+
+    parsed_days: List[date] = []
+    for day_key in candidate_days:
+        try:
+            parsed_days.append(date.fromisoformat(day_key))
+        except ValueError:
+            continue
+    start_day = min(parsed_days) if parsed_days else today
+    current_watched_seconds = _study_plan_nonnegative_number(current_watched_minutes) * 60
+    cumulative_target = 0.0
+    cumulative_actual: Optional[float] = None
+    rows: List[Dict[str, Any]] = []
+    cursor = start_day
+    while cursor <= today:
+        day_key = cursor.isoformat()
+        cumulative_target += daily_targets.get(day_key, 0.0)
+        if day_key in snapshots_by_day:
+            cumulative_actual = snapshots_by_day[day_key]
+        if cursor == today:
+            cumulative_actual = current_watched_seconds
+        if cumulative_actual is not None:
+            delta_hours = (cumulative_actual - cumulative_target) / 3600
+            if delta_hours > 0.05:
+                state = "early"
+            elif delta_hours < -0.05:
+                state = "behind"
+            else:
+                state = "active"
+            rows.append(
+                {
+                    "date": day_key,
+                    "short_date": f"{cursor.month}/{cursor.day}",
+                    "delta_hours": round(delta_hours, 1),
+                    "value_label": f"{delta_hours:+.1f}",
+                    "state": state,
+                    "is_today": cursor == today,
+                    "accessible_label": (
+                        f"{cursor.month} 月 {cursor.day} 日，"
+                        f"{'領先' if delta_hours >= 0 else '落後'} {abs(delta_hours):.1f} 小時"
+                    ),
+                }
+            )
+        cursor += timedelta(days=1)
+
+    display_rows = rows[-max(2, min(int(limit or 14), 31)) :]
+    if not display_rows:
+        return {
+            "rows": [],
+            "points": "",
+            "range_label": "尚無每日紀錄",
+            "trend_label": "開始記錄影片進度後會顯示曲線。",
+            "latest_label": "+0.0h",
+            "latest_state": "active",
+            "scale_label": "1.0h",
+        }
+
+    max_absolute = max(1.0, max(abs(float(row["delta_hours"])) for row in display_rows))
+    scale_hours = math.ceil(max_absolute * 2) / 2
+    left, right, zero_y, amplitude = 52.0, 680.0, 100.0, 66.0
+    denominator = max(1, len(display_rows) - 1)
+    for index, row in enumerate(display_rows):
+        x = left + ((right - left) * index / denominator)
+        normalized = max(-1.0, min(1.0, float(row["delta_hours"]) / scale_hours))
+        y = zero_y - normalized * amplitude
+        row["x"] = round(x, 1)
+        row["y"] = round(y, 1)
+        row["value_y"] = round(max(18.0, y - 11) if normalized >= 0 else min(184.0, y + 18), 1)
+    first = display_rows[0]
+    latest = display_rows[-1]
+    trend_hours = float(latest["delta_hours"]) - float(first["delta_hours"])
+    if abs(trend_hours) < 0.05:
+        trend_label = f"相較 {first['short_date']} 持平"
+    elif trend_hours > 0:
+        trend_label = f"相較 {first['short_date']} 改善 {abs(trend_hours):.1f} 小時"
+    else:
+        trend_label = f"相較 {first['short_date']} 惡化 {abs(trend_hours):.1f} 小時"
+    return {
+        "rows": display_rows,
+        "points": " ".join(f"{row['x']},{row['y']}" for row in display_rows),
+        "range_label": f"{first['short_date']} - {latest['short_date']}",
+        "trend_label": trend_label,
+        "latest_label": f"{float(latest['delta_hours']):+.1f}h",
+        "latest_state": str(latest["state"]),
+        "scale_label": f"{scale_hours:.1f}h",
+    }
+
+
 def _study_plan_daily_recommendations(
     subject: str,
     target_seconds: float,
@@ -3378,6 +3494,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             start_day=tracked_start_day,
             end_day=today.isoformat(),
         )
+        pace_history = _study_plan_pace_history(
+            week_rows,
+            storage.list_study_plan_daily_snapshots(
+                start_day=STUDY_PLAN_START,
+                end_day=today.isoformat(),
+            ),
+            today=today,
+            current_watched_minutes=watched_minutes_total,
+        )
         activity_events_by_day: Dict[str, List[Dict[str, Any]]] = {}
         for event in activity_events:
             event_day = str(event.get("day") or "")
@@ -3653,6 +3778,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "pace_message": pace_message,
             "pace_insight": pace_insight,
             "progress_race": progress_race,
+            "pace_history": pace_history,
             "visual_angle": visual_angle,
             "metric_cards": metric_cards,
             "subject_rows": subject_rows,
