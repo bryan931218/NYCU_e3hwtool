@@ -14436,6 +14436,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         try:
             frame = fetch_youtube_cached_frame(youtube_video_id, playback_seconds)
         except YoutubeFrameError as exc:
+            record_ui_event(
+                "study_plan_video_frame_capture",
+                "error",
+                {
+                    "stage": "question",
+                    "video_id": video_id,
+                    "youtube_video_id": youtube_video_id,
+                    "playback_seconds": round(playback_seconds, 1),
+                    "reason": str(exc)[:160],
+                },
+            )
             return {"ok": False, "error": str(exc)}, 502
         image_data_url = (
             f"data:{frame['mime_type']};base64,"
@@ -14547,6 +14558,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         try:
             frame = fetch_youtube_cached_frame(youtube_video_id, playback_seconds)
         except YoutubeFrameError as exc:
+            record_ui_event(
+                "study_plan_video_frame_capture",
+                "error",
+                {
+                    "stage": "prefetch",
+                    "video_id": video_id,
+                    "youtube_video_id": youtube_video_id,
+                    "playback_seconds": round(playback_seconds, 1),
+                    "reason": str(exc)[:160],
+                },
+            )
             return {"ok": False, "error": str(exc)}, 502
         return {
             "ok": True,

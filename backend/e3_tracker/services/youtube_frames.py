@@ -681,6 +681,35 @@ def _frame_from_storyboard(
     }
 
 
+def _frame_from_storyboard_info(
+    info: Dict[str, Any],
+    requested_seconds: float,
+    *,
+    timeout: int,
+) -> Dict[str, Any]:
+    """Try every resolution from one metadata response before changing source."""
+    duration = _positive_float(info.get("duration"))
+    sample_seconds = min(requested_seconds, duration) if duration > 0 else requested_seconds
+    formats = _storyboard_formats(info)
+    if not formats:
+        raise YoutubeFrameError("這部影片目前沒有可用的預覽影格。")
+
+    last_error: YoutubeFrameError | None = None
+    for storyboard in formats:
+        try:
+            return _frame_from_storyboard(
+                storyboard,
+                sample_seconds,
+                duration,
+                timeout=timeout,
+            )
+        except YoutubeFrameError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise YoutubeFrameError("目前無法讀取這部影片的預覽影格。")
+
+
 def _ffmpeg_executable() -> str:
     try:
         import imageio_ffmpeg
@@ -843,26 +872,63 @@ def _fetch_youtube_storyboard_frame(
             last_error = exc
             continue
 
-        duration = _positive_float(info.get("duration"))
-        sample_seconds = min(requested_seconds, duration) if duration > 0 else requested_seconds
-        formats = _storyboard_formats(info)
-        if not formats:
-            last_error = YoutubeFrameError("這部影片目前沒有可用的預覽影格。")
-            continue
-        for storyboard in formats:
-            try:
-                return _frame_from_storyboard(
-                    storyboard,
-                    sample_seconds,
-                    duration,
-                    timeout=timeout,
-                )
-            except YoutubeFrameError as exc:
-                last_error = exc
+        try:
+            return _frame_from_storyboard_info(
+                info,
+                requested_seconds,
+                timeout=timeout,
+            )
+        except YoutubeFrameError as exc:
+            last_error = exc
 
     if last_error is not None:
         raise last_error
     raise YoutubeFrameError("目前無法讀取這部影片的預覽影格。")
+
+
+def _fetch_youtube_reliable_storyboard_frame(
+    youtube_video_id: str,
+    playback_seconds: float,
+    *,
+    timeout: int = 10,
+) -> Dict[str, Any]:
+    """Use cheap storyboard sources before invoking the slower yt-dlp extractor."""
+    video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
+    last_error: YoutubeFrameError | None = None
+
+    bundled_info = _bundled_storyboard_info(video_id)
+    if bundled_info:
+        try:
+            return _frame_from_storyboard_info(
+                bundled_info,
+                requested_seconds,
+                timeout=min(6, max(3, int(timeout))),
+            )
+        except YoutubeFrameError as exc:
+            # Bundled signatures can expire. Refresh from the public watch page
+            # immediately instead of retrying the same stale sprite URL.
+            last_error = exc
+
+    try:
+        live_info = _extract_watch_page_storyboards(video_id)
+        return _frame_from_storyboard_info(
+            live_info,
+            requested_seconds,
+            timeout=min(6, max(3, int(timeout))),
+        )
+    except YoutubeFrameError as exc:
+        last_error = exc
+
+    try:
+        return _fetch_youtube_storyboard_frame(
+            video_id,
+            requested_seconds,
+            timeout=min(8, max(4, int(timeout))),
+        )
+    except YoutubeFrameError as exc:
+        if last_error is not None:
+            raise YoutubeFrameError("YouTube 暫時無法提供這一幕，請稍後再試。") from exc
+        raise
 
 
 def fetch_youtube_storyboard_frame(
@@ -871,24 +937,23 @@ def fetch_youtube_storyboard_frame(
     *,
     timeout: int = 25,
 ) -> Dict[str, Any]:
-    """Fetch the requested stream frame, falling back to a storyboard tile.
+    """Fetch a reliable storyboard tile, falling back to exact stream decoding.
 
     The public function name is retained for compatibility with the existing
-    study-plan route. Exact decoding is attempted first for timestamp accuracy;
-    YouTube's nearest storyboard tile remains the cross-device fallback.
+    study-plan route. Storyboards are available for more videos and avoid long
+    extractor delays on data-centre hosts; exact decoding remains the fallback.
     """
-    precise_timeout = min(max(6, int(timeout)), _EXACT_FRAME_TIMEOUT_SECONDS)
     try:
-        return fetch_youtube_precise_frame(
-            youtube_video_id,
-            playback_seconds,
-            timeout=precise_timeout,
-        )
-    except YoutubeFrameError:
-        return _fetch_youtube_storyboard_frame(
+        return _fetch_youtube_reliable_storyboard_frame(
             youtube_video_id,
             playback_seconds,
             timeout=min(10, max(4, int(timeout))),
+        )
+    except YoutubeFrameError:
+        return fetch_youtube_precise_frame(
+            youtube_video_id,
+            playback_seconds,
+            timeout=min(max(6, int(timeout)), _EXACT_FRAME_TIMEOUT_SECONDS),
         )
 
 

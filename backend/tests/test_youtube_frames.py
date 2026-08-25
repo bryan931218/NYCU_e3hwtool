@@ -278,26 +278,8 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertIn("b.mp4", run.call_args_list[1].args[0][run.call_args_list[1].args[0].index("-i") + 1])
 
-    def test_public_fetch_prefers_precise_frame(self):
-        exact = {
-            "bytes": self._frame_bytes(),
-            "mime_type": "image/jpeg",
-            "requested_seconds": 33.3,
-            "frame_seconds": 33.3,
-            "width": 960,
-            "height": 540,
-            "source": "exact",
-        }
-        with patch.object(youtube_frames, "fetch_youtube_precise_frame", return_value=exact) as precise, patch.object(
-            youtube_frames, "_fetch_youtube_storyboard_frame"
-        ) as storyboard:
-            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
-        self.assertEqual(result["source"], "exact")
-        precise.assert_called_once()
-        storyboard.assert_not_called()
-
-    def test_public_fetch_falls_back_to_storyboard_frame(self):
-        fallback = {
+    def test_public_fetch_prefers_reliable_storyboard_frame(self):
+        storyboard_frame = {
             "bytes": self._frame_bytes(),
             "mime_type": "image/jpeg",
             "requested_seconds": 33.3,
@@ -308,12 +290,80 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         }
         with patch.object(
             youtube_frames,
-            "fetch_youtube_precise_frame",
-            side_effect=YoutubeFrameError("precise unavailable"),
-        ), patch.object(youtube_frames, "_fetch_youtube_storyboard_frame", return_value=fallback) as storyboard:
+            "_fetch_youtube_reliable_storyboard_frame",
+            return_value=storyboard_frame,
+        ) as storyboard, patch.object(youtube_frames, "fetch_youtube_precise_frame") as precise:
             result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
         self.assertEqual(result["source"], "storyboard")
         storyboard.assert_called_once()
+        precise.assert_not_called()
+
+    def test_public_fetch_falls_back_to_precise_frame(self):
+        exact = {
+            "bytes": self._frame_bytes(),
+            "mime_type": "image/jpeg",
+            "requested_seconds": 33.3,
+            "frame_seconds": 33.3,
+            "width": 960,
+            "height": 540,
+            "source": "exact",
+        }
+        with patch.object(
+            youtube_frames,
+            "_fetch_youtube_reliable_storyboard_frame",
+            side_effect=YoutubeFrameError("storyboard unavailable"),
+        ) as storyboard, patch.object(youtube_frames, "fetch_youtube_precise_frame", return_value=exact) as precise:
+            result = fetch_youtube_storyboard_frame("9dXuhVJ-L5k", 33.3)
+        self.assertEqual(result["source"], "exact")
+        storyboard.assert_called_once()
+        precise.assert_called_once()
+
+    def test_reliable_storyboard_uses_bundled_metadata_without_extracting(self):
+        frame = {"source": "storyboard", "frame_seconds": 30.0}
+        bundled = {"duration": 100.0, "formats": [{"format_id": "bundled"}]}
+        with patch.object(youtube_frames, "_bundled_storyboard_info", return_value=bundled), patch.object(
+            youtube_frames, "_frame_from_storyboard_info", return_value=frame
+        ) as render, patch.object(youtube_frames, "_extract_watch_page_storyboards") as watch_page, patch.object(
+            youtube_frames, "_fetch_youtube_storyboard_frame"
+        ) as slow_fallback:
+            result = youtube_frames._fetch_youtube_reliable_storyboard_frame("9dXuhVJ-L5k", 33.3)
+
+        self.assertIs(result, frame)
+        render.assert_called_once()
+        watch_page.assert_not_called()
+        slow_fallback.assert_not_called()
+
+    def test_reliable_storyboard_refreshes_an_expired_bundled_signature(self):
+        frame = {"source": "storyboard", "frame_seconds": 30.0}
+        bundled = {"duration": 100.0, "formats": [{"format_id": "bundled"}]}
+        live = {"duration": 100.0, "formats": [{"format_id": "live"}]}
+        with patch.object(youtube_frames, "_bundled_storyboard_info", return_value=bundled), patch.object(
+            youtube_frames,
+            "_frame_from_storyboard_info",
+            side_effect=[YoutubeFrameError("expired signature"), frame],
+        ) as render, patch.object(
+            youtube_frames, "_extract_watch_page_storyboards", return_value=live
+        ) as watch_page, patch.object(youtube_frames, "_fetch_youtube_storyboard_frame") as slow_fallback:
+            result = youtube_frames._fetch_youtube_reliable_storyboard_frame("9dXuhVJ-L5k", 33.3)
+
+        self.assertIs(result, frame)
+        self.assertEqual(render.call_count, 2)
+        watch_page.assert_called_once_with("9dXuhVJ-L5k")
+        slow_fallback.assert_not_called()
+
+    def test_reliable_storyboard_supports_video_missing_from_catalog(self):
+        frame = {"source": "storyboard", "frame_seconds": 30.0}
+        live = {"duration": 100.0, "formats": [{"format_id": "live"}]}
+        with patch.object(youtube_frames, "_bundled_storyboard_info", return_value=None), patch.object(
+            youtube_frames, "_extract_watch_page_storyboards", return_value=live
+        ) as watch_page, patch.object(
+            youtube_frames, "_frame_from_storyboard_info", return_value=frame
+        ), patch.object(youtube_frames, "_fetch_youtube_storyboard_frame") as slow_fallback:
+            result = youtube_frames._fetch_youtube_reliable_storyboard_frame("9dXuhVJ-L5k", 33.3)
+
+        self.assertIs(result, frame)
+        watch_page.assert_called_once_with("9dXuhVJ-L5k")
+        slow_fallback.assert_not_called()
 
     def test_cached_frame_reuses_prefetched_timestamp(self):
         frame = {
