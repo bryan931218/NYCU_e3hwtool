@@ -26,6 +26,7 @@ CONTENT_KINDS = (
     "code",
     "example",
     "fact",
+    "visual",
 )
 
 
@@ -42,7 +43,11 @@ def _strict_object(properties: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_study_note_tools(*, max_image_index: int) -> List[Dict[str, Any]]:
+def build_study_note_tools(
+    *,
+    max_image_index: int,
+    enable_visual_refs: bool = False,
+) -> List[Dict[str, Any]]:
     """Return strict Responses API function tools for one note batch."""
 
     source_schema = _strict_object(
@@ -55,6 +60,14 @@ def build_study_note_tools(*, max_image_index: int) -> List[Dict[str, Any]]:
             "evidence": {"type": "string", "minLength": 1, "maxLength": 500},
         }
     )
+    visual_ref_schema = _strict_object(
+        {
+            "region_id": {
+                "type": "string",
+                "pattern": "^p[1-9][0-9]*v[1-9][0-9]*$",
+            }
+        }
+    )
     correction_schema = _strict_object(
         {
             "applied": {"type": "boolean"},
@@ -63,6 +76,49 @@ def build_study_note_tools(*, max_image_index: int) -> List[Dict[str, Any]]:
             "reason": {"type": ["string", "null"], "maxLength": 360},
         }
     )
+    block_properties: Dict[str, Any] = {
+        "block_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+        },
+        "block_type": {"type": "string", "enum": list(CONTENT_KINDS)},
+        "title": {"type": "string", "minLength": 1, "maxLength": 100},
+        "topic": {"type": "string", "minLength": 1, "maxLength": 80},
+        "recall_cue": {"type": ["string", "null"], "maxLength": 180},
+        "key_point": {"type": "string", "minLength": 1, "maxLength": 320},
+        "explanation": {"type": "string", "minLength": 1, "maxLength": 900},
+        "details": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {"type": "string", "minLength": 1, "maxLength": 220},
+        },
+        "example": {"type": ["string", "null"], "maxLength": 420},
+        "pitfall": {"type": ["string", "null"], "maxLength": 240},
+        "memory_hint": {"type": ["string", "null"], "maxLength": 240},
+        "keywords": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {"type": "string", "minLength": 1, "maxLength": 60},
+        },
+        "sources": {
+            "type": "array",
+            "minItems": 0 if enable_visual_refs else 1,
+            "maxItems": 6,
+            "items": source_schema,
+        },
+        "coverage_ids": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {"type": "string", "minLength": 1, "maxLength": 24},
+        },
+        "correction": correction_schema,
+    }
+    if enable_visual_refs:
+        block_properties["visual_refs"] = {
+            "type": "array",
+            "maxItems": 6,
+            "items": visual_ref_schema,
+        }
     return [
         {
             "type": "function",
@@ -87,45 +143,7 @@ def build_study_note_tools(*, max_image_index: int) -> List[Dict[str, Any]]:
                 "block type that best matches the source; optional sections may be null."
             ),
             "strict": True,
-            "parameters": _strict_object(
-                {
-                    "block_id": {
-                        "type": "string",
-                        "pattern": "^[A-Za-z0-9_-]{1,48}$",
-                    },
-                    "block_type": {"type": "string", "enum": list(CONTENT_KINDS)},
-                    "title": {"type": "string", "minLength": 1, "maxLength": 100},
-                    "topic": {"type": "string", "minLength": 1, "maxLength": 80},
-                    "recall_cue": {"type": ["string", "null"], "maxLength": 180},
-                    "key_point": {"type": "string", "minLength": 1, "maxLength": 320},
-                    "explanation": {"type": "string", "minLength": 1, "maxLength": 900},
-                    "details": {
-                        "type": "array",
-                        "maxItems": 8,
-                        "items": {"type": "string", "minLength": 1, "maxLength": 220},
-                    },
-                    "example": {"type": ["string", "null"], "maxLength": 420},
-                    "pitfall": {"type": ["string", "null"], "maxLength": 240},
-                    "memory_hint": {"type": ["string", "null"], "maxLength": 240},
-                    "keywords": {
-                        "type": "array",
-                        "maxItems": 10,
-                        "items": {"type": "string", "minLength": 1, "maxLength": 60},
-                    },
-                    "sources": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 6,
-                        "items": source_schema,
-                    },
-                    "coverage_ids": {
-                        "type": "array",
-                        "maxItems": 12,
-                        "items": {"type": "string", "minLength": 1, "maxLength": 24},
-                    },
-                    "correction": correction_schema,
-                }
-            ),
+            "parameters": _strict_object(block_properties),
         },
         {
             "type": "function",
@@ -214,6 +232,16 @@ class StudyNoteToolAccumulator:
             for page in self.source_pages
             if isinstance(page, Mapping)
         }
+        self._visual_regions: Dict[str, Dict[str, Any]] = {}
+        for page in self.source_pages:
+            if not isinstance(page, Mapping):
+                continue
+            for region in page.get("visual_regions") or []:
+                if not isinstance(region, Mapping):
+                    continue
+                region_id = str(region.get("region_id") or "").strip()
+                if region_id:
+                    self._visual_regions[region_id] = dict(region)
         self._valid_coverage_ids: Set[str] = {
             str(value).strip() for value in self.valid_coverage_ids if str(value).strip()
         }
@@ -235,6 +263,7 @@ class StudyNoteToolAccumulator:
                 self._coverage_items[coverage_id] = {
                     "image_index": image_index,
                     "text": str(item.get("text") or ""),
+                    "visual_region_id": str(item.get("visual_region_id") or "").strip(),
                 }
         if self._coverage_items:
             self._valid_coverage_ids.update(self._coverage_items)
@@ -299,7 +328,25 @@ class StudyNoteToolAccumulator:
                 continue
             seen_sources.add(key)
             sources.append({"image_index": image_index, "evidence": evidence})
-        if not sources:
+        visual_refs: List[Dict[str, Any]] = []
+        seen_visual_refs: Set[str] = set()
+        for item in arguments.get("visual_refs") or []:
+            if not isinstance(item, Mapping):
+                continue
+            region_id = _clean_text(item.get("region_id"), limit=32)
+            region = self._visual_regions.get(region_id)
+            if region is None or region_id in seen_visual_refs:
+                continue
+            seen_visual_refs.add(region_id)
+            visual_refs.append(
+                {
+                    "region_id": region_id,
+                    "image_index": int(region.get("image_index") or 0),
+                }
+            )
+        if not sources and not visual_refs:
+            if self._visual_regions:
+                raise StudyNoteToolError("block has no literal or visual source evidence")
             raise StudyNoteToolError("block has no literal source evidence")
 
         example = _clean_multiline_text(arguments.get("example"), limit=420)
@@ -326,6 +373,12 @@ class StudyNoteToolAccumulator:
                 continue
             coverage_item = self._coverage_items.get(coverage_id)
             if coverage_item:
+                visual_region_id = str(coverage_item.get("visual_region_id") or "")
+                if visual_region_id:
+                    if visual_region_id not in seen_visual_refs:
+                        continue
+                    coverage_ids.append(coverage_id)
+                    continue
                 coverage_text = _canonical_source_text(coverage_item["text"])
                 coverage_page = int(coverage_item["image_index"] or 0)
                 matches_evidence = any(
@@ -370,6 +423,7 @@ class StudyNoteToolAccumulator:
             ),
             "keywords": keywords,
             "source_refs": sources[:6],
+            "visual_refs": visual_refs[:6],
             "coverage_ids": coverage_ids[:12],
             "correction": correction,
         }
@@ -452,6 +506,7 @@ class StudyNoteToolAccumulator:
                     "related_concepts": related_titles[:4],
                     "search_keywords": block["keywords"],
                     "source_refs": block["source_refs"],
+                    "visual_refs": block["visual_refs"],
                     "coverage_ids": block["coverage_ids"],
                     "correction": block["correction"],
                 }
@@ -469,7 +524,7 @@ def run_study_note_tool_conversation(
     initial_input: Sequence[Mapping[str, Any]],
     accumulator: StudyNoteToolAccumulator,
     request_round: Callable[[List[Dict[str, Any]], int], Mapping[str, Any]],
-    max_rounds: int = 24,
+    max_rounds: int = 12,
 ) -> Dict[str, Any]:
     """Run a Responses API function-call loop through an injected requester.
 
@@ -478,6 +533,7 @@ def run_study_note_tool_conversation(
     """
 
     conversation: List[Dict[str, Any]] = copy.deepcopy(list(initial_input))
+    recent_errors: List[str] = []
     for round_index in range(max(1, int(max_rounds))):
         response_payload = request_round(conversation, round_index)
         output_items = response_payload.get("output")
@@ -520,7 +576,10 @@ def run_study_note_tool_conversation(
                 output = {"ok": True, "result": result}
             except (json.JSONDecodeError, StudyNoteToolError, TypeError, ValueError) as exc:
                 had_tool_error = True
-                output = {"ok": False, "error": str(exc)[:500]}
+                error_message = str(exc)[:500]
+                recent_errors.append(f"{tool_name}: {error_message}")
+                recent_errors = recent_errors[-8:]
+                output = {"ok": False, "error": error_message}
             tool_outputs.append(
                 {
                     "type": "function_call_output",
@@ -533,4 +592,17 @@ def run_study_note_tool_conversation(
         conversation.extend(tool_outputs)
         if accumulator.finished:
             return accumulator.to_legacy_payload()
-    raise StudyNoteToolError("tool composer exceeded the maximum number of rounds")
+    # A model may keep retrying an optional malformed sibling after all
+    # required source items are already covered. Preserve the validated blocks
+    # instead of paying for the much larger compatibility pipeline.
+    try:
+        accumulator.execute("finish_note", {"complete": True, "review_note": None})
+    except StudyNoteToolError as exc:
+        recent_errors.append(f"finish_note: {str(exc)[:500]}")
+    else:
+        return accumulator.to_legacy_payload()
+    error_suffix = "; ".join(recent_errors[-4:])
+    raise StudyNoteToolError(
+        "tool composer exceeded the maximum number of rounds"
+        + (f"; recent errors: {error_suffix}" if error_suffix else "")
+    )

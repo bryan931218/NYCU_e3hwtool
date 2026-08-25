@@ -89,6 +89,12 @@ from ..shared.study_math import (
     restore_markdown_code,
     wrap_bare_math_candidate,
 )
+from ..shared.visual_notes import (
+    merge_visual_regions,
+    normalize_visual_regions,
+    render_visual_region_svg,
+    visual_region_crop_box,
+)
 from ..shared.study_note_composer import (
     StudyNoteToolAccumulator,
     StudyNoteToolError,
@@ -200,6 +206,15 @@ def _offset_study_note_batch_analysis(analysis: Dict[str, Any], image_offset: in
 
     for page in analysis.get("source_transcription") or []:
         offset_image_index(page)
+        for region in page.get("visual_regions") or []:
+            if not isinstance(region, dict):
+                continue
+            offset_image_index(region)
+            region["region_id"] = re.sub(
+                r"^p(\d+)v",
+                lambda match: f"p{int(match.group(1)) + image_offset}v",
+                str(region.get("region_id") or ""),
+            )
     for fragment in analysis.get("uncertain_fragments") or []:
         offset_image_index(fragment)
     for record in analysis.get("correction_records") or []:
@@ -217,10 +232,21 @@ def _offset_study_note_batch_analysis(analysis: Dict[str, Any], image_offset: in
                     )
                 except (TypeError, ValueError):
                     pass
+        for visual_ref in concept.get("visual_refs") or []:
+            if not isinstance(visual_ref, dict):
+                continue
+            offset_image_index(visual_ref)
+            visual_ref["region_id"] = re.sub(
+                r"^p(\d+)v",
+                lambda match: f"p{int(match.group(1)) + image_offset}v",
+                str(visual_ref.get("region_id") or ""),
+            )
         concept["coverage_ids"] = [
             re.sub(
-                r"^p(\d+)b",
-                lambda match: f"p{int(match.group(1)) + image_offset}b",
+                r"^p(\d+)([bv])",
+                lambda match: (
+                    f"p{int(match.group(1)) + image_offset}{match.group(2)}"
+                ),
                 str(coverage_id),
             )
             for coverage_id in concept.get("coverage_ids") or []
@@ -1835,6 +1861,9 @@ def _start_youtube_storyboard_index(
 
 def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "assignment", default_timeout: int = 30) -> Flask:
     env_defaults = load_env_defaults()
+    visual_note_pipeline_enabled = _env_flag_truthy(
+        os.getenv("E3_VISUAL_NOTE_PIPELINE", "1")
+    )
 
     def _ensure_private_dir(path: Path) -> Path:
         path.mkdir(parents=True, exist_ok=True)
@@ -4505,7 +4534,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         source_pages: List[Dict[str, Any]],
         coverage_checklist: List[Dict[str, Any]],
         allow_corrections: bool,
-        max_rounds: int = 24,
+        max_rounds: int = 12,
     ) -> Dict[str, Any]:
         """Let the model compose a note through semantic function tools."""
 
@@ -4525,6 +4554,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         # Requiring its first source item prevents an entire non-mathematical
         # page from disappearing merely because it has no formula/example cue.
         represented_pages: Set[int] = set()
+        for item in coverage_checklist:
+            if not isinstance(item, dict) or item.get("priority") != "required":
+                continue
+            try:
+                required_image_index = int(item.get("image_index") or 0)
+            except (TypeError, ValueError):
+                continue
+            if required_image_index > 0:
+                represented_pages.add(required_image_index)
         for item in coverage_checklist:
             if not isinstance(item, dict):
                 continue
@@ -4551,6 +4589,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "演算法步驟、系統執行階段或操作順序；comparison 用於來源明確列出的差異；formula 用於公式、"
             "遞迴式、複雜度或硬體關係；code 用於程式碼、虛擬碼、指令或資料結構操作；example 只用於來源"
             "確實存在的例題／案例／練習；fact 用於不適合前述類型的具體事實。六科全部使用相同規則。\n"
+            + (
+                "visual 用於主要知識由樹、流程、圖表或示意圖表達的區塊。\n"
+                if visual_note_pipeline_enabled
+                else ""
+            )
+            +
             "每個區塊只處理一個可獨立複習的目標。key_point 寫最重要結論，explanation 寫來源已有的脈絡；"
             "details 只在來源真的有步驟、條目、組成或比較項目時使用。example 是可選欄位；definition、"
             "concept、procedure、comparison、formula、code、fact 沒有來源例子時必須傳 null，不得為了填欄位"
@@ -4565,6 +4609,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "每個 sources.evidence 都必須逐字複製對應 transcription 中連續出現的原文；工具會拒絕改寫、"
             "摘要、錯頁或不存在的 evidence。coverage_checklist 中 is_example=true 的項目必須各自建立 "
             "example 區塊，其餘 required 項目必須被至少一個區塊覆蓋。coverage_ids 只能填實際涵蓋的 id。\n"
+            + (
+                "source_pages.visual_regions 是獨立的視覺來源。只要區塊使用某張圖的內容，就必須在 visual_refs"
+                " 填入對應 region_id；純視覺區塊可讓 sources 為空，但不可讓 sources 與 visual_refs 同時為空。"
+                "content_type=visual 的 required coverage id 必須由引用同一 region_id 的卡片覆蓋。不得只把圖"
+                "描述成文字後丟掉 visual_refs，也不得捏造圖中沒有的節點、箭頭或趨勢。\n"
+                if visual_note_pipeline_enabled
+                else ""
+            )
             + (
                 "只可修正能由來源中的公式、標準定義或直接計算毫無歧義確認的錯誤；修正時 correction 四欄"
                 "完整填寫，否則 applied=false 且其他欄傳 null。"
@@ -4584,7 +4636,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "content": [{"type": "input_text", "text": prompt}],
             }
         ]
-        tools = build_study_note_tools(max_image_index=len(source_pages))
+        tools = build_study_note_tools(
+            max_image_index=len(source_pages),
+            enable_visual_refs=visual_note_pipeline_enabled,
+        )
 
         def request_round(
             conversation: List[Dict[str, Any]],
@@ -8906,6 +8961,32 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "is_example": example_block,
                     }
                 )
+            for visual_region in page.get("visual_regions") or []:
+                if not isinstance(visual_region, dict):
+                    continue
+                region_id = str(visual_region.get("region_id") or "").strip()
+                visual_text = "；".join(
+                    part
+                    for part in (
+                        str(visual_region.get("title") or "").strip(),
+                        str(visual_region.get("description") or "").strip(),
+                        str(visual_region.get("visible_text") or "").strip(),
+                    )
+                    if part
+                )
+                if not region_id or not visual_text:
+                    continue
+                items.append(
+                    {
+                        "id": region_id,
+                        "image_index": image_index,
+                        "text": visual_text[:1200],
+                        "priority": "required",
+                        "content_type": "visual",
+                        "is_example": False,
+                        "visual_region_id": region_id,
+                    }
+                )
         return items
 
     def _study_source_page_coverage_plan(source_pages: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -8991,7 +9072,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         and _study_coverage_evidence_matches(evidence, item["text"])
                     ):
                         matched_ids.append(item["id"])
-            concept["coverage_ids"] = matched_ids[:8]
+            for visual_ref in concept.get("visual_refs") or []:
+                if not isinstance(visual_ref, dict):
+                    continue
+                region_id = str(visual_ref.get("region_id") or "").strip()
+                if region_id and any(
+                    item["id"] == region_id
+                    and item.get("visual_region_id") == region_id
+                    for item in coverage_items
+                ):
+                    matched_ids.append(region_id)
+            concept["coverage_ids"] = list(dict.fromkeys(matched_ids))[:8]
 
     def _study_recall_coverage_gaps(payload: Any, source_pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not isinstance(payload, dict) or not isinstance(payload.get("key_concepts"), list):
@@ -9015,6 +9106,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     continue
                 evidence = " ".join(str(source_ref.get("evidence") or "").split()).strip()
                 if evidence and evidence in page_texts.get(image_index, ""):
+                    valid_pages.add(image_index)
+            for visual_ref in concept.get("visual_refs") or []:
+                if not isinstance(visual_ref, dict):
+                    continue
+                try:
+                    image_index = int(visual_ref.get("image_index") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if image_index in page_texts and visual_ref.get("region_id"):
                     valid_pages.add(image_index)
             for image_index in valid_pages:
                 cards_by_page[image_index] = cards_by_page.get(image_index, 0) + 1
@@ -9041,9 +9141,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 for source_ref in concept.get("source_refs") or []
                 if isinstance(source_ref, dict)
             ]
+            visual_region_ids = {
+                str(visual_ref.get("region_id") or "").strip()
+                for visual_ref in concept.get("visual_refs") or []
+                if isinstance(visual_ref, dict)
+            }
             for coverage_id in concept.get("coverage_ids") or []:
                 item = coverage_items.get(str(coverage_id))
                 if not item:
+                    continue
+                if item.get("visual_region_id"):
+                    if item["visual_region_id"] in visual_region_ids:
+                        covered_ids.add(str(coverage_id))
                     continue
                 if any(
                     image_index == item["image_index"]
@@ -9244,6 +9353,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             for page in source_pages
             if isinstance(page, dict)
         }
+        visual_regions_by_id = {
+            str(region.get("region_id") or ""): region
+            for page in source_pages
+            if isinstance(page, dict)
+            for region in page.get("visual_regions") or []
+            if isinstance(region, dict) and str(region.get("region_id") or "")
+        }
         valid_coverage_ids = {item["id"] for item in _study_source_coverage_items(source_pages)}
         prepared_concepts: List[Dict[str, Any]] = []
         correction_records: List[Dict[str, Any]] = []
@@ -9267,6 +9383,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "code",
                 "example",
                 "fact",
+                "visual",
             }:
                 content_kind = "example" if card_type == "example" else "concept"
             example_problem = normalize_math_markup(strip_process_narration(str(item.get("example_problem") or "").strip()))
@@ -9355,6 +9472,31 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     continue
                 image_index = int(page_resolution["image_index"])
                 source_refs.append({"image_index": image_index, "evidence": evidence[:240]})
+            visual_refs: List[Dict[str, Any]] = []
+            for visual_ref in item.get("visual_refs") or []:
+                if not isinstance(visual_ref, dict):
+                    continue
+                region_id = str(visual_ref.get("region_id") or "").strip()
+                region = visual_regions_by_id.get(region_id)
+                if region is None or any(
+                    existing["region_id"] == region_id for existing in visual_refs
+                ):
+                    continue
+                visual_refs.append(
+                    {
+                        "region_id": region_id,
+                        "image_index": int(region.get("image_index") or 0),
+                        "region_type": str(region.get("region_type") or "other"),
+                        "title": str(region.get("title") or "")[:100],
+                        "description": str(region.get("description") or "")[:700],
+                        "visible_text": str(region.get("visible_text") or "")[:800],
+                        "bbox": region.get("bbox"),
+                        "nodes": region.get("nodes") or [],
+                        "edges": region.get("edges") or [],
+                        "confidence": str(region.get("confidence") or "medium"),
+                        "render_mode": str(region.get("render_mode") or "crop"),
+                    }
+                )
             correction = item.get("correction") if isinstance(item.get("correction"), dict) else {}
             correction_applied = bool(correction.get("applied"))
             correction_original = " ".join(str(correction.get("original") or "").split()).strip()
@@ -9373,6 +9515,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         recall_cue,
                         source_bound_card_text,
                         *(source_ref["evidence"] for source_ref in source_refs),
+                        *(
+                            " ".join(
+                                (
+                                    visual_ref["title"],
+                                    visual_ref["description"],
+                                    visual_ref["visible_text"],
+                                )
+                            )
+                            for visual_ref in visual_refs
+                        ),
                     ]
                 )
             )
@@ -9385,7 +9537,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if (
                 concept
                 and explanation
-                and source_refs
+                and (source_refs or visual_refs)
                 and not has_transpose_dimension_conflict(source_bound_card_text)
                 and not has_mapping_signature_conflict(source_bound_card_text, source_refs)
                 and not has_invalid_negation_counterexample(source_bound_card_text)
@@ -9410,6 +9562,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "topic": topic[:48] or detected_topic[:48],
                     "note_topic": detected_topic[:80],
                     "source_refs": source_refs[:4],
+                    "visual_refs": visual_refs[:6],
                     "coverage_ids": list(dict.fromkeys(coverage_ids))[:8],
                     "related_concepts": [
                         str(value).strip()[:80]
@@ -9426,7 +9579,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                             "original": correction_original[:240],
                             "corrected": correction_corrected[:240],
                             "reason": correction_reason[:300],
-                            "image_index": source_refs[0]["image_index"],
+                            "image_index": (
+                                source_refs[0]["image_index"]
+                                if source_refs
+                                else visual_refs[0]["image_index"]
+                            ),
                         }
                     )
         if rejected_corrupted_content:
@@ -9545,6 +9702,102 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     flags=re.IGNORECASE,
                 )
             )
+        visual_region_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "region_type",
+                "title",
+                "description",
+                "visible_text",
+                "bbox",
+                "nodes",
+                "edges",
+                "confidence",
+            ],
+            "properties": {
+                "region_type": {
+                    "type": "string",
+                    "enum": [
+                        "tree",
+                        "flowchart",
+                        "graph",
+                        "chart",
+                        "table",
+                        "diagram",
+                        "architecture",
+                        "circuit",
+                        "geometry",
+                        "image",
+                        "other",
+                    ],
+                },
+                "title": {"type": "string", "maxLength": 100},
+                "description": {"type": "string", "maxLength": 700},
+                "visible_text": {"type": "string", "maxLength": 800},
+                "bbox": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["left", "top", "right", "bottom"],
+                    "properties": {
+                        "left": {"type": "integer", "minimum": 0, "maximum": 1000},
+                        "top": {"type": "integer", "minimum": 0, "maximum": 1000},
+                        "right": {"type": "integer", "minimum": 0, "maximum": 1000},
+                        "bottom": {"type": "integer", "minimum": 0, "maximum": 1000},
+                    },
+                },
+                "nodes": {
+                    "type": "array",
+                    "maxItems": 36,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["id", "label", "x", "y"],
+                        "properties": {
+                            "id": {"type": "string", "maxLength": 32},
+                            "label": {"type": "string", "maxLength": 100},
+                            "x": {"type": "integer", "minimum": 0, "maximum": 1000},
+                            "y": {"type": "integer", "minimum": 0, "maximum": 1000},
+                        },
+                    },
+                },
+                "edges": {
+                    "type": "array",
+                    "maxItems": 60,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["from", "to", "label"],
+                        "properties": {
+                            "from": {"type": "string", "maxLength": 32},
+                            "to": {"type": "string", "maxLength": 32},
+                            "label": {"type": "string", "maxLength": 80},
+                        },
+                    },
+                },
+                "confidence": {
+                    "type": "string",
+                    "enum": ["high", "medium", "low"],
+                },
+            },
+        }
+        page_required = ["image_index", "transcription", "uncertain_fragments"]
+        page_properties: Dict[str, Any] = {
+            "image_index": {"type": "integer", "minimum": 1, "maximum": len(images)},
+            "transcription": {"type": "string", "maxLength": 8000},
+            "uncertain_fragments": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {"type": "string", "maxLength": 240},
+            },
+        }
+        if visual_note_pipeline_enabled:
+            page_required.append("visual_regions")
+            page_properties["visual_regions"] = {
+                "type": "array",
+                "maxItems": 20,
+                "items": visual_region_schema,
+            }
         transcription_schema = {
             "type": "object",
             "additionalProperties": False,
@@ -9558,16 +9811,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["image_index", "transcription", "uncertain_fragments"],
-                        "properties": {
-                            "image_index": {"type": "integer", "minimum": 1, "maximum": len(images)},
-                            "transcription": {"type": "string", "maxLength": 8000},
-                            "uncertain_fragments": {
-                                "type": "array",
-                                "maxItems": 20,
-                                "items": {"type": "string", "maxLength": 240},
-                            },
-                        },
+                        "required": page_required,
+                        "properties": page_properties,
                     },
                 },
             },
@@ -9589,9 +9834,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             page = pages[0]
             returned_index = int(page.get("image_index") or 0)
             page_text = str(page.get("transcription") or "").strip()
-            if returned_index != image_index or not page_text:
+            visual_regions = (
+                normalize_visual_regions(
+                    page.get("visual_regions"),
+                    image_index=image_index,
+                )
+                if visual_note_pipeline_enabled
+                else []
+            )
+            if returned_index != image_index or (not page_text and not visual_regions):
                 raise ValueError(f"Invalid transcription for image {image_index}")
-            return {
+            parsed_page = {
                 "image_index": image_index,
                 "transcription": page_text[:8000],
                 "transcription_mode": "isolated_v1",
@@ -9601,6 +9854,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     if str(value).strip()
                 ],
             }
+            if visual_note_pipeline_enabled:
+                parsed_page["visual_regions"] = visual_regions
+            return parsed_page
 
         def run_isolated_page_jobs(
             page_indices: List[int],
@@ -9660,6 +9916,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "所有原文中的具體名稱、數值、單位、變數、符號、版本、日期、條件與例外都必須保留；不得擅自泛化、特例化、翻譯成不同概念或套用其他科目的知識。detected_topic 只能描述這份「{subject}」筆記實際出現的主題，不得建立第七個科目。"
                     "你這次只會看到一張原圖；不得想像、延續或抄入其他頁的內容。detected_topic 只依目前這張圖實際內容命名。"
         )
+        if visual_note_pipeline_enabled:
+            transcription_instruction += (
+                " transcription 仍只放實際字元；另外必須用 visual_regions 盤點所有具有學習意義的非純文字區塊，"
+                "包括表格、樹狀圖、流程圖、節點關係圖、統計圖、座標圖、架構圖、電路圖、幾何圖與其他示意圖。"
+                "不要把裝飾線、單純框線或一般段落誤判為圖。bbox 使用整張原圖 0 到 1000 的座標，只框完整視覺"
+                "本體與圖內標籤；區塊外的章節標題、相鄰題目或下一張圖不得納入，也不要只框其中一個字。"
+                "title 是圖的短名稱；description 忠實說明圖上直接可見的關係，不得"
+                "補充圖片外知識；visible_text 收錄圖內標籤、軸名、圖例與數值。樹、流程、graph 或架構圖需盡量"
+                "列出 nodes 與 edges，節點 x/y 使用該視覺區塊內 0 到 1000 的相對座標；無法可靠結構化時"
+                " nodes、edges 留空，仍必須保留 visual region，不能因為無文字就漏掉。"
+            )
         card_schema = {
             "type": "object",
             "additionalProperties": False,
@@ -9673,7 +9940,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["concept", "card_type", "recall_cue", "core_summary", "explanation", "simple_example", "example_problem", "example_method", "reasoning_steps", "common_confusion", "memory_hint", "topic", "related_concepts", "search_keywords", "source_refs", "coverage_ids", "correction"],
+                        "required": ["concept", "card_type", "recall_cue", "core_summary", "explanation", "simple_example", "example_problem", "example_method", "reasoning_steps", "common_confusion", "memory_hint", "topic", "related_concepts", "search_keywords", "source_refs", "visual_refs", "coverage_ids", "correction"],
                         "properties": {
                             "concept": {"type": "string", "maxLength": 80},
                             "card_type": {"type": "string", "enum": ["concept", "example"]},
@@ -9703,7 +9970,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                             },
                             "source_refs": {
                                 "type": "array",
-                                "minItems": 1,
+                                "minItems": 0,
                                 "maxItems": 4,
                                 "items": {
                                     "type": "object",
@@ -9712,6 +9979,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                                     "properties": {
                                         "image_index": {"type": "integer", "minimum": 1, "maximum": len(images)},
                                         "evidence": {"type": "string", "maxLength": 240},
+                                    },
+                                },
+                            },
+                            "visual_refs": {
+                                "type": "array",
+                                "maxItems": 6,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["region_id"],
+                                    "properties": {
+                                        "region_id": {
+                                            "type": "string",
+                                            "pattern": "^p[1-9][0-9]*v[1-9][0-9]*$",
+                                        },
                                     },
                                 },
                             },
@@ -9737,6 +10019,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 },
             },
         }
+
+        if not visual_note_pipeline_enabled:
+            card_item_schema = card_schema["properties"]["key_concepts"]["items"]
+            card_item_schema["required"].remove("visual_refs")
+            card_item_schema["properties"].pop("visual_refs", None)
+            card_item_schema["properties"]["source_refs"]["minItems"] = 1
 
         def finalize_tool_composed_note(
             payload: Dict[str, Any],
@@ -9923,6 +10211,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "若草稿與原圖不一致，以原圖為準。每個採用的上下文補全都列入 uncertain_fragments，格式為『已補全｜推定：...｜依據：...｜信心：高／中』；若仍有兩種以上合理結果，才在 transcription 對應位置寫〔無法推定〕並記錄『未補全｜上下文：...』。"
                 "不得寫入目前原圖以外的其他頁內容，即使草稿看起來像有接續內容也必須以目前原圖為準。"
             )
+            if visual_note_pipeline_enabled:
+                symbol_audit_instruction += (
+                    " visual_regions 與 transcription 分開處理：重新盤點原圖中的表格、樹、流程、圖表與示意圖，"
+                    "核對其完整 bbox、圖內文字、節點與箭頭。不得因 transcription 禁止視覺敘事而把"
+                    " visual_regions 清空；無法可靠讀出節點關係時保留原圖區塊並降低 confidence。"
+                )
             def audit_symbol_page(
                 image_index: int,
                 image: Tuple[str, bytes, str],
@@ -9975,10 +10269,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     content=symbol_audit_content,
                     timeout=210,
                 )
-                return parsed_single_page(
+                parsed = parsed_single_page(
                     symbol_audit,
                     image_index,
                 )
+                if visual_note_pipeline_enabled:
+                    parsed["visual_regions"] = merge_visual_regions(
+                        [
+                            pages_by_index[image_index].get("visual_regions"),
+                            parsed.get("visual_regions"),
+                        ],
+                        image_index=image_index,
+                    )
+                return parsed
 
             def report_audited_page(
                 _image_index: int,
@@ -10012,6 +10315,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "仍無法唯一辨識的字元依前後文做最小補全並記錄信心；無法唯一推定才標〔無法推定〕。不得用課本知識補入圖片沒有的定義或解法。"
                 "數學與結構化符號使用可渲染的 LaTeX。你看不到也不得輸出其他頁內容；pages 只能有目前這一頁。"
             )
+            if visual_note_pipeline_enabled:
+                reconciliation_instruction += (
+                    " 同時仲裁 visual_regions：任何一稿辨識出的圖形都必須回到原圖確認；原圖存在就保留，"
+                    "並輸出完整 bbox、可見標籤、節點與邊。不要因另一稿漏圖而刪除，也不要把同一張圖重複輸出。"
+                )
             initial_pages_by_index = {
                 int(page.get("image_index") or 0): page
                 for page in initial_source_pages
@@ -10139,10 +10447,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     timeout=240,
                     max_output_tokens=9000,
                 )
-                return parsed_single_page(
+                parsed = parsed_single_page(
                     reconciled,
                     image_index,
                 )
+                if visual_note_pipeline_enabled:
+                    parsed["visual_regions"] = merge_visual_regions(
+                        [
+                            initial_pages_by_index[image_index].get("visual_regions"),
+                            audited_pages_by_index[image_index].get("visual_regions"),
+                            parsed.get("visual_regions"),
+                        ],
+                        image_index=image_index,
+                    )
+                return parsed
             reconciled_pages_by_index.update(
                 run_isolated_page_jobs(
                     sorted(reconciliation_required_indices),
@@ -10185,6 +10503,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "content_type": item.get("content_type") or "concept",
                     "priority": item.get("priority") or "supporting",
                     "is_example": bool(item.get("is_example")),
+                    "visual_region_id": str(item.get("visual_region_id") or ""),
                 }
                 for item in _study_source_coverage_items(source_pages)
             ]
@@ -10234,7 +10553,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 f"coverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}。priority=required 的區塊應優先進入卡片；supporting 區塊可在不破壞單一卡片主題的前提下併入 explanation。is_example=true 的區塊是不可合併遺漏的逐題清單，coverage_ids 與 source_refs 必須真實對應，不可虛報。"
                 "所有數學公式與數學結構符號一律使用 \\( ... \\) 或 \\[ ... \\] 包住的 LaTeX；長公式用 aligned 合理換行。矩陣與向量必須使用可渲染的 matrix/bmatrix/pmatrix 環境，欄之間用 &，列之間用 \\\\，不可把多個分量直接黏在同一格。不要使用裸露的 $...$、$$...$$ 或只寫線性純文字公式。"
                 "程式碼一律不得轉成 LaTeX。完整程式、函式、類別、虛擬碼或連續兩行以上操作使用 Markdown fenced code block，起始圍欄標明 cpp、c、python、java、javascript、sql 或 pseudocode；不確定時用 text。保留來源縮排、大小寫、括號、分號、陣列索引、指標符號、運算子與註解；不可為了排版改寫程式邏輯。句中的識別字或單行短指令使用單反引號。普通文字保持自然繁體中文。memory_hint 只有原文存在明確記憶線索時才填寫，否則輸出空字串。"
-                "每張卡必須提供 1 至 4 個 source_refs。緊密相關的連續內容可由同一卡引用多段，讓卡片在不混雜不同觀念的前提下保留更多資訊。evidence 必須逐字複製對應頁 transcription 中一段連續、且能直接在原圖看到的文字，連空白與 LaTeX 都不要改，作為可程式比對的來源。evidence 禁止改寫、摘要或描述頁面位置與圖形；不得輸出『頁中列出』『右側原稿示意』『下方有例子』等非原文字句。若卡片跨兩段，分成兩個 source_refs，不可自行寫一段銜接敘述。"
+                + (
+                    "source_pages.visual_regions 中每個 region_id 都代表原圖上已框出的表格、樹、流程圖、圖表或示意圖。"
+                    "卡片只要使用該圖的關係、標籤或趨勢，就必須在 visual_refs 引用 region_id；純視覺卡可讓"
+                    " source_refs 為空，但 source_refs 與 visual_refs 不得同時為空。content_type=visual 且"
+                    " priority=required 的 coverage item 一定要由引用相同 region_id 的卡片覆蓋。不要把圖形"
+                    "自行改寫成來源沒有的知識，也不要因為圖中文字少就略過。"
+                    if visual_note_pipeline_enabled
+                    else ""
+                )
+                +
+                "非純視覺卡提供 1 至 4 個 source_refs。緊密相關的連續內容可由同一卡引用多段，讓卡片在不混雜不同觀念的前提下保留更多資訊。evidence 必須逐字複製對應頁 transcription 中一段連續、且能直接在原圖看到的文字，連空白與 LaTeX 都不要改，作為可程式比對的來源。evidence 禁止改寫、摘要或描述頁面位置與圖形；不得輸出『頁中列出』『右側原稿示意』『下方有例子』等非原文字句。若卡片跨兩段，分成兩個 source_refs，不可自行寫一段銜接敘述。"
                 "source_pages 的 uncertain_fragments 若標為『已補全』且信心為高或中，代表該缺字已由第二輪模型依局部上下文獨立核對，可將 transcription 中補全後的連續文字正常整理成卡片；標為『未補全』或仍含〔無法推定〕的片段不得作為關鍵事實。不要在卡片正文提到補全過程。"
                 "整理時盡量沿用轉錄稿原本的名詞、短語、變數、條件排列與公式，不要為了流暢改成課本式同義說法。只有字元辨識不清、前後自相矛盾、公式結構不可能成立或可由來源直接驗算出錯時，才做最小必要補全或校正。每張卡的 search_keywords 保留 3 至 8 個最可能被使用者回想起來搜尋的原文詞、專有名詞、縮寫、變數組合或公式名稱；只能取自該卡內容、source_refs 或已完成的高信心校正，不得加入來源外同義詞。"
                 "topic 必須是科目底下精確的細分觀念，例如『線性映射判定』『像與反像』『直和與基底』『矩陣可逆性』；禁止直接使用線性代數、離散數學、資料結構、演算法、作業系統、計算機組織等科目名稱，也不要使用『其他』『綜合重點』『課堂筆記』等空泛名稱。"
@@ -10456,6 +10785,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "只能使用 source_pages 與原圖已有內容，不得補充課本知識。priority=required 的公式、定義、方法、例題策略與結論優先補回；supporting 一般敘述可併入最相關卡片，不必獨立成卡。"
                     "同一觀念的成對定義、連續推導或同方法例題可以合併成資訊完整的一張卡；不同章節或不同複習目標才拆卡。卡片數量不設上限，由你依來源資訊與複習目標決定。"
                     "source_refs.evidence 必須逐字連續存在於對應頁 transcription，並且能在原圖直接看到，不得用頁面位置、圖示或內容大意取代原文；coverage_ids 只能標記該卡實際整理的區塊，不可用無關卡片虛報。"
+                    + (
+                        "visual coverage item 必須在 visual_refs 引用相同 region_id；純視覺卡可以沒有 source_refs，"
+                        "但一定要有 visual_refs。保留 current_cards 已有的 visual_refs，不得在補強時移除。"
+                        if visual_note_pipeline_enabled
+                        else ""
+                    )
+                    +
                     "例題必須使用 card_type=example，example_problem 要保留可直接作答的具體題設、數值／給定式、條件與要求，並和可重用解法 example_method、操作 reasoning_steps 分欄；simple_example 留空。若來源未提供解法，example_method 填『來源未提供完整解法』，不可臆造。一般卡使用 card_type=concept，兩個 example 欄位留空；simple_example 只有來源明示例子時才填寫，否則留空。"
                     "來源含程式碼或虛擬碼時，完整程式、函式、類別或連續兩行以上操作保留為帶語言名稱的 Markdown fenced code block，禁止轉成 LaTeX；行內識別字或短指令使用單反引號。"
                     "卡片正文不得出現來源敘事、稽核說明、外部延伸或來源沒有的術語。錯誤只做可由原圖內容直接驗證的最小修正。不可因卡片數量而刪除重點。"
@@ -11617,6 +11953,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     seen_refs.add(key)
                     combined_refs.append(source_ref)
                 keep_card["source_refs"] = combined_refs
+                keep_card["visual_refs"] = list(
+                    {
+                        str(visual_ref.get("region_id") or ""): visual_ref
+                        for visual_ref in (
+                            (keep_card.get("visual_refs") or [])
+                            + (duplicate.get("visual_refs") or [])
+                        )
+                        if isinstance(visual_ref, dict)
+                        and str(visual_ref.get("region_id") or "")
+                    }.values()
+                )
                 keep_card["coverage_ids"] = list(
                     dict.fromkeys((keep_card.get("coverage_ids") or []) + (duplicate.get("coverage_ids") or []))
                 )
@@ -12582,6 +12929,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 url_for("admin_study_recall_image", session_id=session["id"], filename=filename)
                 for filename in session.get("image_filenames") or []
             ]
+            visual_regions_by_id = {
+                str(region.get("region_id") or ""): region
+                for page in session.get("source_transcription") or []
+                if isinstance(page, dict)
+                for region in page.get("visual_regions") or []
+                if isinstance(region, dict) and str(region.get("region_id") or "")
+            }
             indexed_concepts = {
                 index: concept
                 for index, concept in enumerate(raw_concepts)
@@ -12660,6 +13014,51 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         }
                     )
                 concept["source_refs"] = collapse_source_refs_by_image(visible_source_refs)
+                visible_visual_refs: List[Dict[str, Any]] = []
+                for visual_ref in concept.get("visual_refs") or []:
+                    if not isinstance(visual_ref, dict):
+                        continue
+                    region_id = str(visual_ref.get("region_id") or "").strip()
+                    region = visual_regions_by_id.get(region_id)
+                    if region is None or any(
+                        item["region_id"] == region_id for item in visible_visual_refs
+                    ):
+                        continue
+                    try:
+                        visual_image_index = int(region.get("image_index") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if not (1 <= visual_image_index <= len(image_urls)):
+                        continue
+                    visible_visual_refs.append(
+                        {
+                            **region,
+                            "region_id": region_id,
+                            "image_index": visual_image_index,
+                            "crop_url": url_for(
+                                "admin_study_recall_visual_crop",
+                                session_id=session["id"],
+                                region_id=region_id,
+                            ),
+                            "enhanced_url": url_for(
+                                "admin_study_recall_visual_crop",
+                                session_id=session["id"],
+                                region_id=region_id,
+                                variant="enhanced",
+                            ),
+                            "redraw_url": (
+                                url_for(
+                                    "admin_study_recall_visual_redraw",
+                                    session_id=session["id"],
+                                    region_id=region_id,
+                                )
+                                if region.get("render_mode") == "svg"
+                                else ""
+                            ),
+                            "image_url": image_urls[visual_image_index - 1],
+                        }
+                    )
+                concept["visual_refs"] = visible_visual_refs
                 related_cards = []
                 stored_relations = concept.get("relations")
                 if isinstance(stored_relations, list):
@@ -12777,6 +13176,26 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     if 1 <= image_index <= len(selected_session["image_urls"])
                     else ""
                 )
+                for region in page.get("visual_regions") or []:
+                    if not isinstance(region, dict):
+                        continue
+                    region_id = str(region.get("region_id") or "").strip()
+                    if not region_id:
+                        continue
+                    region["crop_url"] = url_for(
+                        "admin_study_recall_visual_crop",
+                        session_id=selected_session["id"],
+                        region_id=region_id,
+                    )
+                    region["redraw_url"] = (
+                        url_for(
+                            "admin_study_recall_visual_redraw",
+                            session_id=selected_session["id"],
+                            region_id=region_id,
+                        )
+                        if region.get("render_mode") == "svg"
+                        else ""
+                    )
             for collection_name in ("uncertain_fragments", "correction_records"):
                 for record in selected_session.get(collection_name) or []:
                     if not isinstance(record, dict):
@@ -13312,6 +13731,89 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not image_path.is_file():
             return Response("Not Found", status=404, mimetype="text/plain")
         return send_file(image_path, conditional=True, max_age=0)
+
+    def _study_visual_region(
+        recall_session: Dict[str, Any],
+        region_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        if not re.fullmatch(r"p[1-9][0-9]*v[1-9][0-9]*", str(region_id or "")):
+            return None
+        for page in recall_session.get("source_transcription") or []:
+            if not isinstance(page, dict):
+                continue
+            for region in page.get("visual_regions") or []:
+                if (
+                    isinstance(region, dict)
+                    and str(region.get("region_id") or "") == region_id
+                ):
+                    return region
+        return None
+
+    @app.get("/admin/study-recall/<int:session_id>/visual/<region_id>/crop")
+    @admin_required
+    def admin_study_recall_visual_crop(session_id: int, region_id: str):
+        recall_session = storage.get_study_recall_session(session_id)
+        region = _study_visual_region(recall_session or {}, region_id)
+        if recall_session is None or region is None:
+            return Response("Not Found", status=404, mimetype="text/plain")
+        try:
+            image_index = int(region.get("image_index") or 0)
+        except (TypeError, ValueError):
+            image_index = 0
+        filenames = recall_session.get("image_filenames") or []
+        if not (1 <= image_index <= len(filenames)):
+            return Response("Not Found", status=404, mimetype="text/plain")
+        image_path = study_upload_root / str(session_id) / str(filenames[image_index - 1])
+        try:
+            with Image.open(image_path) as opened:
+                source = ImageOps.exif_transpose(opened).convert("RGB")
+                crop_box = visual_region_crop_box(
+                    region,
+                    image_width=source.width,
+                    image_height=source.height,
+                )
+                if crop_box is None:
+                    raise ValueError("invalid visual crop")
+                crop = source.crop(crop_box)
+                if request.args.get("variant") == "enhanced":
+                    max_side = max(crop.size)
+                    scale = min(2.5, max(1.0, 1800 / max(1, max_side)))
+                    if scale > 1.05:
+                        crop = crop.resize(
+                            (
+                                max(1, round(crop.width * scale)),
+                                max(1, round(crop.height * scale)),
+                            ),
+                            Image.Resampling.LANCZOS,
+                        )
+                    crop = crop.filter(
+                        ImageFilter.UnsharpMask(radius=1.0, percent=155, threshold=2)
+                    )
+                output = io.BytesIO()
+                crop.save(output, format="JPEG", quality=92, optimize=True)
+                output.seek(0)
+        except (OSError, ValueError):
+            return Response("Not Found", status=404, mimetype="text/plain")
+        return send_file(
+            output,
+            mimetype="image/jpeg",
+            conditional=True,
+            max_age=3600,
+            download_name=f"{region_id}.jpg",
+        )
+
+    @app.get("/admin/study-recall/<int:session_id>/visual/<region_id>/redraw")
+    @admin_required
+    def admin_study_recall_visual_redraw(session_id: int, region_id: str):
+        recall_session = storage.get_study_recall_session(session_id)
+        region = _study_visual_region(recall_session or {}, region_id)
+        svg = render_visual_region_svg(region or {})
+        if recall_session is None or region is None or svg is None:
+            return Response("Not Found", status=404, mimetype="text/plain")
+        response = Response(svg, status=200, mimetype="image/svg+xml")
+        response.headers["Cache-Control"] = "private, max-age=3600"
+        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+        return response
 
     @app.post("/admin/study-recall/<int:session_id>/localize-sources")
     @admin_required
@@ -15192,5 +15694,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     # exposing a route or coupling tests to OpenAI/network behavior.
     app.extensions["study_note_output_validator"] = _validate_recall_output
     app.extensions["study_note_tool_composer"] = _call_openai_study_note_tools
+    app.extensions["study_note_image_analyzer"] = _analyze_study_note_images
+    app.extensions["study_note_coverage_builder"] = _study_source_coverage_items
+    app.extensions["visual_note_pipeline_enabled"] = visual_note_pipeline_enabled
 
     return app

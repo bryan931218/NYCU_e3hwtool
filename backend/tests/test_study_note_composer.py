@@ -578,6 +578,81 @@ class StudyNoteComposerTests(unittest.TestCase):
         self.assertEqual([item["ok"] for item in observed], [False, False])
         self.assertEqual(result["key_concepts"][0]["concept"], "Queue")
 
+    def test_round_limit_keeps_complete_validated_blocks(self):
+        evidence = "Queue 採用 FIFO。"
+        accumulator = self._build_accumulator(
+            evidence,
+            required_coverage_ids=("p1b1",),
+            coverage_items=(
+                {"id": "p1b1", "image_index": 1, "text": evidence},
+            ),
+        )
+        response = {
+            "output": [
+                {
+                    "type": "function_call",
+                    "call_id": "overview",
+                    "name": "set_note_overview",
+                    "arguments": json.dumps(
+                        {"detected_topic": "Queue", "summary": evidence},
+                        ensure_ascii=False,
+                    ),
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "block",
+                    "name": "add_note_block",
+                    "arguments": json.dumps(
+                        {
+                            "block_id": "queue",
+                            "block_type": "definition",
+                            "title": "Queue",
+                            "topic": "FIFO",
+                            "recall_cue": None,
+                            "key_point": evidence,
+                            "explanation": evidence,
+                            "details": [],
+                            "example": None,
+                            "pitfall": None,
+                            "memory_hint": None,
+                            "keywords": ["Queue", "FIFO"],
+                            "sources": [{"image_index": 1, "evidence": evidence}],
+                            "coverage_ids": ["p1b1"],
+                            "correction": {
+                                "applied": False,
+                                "original": None,
+                                "corrected": None,
+                                "reason": None,
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "broken-optional-sibling",
+                    "name": "add_note_block",
+                    "arguments": "{broken",
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "finish",
+                    "name": "finish_note",
+                    "arguments": '{"complete":true,"review_note":null}',
+                },
+            ]
+        }
+
+        result = run_study_note_tool_conversation(
+            initial_input=[{"role": "user", "content": "compose"}],
+            accumulator=accumulator,
+            request_round=lambda _conversation, _round_index: response,
+            max_rounds=1,
+        )
+
+        self.assertEqual(len(result["key_concepts"]), 1)
+        self.assertEqual(result["key_concepts"][0]["coverage_ids"], ["p1b1"])
+
     def test_tool_schemas_are_strict_and_cover_all_content_kinds(self):
         tools = build_study_note_tools(max_image_index=6)
         self.assertEqual(

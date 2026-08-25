@@ -2061,6 +2061,19 @@ class PersistentStorage:
                         if indexed_texts
                         else str(page.get("transcription") or "").strip()
                     )
+                    visual_text = "\n\n".join(
+                        " ".join(
+                            str(region.get(field) or "").strip()
+                            for field in ("title", "description", "visible_text")
+                            if str(region.get(field) or "").strip()
+                        )
+                        for region in page.get("visual_regions") or []
+                        if isinstance(region, dict)
+                    )
+                    if visual_text:
+                        transcription = "\n\n".join(
+                            part for part in (transcription, visual_text) if part
+                        )
                     transcriptions[image_index] = transcription
             canonical_pages = {
                 image_index: canonicalize_source_text(transcription)
@@ -2142,6 +2155,38 @@ class PersistentStorage:
                             ),
                         }
                     )
+                if not linked_to_page:
+                    for visual_ref in concept.get("visual_refs") or []:
+                        if not isinstance(visual_ref, dict):
+                            continue
+                        try:
+                            image_index = int(visual_ref.get("image_index") or 0)
+                        except (TypeError, ValueError):
+                            continue
+                        if not (1 <= image_index <= len(image_filenames)):
+                            continue
+                        linked_to_page = True
+                        visual_evidence = " ".join(
+                            str(visual_ref.get(field) or "").strip()
+                            for field in ("title", "description", "visible_text")
+                            if str(visual_ref.get(field) or "").strip()
+                        )
+                        cards_by_page.setdefault(image_index, []).append(
+                            {
+                                "concept_index": concept_index,
+                                "concept_title": concept_title,
+                                "topic": topic,
+                                "card_type": card_type,
+                                "card_text": " ".join((card_text, visual_evidence)),
+                                "preview_text": preview_text,
+                                "keyword_text": keyword_text,
+                                "evidence": visual_evidence,
+                                "bbox": visual_ref.get("bbox"),
+                                "has_formula": _recall_search_contains_formula(
+                                    " ".join((card_text, visual_evidence))
+                                ),
+                            }
+                        )
                 if not linked_to_page:
                     if transcriptions:
                         page_index = max(
