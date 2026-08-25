@@ -379,7 +379,7 @@
         .race-actual-marker { position: absolute; z-index: 5; top: 54px; left: clamp(24px, var(--runner-position), calc(100% - 24px)); height: 40px; transform: translateX(-50%); border-left: 2px solid var(--blue); }
         .pace-panel.early .race-actual-marker { border-left-color: var(--teal); }
         .race-scale { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 30px; color: var(--muted); font-size: 10px; font-weight: 850; }
-        .pace-history { margin-top: 10px; padding-top: 18px; border-top: 1px solid rgba(174,191,208,.52); }
+        .pace-history { margin-top: 10px; padding-top: 16px; border-top: 1px solid rgba(174,191,208,.52); }
         .pace-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
         .pace-history-head h3 { margin: 0; color: var(--ink-2); font-size: 16px; letter-spacing: 0; }
         .pace-history-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
@@ -406,6 +406,18 @@
         .pace-history-date.today { fill: var(--ink-2); font-weight: 950; }
         .pace-history-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; font-weight: 760; }
         .pace-history-foot strong { color: var(--ink-2); }
+        @media (min-width: 981px) {
+            .pace-history { display: grid; grid-template-columns: minmax(190px, 230px) minmax(0, 760px); grid-template-rows: auto auto; column-gap: 24px; row-gap: 10px; align-items: center; justify-content: space-between; }
+            .pace-history-head { grid-column: 1; grid-row: 1; display: block; }
+            .pace-history-head p { max-width: 28ch; }
+            .pace-history-current { width: fit-content; min-width: 112px; margin-top: 12px; padding: 6px 9px; text-align: left; }
+            .pace-history-current span, .pace-history-current strong { display: inline; }
+            .pace-history-current strong { margin: 0 0 0 6px; font-size: 16px; }
+            .pace-history-scroll { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: 760px; margin: 0; padding: 4px 8px 0; border-radius: 8px; background: rgba(245,249,253,.72); overflow: hidden; }
+            .pace-history-chart { min-width: 0; }
+            .pace-history-foot { grid-column: 1; grid-row: 2; display: grid; align-self: end; justify-content: stretch; gap: 3px; }
+            .pace-history-foot strong { line-height: 1.45; }
+        }
         .progress-compare { display: grid; gap: 13px; margin-top: 14px; }
         .compare-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--ink-2); font-size: 13px; font-weight: 900; }
         .compare-head strong { font-size: 17px; font-variant-numeric: tabular-nums; }
