@@ -47,6 +47,7 @@ from ..services.youtube_playlists import (
 from ..services.youtube_frames import (
     YoutubeFrameError,
     fetch_youtube_cached_frame,
+    fetch_youtube_storyboard_metadata,
 )
 from ..shared.config import (
     DEFAULT_OPENAI_MODEL,
@@ -1751,6 +1752,84 @@ class TrafficTracker:
 
 def _env_flag_truthy(value: Optional[str]) -> bool:
     return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_YOUTUBE_STORYBOARD_INDEX_PENDING: Set[str] = set()
+_YOUTUBE_STORYBOARD_INDEX_LOCK = threading.Lock()
+
+
+def _persist_youtube_storyboard_metadata(
+    storage: PersistentStorage,
+    payload: Any,
+    logger: Any,
+) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    try:
+        saved = storage.upsert_youtube_storyboard_metadata(
+            youtube_video_id=str(payload.get("youtube_video_id") or ""),
+            duration_seconds=float(payload.get("duration_seconds") or 0),
+            storyboard_spec=str(payload.get("storyboard_spec") or ""),
+        )
+    except Exception:
+        logger.exception("YouTube storyboard metadata persistence failed")
+        return False
+    return bool(saved)
+
+
+def _start_youtube_storyboard_index(
+    storage: PersistentStorage,
+    youtube_video_ids: Iterable[str],
+    logger: Any,
+) -> int:
+    candidates = {
+        str(video_id or "").strip()
+        for video_id in youtube_video_ids
+        if re.fullmatch(r"[A-Za-z0-9_-]{11}", str(video_id or "").strip())
+    }
+    missing = {
+        video_id
+        for video_id in candidates
+        if storage.get_youtube_storyboard_metadata(video_id) is None
+    }
+    with _YOUTUBE_STORYBOARD_INDEX_LOCK:
+        scheduled = sorted(missing - _YOUTUBE_STORYBOARD_INDEX_PENDING)
+        _YOUTUBE_STORYBOARD_INDEX_PENDING.update(scheduled)
+    if not scheduled:
+        return 0
+
+    def run() -> None:
+        def index_one(video_id: str) -> Tuple[str, bool]:
+            try:
+                payload = fetch_youtube_storyboard_metadata(video_id)
+                return video_id, _persist_youtube_storyboard_metadata(storage, payload, logger)
+            except YoutubeFrameError as exc:
+                logger.warning("YouTube storyboard indexing failed for %s: %s", video_id, exc)
+                return video_id, False
+            except Exception:
+                logger.exception("Unexpected YouTube storyboard indexing failure for %s", video_id)
+                return video_id, False
+
+        try:
+            worker_count = max(1, min(3, len(scheduled)))
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                results = list(executor.map(index_one, scheduled))
+            succeeded = sum(1 for _, ok in results if ok)
+            logger.info(
+                "YouTube storyboard indexing completed: %s/%s",
+                succeeded,
+                len(scheduled),
+            )
+        finally:
+            with _YOUTUBE_STORYBOARD_INDEX_LOCK:
+                _YOUTUBE_STORYBOARD_INDEX_PENDING.difference_update(scheduled)
+
+    threading.Thread(
+        target=run,
+        name="youtube-storyboard-index",
+        daemon=True,
+    ).start()
+    return len(scheduled)
 
 
 
@@ -14085,6 +14164,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 youtube_playlist_id=parsed["playlist_id"],
                 youtube_url=parsed["url"],
             ):
+                if parsed["video_id"]:
+                    _start_youtube_storyboard_index(
+                        storage,
+                        [parsed["video_id"]],
+                        app.logger,
+                    )
                 record_ui_event(
                     "study_plan_video_youtube_updated",
                     meta={"video_id": video_id, "youtube_video_id": parsed["video_id"]},
@@ -14132,6 +14217,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             flash(message, "error")
             return redirect(url_for("admin_study_settings"))
 
+        result["storyboard_indexing"] = _start_youtube_storyboard_index(
+            storage,
+            result.get("youtube_video_ids") or [],
+            app.logger,
+        )
         current_videos = storage.list_study_plan_videos_with_records()
         payload = {
             "ok": True,
@@ -14433,8 +14523,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if duration_seconds > 0:
             playback_seconds = min(playback_seconds, duration_seconds)
 
+        storyboard_metadata = storage.get_youtube_storyboard_metadata(youtube_video_id)
         try:
-            frame = fetch_youtube_cached_frame(youtube_video_id, playback_seconds)
+            frame = fetch_youtube_cached_frame(
+                youtube_video_id,
+                playback_seconds,
+                storyboard_metadata=storyboard_metadata,
+            )
         except YoutubeFrameError as exc:
             record_ui_event(
                 "study_plan_video_frame_capture",
@@ -14448,6 +14543,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 },
             )
             return {"ok": False, "error": str(exc)}, 502
+        _persist_youtube_storyboard_metadata(
+            storage,
+            frame.get("storyboard_metadata"),
+            app.logger,
+        )
         image_data_url = (
             f"data:{frame['mime_type']};base64,"
             + base64.b64encode(frame["bytes"]).decode("ascii")
@@ -14555,8 +14655,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         duration_seconds = max(0.0, float(video.get("duration_seconds") or 0))
         if duration_seconds > 0:
             playback_seconds = min(playback_seconds, duration_seconds)
+        storyboard_metadata = storage.get_youtube_storyboard_metadata(youtube_video_id)
         try:
-            frame = fetch_youtube_cached_frame(youtube_video_id, playback_seconds)
+            frame = fetch_youtube_cached_frame(
+                youtube_video_id,
+                playback_seconds,
+                storyboard_metadata=storyboard_metadata,
+            )
         except YoutubeFrameError as exc:
             record_ui_event(
                 "study_plan_video_frame_capture",
@@ -14570,6 +14675,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 },
             )
             return {"ok": False, "error": str(exc)}, 502
+        _persist_youtube_storyboard_metadata(
+            storage,
+            frame.get("storyboard_metadata"),
+            app.logger,
+        )
         return {
             "ok": True,
             "frame_image": (

@@ -365,6 +365,85 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         watch_page.assert_called_once_with("9dXuhVJ-L5k")
         slow_fallback.assert_not_called()
 
+    def test_reliable_storyboard_prefers_persisted_metadata(self):
+        frame = {"source": "storyboard", "frame_seconds": 30.0}
+        persisted = {
+            "youtube_video_id": "9dXuhVJ-L5k",
+            "duration_seconds": 100.0,
+            "storyboard_spec": "persisted-spec",
+        }
+        persisted_info = {
+            "duration": 100.0,
+            "formats": [{"format_id": "database"}],
+            "storyboard_spec": "persisted-spec",
+        }
+        with patch.object(
+            youtube_frames,
+            "_storyboard_info_from_metadata",
+            return_value=persisted_info,
+        ), patch.object(
+            youtube_frames,
+            "_bundled_storyboard_info",
+            return_value=None,
+        ), patch.object(
+            youtube_frames,
+            "_frame_from_storyboard_info",
+            return_value=frame,
+        ) as render, patch.object(
+            youtube_frames,
+            "_extract_watch_page_storyboards",
+        ) as watch_page:
+            result = youtube_frames._fetch_youtube_reliable_storyboard_frame(
+                "9dXuhVJ-L5k",
+                33.3,
+                storyboard_metadata=persisted,
+            )
+
+        self.assertEqual(result["storyboard_metadata"]["storyboard_spec"], "persisted-spec")
+        render.assert_called_once()
+        watch_page.assert_not_called()
+
+    def test_reliable_storyboard_refreshes_failed_persisted_metadata(self):
+        frame = {"source": "storyboard", "frame_seconds": 30.0}
+        persisted_info = {
+            "duration": 100.0,
+            "formats": [{"format_id": "database"}],
+            "storyboard_spec": "expired-spec",
+        }
+        live_info = {
+            "duration": 101.0,
+            "formats": [{"format_id": "live"}],
+            "storyboard_spec": "fresh-spec",
+        }
+        with patch.object(
+            youtube_frames,
+            "_storyboard_info_from_metadata",
+            return_value=persisted_info,
+        ), patch.object(
+            youtube_frames,
+            "_bundled_storyboard_info",
+            return_value=None,
+        ), patch.object(
+            youtube_frames,
+            "_frame_from_storyboard_info",
+            side_effect=[YoutubeFrameError("expired"), frame],
+        ), patch.object(
+            youtube_frames,
+            "_extract_watch_page_storyboards",
+            return_value=live_info,
+        ):
+            result = youtube_frames._fetch_youtube_reliable_storyboard_frame(
+                "9dXuhVJ-L5k",
+                33.3,
+                storyboard_metadata={
+                    "youtube_video_id": "9dXuhVJ-L5k",
+                    "storyboard_spec": "expired-spec",
+                },
+            )
+
+        self.assertEqual(result["storyboard_metadata"]["storyboard_spec"], "fresh-spec")
+        self.assertEqual(result["storyboard_metadata"]["duration_seconds"], 101.0)
+
     def test_cached_frame_reuses_prefetched_timestamp(self):
         frame = {
             "bytes": self._frame_bytes(),

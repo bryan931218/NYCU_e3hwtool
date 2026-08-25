@@ -101,6 +101,7 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
         self.assertEqual(result["fetched_subjects"], ["科目丙", "科目甲"])
         self.assertEqual(result["empty_subjects"], ["科目丙"])
         self.assertEqual(result["errors"][0]["subject"], "科目乙")
+        self.assertEqual(result["youtube_video_ids"], ["ABCDEFGHIJK"])
         self.assertEqual(len(storage.links), 1)
 
     def test_admin_endpoint_returns_sync_result_without_page_reload(self):
@@ -142,8 +143,15 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
                 "fetched_subjects": ["線性代數", "離散數學", "資料結構", "作業系統", "計算機組織", "演算法"],
                 "empty_subjects": ["作業系統", "計算機組織", "演算法"],
                 "errors": [],
+                "youtube_video_ids": ["9dXuhVJ-L5k"],
             }
-            with patch("e3_tracker.api.web.sync_known_youtube_playlists", return_value=fake_result):
+            with patch(
+                "e3_tracker.api.web.sync_known_youtube_playlists",
+                return_value=fake_result,
+            ), patch(
+                "e3_tracker.api.web._start_youtube_storyboard_index",
+                return_value=1,
+            ) as start_index:
                 response = client.post(
                     "/admin/study-settings/youtube-sync",
                     headers={"Accept": "application/json"},
@@ -153,7 +161,24 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
             payload = response.get_json()
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["result"]["updated"], 3)
+            self.assertEqual(payload["result"]["storyboard_indexing"], 1)
             self.assertTrue(payload["videos"])
+            start_index.assert_called_once()
+
+            video = storage.list_study_plan_videos_with_records()[0]
+            with patch(
+                "e3_tracker.api.web._start_youtube_storyboard_index",
+                return_value=1,
+            ) as start_manual_index:
+                manual_response = client.post(
+                    "/admin/study-settings",
+                    data={
+                        "video_id": video["id"],
+                        "youtube_url": "https://www.youtube.com/watch?v=NEWVIDEO001",
+                    },
+                )
+            self.assertEqual(manual_response.status_code, 302)
+            self.assertEqual(start_manual_index.call_args.args[1], ["NEWVIDEO001"])
             storage._engine.dispose()
 
 

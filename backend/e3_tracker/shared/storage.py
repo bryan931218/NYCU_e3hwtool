@@ -419,6 +419,15 @@ study_plan_video_overrides_table = Table(
     Column("updated_at", String(64), nullable=False),
 )
 
+youtube_storyboard_metadata_table = Table(
+    "youtube_storyboard_metadata",
+    metadata,
+    Column("youtube_video_id", String(64), primary_key=True),
+    Column("duration_seconds", Float, nullable=False, default=0),
+    Column("storyboard_spec", Text, nullable=False),
+    Column("updated_at", String(64), nullable=False),
+)
+
 study_plan_video_records_table = Table(
     "study_plan_video_records",
     metadata,
@@ -1297,6 +1306,79 @@ class PersistentStorage:
                     )
                 )
             return True
+
+    def get_youtube_storyboard_metadata(self, youtube_video_id: str) -> Optional[Dict[str, Any]]:
+        video_id = str(youtube_video_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+            return None
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(youtube_storyboard_metadata_table).where(
+                    youtube_storyboard_metadata_table.c.youtube_video_id == video_id
+                )
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "youtube_video_id": str(row.youtube_video_id),
+            "duration_seconds": max(0.0, float(row.duration_seconds or 0)),
+            "storyboard_spec": str(row.storyboard_spec or ""),
+            "updated_at": str(row.updated_at or ""),
+        }
+
+    def upsert_youtube_storyboard_metadata(
+        self,
+        *,
+        youtube_video_id: str,
+        duration_seconds: float,
+        storyboard_spec: str,
+    ) -> Optional[Dict[str, Any]]:
+        video_id = str(youtube_video_id or "").strip()
+        spec = str(storyboard_spec or "").strip()
+        if (
+            not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id)
+            or not spec
+            or len(spec) > 250_000
+        ):
+            return None
+        try:
+            duration = max(0.0, float(duration_seconds or 0))
+        except (TypeError, ValueError):
+            duration = 0.0
+        if not math.isfinite(duration):
+            duration = 0.0
+        now = self._now_iso()
+        values = {
+            "duration_seconds": duration,
+            "storyboard_spec": spec,
+            "updated_at": now,
+        }
+        try:
+            with self._lock, self._engine.begin() as conn:
+                result = conn.execute(
+                    update(youtube_storyboard_metadata_table)
+                    .where(youtube_storyboard_metadata_table.c.youtube_video_id == video_id)
+                    .values(**values)
+                )
+                if not result.rowcount:
+                    conn.execute(
+                        insert(youtube_storyboard_metadata_table).values(
+                            youtube_video_id=video_id,
+                            **values,
+                        )
+                    )
+        except IntegrityError:
+            # Separate web workers can discover the same new video concurrently.
+            with self._lock, self._engine.begin() as conn:
+                conn.execute(
+                    update(youtube_storyboard_metadata_table)
+                    .where(youtube_storyboard_metadata_table.c.youtube_video_id == video_id)
+                    .values(**values)
+                )
+        return {
+            "youtube_video_id": video_id,
+            **values,
+        }
 
     def sync_study_plan_youtube_links(self, links: List[Dict[str, Any]]) -> Dict[str, int]:
         """Update playlist-derived links without replacing manual overrides or progress."""

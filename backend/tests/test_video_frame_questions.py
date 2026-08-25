@@ -82,7 +82,11 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["answer"], "因為這一步使用了反證法。")
         self.assertTrue(result["frame_image"].startswith("data:image/jpeg;base64,"))
-        fetch_frame.assert_called_once_with(self.video["youtube_video_id"], 123.4)
+        fetch_frame.assert_called_once_with(
+            self.video["youtube_video_id"],
+            123.4,
+            storyboard_metadata=None,
+        )
         request_json = post.call_args.kwargs["json"]
         content = request_json["input"][0]["content"]
         self.assertEqual(content[0]["type"], "input_text")
@@ -105,8 +109,36 @@ class VideoFrameQuestionTests(unittest.TestCase):
         result = response.get_json()
         self.assertTrue(result["frame_image"].startswith("data:image/jpeg;base64,"))
         self.assertEqual(result["frame_source"], "exact")
-        fetch_frame.assert_called_once_with(self.video["youtube_video_id"], 123.4)
+        fetch_frame.assert_called_once_with(
+            self.video["youtube_video_id"],
+            123.4,
+            storyboard_metadata=None,
+        )
         post.assert_not_called()
+
+    def test_persists_storyboard_metadata_returned_by_frame_capture(self):
+        frame = self._frame()
+        frame["storyboard_metadata"] = {
+            "youtube_video_id": self.video["youtube_video_id"],
+            "duration_seconds": 456.0,
+            "storyboard_spec": "https://i.example.test/storyboard/$L/$N.jpg|160#90#10#5#10#0#M$M#sig",
+        }
+        with patch(
+            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            return_value=frame,
+        ):
+            response = self.client.post(
+                "/admin/study-plan/video-frame",
+                json={"video_id": self.video["id"], "playback_seconds": 123.4},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        saved = self.storage.get_youtube_storyboard_metadata(
+            self.video["youtube_video_id"]
+        )
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["duration_seconds"], 456.0)
+        self.assertIn("storyboard", saved["storyboard_spec"])
 
     def test_validates_question_and_video(self):
         missing_question = self.client.post(

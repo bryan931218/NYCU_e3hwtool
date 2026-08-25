@@ -128,6 +128,13 @@ def sync_known_youtube_playlists(
             "fetched_subjects": sorted(fetched_subjects),
             "empty_subjects": sorted(empty_subjects),
             "errors": sorted(errors, key=lambda item: item["subject"]),
+            "youtube_video_ids": sorted(
+                {
+                    str(item.get("youtube_video_id") or "").strip()
+                    for item in links
+                    if item.get("youtube_video_id")
+                }
+            ),
             "ok": bool(fetched_subjects),
         }
     finally:

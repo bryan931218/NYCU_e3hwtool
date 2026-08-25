@@ -276,8 +276,9 @@ def _bundled_storyboard_info(video_id: str) -> Dict[str, Any] | None:
     if not item:
         return None
     duration = _positive_float(item.get("duration"))
+    spec = str(item.get("spec") or "")
     formats = _storyboard_formats_from_spec(
-        str(item.get("spec") or ""),
+        spec,
         duration=duration,
     )
     if not formats:
@@ -285,6 +286,7 @@ def _bundled_storyboard_info(video_id: str) -> Dict[str, Any] | None:
     return {
         "duration": duration,
         "formats": formats,
+        "storyboard_spec": spec,
         "_metadata_source": "bundled_catalog",
     }
 
@@ -313,20 +315,67 @@ def _extract_watch_page_storyboards(video_id: str) -> Dict[str, Any]:
                 or storyboards.get("playerLiveStoryboardSpecRenderer")
                 or {}
             )
+            spec = str(renderer.get("spec") or "")
             formats = _storyboard_formats_from_spec(
-                str(renderer.get("spec") or ""),
+                spec,
                 duration=duration,
             )
             if formats:
                 return {
                     "duration": duration,
                     "formats": formats,
+                    "storyboard_spec": spec,
                     "_metadata_source": "watch_page",
                 }
             last_error = YoutubeMetadataError("YouTube 播放頁沒有可用的預覽影格。")
         except (requests.RequestException, YoutubeMetadataError) as exc:
             last_error = exc
     raise YoutubeMetadataError("YouTube 播放頁沒有可用的預覽影格。") from last_error
+
+
+def _storyboard_metadata_from_info(video_id: str, info: Dict[str, Any]) -> Dict[str, Any] | None:
+    spec = str(info.get("storyboard_spec") or "").strip()
+    if not spec:
+        return None
+    return {
+        "youtube_video_id": video_id,
+        "duration_seconds": _positive_float(info.get("duration")),
+        "storyboard_spec": spec,
+    }
+
+
+def _storyboard_info_from_metadata(
+    video_id: str,
+    storyboard_metadata: Dict[str, Any] | None,
+) -> Dict[str, Any] | None:
+    if not isinstance(storyboard_metadata, dict):
+        return None
+    metadata_video_id = str(storyboard_metadata.get("youtube_video_id") or video_id).strip()
+    if metadata_video_id != video_id:
+        return None
+    duration = _positive_float(storyboard_metadata.get("duration_seconds"))
+    spec = str(storyboard_metadata.get("storyboard_spec") or "").strip()
+    formats = _storyboard_formats_from_spec(spec, duration=duration)
+    if not formats:
+        return None
+    return {
+        "duration": duration,
+        "formats": formats,
+        "storyboard_spec": spec,
+        "_metadata_source": "database",
+    }
+
+
+def fetch_youtube_storyboard_metadata(youtube_video_id: str) -> Dict[str, Any]:
+    """Resolve reusable storyboard metadata for background persistence."""
+    video_id, _ = _validate_frame_request(youtube_video_id, 0)
+    info = _bundled_storyboard_info(video_id)
+    if info is None:
+        info = _extract_watch_page_storyboards(video_id)
+    metadata_payload = _storyboard_metadata_from_info(video_id, info)
+    if metadata_payload is None:
+        raise YoutubeMetadataError("YouTube 沒有提供可保存的預覽影格索引。")
+    return metadata_payload
 
 
 def _has_frame_formats(info: Dict[str, Any]) -> bool:
@@ -891,31 +940,45 @@ def _fetch_youtube_reliable_storyboard_frame(
     playback_seconds: float,
     *,
     timeout: int = 10,
+    storyboard_metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Use cheap storyboard sources before invoking the slower yt-dlp extractor."""
     video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
     last_error: YoutubeFrameError | None = None
 
+    persisted_info = _storyboard_info_from_metadata(video_id, storyboard_metadata)
     bundled_info = _bundled_storyboard_info(video_id)
-    if bundled_info:
+    candidates = [item for item in (persisted_info, bundled_info) if item]
+    seen_specs: set[str] = set()
+    for candidate in candidates:
+        candidate_spec = str(candidate.get("storyboard_spec") or "")
+        if candidate_spec and candidate_spec in seen_specs:
+            continue
+        seen_specs.add(candidate_spec)
         try:
-            return _frame_from_storyboard_info(
-                bundled_info,
+            frame = _frame_from_storyboard_info(
+                candidate,
                 requested_seconds,
                 timeout=min(6, max(3, int(timeout))),
             )
+            metadata_payload = _storyboard_metadata_from_info(video_id, candidate)
+            if metadata_payload:
+                frame = {**frame, "storyboard_metadata": metadata_payload}
+            return frame
         except YoutubeFrameError as exc:
-            # Bundled signatures can expire. Refresh from the public watch page
-            # immediately instead of retrying the same stale sprite URL.
             last_error = exc
 
     try:
         live_info = _extract_watch_page_storyboards(video_id)
-        return _frame_from_storyboard_info(
+        frame = _frame_from_storyboard_info(
             live_info,
             requested_seconds,
             timeout=min(6, max(3, int(timeout))),
         )
+        metadata_payload = _storyboard_metadata_from_info(video_id, live_info)
+        if metadata_payload:
+            frame = {**frame, "storyboard_metadata": metadata_payload}
+        return frame
     except YoutubeFrameError as exc:
         last_error = exc
 
@@ -936,6 +999,7 @@ def fetch_youtube_storyboard_frame(
     playback_seconds: float,
     *,
     timeout: int = 25,
+    storyboard_metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Fetch a reliable storyboard tile, falling back to exact stream decoding.
 
@@ -948,6 +1012,7 @@ def fetch_youtube_storyboard_frame(
             youtube_video_id,
             playback_seconds,
             timeout=min(10, max(4, int(timeout))),
+            storyboard_metadata=storyboard_metadata,
         )
     except YoutubeFrameError:
         return fetch_youtube_precise_frame(
@@ -962,6 +1027,7 @@ def fetch_youtube_cached_frame(
     playback_seconds: float,
     *,
     timeout: int = 18,
+    storyboard_metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Reuse a recently prefetched frame for the matching video timestamp."""
     video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
@@ -979,7 +1045,12 @@ def fetch_youtube_cached_frame(
             cached = _frame_cache.get(key)
             if cached and now - cached[0] < _FRAME_CACHE_TTL_SECONDS:
                 return cached[1]
-        frame = fetch_youtube_storyboard_frame(video_id, requested_seconds, timeout=timeout)
+        frame = fetch_youtube_storyboard_frame(
+            video_id,
+            requested_seconds,
+            timeout=timeout,
+            storyboard_metadata=storyboard_metadata,
+        )
         with _frame_lock:
             if len(_frame_cache) >= _FRAME_CACHE_LIMIT:
                 oldest = min(_frame_cache, key=lambda item: _frame_cache[item][0])
