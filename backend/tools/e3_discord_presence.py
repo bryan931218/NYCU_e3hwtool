@@ -11,7 +11,6 @@ import shutil
 import struct
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -129,10 +128,6 @@ class DiscordIpc:
     def __init__(self, client_id: str) -> None:
         self.client_id = str(client_id)
         self.pipe: Any = None
-        self.reader: Optional[threading.Thread] = None
-        self.stop_reader = threading.Event()
-        self.ready = threading.Event()
-        self.write_lock = threading.Lock()
 
     @staticmethod
     def encode_frame(opcode: int, payload: Any) -> bytes:
@@ -149,48 +144,49 @@ class DiscordIpc:
         if self.pipe is None:
             raise ConnectionError("Discord IPC is not connected")
         frame = self.encode_frame(opcode, payload)
-        with self.write_lock:
-            self.pipe.write(frame)
-            self.pipe.flush()
+        descriptor = self.pipe.fileno()
+        written = 0
+        while written < len(frame):
+            chunk_size = os.write(descriptor, frame[written:])
+            if chunk_size <= 0:
+                raise ConnectionError("Discord IPC write failed")
+            written += chunk_size
 
     def _read_exact(self, size: int) -> bytes:
         chunks = bytearray()
-        while len(chunks) < size and not self.stop_reader.is_set():
+        while len(chunks) < size:
             chunk = self.pipe.read(size - len(chunks))
             if not chunk:
                 raise EOFError("Discord IPC closed")
             chunks.extend(chunk)
         return bytes(chunks)
 
-    def _drain(self) -> None:
-        try:
-            while not self.stop_reader.is_set() and self.pipe is not None:
-                opcode, length = self.decode_header(self._read_exact(8))
-                body = self._read_exact(length) if length else b""
-                if opcode == self.PING:
-                    payload = json.loads(body.decode("utf-8")) if body else None
-                    self._write(self.PONG, payload)
-                elif opcode == self.CLOSE:
-                    break
-                elif opcode == self.FRAME and body:
-                    payload = json.loads(body.decode("utf-8"))
-                    if payload.get("evt") == "READY":
-                        self.ready.set()
-                    elif payload.get("evt") == "ERROR":
-                        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-                        _log(
-                            "Discord rejected activity: "
-                            f"{data.get('code', 'unknown')} {data.get('message', 'unknown error')}"
-                        )
-                    elif payload.get("cmd") == "SET_ACTIVITY":
-                        _log("Discord accepted activity update.")
-        except (OSError, EOFError, ValueError, ConnectionError):
-            pass
-        finally:
-            self.stop_reader.set()
+    def _receive(self, *, expected_event: str = "", expected_nonce: str = "") -> Dict[str, Any]:
+        while self.pipe is not None:
+            opcode, length = self.decode_header(self._read_exact(8))
+            body = self._read_exact(length) if length else b""
+            payload = json.loads(body.decode("utf-8")) if body else {}
+            if opcode == self.PING:
+                self._write(self.PONG, payload or None)
+                continue
+            if opcode == self.CLOSE:
+                raise ConnectionError("Discord closed the IPC connection")
+            if opcode != self.FRAME or not isinstance(payload, dict):
+                continue
+            if payload.get("evt") == "ERROR":
+                data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                code = data.get("code", "unknown")
+                message = data.get("message", "unknown error")
+                _log(f"Discord rejected activity: {code} {message}")
+                raise ConnectionError(f"Discord RPC error {code}: {message}")
+            if expected_event and payload.get("evt") == expected_event:
+                return payload
+            if expected_nonce and payload.get("nonce") == expected_nonce:
+                return payload
+        raise ConnectionError("Discord IPC is not connected")
 
     def connect(self) -> None:
-        if self.pipe is not None and not self.stop_reader.is_set():
+        if self.pipe is not None:
             return
         self.close()
         last_error: Optional[Exception] = None
@@ -198,13 +194,8 @@ class DiscordIpc:
             try:
                 pipe = open(rf"\\?\pipe\discord-ipc-{index}", "r+b", buffering=0)
                 self.pipe = pipe
-                self.stop_reader.clear()
-                self.ready.clear()
                 self._write(self.HANDSHAKE, {"v": 1, "client_id": self.client_id})
-                self.reader = threading.Thread(target=self._drain, daemon=True)
-                self.reader.start()
-                if not self.ready.wait(timeout=3):
-                    raise ConnectionError("Discord IPC handshake timed out")
+                self._receive(expected_event="READY")
                 _log(f"Connected to Discord IPC pipe {index}.")
                 return
             except (OSError, ConnectionError) as exc:
@@ -214,18 +205,19 @@ class DiscordIpc:
 
     def set_activity(self, activity: Optional[Dict[str, Any]]) -> None:
         self.connect()
+        nonce = uuid.uuid4().hex
         self._write(
             self.FRAME,
             {
                 "cmd": "SET_ACTIVITY",
                 "args": {"pid": os.getpid(), "activity": activity},
-                "nonce": uuid.uuid4().hex,
+                "nonce": nonce,
             },
         )
+        self._receive(expected_nonce=nonce)
+        _log("Discord accepted activity update.")
 
     def close(self) -> None:
-        self.stop_reader.set()
-        self.ready.clear()
         pipe, self.pipe = self.pipe, None
         if pipe is not None:
             try:
@@ -247,7 +239,6 @@ def run_agent(*, once: bool = False) -> int:
     config = _read_config()
     mutex = _acquire_single_instance()
     discord = DiscordIpc(str(config["client_id"]))
-    last_activity_json = ""
     last_good_at = 0.0
     cleared_after_error = False
     _log("Agent started.")
@@ -256,10 +247,7 @@ def run_agent(*, once: bool = False) -> int:
             try:
                 payload = fetch_presence(config)
                 activity = build_activity(payload)
-                serialized = json.dumps(activity, ensure_ascii=False, sort_keys=True)
-                if serialized != last_activity_json or discord.stop_reader.is_set():
-                    discord.set_activity(activity)
-                    last_activity_json = serialized
+                discord.set_activity(activity)
                 last_good_at = time.monotonic()
                 cleared_after_error = False
             except urllib.error.HTTPError as exc:
@@ -268,10 +256,10 @@ def run_agent(*, once: bool = False) -> int:
                     return 2
             except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError, ConnectionError) as exc:
                 _log(f"Sync retry: {exc}")
+                discord.close()
                 if last_good_at and time.monotonic() - last_good_at >= STALE_CLEAR_SECONDS and not cleared_after_error:
                     try:
                         discord.set_activity(None)
-                        last_activity_json = "null"
                         cleared_after_error = True
                     except (OSError, ConnectionError):
                         discord.close()

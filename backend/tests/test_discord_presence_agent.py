@@ -10,6 +10,26 @@ from tools.e3_discord_presence import DiscordIpc, build_activity
 
 
 class DiscordPresenceAgentTests(unittest.TestCase):
+    def test_ipc_write_sends_the_complete_frame_through_the_descriptor(self):
+        class FakePipe:
+            @staticmethod
+            def fileno():
+                return 42
+
+            def write(self, _payload):
+                raise AssertionError("FileIO.write would deadlock with the reader thread")
+
+        ipc = DiscordIpc("123456789012345678")
+        ipc.pipe = FakePipe()
+        with patch(
+            "tools.e3_discord_presence.os.write",
+            side_effect=lambda _descriptor, payload: len(payload),
+        ) as write:
+            ipc._write(DiscordIpc.FRAME, {"state": "讀書"})
+
+        self.assertEqual(write.call_args.args[0], 42)
+        self.assertGreater(len(write.call_args.args[1]), 8)
+
     def test_inactive_payload_clears_presence(self):
         self.assertIsNone(build_activity({"active": False}))
 
