@@ -5,7 +5,6 @@ from e3_tracker.shared.study_calendar_runtime import install_study_calendar_runt
 from e3_tracker.shared.study_note_upload_runtime import install_study_note_upload_runtime
 from e3_tracker.shared.study_recall_favorites_runtime import install_study_recall_favorites_runtime
 from e3_tracker.shared.study_recall_library_runtime import install_study_recall_library_runtime
-from e3_tracker.shared.one_time_note_resubmit_runtime import install_one_time_note_resubmit_runtime
 
 
 install_deployment_runtime(web)
@@ -14,5 +13,4 @@ install_study_calendar_runtime(web)
 install_study_note_upload_runtime(web)
 install_study_recall_library_runtime(web)
 install_study_recall_favorites_runtime(web)
-install_one_time_note_resubmit_runtime(web)
 app = web.create_app()

@@ -105,7 +105,7 @@
         @media (max-width:620px) { .page-head { align-items:flex-start; flex-direction:column; }.form-grid,.concepts,.side-stack { grid-template-columns:1fr; }.study-nav { gap:8px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; }.card-actions { justify-content:stretch; }.card-actions .submit { width:100%; }.panel-fold-summary,.compact-fold > summary,.topic-section-head { padding-left:14px; padding-right:14px; }.topic-section-body { padding:0 14px 14px; }.topic-index { padding-left:14px; padding-right:14px; }.concept-fold-head { padding-left:11px; }.concept-fold-body { padding-left:11px; padding-right:11px; }.concept-fold-title { font-size:13px; }.session-title-row { flex-direction:column; }.session-actions { margin-top:10px; }.ai-card-dialog { left:10px; right:10px; bottom:72px; width:auto; height:min(640px,calc(100vh - 88px)); max-height:calc(100vh - 88px); }.ai-dialog-head { padding:14px 14px 11px; }.ai-card-context { padding:8px 14px; }.ai-chat-messages { padding:12px 14px; }.ai-chat-form { padding:10px 14px 12px; }.ai-floating-toggle { left:10px; bottom:12px; }.source-locator-dialog { width:100vw; height:100dvh; border:0; border-radius:0; }.source-locator-head { padding:11px 10px; }.source-locator-evidence { padding:8px 10px; }.source-locator-tool { min-width:32px; height:32px; }.source-locator-title { font-size:15px; } }
         @media (max-width:620px) { .ai-floating-toggle { left:auto; right:10px; } }
         @media (max-width:620px) { .note-search-body { padding:14px; }.note-search-primary { grid-template-columns:minmax(0,1fr) auto; }.note-search-primary .submit { min-width:72px; }.note-search-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }.note-search-support { display:block; }.note-search-history { justify-content:flex-start; margin-top:7px; }.note-search-result { grid-template-columns:1fr; gap:10px; }.note-search-thumb { width:100%; height:180px; }.note-search-result-head { gap:8px; } }
-        .source-locator-highlight { border:3px solid rgba(215,38,61,.48); background:transparent; box-shadow:none; animation:none; }
+        .source-locator-highlight { box-sizing:border-box; border:3px solid rgba(215,38,61,.48); background:transparent; box-shadow:none; animation:none; }
         .source-locator-highlight[hidden] { display:none; }
         @media (max-width:620px) { .rename-note-form { align-items:stretch; flex-direction:column; }.rename-note-form input,.rename-note-save { width:100%; }.study-code-block pre { padding:11px 12px 13px; font-size:11px; }.study-code-head { padding-left:9px; } }
 </style>
@@ -1454,7 +1454,7 @@
             const clampScale = (value) => Math.max(0.08, Math.min(3.5, value));
             const centerHighlight = () => {
                 if (!box || !canvas.clientWidth || !canvas.clientHeight) return;
-                const centerX = canvas.offsetLeft + canvas.clientWidth * ((box.left + box.right) / 2000);
+                const centerX = canvas.offsetLeft + canvas.clientWidth / 2;
                 const centerY = canvas.offsetTop + canvas.clientHeight * ((box.top + box.bottom) / 2000);
                 viewport.scrollTo({
                     left: Math.max(0, centerX - viewport.clientWidth / 2),
@@ -1483,9 +1483,9 @@
                     viewport.scrollTo({ left: 0, top: 0, behavior: 'instant' });
                     return;
                 }
-                highlight.style.left = `${box.left / 10}%`;
+                highlight.style.left = '0';
                 highlight.style.top = `${box.top / 10}%`;
-                highlight.style.width = `${(box.right - box.left) / 10}%`;
+                highlight.style.width = '100%';
                 highlight.style.height = `${(box.bottom - box.top) / 10}%`;
                 const baseScale = fitScale();
                 const sourceWidth = image.naturalWidth * ((box.right - box.left) / 1000);
