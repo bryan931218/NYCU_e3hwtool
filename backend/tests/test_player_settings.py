@@ -80,10 +80,34 @@ class PlayerSettingsTests(unittest.TestCase):
 
             self.assertEqual(payload["day"], summary["day"])
             self.assertTrue(payload["active"])
+            self.assertTrue(payload["studying_now"])
             self.assertEqual(payload["today_total_seconds"], 3900)
             self.assertEqual(payload["today_label"], "1 小時 5 分")
             self.assertEqual(payload["details"], "正在刷題")
             self.assertEqual(payload["state"], "今日實際學習 1 小時 5 分")
+            storage._engine.dispose()
+
+    def test_discord_presence_keeps_todays_result_visible_after_studying(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "settings.sqlite3"))
+            summary = storage.record_study_time_session(
+                session_key="completed-discord-session",
+                kind="practice",
+                label="演算法題目",
+                elapsed_seconds=5400,
+                completed=True,
+            )
+            payload = build_discord_presence_payload(
+                storage,
+                now=datetime.now(timezone.utc),
+            )
+
+            self.assertEqual(payload["day"], summary["day"])
+            self.assertTrue(payload["active"])
+            self.assertFalse(payload["studying_now"])
+            self.assertEqual(payload["details"], "今日學習紀錄")
+            self.assertEqual(payload["state"], "實際學習 1 小時 30 分")
+            self.assertIsNone(payload["session_started_at"])
             storage._engine.dispose()
 
     def test_discord_presence_api_requires_the_generated_bearer_token(self):

@@ -122,7 +122,8 @@ def build_discord_presence_payload(
     payload: Dict[str, Any] = {
         "ok": True,
         "day": day,
-        "active": bool(active_session),
+        "active": bool(active_session) or total_seconds > 0,
+        "studying_now": bool(active_session),
         "today_total_seconds": round(total_seconds, 1),
         "today_video_seconds": round(max(0.0, float(summary.get("video_seconds") or 0)), 1),
         "today_practice_seconds": round(max(0.0, float(summary.get("practice_seconds") or 0)), 1),
@@ -147,6 +148,18 @@ def build_discord_presence_payload(
                 "state": f"今日實際學習 {format_discord_study_duration(total_seconds)}"[:128],
                 "session_started_at": int(started_at.timestamp()) if started_at else None,
                 "session_updated_at": str(active_session.get("updated_at") or ""),
+            }
+        )
+    elif total_seconds > 0:
+        payload.update(
+            {
+                "kind": "daily_summary",
+                "subject": "",
+                "label": "",
+                "details": "今日學習紀錄",
+                "state": f"實際學習 {format_discord_study_duration(total_seconds)}"[:128],
+                "session_started_at": None,
+                "session_updated_at": "",
             }
         )
     return payload
