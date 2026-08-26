@@ -1,7 +1,11 @@
 import json
 import struct
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+from tools import e3_discord_presence as presence_agent
 from tools.e3_discord_presence import DiscordIpc, build_activity
 
 
@@ -33,6 +37,22 @@ class DiscordPresenceAgentTests(unittest.TestCase):
         self.assertEqual(opcode, DiscordIpc.FRAME)
         self.assertEqual(length, len(frame) - 8)
         self.assertEqual(payload["state"], "正在讀書")
+
+    def test_startup_falls_back_to_the_current_users_startup_folder(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            appdata = Path(temp_dir)
+            with patch.dict(presence_agent.os.environ, {"APPDATA": str(appdata)}), patch(
+                "tools.e3_discord_presence._set_registry_startup",
+                side_effect=PermissionError("blocked"),
+            ):
+                method = presence_agent._register_user_startup(
+                    '"C:\\Python\\pythonw.exe" "C:\\E3\\agent.py" run'
+                )
+                launcher = presence_agent._startup_folder_launcher()
+                source = launcher.read_text(encoding="utf-8-sig")
+            self.assertEqual(method, "Startup folder")
+            self.assertIn("WScript.Shell", source)
+            self.assertIn('""C:\\Python\\pythonw.exe""', source)
 
 
 if __name__ == "__main__":

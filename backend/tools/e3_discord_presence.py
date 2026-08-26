@@ -25,6 +25,8 @@ CONFIG_PATH = APP_DIR / "config.json"
 LOG_PATH = APP_DIR / "presence.log"
 AGENT_PATH = APP_DIR / "e3_discord_presence.py"
 TASK_NAME = "E3 Discord Study Presence"
+RUN_VALUE_NAME = "E3DiscordStudyPresence"
+RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 POLL_SECONDS = 30
 STALE_CLEAR_SECONDS = 120
 ERROR_ALREADY_EXISTS = 183
@@ -281,6 +283,65 @@ def _pythonw_path() -> Path:
     return candidate if candidate.is_file() else executable
 
 
+def _startup_folder_launcher() -> Path:
+    appdata = str(os.getenv("APPDATA") or "").strip()
+    if not appdata:
+        raise RuntimeError("Windows APPDATA is unavailable.")
+    return (
+        Path(appdata)
+        / "Microsoft"
+        / "Windows"
+        / "Start Menu"
+        / "Programs"
+        / "Startup"
+        / "E3 Discord Study Presence.vbs"
+    )
+
+
+def _set_registry_startup(command: str) -> None:
+    import winreg
+
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH) as key:
+        winreg.SetValueEx(key, RUN_VALUE_NAME, 0, winreg.REG_SZ, command)
+
+
+def _register_user_startup(command: str) -> str:
+    try:
+        _set_registry_startup(command)
+        launcher = _startup_folder_launcher()
+        launcher.unlink(missing_ok=True)
+        return "current-user registry"
+    except (ImportError, OSError):
+        launcher = _startup_folder_launcher()
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        escaped_command = command.replace('"', '""')
+        launcher.write_text(
+            "Set runner = CreateObject(\"WScript.Shell\")\n"
+            f"runner.Run \"{escaped_command}\", 0, False\n",
+            encoding="utf-8-sig",
+        )
+        return "Startup folder"
+
+
+def _remove_user_startup() -> None:
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            RUN_KEY_PATH,
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
+            winreg.DeleteValue(key, RUN_VALUE_NAME)
+    except (ImportError, FileNotFoundError, OSError):
+        pass
+    try:
+        _startup_folder_launcher().unlink(missing_ok=True)
+    except (OSError, RuntimeError):
+        pass
+
+
 def install_startup() -> None:
     if os.name != "nt":
         raise RuntimeError("Automatic startup is only supported on Windows.")
@@ -290,22 +351,8 @@ def install_startup() -> None:
     if source != AGENT_PATH.resolve():
         shutil.copy2(source, AGENT_PATH)
     command = f'"{_pythonw_path()}" "{AGENT_PATH}" run'
-    subprocess.run(
-        [
-            "schtasks",
-            "/Create",
-            "/SC",
-            "ONLOGON",
-            "/TN",
-            TASK_NAME,
-            "/TR",
-            command,
-            "/RL",
-            "LIMITED",
-            "/F",
-        ],
-        check=True,
-    )
+    startup_method = _register_user_startup(command)
+    _log(f"Installed automatic startup via {startup_method}.")
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     subprocess.Popen(
         [str(_pythonw_path()), str(AGENT_PATH), "run"],
@@ -315,6 +362,7 @@ def install_startup() -> None:
 
 
 def uninstall_startup(remove_config: bool = False) -> None:
+    _remove_user_startup()
     if os.name == "nt":
         subprocess.run(
             ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
