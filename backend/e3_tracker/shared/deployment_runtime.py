@@ -43,6 +43,33 @@ PLAYER_SETTINGS_DEFAULTS: Dict[str, Any] = {
 }
 DISCORD_PRESENCE_IDLE_SECONDS = 5 * 60 + 30
 DISCORD_APPLICATION_ID_PATTERN = re.compile(r"^[0-9]{17,20}$")
+DISCORD_TOKEN_NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{12,32}$")
+
+
+def issue_discord_presence_token(application_id: str, signing_secret: Any) -> str:
+    normalized_application_id = str(application_id or "").strip()
+    if not DISCORD_APPLICATION_ID_PATTERN.fullmatch(normalized_application_id):
+        raise ValueError("Invalid Discord Application ID")
+    nonce = secrets.token_urlsafe(12)
+    message = f"e3-discord-presence:{normalized_application_id}:{nonce}".encode("utf-8")
+    key = signing_secret if isinstance(signing_secret, bytes) else str(signing_secret or "").encode("utf-8")
+    signature = hmac.new(key, message, hashlib.sha256).hexdigest()
+    return f"dp1.{normalized_application_id}.{nonce}.{signature}"
+
+
+def verify_discord_presence_signed_token(token: str, signing_secret: Any) -> str:
+    parts = str(token or "").strip().split(".")
+    if len(parts) != 4 or parts[0] != "dp1":
+        return ""
+    _version, application_id, nonce, signature = parts
+    if not DISCORD_APPLICATION_ID_PATTERN.fullmatch(application_id):
+        return ""
+    if not DISCORD_TOKEN_NONCE_PATTERN.fullmatch(nonce) or not re.fullmatch(r"[0-9a-f]{64}", signature):
+        return ""
+    message = f"e3-discord-presence:{application_id}:{nonce}".encode("utf-8")
+    key = signing_secret if isinstance(signing_secret, bytes) else str(signing_secret or "").encode("utf-8")
+    expected = hmac.new(key, message, hashlib.sha256).hexdigest()
+    return application_id if hmac.compare_digest(expected, signature) else ""
 
 
 def format_discord_study_duration(seconds: Any) -> str:
@@ -558,7 +585,7 @@ def _register_player_settings_routes(
                 if not DISCORD_APPLICATION_ID_PATTERN.fullmatch(application_id):
                     flash("Discord Application ID 格式不正確。", "error")
                     return redirect(url_for("admin_study_player_settings", _anchor="discord-presence"))
-                token = secrets.token_urlsafe(36)
+                token = issue_discord_presence_token(application_id, app.secret_key)
                 storage.save_discord_presence_settings(
                     application_id=application_id,
                     token=token,
@@ -610,7 +637,29 @@ def _register_player_settings_routes(
     def discord_presence_api():
         authorization = str(request.headers.get("Authorization") or "")
         scheme, _separator, token = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not storage.verify_discord_presence_token(token):
+        authorized = bool(
+            scheme.lower() == "bearer"
+            and storage.verify_discord_presence_token(token)
+        )
+        if not authorized and scheme.lower() == "bearer":
+            recovered_application_id = verify_discord_presence_signed_token(
+                token,
+                app.secret_key,
+            )
+            current_settings = storage.load_discord_presence_settings()
+            can_recover = bool(
+                recovered_application_id
+                and not current_settings.get("application_id")
+                and not current_settings.get("has_token")
+            )
+            if can_recover:
+                storage.save_discord_presence_settings(
+                    application_id=recovered_application_id,
+                    token=token,
+                    enabled=True,
+                )
+                authorized = True
+        if not authorized:
             return (
                 {"ok": False, "error": "invalid_presence_token"},
                 401,

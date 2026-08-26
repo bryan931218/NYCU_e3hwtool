@@ -176,6 +176,14 @@ class DiscordIpc:
                     payload = json.loads(body.decode("utf-8"))
                     if payload.get("evt") == "READY":
                         self.ready.set()
+                    elif payload.get("evt") == "ERROR":
+                        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                        _log(
+                            "Discord rejected activity: "
+                            f"{data.get('code', 'unknown')} {data.get('message', 'unknown error')}"
+                        )
+                    elif payload.get("cmd") == "SET_ACTIVITY":
+                        _log("Discord accepted activity update.")
         except (OSError, EOFError, ValueError, ConnectionError):
             pass
         finally:

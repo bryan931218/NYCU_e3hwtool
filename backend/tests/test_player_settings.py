@@ -12,12 +12,31 @@ from e3_tracker.shared.deployment_runtime import (
     _register_player_settings_routes,
     build_discord_presence_payload,
     format_discord_study_duration,
+    issue_discord_presence_token,
     normalize_player_settings,
+    verify_discord_presence_signed_token,
 )
 from e3_tracker.shared.player_control_runtime import install_player_control_dock
 
 
 class PlayerSettingsTests(unittest.TestCase):
+    def test_signed_discord_token_rejects_tampering(self):
+        application_id = "123456789012345678"
+        token = issue_discord_presence_token(application_id, "test-signing-secret")
+
+        self.assertEqual(
+            verify_discord_presence_signed_token(token, "test-signing-secret"),
+            application_id,
+        )
+        self.assertEqual(
+            verify_discord_presence_signed_token(token + "x", "test-signing-secret"),
+            "",
+        )
+        self.assertEqual(
+            verify_discord_presence_signed_token(token, "different-secret"),
+            "",
+        )
+
     def test_discord_presence_token_is_hashed_and_can_be_revoked(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = DeploymentSafeStorage(str(Path(temp_dir) / "settings.sqlite3"))
@@ -102,6 +121,30 @@ class PlayerSettingsTests(unittest.TestCase):
                 self.assertEqual(download.status_code, 200)
                 self.assertIn("attachment", download.headers["Content-Disposition"])
                 download.get_data()
+            storage._engine.dispose()
+
+    def test_signed_token_restores_missing_settings_after_a_deployment(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "settings.sqlite3"))
+            agent_path = Path(temp_dir) / "agent.py"
+            agent_path.write_text("print('agent')\n", encoding="utf-8")
+            app = Flask(__name__)
+            app.secret_key = "stable-deployment-secret"
+            app.add_url_rule("/login", endpoint="login", view_func=lambda: "login")
+            _register_player_settings_routes(app, storage, "settings", agent_path)
+            application_id = "123456789012345678"
+            signed_token = issue_discord_presence_token(application_id, app.secret_key)
+
+            response = app.test_client().get(
+                "/api/discord-presence",
+                headers={"Authorization": f"Bearer {signed_token}"},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            restored = storage.load_discord_presence_settings()
+            self.assertEqual(restored["application_id"], application_id)
+            self.assertTrue(restored["enabled"])
+            self.assertTrue(storage.verify_discord_presence_token(signed_token))
             storage._engine.dispose()
 
     def test_study_duration_format_is_compact(self):
