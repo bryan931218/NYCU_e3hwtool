@@ -13165,12 +13165,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                                 "admin_study_recall_visual_crop",
                                 session_id=session["id"],
                                 region_id=region_id,
+                                layout="full-width-v1",
                             ),
                             "enhanced_url": url_for(
                                 "admin_study_recall_visual_crop",
                                 session_id=session["id"],
                                 region_id=region_id,
                                 variant="enhanced",
+                                layout="full-width-v1",
                             ),
                             "redraw_url": (
                                 url_for(

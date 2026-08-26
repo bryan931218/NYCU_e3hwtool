@@ -201,16 +201,15 @@ def visual_region_crop_box(
     image_height: int,
     padding_ratio: float = 0.005,
 ) -> Optional[Tuple[int, int, int, int]]:
+    """Crop the detected vertical band while retaining the full source width."""
+
     bbox = normalize_visual_bbox(region.get("bbox"))
     if bbox is None or image_width <= 0 or image_height <= 0:
         return None
-    pad_x = round(image_width * max(0.0, min(0.08, padding_ratio)))
     pad_y = round(image_height * max(0.0, min(0.08, padding_ratio)))
-    left = max(0, math.floor(image_width * bbox["left"] / 1000) - pad_x)
     top = max(0, math.floor(image_height * bbox["top"] / 1000) - pad_y)
-    right = min(image_width, math.ceil(image_width * bbox["right"] / 1000) + pad_x)
     bottom = min(image_height, math.ceil(image_height * bbox["bottom"] / 1000) + pad_y)
-    return (left, top, right, bottom) if right > left and bottom > top else None
+    return (0, top, image_width, bottom) if bottom > top else None
 
 
 def render_visual_region_svg(region: Mapping[str, Any]) -> Optional[str]:

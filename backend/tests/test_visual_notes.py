@@ -93,7 +93,7 @@ class VisualNoteHelperTests(unittest.TestCase):
         self.assertEqual(regions[0]["region_id"], "p1v1")
         self.assertIn("children", regions[0]["description"])
 
-    def test_crop_box_uses_normalized_coordinates_without_overflow(self):
+    def test_crop_box_keeps_full_width_and_uses_normalized_vertical_coordinates(self):
         box = visual_region_crop_box(
             _tree_region(), image_width=2000, image_height=1000, padding_ratio=0
         )
@@ -103,7 +103,7 @@ class VisualNoteHelperTests(unittest.TestCase):
             image_height=480,
         )
 
-        self.assertEqual(box, (200, 200, 1800, 800))
+        self.assertEqual(box, (0, 200, 2000, 800))
         self.assertEqual(edge_box, (0, 0, 640, 480))
 
     def test_svg_redraw_is_deterministic_and_escapes_model_text(self):
@@ -277,6 +277,8 @@ class VisualNoteRouteTests(unittest.TestCase):
                 image_dir.mkdir(parents=True)
                 image = Image.new("RGB", (1000, 800), "white")
                 draw = ImageDraw.Draw(image)
+                draw.rectangle((0, 0, 12, 799), fill="#d02030")
+                draw.rectangle((987, 0, 999, 799), fill="#2060d0")
                 draw.rectangle((100, 160, 900, 640), outline="#cc3344", width=4)
                 draw.line((500, 250, 300, 530), fill="#222222", width=6)
                 draw.line((500, 250, 700, 530), fill="#222222", width=6)
@@ -311,7 +313,9 @@ class VisualNoteRouteTests(unittest.TestCase):
                 self.assertEqual(crop_response.status_code, 200)
                 self.assertEqual(crop_response.mimetype, "image/jpeg")
                 with Image.open(io.BytesIO(crop_response.data)) as cropped:
-                    self.assertEqual(cropped.size, (810, 488))
+                    self.assertEqual(cropped.size, (1000, 488))
+                    self.assertGreater(cropped.getpixel((4, 200))[0], 150)
+                    self.assertGreater(cropped.getpixel((995, 200))[2], 150)
                 self.assertEqual(redraw_response.status_code, 200)
                 self.assertEqual(redraw_response.mimetype, "image/svg+xml")
                 self.assertIn("default-src 'none'", redraw_response.headers["Content-Security-Policy"])
@@ -319,6 +323,7 @@ class VisualNoteRouteTests(unittest.TestCase):
                 self.assertEqual(page_response.status_code, 200)
                 self.assertIn('aria-label="筆記圖像與圖表"', page)
                 self.assertIn(f"/admin/study-recall/{session_id}/visual/p1v1/crop", page)
+                self.assertIn("layout=full-width-v1", page)
                 self.assertIn("結構重繪", page)
                 search_payload = search_response.get_json()
                 self.assertEqual(search_response.status_code, 200)
