@@ -45,7 +45,7 @@
         .field { display:grid; gap:7px; min-width:0; }
         .field label { font-size:13px; font-weight:850; }
         .field small { color:var(--muted); line-height:1.5; }
-        select,input[type="number"] { width:100%; min-height:42px; padding:8px 11px; color:var(--ink); border:1px solid #cbd8e6; border-radius:9px; background:#fff; }
+        select,input[type="number"],input[type="text"] { width:100%; min-height:42px; padding:8px 11px; color:var(--ink); border:1px solid #cbd8e6; border-radius:9px; background:#fff; }
         select:focus,input:focus { outline:3px solid rgba(20,99,217,.14); border-color:var(--blue); }
         .rate-control { display:grid; grid-template-columns:minmax(0,1fr) 62px; align-items:center; gap:12px; min-height:42px; }
         .rate-control input { width:100%; accent-color:var(--blue); }
@@ -66,12 +66,29 @@
         .save { min-height:42px; padding:9px 18px; color:#fff; border:0; border-radius:9px; background:var(--blue); font-weight:900; cursor:pointer; }
         .preview { display:flex; flex-wrap:wrap; gap:7px; margin-top:14px; }
         .chip { padding:7px 9px; color:#35506d; border:1px solid #cbd8e6; border-radius:8px; background:#f7faff; font-size:12px; font-weight:800; }
+        .discord-card { margin-top:18px; }
+        .discord-layout { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:18px; align-items:end; }
+        .discord-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:9px; align-items:end; }
+        .discord-form .field { min-width:260px; }
+        .discord-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+        .secondary-action { min-height:42px; padding:8px 13px; color:var(--blue); border:1px solid #bfd3ef; border-radius:9px; background:#fff; font-weight:850; cursor:pointer; }
+        .secondary-action.danger { color:#a33b45; border-color:#e3c2c7; }
+        .discord-status { display:inline-flex; align-items:center; gap:7px; min-height:30px; padding:5px 9px; color:var(--muted); border:1px solid var(--line); border-radius:8px; background:#f7f9fc; font-size:12px; font-weight:850; }
+        .discord-status.ready { color:#17633d; border-color:#b8dfc5; background:#edf9f1; }
+        .discord-token { margin-top:16px; padding:14px; border:1px solid #b8dfc5; border-radius:10px; background:#f2fbf5; }
+        .discord-token strong { display:block; margin-bottom:9px; font-size:13px; }
+        .discord-token-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; }
+        .discord-token code { min-width:0; display:block; padding:10px 11px; overflow:hidden; color:#31506d; border:1px solid #c9d8e6; border-radius:8px; background:#fff; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+        .discord-link { color:var(--blue); font-weight:800; }
         @media (max-width:680px) {
             .nav { align-items:flex-start; flex-direction:column; padding:14px 18px; }
             .links { justify-content:flex-start; }
             main { margin-top:24px; }
             .title-row { align-items:flex-start; flex-direction:column; }
-            .field-grid,.field-grid.two,.switch-grid { grid-template-columns:1fr; }
+            .field-grid,.field-grid.two,.switch-grid,.discord-layout,.discord-form,.discord-token-row { grid-template-columns:1fr; }
+            .discord-form .field { min-width:0; }
+            .discord-actions { justify-content:stretch; }
+            .discord-actions > *,.discord-token-row button { width:100%; }
             .section { padding:20px 17px; }
             .actions { align-items:stretch; flex-direction:column; }
             .save { width:100%; }
@@ -104,6 +121,7 @@
         {% endfor %}
 
         <form class="card" method="post">
+            <input type="hidden" name="action" value="save_player">
             <section class="section">
                 <div class="section-head"><span class="section-icon">▶</span><div><strong>播放速度</strong><span>預設速度與快速加速</span></div></div>
                 <div class="field-grid">
@@ -229,6 +247,37 @@
                 <button class="save" type="submit">儲存播放器設定</button>
             </div>
         </form>
+
+        <section id="discord-presence" class="card discord-card">
+            <div class="section">
+                <div class="section-head"><span class="section-icon">D</span><div><strong>Discord 學習狀態</strong><span>同步目前科目與今日實際學習時間</span></div></div>
+                <div class="discord-layout">
+                    <form class="discord-form" method="post">
+                        <input type="hidden" name="action" value="discord_generate">
+                        <div class="field">
+                            <label for="discord_application_id">Discord Application ID</label>
+                            <input id="discord_application_id" name="discord_application_id" type="text" inputmode="numeric" pattern="[0-9]{17,20}" maxlength="20" value="{{ discord.application_id }}" required>
+                            <small><a class="discord-link" href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal</a> 建立應用程式後貼上 ID。</small>
+                        </div>
+                        <button class="save" type="submit">{% if discord.has_token %}更新連線{% else %}建立連線{% endif %}</button>
+                    </form>
+                    <div class="discord-actions">
+                        <span class="discord-status{% if discord.enabled %} ready{% endif %}">{% if discord.enabled %}已啟用{% else %}未連線{% endif %}</span>
+                        {% if discord.has_token %}<form method="post"><input type="hidden" name="action" value="discord_revoke"><button class="secondary-action danger" type="submit">停用</button></form>{% endif %}
+                    </div>
+                </div>
+                {% if discord_token_once %}
+                <div class="discord-token" data-discord-setup>
+                    <strong>連線已建立</strong>
+                    <div class="discord-token-row">
+                        <code data-discord-token>{{ discord_token_once }}</code>
+                        <button class="secondary-action" type="button" data-copy-discord-token>複製權杖</button>
+                        <button class="save" type="button" data-download-discord-installer>下載 Windows 安裝檔</button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </section>
     </main>
     <script>
         (() => {
@@ -248,6 +297,48 @@
             };
             bindRate('default_playback_rate', 'default-rate-value', 'default-rate-preview', '預設');
             bindRate('hold_space_rate', 'hold-space-rate-value', 'hold-space-rate-preview', '長按');
+
+            const token = {{ discord_token_once|tojson }};
+            const applicationId = {{ discord.application_id|tojson }};
+            const apiUrl = {{ discord_api_url|tojson }};
+            const agentUrl = {{ discord_agent_url|tojson }};
+            const copyButton = document.querySelector('[data-copy-discord-token]');
+            if (copyButton && token) {
+                copyButton.addEventListener('click', async () => {
+                    await navigator.clipboard.writeText(token);
+                    copyButton.textContent = '已複製';
+                });
+            }
+            const installerButton = document.querySelector('[data-download-discord-installer]');
+            if (installerButton && token && applicationId) {
+                installerButton.addEventListener('click', () => {
+                    const lines = [
+                        '@echo off',
+                        'chcp 65001 >nul',
+                        'setlocal',
+                        'where py >nul 2>nul || (echo This computer needs Python 3.& pause & exit /b 1)',
+                        'set "E3_DIR=%LOCALAPPDATA%\\E3DiscordPresence"',
+                        'if not exist "%E3_DIR%" mkdir "%E3_DIR%"',
+                        `powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '${agentUrl}' -OutFile '$env:LOCALAPPDATA\\E3DiscordPresence\\e3_discord_presence.py'"`,
+                        `py -3 "%E3_DIR%\\e3_discord_presence.py" configure --url "${apiUrl}" --client-id "${applicationId}" --token "${token}"`,
+                        'if errorlevel 1 (pause & exit /b 1)',
+                        'py -3 "%E3_DIR%\\e3_discord_presence.py" install-startup',
+                        'if errorlevel 1 (pause & exit /b 1)',
+                        'echo Discord study presence is running.',
+                        'timeout /t 3 >nul',
+                        'endlocal',
+                    ];
+                    const blob = new Blob([lines.join('\r\n')], { type:'application/x-msdos-program' });
+                    const link = document.createElement('a');
+                    const objectUrl = URL.createObjectURL(blob);
+                    link.href = objectUrl;
+                    link.download = 'install-e3-discord-presence.cmd';
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(objectUrl);
+                });
+            }
         })();
     </script>
 </body>

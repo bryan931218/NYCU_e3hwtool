@@ -1,16 +1,114 @@
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+
+from flask import Flask
+from sqlalchemy import text
 
 from e3_tracker.shared.deployment_runtime import (
     DeploymentSafeStorage,
     PLAYER_SETTINGS_DEFAULTS,
+    _register_player_settings_routes,
+    build_discord_presence_payload,
+    format_discord_study_duration,
     normalize_player_settings,
 )
 from e3_tracker.shared.player_control_runtime import install_player_control_dock
 
 
 class PlayerSettingsTests(unittest.TestCase):
+    def test_discord_presence_token_is_hashed_and_can_be_revoked(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "settings.sqlite3"))
+            token = "presence-token-that-is-long-enough-for-testing"
+            saved = storage.save_discord_presence_settings(
+                application_id="123456789012345678",
+                token=token,
+                enabled=True,
+            )
+
+            self.assertTrue(saved["enabled"])
+            self.assertTrue(saved["has_token"])
+            self.assertTrue(storage.verify_discord_presence_token(token))
+            self.assertFalse(storage.verify_discord_presence_token("wrong-token"))
+            with storage._engine.connect() as connection:
+                stored_hash = connection.execute(
+                    text("SELECT token_hash FROM discord_presence_settings WHERE id = 1")
+                ).scalar_one()
+            self.assertNotEqual(stored_hash, token)
+            self.assertEqual(len(stored_hash), 64)
+
+            storage.revoke_discord_presence_token()
+            self.assertFalse(storage.verify_discord_presence_token(token))
+            self.assertFalse(storage.load_discord_presence_settings()["enabled"])
+            storage._engine.dispose()
+
+    def test_discord_presence_uses_existing_daily_study_time(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "settings.sqlite3"))
+            summary = storage.record_study_time_session(
+                session_key="discord-practice-session",
+                kind="practice",
+                label="離散數學題目",
+                elapsed_seconds=3900,
+            )
+            payload = build_discord_presence_payload(
+                storage,
+                now=datetime.now(timezone.utc),
+                public_url="https://example.com/study-progress",
+            )
+
+            self.assertEqual(payload["day"], summary["day"])
+            self.assertTrue(payload["active"])
+            self.assertEqual(payload["today_total_seconds"], 3900)
+            self.assertEqual(payload["today_label"], "1 小時 5 分")
+            self.assertEqual(payload["details"], "正在刷題")
+            self.assertEqual(payload["state"], "今日實際學習 1 小時 5 分")
+            storage._engine.dispose()
+
+    def test_discord_presence_api_requires_the_generated_bearer_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "settings.sqlite3"))
+            agent_path = Path(temp_dir) / "agent.py"
+            agent_path.write_text("print('agent')\n", encoding="utf-8")
+            app = Flask(__name__)
+            app.secret_key = "test-secret"
+            app.add_url_rule("/login", endpoint="login", view_func=lambda: "login")
+            _register_player_settings_routes(
+                app,
+                storage,
+                "{{ discord.application_id }}|{{ discord_token_once }}|{{ discord_api_url }}",
+                agent_path,
+            )
+            token = "known-presence-token-that-is-long-enough"
+            storage.save_discord_presence_settings(
+                application_id="123456789012345678",
+                token=token,
+                enabled=True,
+            )
+            client = app.test_client()
+
+            denied = client.get("/api/discord-presence")
+            allowed = client.get(
+                "/api/discord-presence",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            self.assertEqual(denied.status_code, 401)
+            self.assertEqual(denied.headers["Cache-Control"], "no-store, max-age=0")
+            self.assertEqual(allowed.status_code, 200)
+            self.assertTrue(allowed.get_json()["ok"])
+            with client.get("/downloads/e3-discord-presence.py") as download:
+                self.assertEqual(download.status_code, 200)
+                self.assertIn("attachment", download.headers["Content-Disposition"])
+                download.get_data()
+            storage._engine.dispose()
+
+    def test_study_duration_format_is_compact(self):
+        self.assertEqual(format_discord_study_duration(0), "0 分")
+        self.assertEqual(format_discord_study_duration(59 * 60), "59 分")
+        self.assertEqual(format_discord_study_duration(2 * 3600), "2 小時")
+
     def test_defaults_are_available_before_first_save(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = DeploymentSafeStorage(str(Path(temp_dir) / "settings.sqlite3"))
@@ -198,6 +296,8 @@ class PlayerSettingsTests(unittest.TestCase):
             "show_speed_presets",
         ):
             self.assertIn(f'name="{field_name}"', settings_source)
+        self.assertIn('name="discord_application_id"', settings_source)
+        self.assertIn("data-download-discord-installer", settings_source)
         self.assertIn("settings.seek_back_seconds", shortcut_source)
         self.assertIn("settings.seek_forward_seconds", shortcut_source)
         self.assertIn("settings.pause_on_marker", shortcut_source)

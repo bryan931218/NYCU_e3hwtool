@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import re
+import secrets
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
-from flask import Response, flash, redirect, render_template_string, request, session, url_for
+from flask import Response, flash, redirect, render_template_string, request, send_file, session, url_for
 from sqlalchemy import inspect, text
 
 from .storage import PersistentStorage
@@ -37,6 +41,88 @@ PLAYER_SETTINGS_DEFAULTS: Dict[str, Any] = {
     "show_shortcut_hint": True,
     "hint_duration_ms": 1400,
 }
+DISCORD_PRESENCE_IDLE_SECONDS = 5 * 60 + 30
+DISCORD_APPLICATION_ID_PATTERN = re.compile(r"^[0-9]{17,20}$")
+
+
+def format_discord_study_duration(seconds: Any) -> str:
+    total_minutes = max(0, int(float(seconds or 0) // 60))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours and minutes:
+        return f"{hours} 小時 {minutes} 分"
+    if hours:
+        return f"{hours} 小時"
+    return f"{minutes} 分"
+
+
+def _discord_utc_datetime(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def build_discord_presence_payload(
+    storage: Any,
+    *,
+    now: datetime | None = None,
+    public_url: str = "",
+) -> Dict[str, Any]:
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+    day = storage._study_plan_business_day_from_timestamp(current.isoformat())
+    summary = storage.get_study_time_summary(day=day)
+    sessions = storage.list_study_time_sessions(day=day, limit=100)
+    active_session = None
+    for candidate in sessions:
+        if bool(candidate.get("completed")):
+            continue
+        updated_at = _discord_utc_datetime(candidate.get("updated_at"))
+        if updated_at is None:
+            continue
+        age_seconds = max(0.0, (current - updated_at).total_seconds())
+        if age_seconds <= DISCORD_PRESENCE_IDLE_SECONDS:
+            active_session = candidate
+            break
+
+    total_seconds = max(0.0, float(summary.get("total_seconds") or 0))
+    payload: Dict[str, Any] = {
+        "ok": True,
+        "day": day,
+        "active": bool(active_session),
+        "today_total_seconds": round(total_seconds, 1),
+        "today_video_seconds": round(max(0.0, float(summary.get("video_seconds") or 0)), 1),
+        "today_practice_seconds": round(max(0.0, float(summary.get("practice_seconds") or 0)), 1),
+        "today_label": format_discord_study_duration(total_seconds),
+        "public_url": str(public_url or "").strip(),
+        "checked_at": current.isoformat(),
+    }
+    if active_session:
+        kind = str(active_session.get("kind") or "")
+        subject = str(active_session.get("subject") or "").strip()
+        label = str(active_session.get("label") or "").strip()
+        started_at = _discord_utc_datetime(active_session.get("started_at"))
+        details = f"正在讀{subject}" if kind == "video" and subject else (
+            "正在看課程影片" if kind == "video" else "正在刷題"
+        )
+        payload.update(
+            {
+                "kind": kind,
+                "subject": subject,
+                "label": label,
+                "details": details[:128],
+                "state": f"今日實際學習 {format_discord_study_duration(total_seconds)}"[:128],
+                "session_started_at": int(started_at.timestamp()) if started_at else None,
+                "session_updated_at": str(active_session.get("updated_at") or ""),
+            }
+        )
+    return payload
 
 
 def _number(value: Any, default: float) -> float:
@@ -150,6 +236,7 @@ class DeploymentSafeStorage(PersistentStorage):
     def __init__(self, database_url: str) -> None:
         super().__init__(database_url)
         self._ensure_player_settings_table()
+        self._ensure_discord_presence_settings_table()
 
     def _ensure_player_settings_table(self) -> None:
         with self._lock, self._engine.begin() as conn:
@@ -200,6 +287,113 @@ class DeploymentSafeStorage(PersistentStorage):
                         f"ADD COLUMN {column_name} {definition}"
                     )
                 )
+
+    def _ensure_discord_presence_settings_table(self) -> None:
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS discord_presence_settings ("
+                    "id INTEGER PRIMARY KEY, "
+                    "application_id VARCHAR(32) NOT NULL, "
+                    "token_hash VARCHAR(64) NOT NULL, "
+                    "enabled INTEGER NOT NULL DEFAULT 0, "
+                    "updated_at VARCHAR(64) NOT NULL"
+                    ")"
+                )
+            )
+
+    def load_discord_presence_settings(self) -> Dict[str, Any]:
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT application_id, token_hash, enabled, updated_at "
+                    "FROM discord_presence_settings WHERE id = 1"
+                )
+            ).mappings().first()
+        if not row:
+            return {
+                "application_id": "",
+                "has_token": False,
+                "enabled": False,
+                "updated_at": "",
+            }
+        return {
+            "application_id": str(row.get("application_id") or ""),
+            "has_token": bool(str(row.get("token_hash") or "")),
+            "enabled": bool(row.get("enabled")),
+            "updated_at": str(row.get("updated_at") or ""),
+        }
+
+    def save_discord_presence_settings(
+        self,
+        *,
+        application_id: str,
+        token: str | None = None,
+        enabled: bool,
+    ) -> Dict[str, Any]:
+        normalized_application_id = str(application_id or "").strip()
+        token_hash = hashlib.sha256(str(token).encode("utf-8")).hexdigest() if token else None
+        now = datetime.utcnow().isoformat()
+        with self._lock, self._engine.begin() as conn:
+            existing = conn.execute(
+                text(
+                    "SELECT token_hash FROM discord_presence_settings WHERE id = 1"
+                )
+            ).mappings().first()
+            resolved_hash = token_hash if token_hash is not None else str((existing or {}).get("token_hash") or "")
+            params = {
+                "application_id": normalized_application_id,
+                "token_hash": resolved_hash,
+                "enabled": 1 if enabled and resolved_hash and normalized_application_id else 0,
+                "updated_at": now,
+            }
+            if existing:
+                conn.execute(
+                    text(
+                        "UPDATE discord_presence_settings SET "
+                        "application_id = :application_id, token_hash = :token_hash, "
+                        "enabled = :enabled, updated_at = :updated_at WHERE id = 1"
+                    ),
+                    params,
+                )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO discord_presence_settings "
+                        "(id, application_id, token_hash, enabled, updated_at) VALUES "
+                        "(1, :application_id, :token_hash, :enabled, :updated_at)"
+                    ),
+                    params,
+                )
+        return self.load_discord_presence_settings()
+
+    def revoke_discord_presence_token(self) -> None:
+        current = self.load_discord_presence_settings()
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM discord_presence_settings WHERE id = 1"
+                )
+            )
+        if current.get("application_id"):
+            self.save_discord_presence_settings(
+                application_id=str(current["application_id"]),
+                enabled=False,
+            )
+
+    def verify_discord_presence_token(self, token: str) -> bool:
+        candidate = str(token or "").strip()
+        if not candidate:
+            return False
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT token_hash, enabled FROM discord_presence_settings WHERE id = 1"
+                )
+            ).mappings().first()
+        expected = str((row or {}).get("token_hash") or "")
+        actual = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+        return bool(row and row.get("enabled") and expected and hmac.compare_digest(expected, actual))
 
     def load_study_player_settings(self) -> Dict[str, Any]:
         with self._lock, self._engine.connect() as conn:
@@ -327,6 +521,7 @@ def _register_player_settings_routes(
     app: Any,
     storage: DeploymentSafeStorage,
     template: str,
+    agent_path: Path,
 ) -> None:
     if "admin_study_player_settings" in app.view_functions:
         return
@@ -343,7 +538,38 @@ def _register_player_settings_routes(
         denied = require_admin()
         if denied is not None:
             return denied
+        base_url = str(os.getenv("E3_APP_HOME_URL") or request.url_root).rstrip("/")
+
+        def render_settings(*, revealed_token: str = ""):
+            return render_template_string(
+                template,
+                settings=storage.load_study_player_settings(),
+                discord=storage.load_discord_presence_settings(),
+                discord_token_once=revealed_token,
+                discord_api_url=f"{base_url}/api/discord-presence",
+                discord_agent_url=f"{base_url}/downloads/e3-discord-presence.py",
+                username=session.get("username") or "管理員",
+            )
+
         if request.method == "POST":
+            action = str(request.form.get("action") or "save_player").strip()
+            if action == "discord_generate":
+                application_id = str(request.form.get("discord_application_id") or "").strip()
+                if not DISCORD_APPLICATION_ID_PATTERN.fullmatch(application_id):
+                    flash("Discord Application ID 格式不正確。", "error")
+                    return redirect(url_for("admin_study_player_settings", _anchor="discord-presence"))
+                token = secrets.token_urlsafe(36)
+                storage.save_discord_presence_settings(
+                    application_id=application_id,
+                    token=token,
+                    enabled=True,
+                )
+                flash("Discord 連線權杖已更新，請下載新的 Windows 安裝檔。", "success")
+                return render_settings(revealed_token=token)
+            if action == "discord_revoke":
+                storage.revoke_discord_presence_token()
+                flash("Discord 學習狀態連線已停用。", "success")
+                return redirect(url_for("admin_study_player_settings", _anchor="discord-presence"))
             saved = storage.save_study_player_settings(
                 {
                     "default_playback_rate": request.form.get("default_playback_rate"),
@@ -370,11 +596,7 @@ def _register_player_settings_routes(
                 "success",
             )
             return redirect(url_for("admin_study_player_settings"))
-        return render_template_string(
-            template,
-            settings=storage.load_study_player_settings(),
-            username=session.get("username") or "管理員",
-        )
+        return render_settings()
 
     def admin_study_player_settings_json():
         denied = require_admin()
@@ -384,6 +606,40 @@ def _register_player_settings_routes(
             "ok": True,
             "settings": storage.load_study_player_settings(),
         }
+
+    def discord_presence_api():
+        authorization = str(request.headers.get("Authorization") or "")
+        scheme, _separator, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not storage.verify_discord_presence_token(token):
+            return (
+                {"ok": False, "error": "invalid_presence_token"},
+                401,
+                {
+                    "Cache-Control": "no-store, max-age=0",
+                    "WWW-Authenticate": 'Bearer realm="E3 Discord Presence"',
+                },
+            )
+        base_url = str(os.getenv("E3_APP_HOME_URL") or request.url_root).rstrip("/")
+        return (
+            build_discord_presence_payload(
+                storage,
+                public_url=f"{base_url}/study-progress",
+            ),
+            200,
+            {"Cache-Control": "no-store, max-age=0"},
+        )
+
+    def discord_presence_agent_download():
+        if not agent_path.is_file():
+            return Response("Not Found", status=404, mimetype="text/plain")
+        return send_file(
+            agent_path,
+            mimetype="text/x-python",
+            as_attachment=True,
+            download_name="e3_discord_presence.py",
+            conditional=True,
+            max_age=3600,
+        )
 
     app.add_url_rule(
         "/admin/study-player-settings",
@@ -395,6 +651,18 @@ def _register_player_settings_routes(
         "/admin/study-player-settings.json",
         endpoint="admin_study_player_settings_json",
         view_func=admin_study_player_settings_json,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        "/api/discord-presence",
+        endpoint="discord_presence_api",
+        view_func=discord_presence_api,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        "/downloads/e3-discord-presence.py",
+        endpoint="discord_presence_agent_download",
+        view_func=discord_presence_agent_download,
         methods=["GET"],
     )
 
@@ -412,6 +680,7 @@ def install_deployment_runtime(web_module: Any) -> None:
     settings_template_path = (
         root_dir / "frontend" / "templates" / "admin_study_player_settings.html"
     )
+    discord_agent_path = root_dir / "backend" / "tools" / "e3_discord_presence.py"
     settings_template = (
         settings_template_path.read_text(encoding="utf-8")
         if settings_template_path.exists()
@@ -429,7 +698,12 @@ def install_deployment_runtime(web_module: Any) -> None:
         app = original_create_app(*args, **kwargs)
         storage = app.extensions.get("e3_storage")
         if isinstance(storage, DeploymentSafeStorage):
-            _register_player_settings_routes(app, storage, settings_template)
+            _register_player_settings_routes(
+                app,
+                storage,
+                settings_template,
+                discord_agent_path,
+            )
         return app
 
     web_module.create_app = create_app_with_player_settings
