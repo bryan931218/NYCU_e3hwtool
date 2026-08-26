@@ -113,8 +113,16 @@ def build_activity(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if started_at > 0:
         activity["timestamps"] = {"start": started_at}
     public_url = str(payload.get("public_url") or "").strip()
+    cover_image_url = str(payload.get("cover_image_url") or "").strip()
     if public_url.startswith("https://"):
         activity["buttons"] = [{"label": "查看學習進度", "url": public_url}]
+    if cover_image_url.startswith("https://"):
+        activity["assets"] = {
+            "large_image": cover_image_url,
+            "large_text": "E3 研究所備考中心",
+        }
+        if public_url.startswith("https://"):
+            activity["assets"]["large_url"] = public_url
     return activity
 
 

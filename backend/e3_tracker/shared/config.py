@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, Optional
 
 
@@ -30,6 +30,8 @@ def _railway_volume_path(*parts: str) -> str:
     mount_path = str(os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").strip()
     if not mount_path:
         return ""
+    if mount_path.startswith("/"):
+        return str(PurePosixPath(mount_path).joinpath(*parts))
     return str(Path(mount_path).expanduser().joinpath(*parts))
 
 

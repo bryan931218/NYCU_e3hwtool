@@ -5,9 +5,6 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from flask import session
-from sqlalchemy import text
-
-
 _MAX_CALENDAR_RANGE_DAYS = 550
 
 
@@ -18,34 +15,10 @@ def _study_calendar_time_rows(
     end_day: str,
 ) -> List[Dict[str, Any]]:
     """Return total recorded learning time grouped by learning day."""
-
-    statement = text(
-        "SELECT day, "
-        "SUM(elapsed_seconds) AS total_seconds, "
-        "COUNT(*) AS session_count "
-        "FROM study_time_sessions "
-        "WHERE day >= :start_day AND day <= :end_day "
-        "GROUP BY day ORDER BY day"
+    return storage.list_study_time_daily_totals(
+        start_day=start_day,
+        end_day=end_day,
     )
-    with storage._lock, storage._engine.connect() as conn:
-        rows = conn.execute(
-            statement,
-            {"start_day": start_day, "end_day": end_day},
-        ).mappings().all()
-
-    result: List[Dict[str, Any]] = []
-    for row in rows:
-        result.append(
-            {
-                "date": str(row.get("day") or ""),
-                "total_seconds": round(
-                    max(0.0, float(row.get("total_seconds") or 0)),
-                    1,
-                ),
-                "session_count": max(0, int(row.get("session_count") or 0)),
-            }
-        )
-    return result
 
 
 def _register_study_calendar_routes(app: Any, storage: Any) -> None:

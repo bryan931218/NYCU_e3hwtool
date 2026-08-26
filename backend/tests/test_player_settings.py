@@ -76,6 +76,7 @@ class PlayerSettingsTests(unittest.TestCase):
                 storage,
                 now=datetime.now(timezone.utc),
                 public_url="https://example.com/study-progress",
+                cover_image_url="https://example.com/e3-study-cover.png",
             )
 
             self.assertEqual(payload["day"], summary["day"])
@@ -85,6 +86,10 @@ class PlayerSettingsTests(unittest.TestCase):
             self.assertEqual(payload["today_label"], "1 小時 5 分")
             self.assertEqual(payload["details"], "正在刷題")
             self.assertEqual(payload["state"], "今日實際學習 1 小時 5 分")
+            self.assertEqual(
+                payload["cover_image_url"],
+                "https://example.com/e3-study-cover.png",
+            )
             storage._engine.dispose()
 
     def test_discord_presence_keeps_todays_result_visible_after_studying(self):

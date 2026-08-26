@@ -3573,8 +3573,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             day: sum(max(0.0, float(item.get("delta_seconds") or 0)) for item in events)
             for day, events in activity_events_by_day.items()
         }
+        study_time_days = storage.list_study_time_daily_totals(
+            start_day=STUDY_PLAN_START,
+            end_day=today.isoformat(),
+        )
+        learning_time_by_day = {
+            str(item.get("date") or ""): item
+            for item in study_time_days
+            if str(item.get("date") or "")
+        }
         calendar_days: List[Dict[str, Any]] = []
-        for activity_day, events in sorted(activity_events_by_day.items()):
+        calendar_day_keys = sorted(set(activity_events_by_day) | set(learning_time_by_day))
+        for activity_day in calendar_day_keys:
+            events = activity_events_by_day.get(activity_day, [])
             calendar_activities: List[Dict[str, Any]] = []
             for item in events:
                 delta_seconds = float(item.get("delta_seconds") or 0)
@@ -3598,11 +3609,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     }
                 )
             calendar_seconds = calendar_seconds_by_day.get(activity_day, 0.0)
-            if calendar_seconds > 0 or calendar_activities:
+            learning_time = learning_time_by_day.get(activity_day, {})
+            learning_seconds = max(0.0, float(learning_time.get("total_seconds") or 0))
+            if calendar_seconds > 0 or learning_seconds > 0 or calendar_activities:
                 calendar_days.append(
                     {
                         "date": activity_day,
                         "seconds": int(round(calendar_seconds)),
+                        "learning_seconds": int(round(learning_seconds)),
+                        "learning_session_count": max(
+                            0,
+                            int(learning_time.get("session_count") or 0),
+                        ),
                         "activities": calendar_activities,
                     }
                 )

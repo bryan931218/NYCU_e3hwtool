@@ -66,6 +66,25 @@ class StudyTimeTests(unittest.TestCase):
         self.assertTrue(self.storage.delete_study_time_session("practice_session_history"))
         self.assertEqual(self.storage.list_study_time_sessions(day=summary["day"]), [])
 
+    def test_daily_totals_include_all_session_kinds(self):
+        video = self.storage.list_study_plan_videos_with_records()[0]
+        day = self.storage.record_study_time_session(
+            session_key="calendar_video",
+            kind="video",
+            video_id=int(video["id"]),
+            elapsed_seconds=1500,
+        )["day"]
+        self.storage.record_study_time_session(
+            session_key="calendar_practice",
+            kind="practice",
+            elapsed_seconds=900,
+        )
+
+        self.assertEqual(
+            self.storage.list_study_time_daily_totals(start_day=day, end_day=day),
+            [{"date": day, "total_seconds": 2400.0, "session_count": 2}],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

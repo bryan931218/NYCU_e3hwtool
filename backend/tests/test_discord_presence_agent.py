@@ -41,6 +41,7 @@ class DiscordPresenceAgentTests(unittest.TestCase):
                 "state": "今日實際學習 2 小時 15 分",
                 "session_started_at": 1787788800,
                 "public_url": "https://www.e3hwtool.space/study-progress",
+                "cover_image_url": "https://www.e3hwtool.space/static/discord/e3-study-cover.png",
             }
         )
 
@@ -48,6 +49,14 @@ class DiscordPresenceAgentTests(unittest.TestCase):
         self.assertEqual(activity["state"], "今日實際學習 2 小時 15 分")
         self.assertEqual(activity["timestamps"], {"start": 1787788800})
         self.assertEqual(activity["buttons"][0]["label"], "查看學習進度")
+        self.assertEqual(
+            activity["assets"],
+            {
+                "large_image": "https://www.e3hwtool.space/static/discord/e3-study-cover.png",
+                "large_text": "E3 研究所備考中心",
+                "large_url": "https://www.e3hwtool.space/study-progress",
+            },
+        )
 
     def test_discord_ipc_frame_uses_little_endian_header_and_utf8_json(self):
         frame = DiscordIpc.encode_frame(DiscordIpc.FRAME, {"state": "正在讀書"})

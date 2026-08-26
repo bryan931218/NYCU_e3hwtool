@@ -39,8 +39,9 @@
 </style>
 <script>
 (() => {
-    if (window.__e3StudyRecallSubjectLibraryInstalled) return;
-    window.__e3StudyRecallSubjectLibraryInstalled = true;
+    const installKey = '__e3StudyRecallSubjectLibraryInstalled';
+    if (window[installKey]) return;
+    window[installKey] = true;
 
     const library = document.querySelector('.panel.history [data-recall-fold="library"]');
     if (!library) return;
@@ -96,7 +97,7 @@
 
     const shell = document.createElement('div');
     shell.className = 'subject-library-shell';
-    shell.dataset.recallSubjectLibrary = '';
+    shell.setAttribute('data-recall-subject-library', '');
     shell.innerHTML = [
         '<div class="subject-library-toolbar">',
         '  <div class="subject-library-search">',

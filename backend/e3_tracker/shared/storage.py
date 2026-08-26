@@ -1629,6 +1629,34 @@ class PersistentStorage:
             "session_count": len(rows),
         }
 
+    def list_study_time_daily_totals(
+        self,
+        *,
+        start_day: str,
+        end_day: str,
+    ) -> List[Dict[str, Any]]:
+        stmt = (
+            select(
+                study_time_sessions_table.c.day,
+                func.sum(study_time_sessions_table.c.elapsed_seconds).label("total_seconds"),
+                func.count().label("session_count"),
+            )
+            .where(study_time_sessions_table.c.day >= str(start_day or ""))
+            .where(study_time_sessions_table.c.day <= str(end_day or ""))
+            .group_by(study_time_sessions_table.c.day)
+            .order_by(study_time_sessions_table.c.day)
+        )
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+        return [
+            {
+                "date": str(row.day or ""),
+                "total_seconds": max(0.0, float(row.total_seconds or 0)),
+                "session_count": max(0, int(row.session_count or 0)),
+            }
+            for row in rows
+        ]
+
     def list_study_time_sessions(self, *, day: str, limit: int = 20) -> List[Dict[str, Any]]:
         stmt = (
             select(

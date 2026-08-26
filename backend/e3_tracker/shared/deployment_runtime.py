@@ -97,6 +97,7 @@ def build_discord_presence_payload(
     *,
     now: datetime | None = None,
     public_url: str = "",
+    cover_image_url: str = "",
 ) -> Dict[str, Any]:
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
@@ -129,6 +130,7 @@ def build_discord_presence_payload(
         "today_practice_seconds": round(max(0.0, float(summary.get("practice_seconds") or 0)), 1),
         "today_label": format_discord_study_duration(total_seconds),
         "public_url": str(public_url or "").strip(),
+        "cover_image_url": str(cover_image_url or "").strip(),
         "checked_at": current.isoformat(),
     }
     if active_session:
@@ -686,6 +688,7 @@ def _register_player_settings_routes(
             build_discord_presence_payload(
                 storage,
                 public_url=f"{base_url}/study-progress",
+                cover_image_url=f"{base_url}/static/discord/e3-study-cover.png",
             ),
             200,
             {"Cache-Control": "no-store, max-age=0"},

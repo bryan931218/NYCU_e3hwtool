@@ -122,6 +122,11 @@
         .calendar-dialog-close { display: grid; width: 36px; height: 36px; padding: 0; place-items: center; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: #fff; font-size: 23px; line-height: 1; cursor: pointer; }
         .calendar-dialog-close:hover { color: var(--blue); border-color: #a9c8ef; background: var(--blue-soft); }
         .calendar-dialog-body { max-height: calc(100vh - 190px); padding: 16px 22px 22px; overflow-y: auto; }
+        .calendar-time-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+        .calendar-time-card { min-width: 0; padding: 15px 16px; border: 1px solid #c9ddf7; border-radius: 11px; background: #f1f7ff; }
+        .calendar-time-card.is-learning { border-color: #c6e9d8; background: #f0fbf5; }
+        .calendar-time-card span { display: block; color: var(--muted); font-size: 11px; font-weight: 850; }
+        .calendar-time-card strong { display: block; margin-top: 7px; overflow: hidden; color: var(--ink); font-size: 19px; font-weight: 950; text-overflow: ellipsis; white-space: nowrap; }
         .calendar-activity-list { display: grid; gap: 9px; }
         .calendar-activity-item { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; gap: 11px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: #fbfdff; }
         .calendar-activity-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 9px; color: var(--blue); background: var(--blue-soft); }
@@ -320,6 +325,7 @@
             .calendar-modal { padding: 10px; place-items: end center; }
             .calendar-dialog { width: 100%; max-height: calc(100vh - 20px); border-radius: 18px 18px 12px 12px; }
             .calendar-dialog-head { padding: 18px 16px 14px; }.calendar-dialog-body { max-height: calc(100vh - 155px); padding: 13px 16px 18px; }
+            .calendar-time-summary { gap: 7px; }.calendar-time-card { padding: 12px 10px; }.calendar-time-card strong { font-size: 15px; }
             .calendar-activity-item { grid-template-columns: 34px minmax(0,1fr); }.calendar-activity-icon { width: 34px; height: 34px; }.calendar-activity-time { grid-column: 2; }
             .pace-panel { padding: 18px 14px; border-radius: 12px; }
             .pace-message { max-width: 30ch; }
@@ -734,7 +740,9 @@
                 return `${hours >= 10 ? Math.round(hours) : hours.toFixed(1).replace('.0', '')}h`;
             };
             const activityDuration = (seconds) => {
-                const minutes = Math.max(1, Math.round((Number(seconds) || 0) / 60));
+                const value = Math.max(0, Number(seconds) || 0);
+                if (value <= 0) return '0 分鐘';
+                const minutes = Math.max(1, Math.round(value / 60));
                 const hours = Math.floor(minutes / 60);
                 const remainder = minutes % 60;
                 if (!hours) return `${minutes} 分鐘`;
@@ -759,11 +767,21 @@
             };
             const openModal = (key) => {
                 if (!modal || !modalTitle || !modalSummary || !modalList) return;
-                const detail = detailsByDay.get(key) || { seconds: 0, activities: [] };
+                const detail = detailsByDay.get(key) || { seconds: 0, learning_seconds: 0, activities: [] };
                 const activities = Array.isArray(detail.activities) ? detail.activities : [];
+                const videoSeconds = Number(detail.seconds) || 0;
+                const learningSeconds = Number(detail.learning_seconds) || 0;
                 modalTitle.textContent = spokenDate(key);
-                modalSummary.textContent = `${fullDuration(Number(detail.seconds) || 0)}・${activities.filter((item) => !item.is_correction).length} 支影片有進度`;
+                modalSummary.textContent = `${activities.filter((item) => !item.is_correction).length} 支影片有進度`;
                 modalList.replaceChildren();
+                const timeSummary = document.createElement('section');
+                timeSummary.className = 'calendar-time-summary';
+                timeSummary.setAttribute('aria-label', '當日影片與學習時間統計');
+                timeSummary.innerHTML = [
+                    `<div class="calendar-time-card"><span>影片觀看時間</span><strong>${activityDuration(videoSeconds)}</strong></div>`,
+                    `<div class="calendar-time-card is-learning"><span>實際學習時間</span><strong>${activityDuration(learningSeconds)}</strong></div>`,
+                ].join('');
+                modalList.appendChild(timeSummary);
                 if (!activities.length) {
                     const empty = document.createElement('div');
                     empty.className = 'calendar-activity-empty';

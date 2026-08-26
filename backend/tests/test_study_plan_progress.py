@@ -21,6 +21,7 @@ from e3_tracker.api.web import (
     _study_plan_task_video_queue,
     _study_plan_credited_video_seconds,
     _study_plan_video_completion,
+    _study_plan_business_date,
 )
 from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
@@ -965,8 +966,9 @@ class StudyPlanProgressTests(unittest.TestCase):
             )
             self.assertIsNotNone(home_calendar_match)
             home_calendar = json.loads(home_calendar_match.group(1))
+            learning_day = _study_plan_business_date().isoformat()
             today_entry = next(
-                item for item in home_calendar["days"] if item["date"] == date.today().isoformat()
+                item for item in home_calendar["days"] if item["date"] == learning_day
             )
             self.assertEqual(today_entry["activities"][0]["title"], first_video["title"])
 
@@ -978,6 +980,9 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("data-public-study-calendar", public_html)
             self.assertIn("data-public-calendar-modal", public_html)
             self.assertIn("data-public-calendar-average", public_html)
+            self.assertIn("影片觀看時間", public_html)
+            self.assertIn("實際學習時間", public_html)
+            self.assertIn("learning_seconds", public_html)
             self.assertIn(first_video["title"], public_html)
             self.assertNotIn("public-calendar-legend-gradient", public_html)
             self.assertIn("applyHeatColor", public_html)
@@ -990,7 +995,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIsNotNone(public_calendar_match)
             public_calendar = json.loads(public_calendar_match.group(1))
             public_today_entry = next(
-                item for item in public_calendar["days"] if item["date"] == date.today().isoformat()
+                item for item in public_calendar["days"] if item["date"] == learning_day
             )
             self.assertEqual(public_today_entry["activities"][0]["title"], first_video["title"])
             storage._engine.dispose()
