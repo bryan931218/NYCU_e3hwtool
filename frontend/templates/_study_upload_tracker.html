@@ -82,6 +82,8 @@
     const root = document.querySelector('[data-study-upload-tracker]');
     if (!root) return;
     const storageKey = 'e3StudyUploadJobId';
+    const dismissedKey = 'e3StudyUploadDismissedJobId';
+    const currentJobUrl = '/admin/study-recall/upload-jobs/current';
     const title = root.querySelector('[data-study-upload-title]');
     const message = root.querySelector('[data-study-upload-message]');
     const bar = root.querySelector('[data-study-upload-bar]');
@@ -90,9 +92,14 @@
     const cancel = root.querySelector('[data-study-upload-cancel]');
     const close = root.querySelector('[data-study-upload-close]');
     let pollTimer = null;
+    let discoveryTimer = null;
     let trackedJobId = null;
 
     const clearTimer = () => { if (pollTimer) window.clearTimeout(pollTimer); pollTimer = null; };
+    const scheduleDiscovery = () => {
+        if (discoveryTimer) window.clearTimeout(discoveryTimer);
+        discoveryTimer = window.setTimeout(discoverCurrentJob, 12000);
+    };
     const render = (job) => {
         const value = Math.max(0, Math.min(Number(job.progress) || 0, 100));
         root.hidden = false;
@@ -117,17 +124,49 @@
             if (!response.ok || !job.ok) throw new Error(job.error || '無法讀取筆記處理進度。');
             render(job);
             if (job.status === 'running') pollTimer = window.setTimeout(() => poll(jobId), 1200);
+            else scheduleDiscovery();
         } catch (error) {
-            render({ status:'error', progress:Number(bar.value) || 0, message:error.message || '無法讀取筆記處理進度。' });
+            trackedJobId = null;
+            localStorage.removeItem(storageKey);
+            scheduleDiscovery();
         }
     };
     const track = (jobId) => {
         if (!jobId) return;
         trackedJobId = jobId;
         localStorage.setItem(storageKey, jobId);
+        localStorage.removeItem(dismissedKey);
         render({ status:'running', progress:10, message:'照片已上傳，背景工作即將開始。' });
         poll(jobId);
     };
+    async function discoverCurrentJob() {
+        if (discoveryTimer) window.clearTimeout(discoveryTimer);
+        discoveryTimer = null;
+        if (trackedJobId) return;
+        try {
+            const response = await fetch(currentJobUrl, {
+                credentials:'same-origin',
+                cache:'no-store',
+                headers:{ Accept:'application/json' },
+            });
+            const job = await response.json().catch(() => ({}));
+            if (!response.ok || !job.ok || !job.job_id) {
+                scheduleDiscovery();
+                return;
+            }
+            if (localStorage.getItem(dismissedKey) === job.job_id) {
+                scheduleDiscovery();
+                return;
+            }
+            trackedJobId = job.job_id;
+            localStorage.setItem(storageKey, job.job_id);
+            render(job);
+            if (job.status === 'running') poll(job.job_id);
+            else scheduleDiscovery();
+        } catch (error) {
+            scheduleDiscovery();
+        }
+    }
     cancel.addEventListener('click', async () => {
         const jobId = trackedJobId;
         if (!jobId || cancel.disabled) return;
@@ -148,11 +187,30 @@
             pollTimer = window.setTimeout(() => poll(jobId), 1500);
         }
     });
-    close.addEventListener('click', () => { clearTimer(); trackedJobId = null; localStorage.removeItem(storageKey); root.hidden = true; });
-    open.addEventListener('click', () => { clearTimer(); trackedJobId = null; localStorage.removeItem(storageKey); });
+    close.addEventListener('click', () => {
+        clearTimer();
+        if (trackedJobId) localStorage.setItem(dismissedKey, trackedJobId);
+        trackedJobId = null;
+        localStorage.removeItem(storageKey);
+        root.hidden = true;
+        scheduleDiscovery();
+    });
+    open.addEventListener('click', () => {
+        clearTimer();
+        if (trackedJobId) localStorage.setItem(dismissedKey, trackedJobId);
+        trackedJobId = null;
+        localStorage.removeItem(storageKey);
+    });
     window.E3StudyUploadTracker = { track };
     const activeJob = localStorage.getItem(storageKey);
     if (activeJob) { trackedJobId = activeJob; poll(activeJob); }
+    else discoverCurrentJob();
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && !trackedJobId) discoverCurrentJob();
+    });
+    window.addEventListener('focus', () => {
+        if (!trackedJobId) discoverCurrentJob();
+    });
 })();
 </script>
 

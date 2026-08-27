@@ -2,6 +2,7 @@ import unittest
 
 from e3_tracker.api.web import (
     _offset_study_note_batch_analysis,
+    _study_upload_parallel_progress,
     _study_upload_time_weighted_progress,
 )
 
@@ -39,6 +40,19 @@ class StudyUploadProgressTests(unittest.TestCase):
         self.assertEqual(values, sorted(values))
         self.assertGreaterEqual(values[0], 10)
         self.assertLessEqual(values[-1], 94)
+
+    def test_parallel_progress_uses_the_average_of_all_batches(self):
+        self.assertEqual(_study_upload_parallel_progress([20, 20]), 10)
+        self.assertEqual(_study_upload_parallel_progress([100, 20]), 52)
+        self.assertEqual(_study_upload_parallel_progress([100, 100]), 94)
+
+    def test_parallel_progress_does_not_jump_when_one_batch_reports_early(self):
+        values = [
+            _study_upload_parallel_progress(progress)
+            for progress in ([20, 20, 20], [80, 20, 20], [80, 60, 20], [100, 100, 100])
+        ]
+        self.assertEqual(values, sorted(values))
+        self.assertLess(values[1], 40)
 
     def test_batch_offset_updates_source_reference_and_bbox_page(self):
         analysis = {

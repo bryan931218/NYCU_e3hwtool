@@ -192,6 +192,18 @@ def _study_upload_time_weighted_progress(
     return STUDY_UPLOAD_ANALYSIS_START_PROGRESS + round(overall_ratio * progress_span)
 
 
+def _study_upload_parallel_progress(batch_progress: Iterable[int]) -> int:
+    """Combine independently running batch progress without overstating completion."""
+    values = list(batch_progress)
+    if not values:
+        return STUDY_UPLOAD_ANALYSIS_START_PROGRESS
+    ratios = [min(1.0, max(0.0, (int(value) - 20) / 80)) for value in values]
+    progress_span = STUDY_UPLOAD_BATCHES_END_PROGRESS - STUDY_UPLOAD_ANALYSIS_START_PROGRESS
+    return STUDY_UPLOAD_ANALYSIS_START_PROGRESS + round(
+        (sum(ratios) / len(ratios)) * progress_span
+    )
+
+
 def _offset_study_note_batch_analysis(analysis: Dict[str, Any], image_offset: int) -> None:
     if image_offset <= 0:
         return
@@ -2096,6 +2108,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     refresh_jobs: Dict[str, Dict[str, Any]] = {}
     study_upload_jobs_lock = threading.Lock()
     study_upload_jobs: Dict[str, Dict[str, Any]] = {}
+    study_upload_staging_lock = threading.Lock()
     study_source_jobs_lock = threading.Lock()
     study_source_jobs: Dict[str, Dict[str, Any]] = {}
     study_upload_context = threading.local()
@@ -2179,6 +2192,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         time.sleep(max(0.0, seconds))
 
     def _set_study_upload_job(job_id: str, **changes: Any) -> None:
+        persisted_job: Optional[Dict[str, Any]] = None
         with study_upload_jobs_lock:
             job = study_upload_jobs.get(job_id)
             if job is None:
@@ -2195,6 +2209,25 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     changes.pop("progress", None)
             job.update(changes)
             job["updated_at"] = time.time()
+            persisted_job = dict(job)
+        if persisted_job is not None:
+            try:
+                storage.save_study_note_upload_job(
+                    job_id=job_id,
+                    username=str(persisted_job.get("username") or ""),
+                    status=str(persisted_job.get("status") or "running"),
+                    progress=int(persisted_job.get("progress") or 0),
+                    message=str(persisted_job.get("message") or "正在處理筆記。"),
+                    session_id=(
+                        int(persisted_job["session_id"])
+                        if persisted_job.get("session_id") is not None
+                        else None
+                    ),
+                    created_at=float(persisted_job.get("created_at") or time.time()),
+                    updated_at=float(persisted_job.get("updated_at") or time.time()),
+                )
+            except Exception:
+                app.logger.exception("Unable to persist study-note upload job %s", job_id)
 
     def _set_study_source_job(job_id: str, **changes: Any) -> None:
         with study_source_jobs_lock:
@@ -2213,6 +2246,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             for job_id, job in study_upload_jobs.items():
                 if job.get("username") == username and job.get("status") == "running":
                     return job_id
+        persisted_job = storage.get_current_study_note_upload_job(
+            username,
+            terminal_window_seconds=0,
+        )
+        if persisted_job and persisted_job.get("status") == "running":
+            return str(persisted_job.get("job_id") or "") or None
         return None
 
     def _refresh_job_state(username: str) -> Optional[Dict[str, Any]]:
@@ -12139,35 +12178,76 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 prepared.append((filename, image_bytes, mime_type))
             return prepared
 
-        batch_count = math.ceil(len(images) / STUDY_NOTE_AI_BATCH_SIZE)
-        analyses: List[Dict[str, Any]] = []
-        for batch_index, batch_start in enumerate(range(0, len(images), STUDY_NOTE_AI_BATCH_SIZE)):
-            _raise_if_study_upload_cancelled()
-            batch_images = images[batch_start : batch_start + STUDY_NOTE_AI_BATCH_SIZE]
+        batch_specs = [
+            (batch_index, batch_start, images[batch_start : batch_start + STUDY_NOTE_AI_BATCH_SIZE])
+            for batch_index, batch_start in enumerate(
+                range(0, len(images), STUDY_NOTE_AI_BATCH_SIZE)
+            )
+        ]
+        batch_count = len(batch_specs)
+        analyses_by_index: Dict[int, Dict[str, Any]] = {}
+        progress_by_batch = [20] * batch_count
+        progress_lock = threading.Lock()
+        parent_cancel_event = getattr(study_upload_context, "cancel_event", None)
+        parent_job_id = getattr(study_upload_context, "job_id", None)
 
-            def report_batch_progress(progress: int, message: str, *, current_batch: int = batch_index) -> None:
+        def analyze_batch(
+            batch_index: int,
+            batch_start: int,
+            batch_images: List[Tuple[str, Any, str]],
+        ) -> Tuple[int, Optional[Dict[str, Any]], Optional[str]]:
+            if isinstance(parent_cancel_event, threading.Event):
+                study_upload_context.cancel_event = parent_cancel_event
+            if parent_job_id:
+                study_upload_context.job_id = parent_job_id
+
+            def report_batch_progress(progress: int, message: str) -> None:
                 if not progress_callback:
                     return
-                combined_progress = _study_upload_time_weighted_progress(
-                    progress,
-                    batch_index=current_batch,
-                    batch_count=batch_count,
+                with progress_lock:
+                    progress_by_batch[batch_index] = max(
+                        progress_by_batch[batch_index],
+                        int(progress),
+                    )
+                    combined_progress = _study_upload_parallel_progress(
+                        progress_by_batch
+                    )
+                    completed = sum(value >= 100 for value in progress_by_batch)
+                status_prefix = (
+                    f"第 {batch_index + 1}/{batch_count} 批"
+                    if batch_count == 1
+                    else f"AI 同時整理 {batch_count} 批，已完成 {completed} 批；第 {batch_index + 1} 批"
                 )
-                progress_callback(
-                    combined_progress,
-                    f"第 {current_batch + 1}/{batch_count} 批：{message}",
-                )
+                progress_callback(combined_progress, f"{status_prefix}：{message}")
 
-            analysis, error = _analyze_study_note_image_batch(
-                materialize(batch_images),
-                subject=subject,
-                allow_corrections=allow_corrections,
-                progress_callback=report_batch_progress,
-            )
+            try:
+                _raise_if_study_upload_cancelled()
+                analysis, error = _analyze_study_note_image_batch(
+                    materialize(batch_images),
+                    subject=subject,
+                    allow_corrections=allow_corrections,
+                    progress_callback=report_batch_progress,
+                )
+                if analysis:
+                    _offset_study_note_batch_analysis(analysis, batch_start)
+                return batch_index, analysis, error
+            finally:
+                if hasattr(study_upload_context, "cancel_event"):
+                    del study_upload_context.cancel_event
+                if hasattr(study_upload_context, "job_id"):
+                    del study_upload_context.job_id
+
+        if batch_count == 1:
+            results = [analyze_batch(*batch_specs[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=min(2, batch_count)) as executor:
+                futures = [executor.submit(analyze_batch, *spec) for spec in batch_specs]
+                results = [future.result() for future in as_completed(futures)]
+        for batch_index, analysis, error in results:
             if error or not analysis:
                 return None, f"第 {batch_index + 1}/{batch_count} 批處理失敗：{error or '筆記分析失敗。'}"
-            _offset_study_note_batch_analysis(analysis, batch_start)
-            analyses.append(analysis)
+            analyses_by_index[batch_index] = analysis
+        analyses = [analyses_by_index[index] for index in range(batch_count)]
 
         _raise_if_study_upload_cancelled()
         if batch_count == 1:
@@ -14520,7 +14600,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         username = str(user.get("username") or "")
         if _active_study_upload_job(username):
             return _study_upload_error("已有一份筆記正在背景整理，請完成或取消後再上傳下一份。", 409)
-        _cleanup_expired_study_upload_staging()
+        with study_upload_staging_lock:
+            _cleanup_expired_study_upload_staging()
         try:
             image_index = int(request.form.get("image_index") or 0)
             total_images = int(request.form.get("total_images") or 0)
@@ -14541,39 +14622,40 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return _study_upload_error("每張筆記照片壓縮後必須小於 2MB。")
 
         upload_id = str(request.form.get("upload_id") or "").strip()
-        manifest: Optional[Dict[str, Any]] = None
-        directory: Optional[Path] = None
-        if upload_id:
-            manifest, directory = _read_study_upload_manifest(upload_id, username)
-            if manifest is None or directory is None:
-                return _study_upload_error("這次暫存上傳已失效，請重新選擇照片。", 404)
-            if int(manifest.get("expected_count") or 0) != total_images:
-                return _study_upload_error("圖片總數與這次暫存上傳不一致。")
-        else:
-            upload_id = secrets.token_urlsafe(24)
-            directory = _study_upload_staging_directory(upload_id)
-            if directory is None:
-                return _study_upload_error("無法建立圖片暫存空間。", 500)
-            _ensure_private_dir(directory)
-            manifest = {
-                "username": username,
-                "expected_count": total_images,
-                "files": {},
-                "created_at": time.time(),
+        with study_upload_staging_lock:
+            manifest: Optional[Dict[str, Any]] = None
+            directory: Optional[Path] = None
+            if upload_id:
+                manifest, directory = _read_study_upload_manifest(upload_id, username)
+                if manifest is None or directory is None:
+                    return _study_upload_error("這次暫存上傳已失效，請重新選擇照片。", 404)
+                if int(manifest.get("expected_count") or 0) != total_images:
+                    return _study_upload_error("圖片總數與這次暫存上傳不一致。")
+            else:
+                upload_id = secrets.token_urlsafe(24)
+                directory = _study_upload_staging_directory(upload_id)
+                if directory is None:
+                    return _study_upload_error("無法建立圖片暫存空間。", 500)
+                _ensure_private_dir(directory)
+                manifest = {
+                    "username": username,
+                    "expected_count": total_images,
+                    "files": {},
+                    "created_at": time.time(),
+                }
+            assert manifest is not None and directory is not None
+            stored_name = f"{image_index:06d}{extension}"
+            (directory / stored_name).write_bytes(image_bytes)
+            files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+            files[str(image_index)] = {
+                "stored_name": stored_name,
+                "original_name": filename,
+                "mime_type": mime_type,
+                "size": len(image_bytes),
             }
-        assert manifest is not None and directory is not None
-        stored_name = f"{image_index:06d}{extension}"
-        (directory / stored_name).write_bytes(image_bytes)
-        files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
-        files[str(image_index)] = {
-            "stored_name": stored_name,
-            "original_name": filename,
-            "mime_type": mime_type,
-            "size": len(image_bytes),
-        }
-        manifest["files"] = files
-        manifest["updated_at"] = time.time()
-        _write_study_upload_manifest(directory, manifest)
+            manifest["files"] = files
+            manifest["updated_at"] = time.time()
+            _write_study_upload_manifest(directory, manifest)
         return {
             "ok": True,
             "upload_id": upload_id,
@@ -14586,7 +14668,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     def admin_study_recall_cancel_upload_staging(upload_id: str):
         user = current_user() or {}
         username = str(user.get("username") or "")
-        removed = _remove_study_upload_staging(upload_id, username)
+        with study_upload_staging_lock:
+            removed = _remove_study_upload_staging(upload_id, username)
         return {"ok": True, "removed": removed}
 
     @app.post("/admin/study-recall/upload")
@@ -14675,6 +14758,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "created_at": now,
                 "updated_at": now,
             }
+        _set_study_upload_job(job_id)
 
         def _run_study_upload() -> None:
             recall_id: Optional[int] = None
@@ -14801,6 +14885,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         with study_upload_jobs_lock:
             stored_job = study_upload_jobs.get(job_id)
             job = dict(stored_job) if stored_job else None
+        if job is None:
+            job = storage.get_study_note_upload_job(job_id)
         if not job or job.get("username") != user.get("username"):
             return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
         payload = {
@@ -14814,33 +14900,76 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             payload["redirect_url"] = url_for("admin_study_recall", session_id=int(job["session_id"]))
         return payload
 
+    @app.get("/admin/study-recall/upload-jobs/current")
+    @admin_required
+    def admin_study_recall_current_upload_job():
+        user = current_user() or {}
+        username = str(user.get("username") or "")
+        job = storage.get_current_study_note_upload_job(username)
+        if not job:
+            return {"ok": True, "job": None}
+        payload: Dict[str, Any] = {
+            "ok": True,
+            "job_id": str(job.get("job_id") or ""),
+            "status": str(job.get("status") or "running"),
+            "progress": int(job.get("progress") or 0),
+            "message": str(job.get("message") or "正在處理筆記。"),
+        }
+        if job.get("status") == "success" and job.get("session_id"):
+            payload["session_id"] = int(job["session_id"])
+            payload["redirect_url"] = url_for(
+                "admin_study_recall",
+                session_id=int(job["session_id"]),
+            )
+        return payload
+
     @app.post("/admin/study-recall/upload-jobs/<job_id>/cancel")
     @admin_required
     def admin_study_recall_cancel_upload_job(job_id: str):
         user = current_user() or {}
         with study_upload_jobs_lock:
-            job = study_upload_jobs.get(job_id)
-            if not job or job.get("username") != user.get("username"):
-                return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
-            status = str(job.get("status") or "running")
-            if status == "success":
-                return {"ok": False, "error": "筆記已完成，無法取消。", "status": status}, 409
-            if status == "running":
-                cancel_event = job.get("cancel_event")
+            memory_job = study_upload_jobs.get(job_id)
+            job = dict(memory_job) if memory_job else None
+        if job is None:
+            job = storage.get_study_note_upload_job(job_id)
+        if not job or job.get("username") != user.get("username"):
+            return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
+        status = str(job.get("status") or "running")
+        if status == "success":
+            return {"ok": False, "error": "筆記已完成，無法取消。", "status": status}, 409
+        if status == "running":
+            if memory_job is not None:
+                cancel_event = memory_job.get("cancel_event")
                 if isinstance(cancel_event, threading.Event):
                     cancel_event.set()
+                _set_study_upload_job(
+                    job_id,
+                    status="cancelled",
+                    message="已取消這次筆記處理，可以立即上傳下一份筆記。",
+                )
+                job = storage.get_study_note_upload_job(job_id) or job
+            else:
+                updated_at = time.time()
+                storage.save_study_note_upload_job(
+                    job_id=job_id,
+                    username=str(job.get("username") or ""),
+                    status="cancelled",
+                    progress=int(job.get("progress") or 0),
+                    message="已取消這次筆記處理，可以立即上傳下一份筆記。",
+                    session_id=(int(job["session_id"]) if job.get("session_id") is not None else None),
+                    created_at=float(job.get("created_at") or updated_at),
+                    updated_at=updated_at,
+                )
                 job.update(
                     status="cancelled",
                     message="已取消這次筆記處理，可以立即上傳下一份筆記。",
-                    updated_at=time.time(),
                 )
-            payload = {
-                "ok": True,
-                "status": "cancelled" if status in {"running", "cancelled"} else status,
-                "progress": int(job.get("progress") or 0),
-                "message": str(job.get("message") or "已取消這次筆記處理。"),
-            }
-        return payload
+        return {
+            "ok": True,
+            "status": "cancelled" if status in {"running", "cancelled"} else status,
+            "progress": int(job.get("progress") or 0),
+            "message": str(job.get("message") or "已取消這次筆記處理。"),
+        }
 
     @app.post("/admin/study-recall/<int:session_id>/rate-cards")
     @admin_required

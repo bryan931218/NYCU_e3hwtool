@@ -2336,31 +2336,49 @@
                 submit.disabled = true;
                 setStatus('正在縮小照片…');
                 let uploadId = '';
+                const uploadController = new AbortController();
                 try {
                     let uploadedBytes = 0;
-                    for (let index = 0; index < files.length; index += 1) {
-                        setStatus(`正在準備第 ${index + 1}/${files.length} 張照片…`);
+                    let uploadedCount = 0;
+                    const uploadOne = async (index, batchId = '') => {
                         const prepared = await compress(files[index]);
                         const stagePayload = new FormData();
-                        if (uploadId) stagePayload.append('upload_id', uploadId);
+                        if (batchId) stagePayload.append('upload_id', batchId);
                         stagePayload.append('image_index', String(index + 1));
                         stagePayload.append('total_images', String(files.length));
                         stagePayload.append('note_image', prepared, prepared.name);
-                        setStatus(`正在上傳第 ${index + 1}/${files.length} 張照片…`);
                         const stageResponse = await fetch(stageUrl, {
                             method: 'POST',
                             body: stagePayload,
                             credentials: 'same-origin',
+                            signal: uploadController.signal,
                             headers: { 'X-E3-Study-Upload': '1', Accept: 'application/json' },
                         });
                         const stageResult = await stageResponse.json().catch(() => ({}));
                         if (!stageResponse.ok || !stageResult.ok) {
                             throw new Error(stageResult.error || (stageResponse.status === 413 ? 'request-too-large' : 'upload-failed'));
                         }
-                        uploadId = stageResult.upload_id || uploadId;
-                        if (!uploadId) throw new Error('upload-failed');
+                        const nextUploadId = stageResult.upload_id || batchId;
+                        if (!nextUploadId) throw new Error('upload-failed');
                         uploadedBytes += prepared.size;
-                        setStatus(`已上傳 ${index + 1}/${files.length} 張（${formatBytes(uploadedBytes)}）`, 'ready');
+                        uploadedCount += 1;
+                        setStatus(`已上傳 ${uploadedCount}/${files.length} 張（${formatBytes(uploadedBytes)}）`, 'ready');
+                        return nextUploadId;
+                    };
+                    setStatus(`正在準備並上傳第 1/${files.length} 張照片…`);
+                    uploadId = await uploadOne(0);
+                    if (files.length > 1) {
+                        let nextIndex = 1;
+                        const workerCount = Math.min(3, files.length - 1);
+                        setStatus(`正在同時處理 ${files.length - 1} 張剩餘照片…`);
+                        const workers = Array.from({ length: workerCount }, async () => {
+                            while (nextIndex < files.length) {
+                                const index = nextIndex;
+                                nextIndex += 1;
+                                await uploadOne(index, uploadId);
+                            }
+                        });
+                        await Promise.all(workers);
                     }
                     setStatus(`全部 ${files.length} 張照片已上傳，正在建立背景整理工作…`, 'ready');
                     const payload = new FormData(form);
@@ -2380,6 +2398,7 @@
                     submit.disabled = false;
                     setStatus('已開始背景整理，可自由前往其他頁面；右下角會持續顯示進度。', 'ready');
                 } catch (error) {
+                    uploadController.abort();
                     if (uploadId) {
                         fetch(`${stageUrl}/${encodeURIComponent(uploadId)}/cancel`, {
                             method: 'POST',
