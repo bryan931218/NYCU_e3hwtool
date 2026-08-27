@@ -100,7 +100,7 @@ class DeploymentPersistenceTests(unittest.TestCase):
                         "VALUES "
                         "('2026-08-26', :video_11, 0, 1054, 1054, '2026-08-26T15:00:00'), "
                         "('2026-08-27', :video_12, 0, 1860, 1860, '2026-08-27T02:00:00'), "
-                        "('2026-08-27', :video_11, 0, 48, 48, '2026-08-27T02:01:00')"
+                        "('2026-08-27', :video_11, 1054, 1274, 220, '2026-08-27T02:01:00')"
                     ),
                     {"video_11": video_11_id, "video_12": video_12_id},
                 )
@@ -114,6 +114,16 @@ class DeploymentPersistenceTests(unittest.TestCase):
                     ),
                     {"video_11": video_11_id},
                 )
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_video_records "
+                        "(video_id, watched_seconds, playback_seconds, progress_version, notes, updated_at) "
+                        "VALUES "
+                        "(:video_11, 1274, 1274, 3, '', '2026-08-27T02:01:00'), "
+                        "(:video_12, 1860, 1860, 2, '', '2026-08-27T02:00:00')"
+                    ),
+                    {"video_11": video_11_id, "video_12": video_12_id},
+                )
 
             storage.sync_study_plan_videos(inventory)
             repaired = storage.list_study_plan_activity_events(
@@ -126,7 +136,14 @@ class DeploymentPersistenceTests(unittest.TestCase):
             }
             self.assertEqual(repaired_by_day_sequence[("2026-08-26", 12)]["delta_seconds"], 1054)
             self.assertEqual(repaired_by_day_sequence[("2026-08-27", 12)]["delta_seconds"], 806)
-            self.assertEqual(repaired_by_day_sequence[("2026-08-27", 11)]["delta_seconds"], 48)
+            self.assertEqual(repaired_by_day_sequence[("2026-08-27", 11)]["delta_seconds"], 220)
+            repaired_videos = {
+                item["sequence"]: item
+                for item in storage.list_study_plan_videos_with_records()
+            }
+            self.assertEqual(repaired_videos[11]["watched_seconds"], 220)
+            self.assertEqual(repaired_videos[11]["playback_seconds"], 220)
+            self.assertEqual(repaired_videos[12]["watched_seconds"], 1860)
             with storage._lock, storage._engine.connect() as conn:
                 sessions = conn.execute(
                     text(
@@ -139,7 +156,7 @@ class DeploymentPersistenceTests(unittest.TestCase):
             self.assertEqual(session_by_key["old-video-session"]["video_id"], video_12_id)
             self.assertEqual(session_by_key["old-video-session"]["label"], "離散數學第 12 支")
             self.assertEqual(session_by_key["new-video-session"]["video_id"], video_11_id)
-            self.assertEqual(len(repairs), 1)
+            self.assertEqual(len(repairs), 2)
 
             storage.sync_study_plan_videos(inventory)
             self.assertEqual(
