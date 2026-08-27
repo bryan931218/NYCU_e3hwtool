@@ -14352,7 +14352,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     + "\n\n上一次回答因長度限制而不完整。請重新從頭回答，不要接續殘句；保留必要公式與條件，"
                     "將完整答案壓縮在 1000 個繁體中文字內，並以完整句子收尾。"
                 )
-            answer = re.sub(r"\bs\d+\s*:\s*c\d+\b", "", answer, flags=re.IGNORECASE).strip()
+            answer = _normalize_study_math_markup(
+                re.sub(r"\bs\d+\s*:\s*c\d+\b", "", answer, flags=re.IGNORECASE).strip()
+            )
         except requests.HTTPError as exc:
             error_code, error_type, error_message = _openai_error_details(exc.response)
             if _is_openai_quota_error(error_code, error_type, error_message):
@@ -14459,6 +14461,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "回答內容仍過長，請縮小問題範圍後再試。"}, 502
         if not answer:
             return {"ok": False, "error": "AI 助手沒有產生有效回答，請換個方式提問。"}, 502
+        answer = _normalize_study_math_markup(answer)
         record_ui_event(
             "study_recall_general_question",
             meta={"history_count": len(history), "response_style": response_style},

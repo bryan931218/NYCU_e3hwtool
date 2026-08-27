@@ -321,7 +321,7 @@
         .ai-dialog-identity { min-width:0; display:flex; align-items:center; gap:10px; }
         .ai-dialog-mark { position:relative; flex:0 0 auto; width:40px; height:40px; display:grid; place-items:center; color:#fff; border-radius:12px; background:#102a43; box-shadow:0 7px 18px rgba(16,42,67,.22); }
         .ai-dialog-mark svg { width:21px; height:21px; stroke-width:2; }
-        .ai-dialog-mark::after { content:""; position:absolute; right:-1px; bottom:-1px; width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:#27a66b; }
+        .ai-dialog-mark::after { display:none; }
         .ai-dialog-kicker { margin:0 0 2px; color:#087f80; font-size:9px; font-weight:950; letter-spacing:.04em; }
         .ai-dialog-head h2 { max-width:300px; margin:0; overflow:hidden; font-size:16px; line-height:1.3; text-overflow:ellipsis; white-space:nowrap; }
         .ai-reset,.ai-dialog-head .dialog-close { min-width:34px; height:34px; display:grid; place-items:center; padding:0; color:#5b6f84; border:1px solid transparent; border-radius:9px; background:#f4f7fa; }
@@ -353,7 +353,8 @@
         .ai-floating-toggle svg { position:absolute; width:25px; height:25px; stroke-width:2; transition:opacity .16s ease,transform .2s ease; }
         .ai-floating-toggle .ai-toggle-close { opacity:0; transform:rotate(-45deg) scale(.7); }
         .ai-floating-toggle::before { content:"AI 助教"; position:absolute; right:calc(100% + 11px); padding:6px 9px; color:#fff; border-radius:7px; background:#102a43; box-shadow:0 6px 16px rgba(16,42,67,.2); font-size:10px; font-weight:850; white-space:nowrap; opacity:0; transform:translateX(5px); pointer-events:none; transition:opacity .16s ease,transform .16s ease; }
-        .ai-floating-toggle::after { content:""; position:absolute; right:5px; top:5px; width:9px; height:9px; border:2px solid #102a43; border-radius:50%; background:#31ba79; }
+        .ai-floating-toggle::after { content:""; position:absolute; right:5px; top:5px; width:9px; height:9px; display:none; border:2px solid #102a43; border-radius:50%; background:#31ba79; }
+        .ai-floating-toggle.has-unread::after { display:block; }
         .ai-floating-toggle:hover,.ai-floating-toggle:focus-visible { background:#163b5d; transform:translateY(-2px); box-shadow:0 18px 38px rgba(16,42,67,.34),0 0 0 5px rgba(226,240,248,.96); outline:0; }
         .ai-floating-toggle:hover::before,.ai-floating-toggle:focus-visible::before { opacity:1; transform:translateX(0); }
         .ai-floating-toggle.is-active { background:#087f80; transform:translateY(0); }
@@ -761,6 +762,21 @@
                 button.classList.remove('is-copied');
             }, 1400);
         });
+        window.normalizeStudyMathText = (value) => {
+            let source = String(value || '').replace(/\\_(?=[A-Za-z0-9{])/g, '_');
+            // Some model responses cross the JSON boundary with TeX escaped
+            // twice. Collapse only delimiters and known commands so matrix row
+            // separators such as "\\" remain intact.
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const repaired = source.replace(
+                    /\\{2,}(?=(?:[()[\]]|acute\b|alpha\b|approx\b|beta\b|begin\b|cdot\b|cdots\b|chi\b|cos\b|delta\b|det\b|dfrac\b|dim\b|end\b|epsilon\b|equiv\b|eta\b|exists\b|forall\b|frac\b|gamma\b|geq?\b|in\b|infty\b|int\b|ker\b|lambda\b|Lambda\b|left\b|leq?\b|lim\b|log\b|mathbb\b|mathbf\b|mathcal\b|mathrm\b|neq?\b|notin\b|nu\b|omega\b|operatorname\b|partial\b|phi\b|pi\b|pmatrix\b|prod\b|qquad\b|quad\b|rank\b|right\b|rho\b|sigma\b|Sigma\b|sin\b|sqrt\b|subseteq?\b|sum\b|tan\b|tau\b|text\b|theta\b|times\b|to\b|top\b|vec\b|xi\b|zeta\b))/g,
+                    '\\',
+                );
+                if (repaired === source) break;
+                source = repaired;
+            }
+            return source;
+        };
         window.renderStudyMath = (root = document) => {
             const queryAll = (selector) => [
                 ...(root.matches?.(selector) ? [root] : []),
@@ -1805,6 +1821,7 @@
             const setPanelOpen = (open) => {
                 dialog.hidden = !open;
                 toggle.classList.toggle('is-active', open);
+                if (open) toggle.classList.remove('has-unread');
                 toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
                 toggle.setAttribute('aria-label', open ? '收合 AI 助教' : '開啟 AI 助教');
                 if (open) toggle.removeAttribute('title');
@@ -1981,6 +1998,7 @@
             }
 
             const appendMessage = (role, content, { copyable = true } = {}) => {
+                const normalizedContent = window.normalizeStudyMathText(content);
                 const row = document.createElement('div');
                 row.className = `ai-message-row ${role}`;
                 if (role !== 'user') {
@@ -1999,7 +2017,7 @@
                     thinking.append(document.createElement('span'), document.createElement('span'), document.createElement('span'));
                     message.append(thinking);
                 } else {
-                    message.textContent = content;
+                    message.textContent = normalizedContent;
                     message.dataset.mathContent = '';
                 }
                 row.append(message);
@@ -2010,7 +2028,7 @@
                     copy.type = 'button';
                     copy.className = 'ai-message-copy';
                     copy.textContent = '複製';
-                    copy.dataset.aiCopyMessage = content;
+                    copy.dataset.aiCopyMessage = normalizedContent;
                     copy.title = '複製回答';
                     tools.append(copy);
                     row.append(tools);
@@ -2065,9 +2083,9 @@
                 if (previousConversation) previousConversation.draft = input.value;
                 activeKey = key;
                 const conversation = ensureConversation(key, title, mode);
-                heading.textContent = conversation.title;
+                heading.textContent = window.normalizeStudyMathText(conversation.title);
                 modeLabel.textContent = conversation.mode === 'card' ? '重點卡助教' : '一般問答';
-                contextTitle.textContent = conversation.mode === 'card' ? conversation.title : '';
+                contextTitle.textContent = conversation.mode === 'card' ? window.normalizeStudyMathText(conversation.title) : '';
                 cardContext.hidden = conversation.mode !== 'card';
                 input.setAttribute('aria-label', conversation.mode === 'card' ? '詢問這張重點卡' : '詢問 AI 助手');
                 input.placeholder = conversation.mode === 'card' ? '詢問這張重點卡' : '輸入任何問題';
@@ -2078,8 +2096,8 @@
                 delete contextTitle.dataset.mathRendered;
                 delete heading.dataset.studyCodeRendered;
                 delete contextTitle.dataset.studyCodeRendered;
-                renderConversation(conversation);
                 setPanelOpen(true);
+                renderConversation(conversation);
                 window.setTimeout(() => input.focus(), 0);
             };
             document.addEventListener('click', (event) => {
@@ -2105,6 +2123,7 @@
             const sendQuestion = async (question, { retrying = false } = {}) => {
                 const requestKey = activeKey;
                 const conversation = conversations.get(requestKey);
+                let receivedAnswer = false;
                 if (!conversation || conversation.pending || !question) return;
                 if (retrying && conversation.messages.at(-1)?.role === 'error') conversation.messages.pop();
                 const priorHistory = conversation.history.slice(-6);
@@ -2139,6 +2158,7 @@
                     conversation.history.push(userMessage, assistantMessage);
                     conversation.history = conversation.history.slice(-12);
                     conversation.lastFailedQuestion = '';
+                    receivedAnswer = true;
                 } catch (error) {
                     const aborted = error?.name === 'AbortError';
                     const message = aborted ? '已停止這次回答。' : (error.message || 'AI 助教暫時無法回答，請稍後再試。');
@@ -2148,6 +2168,9 @@
                 } finally {
                     conversation.pending = false;
                     conversation.controller = null;
+                    if (receivedAnswer && (dialog.hidden || activeKey !== requestKey)) {
+                        toggle.classList.add('has-unread');
+                    }
                     persistConversations();
                     if (activeKey === requestKey) {
                         renderConversation(conversation);

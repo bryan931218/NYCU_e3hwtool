@@ -292,6 +292,9 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertIn("data-ai-stop", html)
                 self.assertIn("data-ai-retry", html)
                 self.assertIn("e3-study-ai-conversations-v2", html)
+                self.assertIn("window.normalizeStudyMathText", html)
+                self.assertIn("toggle.classList.remove('has-unread')", html)
+                self.assertIn("toggle.classList.add('has-unread')", html)
             finally:
                 storage._engine.dispose()
 
@@ -304,7 +307,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.login_admin(app, client)
                 with patch(
                     "e3_tracker.api.web.requests.post",
-                    return_value=self.openai_response("雜湊表的平均查詢時間為 \\(O(1)\\)。"),
+                    return_value=self.openai_response(r"雜湊表的平均查詢時間為 \\(O(1)\\)。"),
                 ) as openai_post:
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
@@ -322,6 +325,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertEqual(response.status_code, 200)
                 self.assertTrue(payload["ok"])
                 self.assertIn(r"\(O(1)\)", payload["answer"])
+                self.assertNotIn(r"\\(", payload["answer"])
                 request_prompt = openai_post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
                 self.assertIn("這是一般問答模式，沒有指定筆記或重點卡", request_prompt)
                 self.assertIn("採詳細回答", request_prompt)
@@ -358,7 +362,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.login_admin(app, client)
                 with patch(
                     "e3_tracker.api.web.requests.post",
-                    return_value=self.openai_response("詳細回答"),
+                    return_value=self.openai_response(r"奇異值為 \\(\sigma_i=\sqrt{\lambda_i}\\)。"),
                 ) as openai_post:
                     response = client.post(
                         f"/admin/study-recall/{session_id}/cards/0/ask",
@@ -366,6 +370,9 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     )
 
                 self.assertEqual(response.status_code, 200)
+                answer = response.get_json()["answer"]
+                self.assertIn(r"\(\sigma_i=\sqrt{\lambda_i}\)", answer)
+                self.assertNotIn(r"\\(", answer)
                 request_prompt = openai_post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
                 self.assertIn("採詳細回答", request_prompt)
                 self.assertIn("重點卡資料", request_prompt)
