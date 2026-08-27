@@ -287,6 +287,11 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertIn('data-general-ask-url="/admin/study-recall/assistant/ask"', html)
                 self.assertIn("data-ai-general-mode", html)
                 self.assertIn("activateConversation(generalKey, 'AI 問答', 'general')", html)
+                self.assertIn('data-ai-style="concise"', html)
+                self.assertIn('data-ai-style="detailed"', html)
+                self.assertIn("data-ai-stop", html)
+                self.assertIn("data-ai-retry", html)
+                self.assertIn("e3-study-ai-conversations-v2", html)
             finally:
                 storage._engine.dispose()
 
@@ -305,6 +310,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                         "/admin/study-recall/assistant/ask",
                         json={
                             "question": "雜湊表查詢的時間複雜度是什麼？",
+                            "response_style": "detailed",
                             "history": [
                                 {"role": "user", "content": "我正在複習資料結構。"},
                                 {"role": "assistant", "content": "了解。"},
@@ -318,9 +324,51 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertIn(r"\(O(1)\)", payload["answer"])
                 request_prompt = openai_post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
                 self.assertIn("這是一般問答模式，沒有指定筆記或重點卡", request_prompt)
+                self.assertIn("採詳細回答", request_prompt)
                 self.assertIn("我正在複習資料結構", request_prompt)
                 self.assertNotIn("重點卡資料", request_prompt)
                 self.assertEqual(openai_post.call_args.kwargs["json"]["max_output_tokens"], 3200)
+            finally:
+                storage._engine.dispose()
+
+    def test_card_assistant_uses_requested_answer_detail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                session_id = storage.create_study_recall_session(
+                    study_date="2026-08-27",
+                    subject="資料結構",
+                    title="雜湊表",
+                    image_filenames=["hash.jpg"],
+                    summary="雜湊表查詢",
+                    source_transcription=[{"image_index": 1, "transcription": "平均查詢為 O(1)"}],
+                    key_concepts=[
+                        {
+                            "topic": "雜湊表",
+                            "concept": "平均查詢時間",
+                            "core_summary": r"平均為 \(O(1)\)",
+                            "explanation": "雜湊函數可直接定位儲存位置。",
+                            "simple_example": "依 key 查詢資料。",
+                            "memory_hint": "直接定位",
+                        }
+                    ],
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response("詳細回答"),
+                ) as openai_post:
+                    response = client.post(
+                        f"/admin/study-recall/{session_id}/cards/0/ask",
+                        json={"question": "為什麼？", "response_style": "detailed"},
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                request_prompt = openai_post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
+                self.assertIn("採詳細回答", request_prompt)
+                self.assertIn("重點卡資料", request_prompt)
             finally:
                 storage._engine.dispose()
 

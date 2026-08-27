@@ -255,6 +255,65 @@
         .queue-item { border-radius: 11px; }
         .ai-floating-toggle { width: 58px; height: 58px; border-radius: 18px; background: linear-gradient(145deg,#169497,#087879); box-shadow: 0 16px 34px rgba(8,127,128,.28); }
         .ai-card-dialog, .relation-dialog, .source-locator-dialog { border-radius: 20px; box-shadow: 0 28px 80px rgba(8,25,43,.24); }
+        .ai-card-dialog { width:min(480px,calc(100vw - 36px)); height:min(560px,calc(100dvh - 100px)); overflow:hidden; border:1px solid #c8d8e8; border-radius:14px; background:#fff; box-shadow:0 24px 68px rgba(16,42,67,.22); }
+        .ai-dialog-body { grid-template-rows:auto auto minmax(170px,1fr) auto; background:#f7fafc; }
+        .ai-dialog-head { min-height:72px; align-items:center; padding:13px 14px; border-bottom:1px solid #d9e4ef; background:#fff; }
+        .ai-dialog-identity { min-width:0; display:flex; align-items:center; gap:10px; }
+        .ai-dialog-mark { flex:0 0 auto; width:36px; height:36px; display:grid; place-items:center; color:#fff; border-radius:10px; background:#087f80; font-size:11px; font-weight:950; box-shadow:0 7px 16px rgba(8,127,128,.2); }
+        .ai-dialog-kicker { margin:0 0 2px; color:#087f80; font-size:9px; letter-spacing:0; }
+        .ai-dialog-head h2 { max-width:280px; margin:0; overflow:hidden; font-size:16px; line-height:1.3; text-overflow:ellipsis; white-space:nowrap; }
+        .ai-dialog-head-actions { gap:5px; }
+        .ai-reset,.ai-dialog-head .dialog-close { min-width:34px; height:34px; padding:0 8px; border:1px solid #d4dfeb; border-radius:8px; background:#fff; }
+        .ai-dialog-head .dialog-close { width:34px; padding:0; color:#5b6f84; font-size:21px; }
+        .ai-card-context { min-height:44px; padding:7px 14px; color:#435b73; background:#eef8f7; border-bottom:1px solid #cde4e2; }
+        .ai-card-context > span { display:flex; align-items:center; gap:7px; }
+        .ai-context-label { flex:0 0 auto; padding:3px 6px; color:#087779; border:1px solid #b8ddda; border-radius:5px; background:#fff; font-size:9px; font-weight:900; }
+        .ai-general-mode { min-height:30px; padding:0 8px; border-radius:7px; background:#fff; }
+        .ai-chat-messages { gap:12px; padding:16px 14px 20px; background:#f7fafc; scrollbar-width:thin; scrollbar-color:#b8c8d8 transparent; }
+        .ai-message-row { min-width:0; max-width:88%; display:grid; gap:4px; }
+        .ai-message-row.assistant,.ai-message-row.pending,.ai-message-row.error { justify-self:start; }
+        .ai-message-row.user { justify-self:end; }
+        .ai-message { max-width:none; padding:10px 12px; border-radius:10px; font-size:13px; line-height:1.72; box-shadow:0 2px 8px rgba(16,42,67,.04); }
+        .ai-message.assistant { border:1px solid #d9e4ef; border-top-left-radius:3px; background:#fff; }
+        .ai-message.user { border:1px solid #1463d9; border-top-right-radius:3px; background:#1463d9; }
+        .ai-message.pending { min-width:66px; color:#587087; background:#fff; }
+        .ai-message.error { border-color:#e9c8cc; background:#fff5f5; }
+        .ai-message-tools { display:flex; gap:5px; padding:0 2px; }
+        .ai-message-copy { min-height:24px; padding:0 6px; color:#6a7e92; border:0; border-radius:5px; background:transparent; font-size:9px; font-weight:800; cursor:pointer; }
+        .ai-message-copy:hover,.ai-message-copy:focus-visible { color:var(--blue); background:#eaf2fb; outline:0; }
+        .ai-thinking { display:flex; align-items:center; gap:4px; height:18px; }
+        .ai-thinking span { width:6px; height:6px; border-radius:50%; background:#5b9d9e; animation:ai-thinking 1s ease-in-out infinite; }
+        .ai-thinking span:nth-child(2) { animation-delay:.15s; }.ai-thinking span:nth-child(3) { animation-delay:.3s; }
+        @keyframes ai-thinking { 0%,60%,100% { transform:translateY(0); opacity:.4; } 30% { transform:translateY(-4px); opacity:1; } }
+        .ai-chat-form { padding:10px 12px 12px; border-top:1px solid #d9e4ef; background:#fff; }
+        .ai-suggestions { min-width:0; display:flex; gap:6px; margin-bottom:8px; overflow-x:auto; scrollbar-width:none; }
+        .ai-suggestions:empty { display:none; }.ai-suggestions::-webkit-scrollbar { display:none; }
+        .ai-suggestion { flex:0 0 auto; min-height:29px; padding:0 9px; color:#315e7c; border:1px solid #cbdbe9; border-radius:7px; background:#f8fbfe; font-size:10px; font-weight:850; cursor:pointer; }
+        .ai-suggestion:hover,.ai-suggestion:focus-visible { color:#087779; border-color:#8bc8c4; background:#eef9f8; outline:0; }
+        .ai-composer { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:7px; padding:6px; border:1px solid #b8cbe0; border-radius:10px; background:#fff; box-shadow:0 1px 2px rgba(16,42,67,.04); }
+        .ai-composer:focus-within { border-color:#4d91df; box-shadow:0 0 0 3px rgba(20,99,217,.1); }
+        .ai-chat-form .ai-composer textarea { min-height:38px; max-height:126px; padding:8px 7px; overflow-y:auto; border:0; border-radius:6px; box-shadow:none; resize:none; line-height:1.55; scrollbar-width:none; }
+        .ai-chat-form .ai-composer textarea::-webkit-scrollbar { display:none; }
+        .ai-chat-form .ai-composer textarea:focus { border:0; box-shadow:none; }
+        .ai-send,.ai-stop { min-width:54px; height:38px; padding:0 10px; color:#fff; border:0; border-radius:8px; background:#1463d9; font-size:11px; font-weight:900; cursor:pointer; }
+        .ai-stop { background:#53697f; }.ai-send:hover,.ai-send:focus-visible { background:#0f55bb; outline:0; }.ai-stop:hover,.ai-stop:focus-visible { background:#40566d; outline:0; }
+        .ai-send:disabled { opacity:.55; cursor:not-allowed; }
+        .ai-chat-footer { min-height:30px; margin-top:7px; }
+        .ai-response-style { display:inline-grid; grid-template-columns:repeat(2,1fr); padding:2px; border:1px solid #d6e1ec; border-radius:7px; background:#f1f5f9; }
+        .ai-response-style button { min-width:43px; height:25px; padding:0 7px; color:#667a8e; border:0; border-radius:5px; background:transparent; font-size:9px; font-weight:850; cursor:pointer; }
+        .ai-response-style button.is-active { color:#0d5b9f; background:#fff; box-shadow:0 1px 3px rgba(16,42,67,.12); }
+        .ai-chat-feedback { min-width:0; display:flex; align-items:center; justify-content:flex-end; gap:7px; }
+        .ai-retry { min-height:27px; padding:0 8px; color:#b13745; border:1px solid #e2b8be; border-radius:6px; background:#fff6f6; font-size:9px; font-weight:900; cursor:pointer; }
+        .ai-chat-status { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ai-floating-toggle { width:56px; height:56px; border:1px solid rgba(255,255,255,.28); border-radius:16px; background:#087f80; box-shadow:0 14px 30px rgba(8,127,128,.28); }
+        .ai-floating-toggle:hover,.ai-floating-toggle:focus-visible,.ai-floating-toggle.is-active { background:#056a6b; transform:translateY(-1px); }
+        @media (max-width:620px) {
+            .ai-card-dialog { left:8px!important; right:8px!important; top:auto!important; bottom:76px!important; width:auto!important; height:min(660px,calc(100dvh - 92px)); max-height:calc(100dvh - 92px); border-radius:13px; }
+            .ai-dialog-head { min-height:64px; padding:10px 11px; }.ai-dialog-head h2 { max-width:190px; font-size:15px; }
+            .ai-chat-messages { padding:13px 10px 16px; }.ai-message-row { max-width:92%; }.ai-message { font-size:12px; }
+            .ai-chat-form { padding:9px 10px 10px; }.ai-card-context { padding-left:11px; padding-right:11px; }
+            .ai-general-mode { max-width:116px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        }
         .relation-association, .relation-card-preview { border-radius: 13px; }
         @media (max-width: 900px) {
             .study-nav { padding: 12px 16px; align-items: center; flex-direction: row; flex-wrap: wrap; }
@@ -541,13 +600,20 @@
     </dialog>
     <section id="card-ai-dialog" class="ai-card-dialog" role="dialog" aria-modal="false" aria-labelledby="card-ai-title" data-ai-enabled="{{ '1' if openai_ready else '0' }}" data-general-ask-url="{{ url_for('admin_study_recall_ask_general') }}" data-selected-session-id="{{ selected_session.id if selected_session else '' }}" hidden>
         <div class="ai-dialog-body">
-            <div class="ai-dialog-head"><div><span class="ai-dialog-kicker">即時 AI 助教</span><h2 id="card-ai-title"></h2></div><div class="ai-dialog-head-actions"><button class="ai-reset" type="button" data-ai-reset>清除對話</button><button class="dialog-close" type="button" data-ai-close aria-label="關閉" title="關閉">×</button></div></div>
-            <div class="ai-card-context" data-ai-card-context hidden><span>正在詢問：<strong data-ai-context-title data-math-content></strong></span><button class="ai-general-mode" type="button" data-ai-general-mode>一般問答</button></div>
+            <div class="ai-dialog-head">
+                <div class="ai-dialog-identity"><span class="ai-dialog-mark" aria-hidden="true">AI</span><div><span class="ai-dialog-kicker" data-ai-mode-label>一般問答</span><h2 id="card-ai-title"></h2></div></div>
+                <div class="ai-dialog-head-actions"><button class="ai-reset" type="button" data-ai-reset>清除</button><button class="dialog-close" type="button" data-ai-close aria-label="關閉" title="關閉">×</button></div>
+            </div>
+            <div class="ai-card-context" data-ai-card-context hidden><span><span class="ai-context-label">重點卡</span><strong data-ai-context-title data-math-content></strong></span><button class="ai-general-mode" type="button" data-ai-general-mode>返回一般問答</button></div>
             <div class="ai-chat-messages" data-ai-messages aria-live="polite"></div>
-            <form class="ai-chat-form" data-ai-form><textarea data-ai-input maxlength="800" rows="3" aria-label="詢問這張重點卡" placeholder="輸入你的問題" required></textarea><div class="ai-chat-footer"><span class="ai-chat-status" data-ai-status aria-live="polite"></span><button class="submit" type="submit">送出問題</button></div></form>
+            <form class="ai-chat-form" data-ai-form>
+                <div class="ai-suggestions" data-ai-suggestions aria-label="快速提問"></div>
+                <div class="ai-composer"><textarea data-ai-input maxlength="800" rows="1" aria-label="詢問 AI 助手" placeholder="輸入任何問題" required></textarea><button class="ai-send" type="submit" aria-label="送出問題" title="送出問題">送出</button><button class="ai-stop" type="button" data-ai-stop aria-label="停止回答" title="停止回答" hidden>停止</button></div>
+                <div class="ai-chat-footer"><div class="ai-response-style" role="group" aria-label="回答方式"><button type="button" data-ai-style="concise">精簡</button><button type="button" data-ai-style="detailed">詳細</button></div><div class="ai-chat-feedback"><button class="ai-retry" type="button" data-ai-retry hidden>重試</button><span class="ai-chat-status" data-ai-status aria-live="polite"></span></div></div>
+            </form>
         </div>
     </section>
-    <button id="card-ai-toggle" class="ai-floating-toggle" type="button" aria-controls="card-ai-dialog" aria-expanded="false" aria-label="開啟 AI 助教" title="開啟 AI 助教">AI</button>
+    <button id="card-ai-toggle" class="ai-floating-toggle" type="button" aria-controls="card-ai-dialog" aria-expanded="false" aria-label="開啟 AI 助教" title="開啟 AI 助教"><span aria-hidden="true">AI</span></button>
     <script>
         const STUDY_CODE_LANGUAGE_LABELS = Object.freeze({
             c: 'C', cpp: 'C++', 'c++': 'C++', cs: 'C#', csharp: 'C#',
@@ -1644,13 +1710,32 @@
             const form = dialog.querySelector('[data-ai-form]');
             const input = dialog.querySelector('[data-ai-input]');
             const submit = form.querySelector('button[type="submit"]');
+            const stop = dialog.querySelector('[data-ai-stop]');
+            const retry = dialog.querySelector('[data-ai-retry]');
             const status = dialog.querySelector('[data-ai-status]');
             const reset = dialog.querySelector('[data-ai-reset]');
             const dragHandle = dialog.querySelector('.ai-dialog-head');
+            const modeLabel = dialog.querySelector('[data-ai-mode-label]');
+            const suggestions = dialog.querySelector('[data-ai-suggestions]');
+            const styleButtons = Array.from(dialog.querySelectorAll('[data-ai-style]'));
             const conversations = new Map();
             const generalKey = dialog.dataset.generalAskUrl;
             const cardContext = dialog.querySelector('[data-ai-card-context]');
             const generalModeButton = dialog.querySelector('[data-ai-general-mode]');
+            const storageKey = 'e3-study-ai-conversations-v2';
+            const suggestionSets = {
+                general: [
+                    ['拆解問題', '請幫我把這個問題拆成清楚的思考步驟：'],
+                    ['比較觀念', '請比較以下兩個觀念的差異與適用情況：'],
+                    ['制定步驟', '請把以下目標整理成可執行的步驟：'],
+                ],
+                card: [
+                    ['白話解釋', '請用更白話的方式解釋這張重點卡。'],
+                    ['給個例子', '請給我一個簡單、具體的例子。'],
+                    ['常見考法', '這個觀念在研究所考試中通常怎麼考？'],
+                    ['易錯點', '這個觀念最常見的錯誤是什麼？'],
+                ],
+            };
             let activeKey = generalKey;
             let dragState = null;
             let preferredPanelWidth = null;
@@ -1721,11 +1806,73 @@
             dragHandle.addEventListener('pointercancel', finishDrag);
             window.addEventListener('resize', clampPanelPosition);
 
+            const persistConversations = () => {
+                try {
+                    const saved = {};
+                    conversations.forEach((conversation, key) => {
+                        if (!conversation.messages.length) return;
+                        saved[key] = {
+                            title: conversation.title,
+                            mode: conversation.mode,
+                            style: conversation.style,
+                            messages: conversation.messages.slice(-24),
+                            history: conversation.history.slice(-12),
+                        };
+                    });
+                    sessionStorage.setItem(storageKey, JSON.stringify(saved));
+                } catch (_error) {
+                    // The assistant remains usable when browser storage is unavailable.
+                }
+            };
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
+                Object.entries(saved).forEach(([key, value]) => {
+                    if (!value || typeof value !== 'object') return;
+                    const isGeneral = key === generalKey;
+                    const isCard = key.startsWith(`${window.location.origin}/admin/study-recall/`) && key.endsWith('/ask');
+                    if (!isGeneral && !isCard) return;
+                    const messages = Array.isArray(value.messages) ? value.messages.slice(-24).filter((message) => (
+                        message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string'
+                    )) : [];
+                    const history = Array.isArray(value.history) ? value.history.slice(-12).filter((message) => (
+                        message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string'
+                    )) : [];
+                    conversations.set(key, {
+                        title: String(value.title || (isGeneral ? 'AI 問答' : '重點卡')).slice(0, 120),
+                        mode: isGeneral ? 'general' : 'card',
+                        style: value.style === 'detailed' ? 'detailed' : 'concise',
+                        messages,
+                        history,
+                        pending: false,
+                        error: '',
+                        lastFailedQuestion: '',
+                        controller: null,
+                        draft: '',
+                    });
+                });
+            } catch (_error) {
+                sessionStorage.removeItem(storageKey);
+            }
             const ensureConversation = (key, title, mode) => {
                 if (!conversations.has(key)) {
-                    conversations.set(key, { title, mode, messages: [], history: [], pending: false, error: '' });
+                    conversations.set(key, {
+                        title,
+                        mode,
+                        style: 'concise',
+                        messages: [],
+                        history: [],
+                        pending: false,
+                        error: '',
+                        lastFailedQuestion: '',
+                        controller: null,
+                        draft: '',
+                    });
                 }
                 return conversations.get(key);
+            };
+            const resizeInput = () => {
+                input.style.height = 'auto';
+                input.style.height = `${Math.min(126, Math.max(38, input.scrollHeight))}px`;
             };
 
             const makeTrigger = (title, url) => {
@@ -1772,37 +1919,89 @@
                 });
             }
 
-            const appendMessage = (role, content) => {
+            const appendMessage = (role, content, { copyable = true } = {}) => {
+                const row = document.createElement('div');
+                row.className = `ai-message-row ${role}`;
                 const message = document.createElement('div');
                 message.className = `ai-message ${role}`;
-                message.textContent = content;
-                message.dataset.mathContent = '';
-                messageList.append(message);
+                if (role === 'pending') {
+                    const thinking = document.createElement('span');
+                    thinking.className = 'ai-thinking';
+                    thinking.setAttribute('aria-label', 'AI 正在回答');
+                    thinking.append(document.createElement('span'), document.createElement('span'), document.createElement('span'));
+                    message.append(thinking);
+                } else {
+                    message.textContent = content;
+                    message.dataset.mathContent = '';
+                }
+                row.append(message);
+                if (role === 'assistant' && content && copyable) {
+                    const tools = document.createElement('div');
+                    tools.className = 'ai-message-tools';
+                    const copy = document.createElement('button');
+                    copy.type = 'button';
+                    copy.className = 'ai-message-copy';
+                    copy.textContent = '複製';
+                    copy.dataset.aiCopyMessage = content;
+                    copy.title = '複製回答';
+                    tools.append(copy);
+                    row.append(tools);
+                }
+                messageList.append(row);
+            };
+            const renderSuggestions = (conversation) => {
+                suggestions.replaceChildren();
+                if (conversation.messages.length || conversation.pending) return;
+                suggestionSets[conversation.mode].forEach(([label, prompt]) => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'ai-suggestion';
+                    button.textContent = label;
+                    button.dataset.aiSuggestion = prompt;
+                    suggestions.append(button);
+                });
             };
             const renderConversation = (conversation) => {
                 messageList.replaceChildren();
                 if (!conversation.messages.length) {
-                    appendMessage('assistant', conversation.mode === 'card' ? '哪個步驟不清楚？' : '想問什麼？');
+                    appendMessage(
+                        'assistant',
+                        conversation.mode === 'card' ? '這張卡哪裡不清楚？' : '今天想解決什麼問題？',
+                        { copyable: false },
+                    );
                 }
                 conversation.messages.forEach((message) => appendMessage(message.role, message.content));
-                if (conversation.pending) appendMessage('assistant pending', '正在整理回答…');
-                status.textContent = conversation.pending ? 'AI 正在回答' : (conversation.error || '');
+                if (conversation.pending) appendMessage('pending', '');
+                renderSuggestions(conversation);
+                status.textContent = conversation.pending ? '回答中' : (conversation.error || '');
                 status.classList.toggle('error', Boolean(conversation.error));
                 submit.disabled = conversation.pending;
-                input.disabled = conversation.pending;
+                submit.hidden = conversation.pending;
+                stop.hidden = !conversation.pending;
                 reset.disabled = conversation.pending || conversation.messages.length === 0;
+                retry.hidden = !conversation.lastFailedQuestion || conversation.pending;
+                styleButtons.forEach((button) => {
+                    button.classList.toggle('is-active', button.dataset.aiStyle === conversation.style);
+                    button.setAttribute('aria-pressed', button.dataset.aiStyle === conversation.style ? 'true' : 'false');
+                    button.disabled = conversation.pending;
+                });
                 toggle.classList.toggle('is-pending', conversation.pending);
-                window.renderStudyMath();
+                window.renderStudyMath(dialog);
                 window.requestAnimationFrame(() => { messageList.scrollTop = messageList.scrollHeight; });
             };
             const activateConversation = (key, title, mode) => {
+                const previousConversation = conversations.get(activeKey);
+                if (previousConversation) previousConversation.draft = input.value;
                 activeKey = key;
                 const conversation = ensureConversation(key, title, mode);
                 heading.textContent = conversation.title;
+                modeLabel.textContent = conversation.mode === 'card' ? '重點卡助教' : '一般問答';
                 contextTitle.textContent = conversation.mode === 'card' ? conversation.title : '';
                 cardContext.hidden = conversation.mode !== 'card';
                 input.setAttribute('aria-label', conversation.mode === 'card' ? '詢問這張重點卡' : '詢問 AI 助手');
                 input.placeholder = conversation.mode === 'card' ? '詢問這張重點卡' : '輸入任何問題';
+                input.value = conversation.draft || '';
+                resizeInput();
                 heading.dataset.mathContent = '';
                 delete heading.dataset.mathRendered;
                 delete contextTitle.dataset.mathRendered;
@@ -1832,7 +2031,60 @@
             generalModeButton.addEventListener('click', () => {
                 activateConversation(generalKey, 'AI 問答', 'general');
             });
-            form.addEventListener('submit', async (event) => {
+            const sendQuestion = async (question, { retrying = false } = {}) => {
+                const requestKey = activeKey;
+                const conversation = conversations.get(requestKey);
+                if (!conversation || conversation.pending || !question) return;
+                if (retrying && conversation.messages.at(-1)?.role === 'error') conversation.messages.pop();
+                const priorHistory = conversation.history.slice(-6);
+                const userMessage = { role: 'user', content: question };
+                if (!retrying) conversation.messages.push(userMessage);
+                conversation.pending = true;
+                conversation.error = '';
+                conversation.lastFailedQuestion = '';
+                conversation.controller = new AbortController();
+                if (!retrying) {
+                    input.value = '';
+                    conversation.draft = '';
+                    resizeInput();
+                }
+                renderConversation(conversation);
+                try {
+                    const response = await fetch(requestKey, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({
+                            question,
+                            history: priorHistory,
+                            response_style: conversation.style,
+                        }),
+                        signal: conversation.controller.signal,
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok || !result.ok) throw new Error(result.error || 'AI 助教暫時無法回答，請稍後再試。');
+                    const assistantMessage = { role: 'assistant', content: result.answer };
+                    conversation.messages.push(assistantMessage);
+                    conversation.history.push(userMessage, assistantMessage);
+                    conversation.history = conversation.history.slice(-12);
+                    conversation.lastFailedQuestion = '';
+                } catch (error) {
+                    const aborted = error?.name === 'AbortError';
+                    const message = aborted ? '已停止這次回答。' : (error.message || 'AI 助教暫時無法回答，請稍後再試。');
+                    conversation.messages.push({ role: 'error', content: message });
+                    conversation.error = aborted ? '已停止' : '回答失敗';
+                    conversation.lastFailedQuestion = question;
+                } finally {
+                    conversation.pending = false;
+                    conversation.controller = null;
+                    persistConversations();
+                    if (activeKey === requestKey) {
+                        renderConversation(conversation);
+                        input.focus();
+                    }
+                }
+            };
+            form.addEventListener('submit', (event) => {
                 event.preventDefault();
                 const conversation = conversations.get(activeKey);
                 const question = input.value.trim();
@@ -1842,36 +2094,7 @@
                     renderConversation(conversation);
                     return;
                 }
-                const priorHistory = conversation.history.slice(-6);
-                const userMessage = { role: 'user', content: question };
-                conversation.messages.push(userMessage);
-                conversation.pending = true;
-                conversation.error = '';
-                input.value = '';
-                renderConversation(conversation);
-                try {
-                    const response = await fetch(activeKey, {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-                        body: JSON.stringify({ question, history: priorHistory }),
-                    });
-                    const result = await response.json().catch(() => ({}));
-                    if (!response.ok || !result.ok) throw new Error(result.error || 'AI 助教暫時無法回答，請稍後再試。');
-                    const assistantMessage = { role: 'assistant', content: result.answer };
-                    conversation.messages.push(assistantMessage);
-                    conversation.history.push(userMessage, assistantMessage);
-                    conversation.history = conversation.history.slice(-12);
-                } catch (error) {
-                    conversation.messages.push({ role: 'error', content: error.message || 'AI 助教暫時無法回答，請稍後再試。' });
-                    conversation.error = '回答失敗';
-                } finally {
-                    conversation.pending = false;
-                    if (conversations.get(activeKey) === conversation) {
-                        renderConversation(conversation);
-                        input.focus();
-                    }
-                }
+                sendQuestion(question);
             });
             input.addEventListener('keydown', (event) => {
                 if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -1879,13 +2102,71 @@
                     form.requestSubmit();
                 }
             });
+            input.addEventListener('input', () => {
+                const conversation = conversations.get(activeKey);
+                if (conversation) conversation.draft = input.value;
+                resizeInput();
+            });
+            suggestions.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-ai-suggestion]');
+                if (!button) return;
+                input.value = button.dataset.aiSuggestion;
+                const conversation = conversations.get(activeKey);
+                if (conversation) conversation.draft = input.value;
+                resizeInput();
+                input.focus();
+                input.setSelectionRange(input.value.length, input.value.length);
+            });
+            styleButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const conversation = conversations.get(activeKey);
+                    if (!conversation || conversation.pending) return;
+                    conversation.style = button.dataset.aiStyle === 'detailed' ? 'detailed' : 'concise';
+                    renderConversation(conversation);
+                    persistConversations();
+                });
+            });
+            stop.addEventListener('click', () => {
+                conversations.get(activeKey)?.controller?.abort();
+            });
+            retry.addEventListener('click', () => {
+                const conversation = conversations.get(activeKey);
+                if (!conversation?.lastFailedQuestion || conversation.pending) return;
+                sendQuestion(conversation.lastFailedQuestion, { retrying: true });
+            });
+            messageList.addEventListener('click', async (event) => {
+                const button = event.target.closest('[data-ai-copy-message]');
+                if (!button) return;
+                const value = button.dataset.aiCopyMessage || '';
+                try {
+                    if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
+                    await navigator.clipboard.writeText(value);
+                } catch (_error) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = value;
+                    textarea.setAttribute('readonly', '');
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.append(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    textarea.remove();
+                }
+                button.textContent = '已複製';
+                window.setTimeout(() => { button.textContent = '複製'; }, 1200);
+            });
             reset.addEventListener('click', () => {
                 const conversation = conversations.get(activeKey);
                 if (!conversation || conversation.pending) return;
                 conversation.messages = [];
                 conversation.history = [];
                 conversation.error = '';
+                conversation.lastFailedQuestion = '';
+                conversation.draft = '';
+                input.value = '';
+                resizeInput();
                 renderConversation(conversation);
+                persistConversations();
                 input.focus();
             });
             dialog.querySelectorAll('[data-ai-close]').forEach((button) => {

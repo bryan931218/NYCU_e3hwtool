@@ -14244,6 +14244,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if len(question) > 800:
             return {"ok": False, "error": "問題請控制在 800 字以內。"}, 400
 
+        response_style = str(payload.get("response_style") or "concise").strip().lower()
+        if response_style not in {"concise", "detailed"}:
+            response_style = "concise"
+        style_instruction = (
+            "採詳細回答：先給結論，再用必要推導、條件與一個例子說清楚，控制在 5 至 10 個短段落。"
+            if response_style == "detailed"
+            else "採精簡回答：直接回答核心問題，保留必要條件與公式，控制在 2 至 5 個短段落。"
+        )
+
         history: List[Dict[str, str]] = []
         raw_history = payload.get("history")
         if isinstance(raw_history, list):
@@ -14309,7 +14318,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "你是研究所考試筆記的即時 AI 助教。請以提供的重點卡為主要脈絡，回答學生目前不熟悉的觀念。"
             "重點卡、同主題卡與最近對話都可能含有錯誤，只能當作問題背景，不可當成事實依據；必須以可靠學科知識重新驗證。"
             "若卡片有可明確判定的錯誤，必須指出正確內容，不可沿用錯誤"
-            "回答使用好理解的繁體中文，控制在 2 至 8 個短段落且完整收尾。數學表達式一律使用 LaTeX："
+            f"回答使用好理解的繁體中文並完整收尾。{style_instruction}數學表達式一律使用 LaTeX："
             "行內公式用 \\( ... \\)，獨立公式用 \\[ ... \\]。不要輸出 Markdown 標題、粗體標記或程式碼區塊。"
             "不得提及資料庫欄位、session_id、concept_index 或 s6:c6 這類內部代碼。\n\n"
             f"重點卡資料：\n{json.dumps(card_context, ensure_ascii=False)}\n\n"
@@ -14357,7 +14366,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "AI 助教沒有產生有效回答，請換個方式提問。"}, 502
         record_ui_event(
             "study_recall_card_question",
-            meta={"session_id": session_id, "concept_index": concept_index, "history_count": len(history)},
+            meta={
+                "session_id": session_id,
+                "concept_index": concept_index,
+                "history_count": len(history),
+                "response_style": response_style,
+            },
         )
         return {"ok": True, "answer": answer}
 
@@ -14372,6 +14386,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "請輸入想詢問的內容。"}, 400
         if len(question) > 800:
             return {"ok": False, "error": "問題請控制在 800 字以內。"}, 400
+
+        response_style = str(payload.get("response_style") or "concise").strip().lower()
+        if response_style not in {"concise", "detailed"}:
+            response_style = "concise"
+        style_instruction = (
+            "採詳細回答：先給結論，再補上必要理由、步驟與一個具體例子，控制在 5 至 10 個短段落。"
+            if response_style == "detailed"
+            else "採精簡回答：直接回答核心問題並保留必要條件，控制在 2 至 5 個短段落。"
+        )
 
         history: List[Dict[str, str]] = []
         raw_history = payload.get("history")
@@ -14392,7 +14415,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "你是可靠、直接且善於教學的繁體中文 AI 助手。這是一般問答模式，沒有指定筆記或重點卡；"
             "請依可靠知識回答使用者的實際問題，不要假裝看過使用者的筆記，也不要自行捏造來源。"
             "若資訊不足或問題有多種合理解讀，先說明必要假設；若內容可能過時，清楚提醒需要查證。"
-            "回答要完整收尾並避免冗長。數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
+            f"回答要完整收尾並避免冗長。{style_instruction}數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
             "獨立公式用 \\[ ... \\]。除非使用者需要，否則不要加入多餘標題或結尾邀請。\n\n"
             f"最近對話：\n{conversation or '尚無'}\n\n"
             f"使用者這次的問題：{question}"
@@ -14438,7 +14461,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "AI 助手沒有產生有效回答，請換個方式提問。"}, 502
         record_ui_event(
             "study_recall_general_question",
-            meta={"history_count": len(history)},
+            meta={"history_count": len(history), "response_style": response_style},
         )
         return {"ok": True, "answer": answer}
 
