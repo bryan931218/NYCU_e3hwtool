@@ -284,6 +284,43 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertIn("公式表", html)
                 self.assertIn("動態規劃", html)
                 self.assertIn("data-library-ai-answer", html)
+                self.assertIn('data-general-ask-url="/admin/study-recall/assistant/ask"', html)
+                self.assertIn("data-ai-general-mode", html)
+                self.assertIn("activateConversation(generalKey, 'AI 問答', 'general')", html)
+            finally:
+                storage._engine.dispose()
+
+    def test_floating_assistant_answers_without_a_selected_card(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response("雜湊表的平均查詢時間為 \\(O(1)\\)。"),
+                ) as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={
+                            "question": "雜湊表查詢的時間複雜度是什麼？",
+                            "history": [
+                                {"role": "user", "content": "我正在複習資料結構。"},
+                                {"role": "assistant", "content": "了解。"},
+                            ],
+                        },
+                    )
+
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(payload["ok"])
+                self.assertIn(r"\(O(1)\)", payload["answer"])
+                request_prompt = openai_post.call_args.kwargs["json"]["input"][0]["content"][0]["text"]
+                self.assertIn("這是一般問答模式，沒有指定筆記或重點卡", request_prompt)
+                self.assertIn("我正在複習資料結構", request_prompt)
+                self.assertNotIn("重點卡資料", request_prompt)
+                self.assertEqual(openai_post.call_args.kwargs["json"]["max_output_tokens"], 3200)
             finally:
                 storage._engine.dispose()
 

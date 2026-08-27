@@ -14361,6 +14361,87 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         )
         return {"ok": True, "answer": answer}
 
+    @app.post("/admin/study-recall/assistant/ask")
+    @admin_required
+    def admin_study_recall_ask_general():
+        if not openai_api_key:
+            return {"ok": False, "error": "AI 問答尚未啟用，請先設定 OPENAI_API_KEY。"}, 503
+        payload = request.get_json(silent=True) or {}
+        question = " ".join(str(payload.get("question") or "").split()).strip()
+        if not question:
+            return {"ok": False, "error": "請輸入想詢問的內容。"}, 400
+        if len(question) > 800:
+            return {"ok": False, "error": "問題請控制在 800 字以內。"}, 400
+
+        history: List[Dict[str, str]] = []
+        raw_history = payload.get("history")
+        if isinstance(raw_history, list):
+            for entry in raw_history[-6:]:
+                if not isinstance(entry, dict):
+                    continue
+                role = str(entry.get("role") or "").strip().lower()
+                content = " ".join(str(entry.get("content") or "").split()).strip()[:1600]
+                if role in {"user", "assistant"} and content:
+                    history.append({"role": role, "content": content})
+
+        conversation = "\n".join(
+            f"{'使用者' if entry['role'] == 'user' else '助理'}：{entry['content']}"
+            for entry in history
+        )
+        prompt = (
+            "你是可靠、直接且善於教學的繁體中文 AI 助手。這是一般問答模式，沒有指定筆記或重點卡；"
+            "請依可靠知識回答使用者的實際問題，不要假裝看過使用者的筆記，也不要自行捏造來源。"
+            "若資訊不足或問題有多種合理解讀，先說明必要假設；若內容可能過時，清楚提醒需要查證。"
+            "回答要完整收尾並避免冗長。數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
+            "獨立公式用 \\[ ... \\]。除非使用者需要，否則不要加入多餘標題或結尾邀請。\n\n"
+            f"最近對話：\n{conversation or '尚無'}\n\n"
+            f"使用者這次的問題：{question}"
+        )
+
+        def request_answer(request_prompt: str) -> Tuple[str, bool]:
+            response = requests.post(
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": openai_model,
+                    "store": False,
+                    "input": [{"role": "user", "content": [{"type": "input_text", "text": request_prompt}]}],
+                    "reasoning": {
+                        "effort": normalize_openai_reasoning_effort(openai_model, "low")
+                    },
+                    "max_output_tokens": 3200,
+                },
+                timeout=90,
+            )
+            response.raise_for_status()
+            response_payload = response.json()
+            return _extract_openai_text(response_payload).strip()[:8000], response_payload.get("status") == "incomplete"
+
+        try:
+            answer, incomplete = request_answer(prompt)
+            if incomplete:
+                answer, incomplete = request_answer(
+                    prompt
+                    + "\n\n上一次回答因長度限制而不完整。請重新從頭回答，不要接續殘句；"
+                    "保留必要條件與結論，壓縮內容並以完整句子收尾。"
+                )
+        except requests.HTTPError as exc:
+            error_code, error_type, error_message = _openai_error_details(exc.response)
+            if _is_openai_quota_error(error_code, error_type, error_message):
+                return {"ok": False, "error": "OpenAI API 額度不足，請管理員補充額度後再使用 AI 助手。"}, 503
+            return {"ok": False, "error": "AI 助手暫時無法回答，請稍後再試。"}, 502
+        except (requests.RequestException, ValueError, TypeError):
+            return {"ok": False, "error": "AI 助手暫時無法回答，請稍後再試。"}, 502
+        if incomplete:
+            return {"ok": False, "error": "回答內容仍過長，請縮小問題範圍後再試。"}, 502
+        if not answer:
+            return {"ok": False, "error": "AI 助手沒有產生有效回答，請換個方式提問。"}, 502
+        record_ui_event(
+            "study_recall_general_question",
+            meta={"history_count": len(history)},
+        )
+        return {"ok": True, "answer": answer}
+
     @app.post("/admin/study-recall/<int:session_id>/delete")
     @admin_required
     def admin_study_recall_delete(session_id: int):

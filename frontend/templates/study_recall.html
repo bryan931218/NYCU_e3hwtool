@@ -53,6 +53,7 @@
         .source-locator-dialog { width:min(1120px,calc(100vw - 24px)); height:min(820px,calc(100vh - 24px)); max-width:none; max-height:none; padding:0; color:var(--ink); border:1px solid #b8c5d5; border-radius:7px; background:#fff; box-shadow:0 28px 90px rgba(23,32,51,.28); }.source-locator-dialog::backdrop { background:rgba(23,32,51,.58); }.source-locator-shell { height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(0,1fr); background:#fff; }.source-locator-head { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); background:#fff; }.source-locator-heading { min-width:0; background:#fff; }.source-locator-kicker { display:block; margin-bottom:3px; color:var(--teal); font-size:10px; font-weight:900; }.source-locator-title { margin:0; overflow:hidden; font-size:17px; text-overflow:ellipsis; white-space:nowrap; }.source-locator-actions { display:flex; align-items:center; gap:6px; background:#fff; }.source-locator-tool { min-width:34px; height:34px; display:grid; place-items:center; padding:0 9px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#fff; font-size:17px; font-weight:850; cursor:pointer; }.source-locator-tool.fit { font-size:11px; }.source-locator-tool:hover,.source-locator-tool:focus-visible { color:var(--blue); border-color:var(--blue); outline:0; }.source-locator-evidence { min-height:38px; margin:0; padding:9px 16px; color:#42536a; border-bottom:1px solid var(--line); background:#f8fafc; font-size:12px; line-height:1.55; overflow-wrap:anywhere; }.source-locator-viewport { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; background:#e8edf3; }.source-locator-canvas { position:relative; margin:16px auto; background:#fff; box-shadow:0 3px 18px rgba(23,32,51,.16); }.source-locator-image { position:absolute; inset:0; width:100%; height:100%; display:block; user-select:none; }.source-locator-highlight { position:absolute; z-index:2; border:4px solid #d7263d; background:rgba(255,222,53,.26); box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 7px rgba(215,38,61,.24); pointer-events:none; animation:source-locator-pulse 1.1s ease-out 2; }.source-locator-highlight span { position:absolute; left:-4px; bottom:calc(100% + 7px); padding:3px 7px; color:#fff; border-radius:3px; background:#d7263d; font-size:11px; font-weight:900; white-space:nowrap; }@keyframes source-locator-pulse { 0% { box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 7px rgba(215,38,61,.38); } 70% { box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 18px rgba(215,38,61,0); } 100% { box-shadow:0 0 0 3px rgba(255,255,255,.9),0 0 0 7px rgba(215,38,61,.24); } }
         .concept-title-row,.card-title-actions { min-width:0; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }.concept-title-row > strong,.concept-title-row > .concept-fold-title,.review-card-title > strong { min-width:0; }.card-title-actions { flex:0 0 auto; justify-content:flex-end; flex-wrap:wrap; }.card-ai-trigger { min-height:28px; padding:4px 8px; color:var(--teal); border:1px solid #a9d9d5; border-radius:4px; background:var(--teal-soft); font-size:11px; font-weight:900; white-space:nowrap; cursor:pointer; }.card-ai-trigger:hover,.card-ai-trigger:focus-visible { border-color:var(--teal); outline:0; }.card-ai-trigger:disabled { opacity:.5; cursor:not-allowed; }.ai-card-dialog { width:min(620px,calc(100vw - 28px)); height:min(680px,calc(100vh - 36px)); max-height:calc(100vh - 36px); padding:0; color:var(--ink); border:1px solid var(--line); border-radius:7px; background:#fff; box-shadow:0 24px 70px rgba(23,32,51,.24); }.ai-card-dialog::backdrop { background:rgba(23,32,51,.46); }.ai-dialog-body { height:100%; min-height:0; display:grid; grid-template-rows:auto auto minmax(150px,1fr) auto; }.ai-dialog-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:start; padding:18px 20px 14px; border-bottom:1px solid var(--line); }.ai-dialog-kicker { display:block; margin-bottom:4px; color:var(--teal); font-size:10px; font-weight:900; }.ai-dialog-head h2 { margin:0; font-size:19px; overflow-wrap:anywhere; }.ai-dialog-head-actions { display:flex; align-items:center; gap:6px; }.ai-reset { min-height:34px; padding:0 9px; color:var(--muted); border:1px solid var(--line); border-radius:4px; background:#fff; font-size:11px; font-weight:800; cursor:pointer; }.ai-reset:hover { color:var(--ink); background:#f5f7fb; }.ai-card-context { padding:9px 20px; color:var(--muted); background:#fafcff; border-bottom:1px solid var(--line); font-size:12px; }.ai-chat-messages { min-height:0; display:grid; align-content:start; gap:9px; padding:16px 20px; overflow-y:auto; overscroll-behavior:contain; }.ai-message { max-width:88%; padding:9px 11px; border-radius:5px; font-size:13px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }.ai-message.assistant { justify-self:start; color:var(--ink); background:#f2f6fb; border:1px solid var(--line); }.ai-message.user { justify-self:end; color:#fff; background:var(--blue); }.ai-message.pending { color:var(--muted); }.ai-message.error { color:var(--red); background:#fff4f4; border-color:#edc8cc; }.ai-chat-form { padding:12px 20px 16px; border-top:1px solid var(--line); background:#fff; }.ai-chat-form textarea { width:100%; min-height:76px; max-height:160px; padding:10px 11px; color:var(--ink); border:1px solid #c9d5e4; border-radius:4px; background:#fff; resize:vertical; outline:0; }.ai-chat-form textarea:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(23,105,216,.1); }.ai-chat-footer { min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; }.ai-chat-status { min-width:0; color:var(--muted); font-size:11px; }.ai-chat-status.error { color:var(--red); }.ai-chat-footer .submit { flex:0 0 auto; }.session-topic { border-bottom:1px solid var(--line); }.session-topic:last-child { border-bottom:0; }.session-topic-head { padding:11px 12px 5px; color:var(--teal); font-size:11px; font-weight:900; }.session-topic .history-note:last-child { border-bottom:0; }
         .ai-card-dialog { position:fixed; z-index:1200; left:18px; right:auto; top:auto; bottom:78px; width:min(440px,calc(100vw - 36px)); height:min(620px,calc(100vh - 100px)); max-height:calc(100vh - 100px); margin:0; }.ai-card-dialog[hidden] { display:none; }.ai-floating-toggle { position:fixed; z-index:1201; left:18px; bottom:18px; width:48px; height:48px; display:grid; place-items:center; padding:0; color:#fff; border:0; border-radius:7px; background:var(--teal); box-shadow:0 10px 28px rgba(23,32,51,.2); font-size:13px; font-weight:950; cursor:pointer; }.ai-floating-toggle:hover,.ai-floating-toggle:focus-visible,.ai-floating-toggle.is-active { background:#056a6b; outline:0; }.ai-floating-toggle:disabled { opacity:.5; cursor:not-allowed; }.ai-floating-toggle.is-pending::after { content:""; position:absolute; width:8px; height:8px; right:5px; top:5px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:ai-spin .8s linear infinite; } @keyframes ai-spin { to { transform:rotate(360deg); } }
+        .ai-card-context { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px; }.ai-card-context[hidden] { display:none; }.ai-card-context > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.ai-general-mode { flex:0 0 auto; min-height:30px; padding:0 9px; color:var(--teal); border:1px solid #b8dcd8; border-radius:4px; background:var(--teal-soft); font-size:10px; font-weight:900; cursor:pointer; }.ai-general-mode:hover,.ai-general-mode:focus-visible { border-color:var(--teal); outline:0; }
         .ai-card-dialog { left:auto; right:18px; }.ai-floating-toggle { left:auto; right:18px; }.ai-dialog-head { cursor:grab; touch-action:none; user-select:none; }.ai-card-dialog.is-dragging .ai-dialog-head { cursor:grabbing; }.ai-dialog-head-actions button { cursor:pointer; }
         .queue { padding:10px; }.queue-item { display:block; padding:12px; border-bottom:1px solid var(--line); }.queue-item:last-child { border-bottom:0; }.queue-item:hover { background:#fafcff; }.queue-title { font-size:13px; font-weight:850; line-height:1.45; }.queue-meta { margin-top:4px; color:var(--muted); font-size:12px; }.history-note { display:flex; align-items:center; border-bottom:1px solid var(--line); }.history-note .queue-item { flex:1; border-bottom:0; }.history-note form { padding-right:8px; }.history-note .delete-note { min-height:30px; font-size:11px; }.due { color:var(--amber); font-weight:850; }.empty { padding:20px; color:var(--muted); text-align:center; font-size:13px; line-height:1.6; }.how { padding:17px; color:var(--muted); font-size:13px; line-height:1.7; }.how strong { color:var(--ink); }.history { max-height:460px; overflow:auto; }
         .note-search-body { padding:16px 20px 20px; }
@@ -538,10 +539,10 @@
             </div>
         </div>
     </dialog>
-    <section id="card-ai-dialog" class="ai-card-dialog" role="dialog" aria-modal="false" aria-labelledby="card-ai-title" data-ai-enabled="{{ '1' if openai_ready else '0' }}" data-selected-session-id="{{ selected_session.id if selected_session else '' }}" hidden>
+    <section id="card-ai-dialog" class="ai-card-dialog" role="dialog" aria-modal="false" aria-labelledby="card-ai-title" data-ai-enabled="{{ '1' if openai_ready else '0' }}" data-general-ask-url="{{ url_for('admin_study_recall_ask_general') }}" data-selected-session-id="{{ selected_session.id if selected_session else '' }}" hidden>
         <div class="ai-dialog-body">
             <div class="ai-dialog-head"><div><span class="ai-dialog-kicker">即時 AI 助教</span><h2 id="card-ai-title"></h2></div><div class="ai-dialog-head-actions"><button class="ai-reset" type="button" data-ai-reset>清除對話</button><button class="dialog-close" type="button" data-ai-close aria-label="關閉" title="關閉">×</button></div></div>
-            <div class="ai-card-context">正在詢問：<strong data-ai-context-title data-math-content></strong></div>
+            <div class="ai-card-context" data-ai-card-context hidden><span>正在詢問：<strong data-ai-context-title data-math-content></strong></span><button class="ai-general-mode" type="button" data-ai-general-mode>一般問答</button></div>
             <div class="ai-chat-messages" data-ai-messages aria-live="polite"></div>
             <form class="ai-chat-form" data-ai-form><textarea data-ai-input maxlength="800" rows="3" aria-label="詢問這張重點卡" placeholder="輸入你的問題" required></textarea><div class="ai-chat-footer"><span class="ai-chat-status" data-ai-status aria-live="polite"></span><button class="submit" type="submit">送出問題</button></div></form>
         </div>
@@ -1647,7 +1648,10 @@
             const reset = dialog.querySelector('[data-ai-reset]');
             const dragHandle = dialog.querySelector('.ai-dialog-head');
             const conversations = new Map();
-            let activeKey = '';
+            const generalKey = dialog.dataset.generalAskUrl;
+            const cardContext = dialog.querySelector('[data-ai-card-context]');
+            const generalModeButton = dialog.querySelector('[data-ai-general-mode]');
+            let activeKey = generalKey;
             let dragState = null;
             let preferredPanelWidth = null;
 
@@ -1717,6 +1721,13 @@
             dragHandle.addEventListener('pointercancel', finishDrag);
             window.addEventListener('resize', clampPanelPosition);
 
+            const ensureConversation = (key, title, mode) => {
+                if (!conversations.has(key)) {
+                    conversations.set(key, { title, mode, messages: [], history: [], pending: false, error: '' });
+                }
+                return conversations.get(key);
+            };
+
             const makeTrigger = (title, url) => {
                 const button = document.createElement('button');
                 button.type = 'button';
@@ -1770,7 +1781,9 @@
             };
             const renderConversation = (conversation) => {
                 messageList.replaceChildren();
-                if (!conversation.messages.length) appendMessage('assistant', '哪個步驟不清楚？');
+                if (!conversation.messages.length) {
+                    appendMessage('assistant', conversation.mode === 'card' ? '哪個步驟不清楚？' : '想問什麼？');
+                }
                 conversation.messages.forEach((message) => appendMessage(message.role, message.content));
                 if (conversation.pending) appendMessage('assistant pending', '正在整理回答…');
                 status.textContent = conversation.pending ? 'AI 正在回答' : (conversation.error || '');
@@ -1782,16 +1795,14 @@
                 window.renderStudyMath();
                 window.requestAnimationFrame(() => { messageList.scrollTop = messageList.scrollHeight; });
             };
-            document.addEventListener('click', (event) => {
-                const trigger = event.target.closest('[data-ai-card]');
-                if (!trigger || trigger.disabled) return;
-                activeKey = trigger.dataset.aiCardUrl;
-                if (!conversations.has(activeKey)) {
-                    conversations.set(activeKey, { title: trigger.dataset.aiCardTitle, messages: [], history: [], pending: false, error: '' });
-                }
-                const conversation = conversations.get(activeKey);
+            const activateConversation = (key, title, mode) => {
+                activeKey = key;
+                const conversation = ensureConversation(key, title, mode);
                 heading.textContent = conversation.title;
-                contextTitle.textContent = conversation.title;
+                contextTitle.textContent = conversation.mode === 'card' ? conversation.title : '';
+                cardContext.hidden = conversation.mode !== 'card';
+                input.setAttribute('aria-label', conversation.mode === 'card' ? '詢問這張重點卡' : '詢問 AI 助手');
+                input.placeholder = conversation.mode === 'card' ? '詢問這張重點卡' : '輸入任何問題';
                 heading.dataset.mathContent = '';
                 delete heading.dataset.mathRendered;
                 delete contextTitle.dataset.mathRendered;
@@ -1800,25 +1811,26 @@
                 renderConversation(conversation);
                 setPanelOpen(true);
                 window.setTimeout(() => input.focus(), 0);
+            };
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-ai-card]');
+                if (!trigger || trigger.disabled) return;
+                activateConversation(trigger.dataset.aiCardUrl, trigger.dataset.aiCardTitle, 'card');
             });
             toggle.addEventListener('click', () => {
                 if (!dialog.hidden) {
                     setPanelOpen(false);
                     return;
                 }
-                if (!activeKey) {
-                    const firstTrigger = document.querySelector('[data-ai-card]:not(:disabled)');
-                    if (firstTrigger) firstTrigger.click();
-                    return;
-                }
                 const conversation = conversations.get(activeKey);
                 if (conversation) {
-                    heading.textContent = conversation.title;
-                    contextTitle.textContent = conversation.title;
-                    renderConversation(conversation);
-                    setPanelOpen(true);
-                    window.setTimeout(() => input.focus(), 0);
+                    activateConversation(activeKey, conversation.title, conversation.mode);
+                } else {
+                    activateConversation(generalKey, 'AI 問答', 'general');
                 }
+            });
+            generalModeButton.addEventListener('click', () => {
+                activateConversation(generalKey, 'AI 問答', 'general');
             });
             form.addEventListener('submit', async (event) => {
                 event.preventDefault();
