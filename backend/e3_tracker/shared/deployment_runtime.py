@@ -602,6 +602,121 @@ class DeploymentSafeStorage(PersistentStorage):
                 },
             )
 
+    def _restore_discrete_video_11_fresh_progress(self) -> None:
+        repair_key = "discrete-video-11-fresh-progress-2026-08-27"
+        offset_repair_key = "discrete-video-11-progress-offset-2026-08-27"
+        repair_day = "2026-08-26"
+        with self._lock, self._engine.begin() as conn:
+            if conn.execute(
+                text("SELECT repair_key FROM e3_data_repairs WHERE repair_key = :repair_key"),
+                {"repair_key": repair_key},
+            ).first():
+                return
+
+            offset_repair = conn.execute(
+                text("SELECT details FROM e3_data_repairs WHERE repair_key = :repair_key"),
+                {"repair_key": offset_repair_key},
+            ).mappings().first()
+            if offset_repair is None:
+                return
+
+            try:
+                baseline = max(
+                    0.0,
+                    float(json.loads(str(offset_repair["details"] or "{}"))["baseline_seconds"]),
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                return
+            if baseline <= 0:
+                return
+
+            source = conn.execute(
+                text(
+                    "SELECT id FROM study_plan_videos "
+                    "WHERE subject = :subject AND sequence = 11"
+                ),
+                {"subject": "離散數學"},
+            ).mappings().first()
+            if source is None:
+                return
+            source_id = int(source["id"])
+
+            source_events = conn.execute(
+                text(
+                    "SELECT id, watched_seconds, updated_at FROM study_plan_activity_events "
+                    "WHERE video_id = :source_id ORDER BY updated_at, id"
+                ),
+                {"source_id": source_id},
+            ).mappings().all()
+            restored_event_count = 0
+            running_position = 0.0
+            for row in source_events:
+                watched = max(0.0, float(row["watched_seconds"] or 0))
+                event_day = self._study_plan_business_day_from_timestamp(str(row["updated_at"] or ""))
+                if event_day > repair_day:
+                    watched += baseline
+                    restored_event_count += 1
+                conn.execute(
+                    text(
+                        "UPDATE study_plan_activity_events SET watched_seconds = :watched, "
+                        "previous_watched_seconds = :previous, delta_seconds = :delta "
+                        "WHERE id = :event_id"
+                    ),
+                    {
+                        "watched": watched,
+                        "previous": running_position,
+                        "delta": watched - running_position,
+                        "event_id": int(row["id"]),
+                    },
+                )
+                running_position = watched
+
+            record = conn.execute(
+                text(
+                    "SELECT watched_seconds, playback_seconds FROM study_plan_video_records "
+                    "WHERE video_id = :source_id"
+                ),
+                {"source_id": source_id},
+            ).mappings().first()
+            restored_record = None
+            now = datetime.utcnow().isoformat()
+            if record is not None:
+                restored_record = max(0.0, float(record["watched_seconds"] or 0)) + baseline
+                restored_playback = max(0.0, float(record["playback_seconds"] or 0)) + baseline
+                conn.execute(
+                    text(
+                        "UPDATE study_plan_video_records SET watched_seconds = :watched, "
+                        "playback_seconds = :playback, progress_version = progress_version + 1, "
+                        "updated_at = :updated_at WHERE video_id = :source_id"
+                    ),
+                    {
+                        "watched": restored_record,
+                        "playback": restored_playback,
+                        "updated_at": now,
+                        "source_id": source_id,
+                    },
+                )
+                self._record_study_plan_daily_snapshot_locked(conn, now=now)
+
+            conn.execute(
+                text(
+                    "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                    "VALUES (:repair_key, :details, :applied_at)"
+                ),
+                {
+                    "repair_key": repair_key,
+                    "details": json.dumps(
+                        {
+                            "restored_seconds": baseline,
+                            "restored_events": restored_event_count,
+                            "restored_record_seconds": restored_record,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "applied_at": now,
+                },
+            )
+
     def load_discord_presence_settings(self) -> Dict[str, Any]:
         with self._lock, self._engine.connect() as conn:
             row = conn.execute(
@@ -805,7 +920,7 @@ class DeploymentSafeStorage(PersistentStorage):
 
         super().sync_study_plan_videos(merged)
         self._repair_discrete_video_11_12_history()
-        self._repair_discrete_video_11_progress_offset()
+        self._restore_discrete_video_11_fresh_progress()
 
 
 def _admin_access(storage: DeploymentSafeStorage) -> tuple[bool, bool]:

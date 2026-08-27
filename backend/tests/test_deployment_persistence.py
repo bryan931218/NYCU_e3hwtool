@@ -136,13 +136,13 @@ class DeploymentPersistenceTests(unittest.TestCase):
             }
             self.assertEqual(repaired_by_day_sequence[("2026-08-26", 12)]["delta_seconds"], 1054)
             self.assertEqual(repaired_by_day_sequence[("2026-08-27", 12)]["delta_seconds"], 806)
-            self.assertEqual(repaired_by_day_sequence[("2026-08-27", 11)]["delta_seconds"], 220)
+            self.assertEqual(repaired_by_day_sequence[("2026-08-27", 11)]["delta_seconds"], 1274)
             repaired_videos = {
                 item["sequence"]: item
                 for item in storage.list_study_plan_videos_with_records()
             }
-            self.assertEqual(repaired_videos[11]["watched_seconds"], 220)
-            self.assertEqual(repaired_videos[11]["playback_seconds"], 220)
+            self.assertEqual(repaired_videos[11]["watched_seconds"], 1274)
+            self.assertEqual(repaired_videos[11]["playback_seconds"], 1274)
             self.assertEqual(repaired_videos[12]["watched_seconds"], 1860)
             with storage._lock, storage._engine.connect() as conn:
                 sessions = conn.execute(
@@ -156,13 +156,79 @@ class DeploymentPersistenceTests(unittest.TestCase):
             self.assertEqual(session_by_key["old-video-session"]["video_id"], video_12_id)
             self.assertEqual(session_by_key["old-video-session"]["label"], "離散數學第 12 支")
             self.assertEqual(session_by_key["new-video-session"]["video_id"], video_11_id)
-            self.assertEqual(len(repairs), 2)
+            self.assertEqual(len(repairs), 1)
 
             storage.sync_study_plan_videos(inventory)
             self.assertEqual(
                 len(storage.list_study_plan_activity_events(start_day="2026-08-26", end_day="2026-08-27")),
                 3,
             )
+            storage._engine.dispose()
+
+    def test_discrete_video_history_repair_restores_fresh_video_11_progress(self):
+        inventory = [
+            {
+                "subject": "離散數學",
+                "sequence": sequence,
+                "title": f"離散數學第 {sequence} 支",
+                "duration_seconds": 10000,
+            }
+            for sequence in (11, 12)
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "restore.sqlite3"))
+            storage.sync_study_plan_videos(inventory)
+            videos = {
+                item["sequence"]: item
+                for item in storage.list_study_plan_videos_with_records()
+            }
+            video_11_id = int(videos[11]["id"])
+            video_12_id = int(videos[12]["id"])
+            with storage._lock, storage._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_activity_events "
+                        "(day, video_id, previous_watched_seconds, watched_seconds, delta_seconds, updated_at) "
+                        "VALUES "
+                        "('2026-08-26', :video_11, 0, 1054, 1054, '2026-08-26T15:00:00'), "
+                        "('2026-08-27', :video_12, 0, 1860, 1860, '2026-08-27T02:00:00'), "
+                        "('2026-08-27', :video_11, 1054, 1274, 220, '2026-08-27T02:01:00')"
+                    ),
+                    {"video_11": video_11_id, "video_12": video_12_id},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_video_records "
+                        "(video_id, watched_seconds, playback_seconds, progress_version, notes, updated_at) "
+                        "VALUES (:video_11, 1274, 1274, 3, '', '2026-08-27T02:01:00')"
+                    ),
+                    {"video_11": video_11_id},
+                )
+
+            storage._repair_discrete_video_11_12_history()
+            storage._repair_discrete_video_11_progress_offset()
+            storage._restore_discrete_video_11_fresh_progress()
+
+            repaired = storage.list_study_plan_activity_events(
+                start_day="2026-08-26",
+                end_day="2026-08-27",
+            )
+            repaired_by_day_sequence = {
+                (item["day"], item["sequence"]): item
+                for item in repaired
+            }
+            self.assertEqual(repaired_by_day_sequence[("2026-08-26", 12)]["delta_seconds"], 1054)
+            self.assertEqual(repaired_by_day_sequence[("2026-08-27", 12)]["delta_seconds"], 806)
+            self.assertEqual(repaired_by_day_sequence[("2026-08-27", 11)]["delta_seconds"], 1274)
+            repaired_videos = {
+                item["sequence"]: item
+                for item in storage.list_study_plan_videos_with_records()
+            }
+            self.assertEqual(repaired_videos[11]["watched_seconds"], 1274)
+            self.assertEqual(repaired_videos[11]["playback_seconds"], 1274)
+            with storage._lock, storage._engine.connect() as conn:
+                repairs = conn.execute(text("SELECT repair_key FROM e3_data_repairs")).all()
+            self.assertEqual(len(repairs), 3)
             storage._engine.dispose()
 
 
