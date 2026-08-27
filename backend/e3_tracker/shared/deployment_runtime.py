@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -279,6 +280,7 @@ class DeploymentSafeStorage(PersistentStorage):
         super().__init__(database_url)
         self._ensure_player_settings_table()
         self._ensure_discord_presence_settings_table()
+        self._ensure_data_repairs_table()
 
     def _ensure_player_settings_table(self) -> None:
         with self._lock, self._engine.begin() as conn:
@@ -342,6 +344,128 @@ class DeploymentSafeStorage(PersistentStorage):
                     "updated_at VARCHAR(64) NOT NULL"
                     ")"
                 )
+            )
+
+    def _ensure_data_repairs_table(self) -> None:
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS e3_data_repairs ("
+                    "repair_key VARCHAR(120) PRIMARY KEY, "
+                    "details TEXT NOT NULL, "
+                    "applied_at VARCHAR(64) NOT NULL"
+                    ")"
+                )
+            )
+
+    def _repair_discrete_video_11_12_history(self) -> None:
+        repair_key = "discrete-video-11-to-12-2026-08-26"
+        repair_day = "2026-08-26"
+        with self._lock, self._engine.begin() as conn:
+            if conn.execute(
+                text("SELECT repair_key FROM e3_data_repairs WHERE repair_key = :repair_key"),
+                {"repair_key": repair_key},
+            ).first():
+                return
+
+            videos = conn.execute(
+                text(
+                    "SELECT id, sequence, title FROM study_plan_videos "
+                    "WHERE subject = :subject AND sequence IN (11, 12)"
+                ),
+                {"subject": "離散數學"},
+            ).mappings().all()
+            video_by_sequence = {int(row["sequence"]): row for row in videos}
+            source = video_by_sequence.get(11)
+            target = video_by_sequence.get(12)
+            if source is None or target is None:
+                return
+
+            source_id = int(source["id"])
+            target_id = int(target["id"])
+            events = conn.execute(
+                text(
+                    "SELECT id, video_id, watched_seconds, updated_at "
+                    "FROM study_plan_activity_events "
+                    "WHERE video_id IN (:source_id, :target_id) "
+                    "ORDER BY updated_at, id"
+                ),
+                {"source_id": source_id, "target_id": target_id},
+            ).mappings().all()
+            moved_event_ids = [
+                int(row["id"])
+                for row in events
+                if int(row["video_id"]) == source_id
+                and self._study_plan_business_day_from_timestamp(str(row["updated_at"] or "")) == repair_day
+            ]
+            if not moved_event_ids:
+                return
+
+            for event_id in moved_event_ids:
+                conn.execute(
+                    text(
+                        "UPDATE study_plan_activity_events SET video_id = :target_id "
+                        "WHERE id = :event_id"
+                    ),
+                    {"target_id": target_id, "event_id": event_id},
+                )
+
+            repaired_events = conn.execute(
+                text(
+                    "SELECT id, video_id, watched_seconds FROM study_plan_activity_events "
+                    "WHERE video_id IN (:source_id, :target_id) "
+                    "ORDER BY updated_at, id"
+                ),
+                {"source_id": source_id, "target_id": target_id},
+            ).mappings().all()
+            previous_by_video = {source_id: 0.0, target_id: 0.0}
+            for row in repaired_events:
+                video_id = int(row["video_id"])
+                previous = previous_by_video[video_id]
+                watched = max(0.0, float(row["watched_seconds"] or 0))
+                conn.execute(
+                    text(
+                        "UPDATE study_plan_activity_events SET "
+                        "previous_watched_seconds = :previous, delta_seconds = :delta "
+                        "WHERE id = :event_id"
+                    ),
+                    {
+                        "previous": previous,
+                        "delta": watched - previous,
+                        "event_id": int(row["id"]),
+                    },
+                )
+                previous_by_video[video_id] = watched
+
+            moved_sessions = conn.execute(
+                text(
+                    "UPDATE study_time_sessions SET video_id = :target_id, label = :target_title "
+                    "WHERE video_id = :source_id AND day = :repair_day"
+                ),
+                {
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "target_title": str(target["title"] or "離散數學第 12 支"),
+                    "repair_day": repair_day,
+                },
+            ).rowcount
+            details = json.dumps(
+                {
+                    "moved_events": len(moved_event_ids),
+                    "moved_sessions": max(0, int(moved_sessions or 0)),
+                },
+                ensure_ascii=False,
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                    "VALUES (:repair_key, :details, :applied_at)"
+                ),
+                {
+                    "repair_key": repair_key,
+                    "details": details,
+                    "applied_at": datetime.utcnow().isoformat(),
+                },
             )
 
     def load_discord_presence_settings(self) -> Dict[str, Any]:
@@ -546,6 +670,7 @@ class DeploymentSafeStorage(PersistentStorage):
             merged.append(item)
 
         super().sync_study_plan_videos(merged)
+        self._repair_discrete_video_11_12_history()
 
 
 def _admin_access(storage: DeploymentSafeStorage) -> tuple[bool, bool]:
