@@ -13765,6 +13765,49 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             search_results.append(payload)
         return search_results
 
+    def _public_study_recall_search_has_evidence(
+        query: str,
+        result: Dict[str, Any],
+    ) -> bool:
+        haystack = " ".join(
+            str(result.get(key) or "")
+            for key in (
+                "subject",
+                "title",
+                "concept_title",
+                "topic",
+                "evidence",
+                "excerpt",
+            )
+        ).casefold()
+        compact_haystack = re.sub(r"[^0-9a-z\u3400-\u9fff]+", "", haystack)
+        normalized_query = str(query or "").casefold()
+        ascii_terms = [
+            term
+            for term in re.findall(r"[a-z0-9]{3,}", normalized_query)
+            if term not in {"what", "where", "when", "which", "how", "the", "and", "for", "with", "note", "notes"}
+        ]
+        ascii_match = any(term in compact_haystack for term in ascii_terms)
+
+        chinese_query = re.sub(
+            r"請|幫我|根據|我的|所有|筆記|整理|分析|列出|製作|產生|歸納|說明|告訴我|是什麼|為什麼|怎麼算|怎麼做|怎麼用|怎麼|什麼意思|什麼|如何|哪一頁|哪裡|相關內容",
+            "",
+            normalized_query,
+        )
+        chinese_core = "".join(re.findall(r"[\u3400-\u9fff]+", chinese_query))
+        chinese_match = False
+        if len(chinese_core) >= 2:
+            query_bigrams = {
+                chinese_core[index : index + 2]
+                for index in range(len(chinese_core) - 1)
+            }
+            matched_bigrams = sum(token in compact_haystack for token in query_bigrams)
+            chinese_match = matched_bigrams >= max(1, math.ceil(len(query_bigrams) * 0.4))
+
+        if ascii_terms or chinese_core:
+            return ascii_match or chinese_match
+        return float(result.get("rank_score") or 0.0) >= 70.0
+
     @app.get("/study-progress/notes/search")
     def public_study_recall_search():
         search_query = " ".join(str(request.args.get("q") or "").split()).strip()[:160]
@@ -13791,6 +13834,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             result
             for result in raw_results
             if float(result.get("rank_score") or 0.0) >= 45.0
+            and _public_study_recall_search_has_evidence(search_query, result)
         ]
         search_results = _serialize_study_recall_search_results(
             raw_results,
