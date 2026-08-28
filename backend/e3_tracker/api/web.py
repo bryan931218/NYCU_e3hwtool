@@ -13784,6 +13784,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             sort="relevance",
             limit=8,
         )
+        # The private search intentionally returns a broad fuzzy fallback for
+        # exploratory retrieval. On a public page that looks like a false
+        # positive, so require meaningful lexical/formula evidence.
+        raw_results = [
+            result
+            for result in raw_results
+            if float(result.get("rank_score") or 0.0) >= 45.0
+        ]
         search_results = _serialize_study_recall_search_results(
             raw_results,
             public=True,

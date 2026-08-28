@@ -411,6 +411,13 @@ class StudyRecallSearchTests(unittest.TestCase):
                 self.assertNotIn("note_url", result)
                 self.assertNotIn("evidence", result)
                 self.assertEqual(result["bbox"]["top"], 120)
+
+                unrelated = client.get(
+                    "/study-progress/notes/search",
+                    query_string={"q": "completely-unrelated-token"},
+                ).get_json()
+                self.assertEqual(unrelated["results"], [])
+
                 image_response = client.get(result["image_url"])
                 self.assertEqual(image_response.status_code, 200)
                 self.assertEqual(image_response.data, image_bytes)
