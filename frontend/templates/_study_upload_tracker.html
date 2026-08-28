@@ -12,6 +12,8 @@
     .study-upload-tracker-open { color:#1769d8; font-size:12px; font-weight:850; }
     .study-upload-tracker-cancel { padding:0; color:#b83b45; border:0; background:transparent; font-size:12px; font-weight:850; cursor:pointer; }
     .study-upload-tracker-cancel:disabled { color:#8c96a6; cursor:wait; }
+    .study-upload-tracker-resume { padding:6px 9px; color:#fff; border:0; border-radius:7px; background:#1769d8; font-size:12px; font-weight:850; cursor:pointer; }
+    .study-upload-tracker-resume:disabled { opacity:.6; cursor:wait; }
     .study-upload-tracker-close { width:28px; height:28px; display:grid; flex:0 0 auto; place-items:center; padding:0; color:#68758a; border:0; background:transparent; cursor:pointer; font-size:20px; line-height:1; }
     .study-upload-tracker.is-error { border-left-color:#b83b45; }
     .study-upload-tracker.is-error progress { accent-color:#b83b45; }
@@ -74,7 +76,7 @@
 <aside class="study-upload-tracker" data-study-upload-tracker hidden aria-live="polite">
     <div class="study-upload-tracker-head"><div><strong data-study-upload-title>筆記整理中</strong><p data-study-upload-message>正在準備背景處理。</p></div><button class="study-upload-tracker-close" type="button" data-study-upload-close title="關閉進度提示" aria-label="關閉進度提示">×</button></div>
     <progress max="100" value="0" data-study-upload-bar></progress>
-    <div class="study-upload-tracker-actions"><span class="study-upload-tracker-percent" data-study-upload-percent>0%</span><div class="study-upload-tracker-action-links"><button class="study-upload-tracker-cancel" type="button" data-study-upload-cancel>取消處理</button><a class="study-upload-tracker-open" data-study-upload-open hidden>開啟完成的筆記</a></div></div>
+    <div class="study-upload-tracker-actions"><span class="study-upload-tracker-percent" data-study-upload-percent>0%</span><div class="study-upload-tracker-action-links"><button class="study-upload-tracker-resume" type="button" data-study-upload-resume hidden>從失敗處繼續</button><button class="study-upload-tracker-cancel" type="button" data-study-upload-cancel>取消處理</button><a class="study-upload-tracker-open" data-study-upload-open hidden>開啟完成的筆記</a></div></div>
 </aside>
 
 <script>
@@ -89,6 +91,7 @@
     const bar = root.querySelector('[data-study-upload-bar]');
     const percent = root.querySelector('[data-study-upload-percent]');
     const open = root.querySelector('[data-study-upload-open]');
+    const resume = root.querySelector('[data-study-upload-resume]');
     const cancel = root.querySelector('[data-study-upload-cancel]');
     const close = root.querySelector('[data-study-upload-close]');
     let pollTimer = null;
@@ -111,6 +114,8 @@
         percent.textContent = `${value}%`;
         cancel.hidden = job.status !== 'running';
         cancel.disabled = false;
+        resume.hidden = job.status !== 'error' || !job.can_resume;
+        resume.disabled = false;
         open.hidden = job.status !== 'success' || !job.redirect_url;
         if (!open.hidden) open.href = job.redirect_url;
         window.dispatchEvent(new CustomEvent('e3-study-upload-progress', { detail: job }));
@@ -194,6 +199,30 @@
         localStorage.removeItem(storageKey);
         root.hidden = true;
         scheduleDiscovery();
+    });
+    resume.addEventListener('click', async () => {
+        const jobId = trackedJobId;
+        if (!jobId || resume.disabled) return;
+        resume.disabled = true;
+        message.textContent = '正在讀取已完成批次…';
+        try {
+            const response = await fetch(`/admin/study-recall/upload-jobs/${encodeURIComponent(jobId)}/resume`, {
+                method:'POST',
+                credentials:'same-origin',
+                headers:{ Accept:'application/json' },
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.ok) throw new Error(result.error || '無法從中斷處繼續。');
+            track(result.job_id || jobId);
+        } catch (error) {
+            resume.disabled = false;
+            render({
+                status:'error',
+                progress:Number(bar.value) || 0,
+                message:error.message || '無法從中斷處繼續。',
+                can_resume:true,
+            });
+        }
     });
     open.addEventListener('click', () => {
         clearTimer();

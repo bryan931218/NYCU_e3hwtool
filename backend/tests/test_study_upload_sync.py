@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import time
 import unittest
@@ -81,6 +82,8 @@ class StudyUploadSyncTests(unittest.TestCase):
 
         self.assertIn("/admin/study-recall/upload-jobs/current", tracker)
         self.assertIn("visibilitychange", tracker)
+        self.assertIn("data-study-upload-resume", tracker)
+        self.assertIn("/resume`,", tracker)
         self.assertIn("Math.min(3, files.length - 1)", recall)
         self.assertIn("Promise.all(workers)", recall)
 
@@ -118,6 +121,62 @@ class StudyUploadSyncTests(unittest.TestCase):
                 self.assertEqual(laptop_job["job_id"], "cross-device-job")
                 self.assertEqual(phone_job["progress"], 61)
                 self.assertIsNone(stranger_job["job"])
+            finally:
+                storage._engine.dispose()
+
+    def test_failed_job_reports_resume_when_original_images_are_preserved(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+            storage = app.extensions["e3_storage"]
+            try:
+                now = time.time()
+                job_id = "failed-resumable-job"
+                upload_id = "resume_upload_token_1234567890"
+                staging = Path(temp_dir) / "study_note_images" / "_staging" / upload_id
+                staging.mkdir(parents=True)
+                (staging / "000001.png").write_bytes(b"image")
+                (staging / "manifest.json").write_text(
+                    json.dumps(
+                        {
+                            "username": "bryan",
+                            "job_id": job_id,
+                            "expected_count": 1,
+                            "files": {
+                                "1": {
+                                    "stored_name": "000001.png",
+                                    "original_name": "note.png",
+                                    "mime_type": "image/png",
+                                }
+                            },
+                            "created_at": now,
+                            "updated_at": now,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                storage.save_study_note_upload_job(
+                    job_id=job_id,
+                    username="bryan",
+                    status="error",
+                    progress=86,
+                    message="第 2 批失敗",
+                    created_at=now,
+                    updated_at=now,
+                )
+                client = self._sign_in(app, storage, "bryan", "resume-token")
+
+                result = client.get(f"/admin/study-recall/upload-jobs/{job_id}").get_json()
+
+                self.assertTrue(result["can_resume"])
+                self.assertEqual(result["progress"], 86)
             finally:
                 storage._engine.dispose()
 

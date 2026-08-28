@@ -1,7 +1,12 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 from e3_tracker.api.web import (
+    _load_study_note_batch_checkpoint,
     _offset_study_note_batch_analysis,
+    _save_study_note_batch_checkpoint,
+    _study_note_batch_signature,
     _study_upload_parallel_progress,
     _study_upload_time_weighted_progress,
 )
@@ -81,6 +86,40 @@ class StudyUploadProgressTests(unittest.TestCase):
         self.assertEqual(source_ref["image_index"], 10)
         self.assertEqual(source_ref["bbox"]["source_image_index"], 10)
         self.assertEqual(analysis["key_concepts"][0]["coverage_ids"], ["p10b3"])
+
+    def test_batch_checkpoint_reuses_only_the_exact_same_images(self):
+        images = [("page.png", b"same-image-bytes", "image/png")]
+        analysis = {
+            "summary": "已完成",
+            "key_concepts": [{"concept": "Queue"}],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            signature = _study_note_batch_signature(images, batch_start=4)
+            _save_study_note_batch_checkpoint(
+                directory,
+                batch_index=1,
+                signature=signature,
+                analysis=analysis,
+            )
+
+            restored = _load_study_note_batch_checkpoint(
+                directory,
+                batch_index=1,
+                signature=signature,
+            )
+            changed_signature = _study_note_batch_signature(
+                [("page.png", b"changed-image-bytes", "image/png")],
+                batch_start=4,
+            )
+            rejected = _load_study_note_batch_checkpoint(
+                directory,
+                batch_index=1,
+                signature=changed_signature,
+            )
+
+        self.assertEqual(restored, analysis)
+        self.assertIsNone(rejected)
 
 
 if __name__ == "__main__":

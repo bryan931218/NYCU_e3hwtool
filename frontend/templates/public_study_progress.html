@@ -8,6 +8,9 @@
     <meta property="og:title" content="研究所備考進度">
     <meta property="og:description" content="公開查看目前影片學習進度、各科完成率與本週觀看軌跡。">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderPublicStudyMath && window.renderPublicStudyMath()"></script>
     <style>
         :root {
             --ink: #102a43;
@@ -382,8 +385,57 @@
         .subject-row { transition: border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
         .subject-row:hover { transform: translateY(-1px); border-color: #bed3ed; box-shadow: 0 8px 20px rgba(16,42,67,.05); }
         button:focus-visible, a:focus-visible { outline: 3px solid rgba(20,99,217,.22); outline-offset: 2px; }
+        .public-note-search { margin-top: 18px; padding: 22px; border-radius: 22px; }
+        .public-note-search-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+        .public-note-search-head h2 { margin:0; font-size:21px; letter-spacing:0; }
+        .public-note-search-count { color:var(--teal); font-size:11px; font-weight:900; white-space:nowrap; }
+        .public-note-search-form { display:grid; grid-template-columns:minmax(260px,1fr) 150px 150px auto; gap:8px; margin-top:16px; }
+        .public-note-search-input-wrap { position:relative; min-width:0; }
+        .public-note-search-input-wrap::before { content:'⌕'; position:absolute; left:13px; top:50%; color:#718399; font-size:19px; transform:translateY(-52%); pointer-events:none; }
+        .public-note-search-form input,.public-note-search-form select,.public-note-search-submit { width:100%; min-height:44px; border:1px solid #cbd9e8; border-radius:8px; background:#fff; color:var(--ink); font:inherit; font-size:12px; }
+        .public-note-search-form input { padding:0 13px 0 39px; }
+        .public-note-search-form select { padding:0 30px 0 11px; }
+        .public-note-search-submit { width:auto; min-width:86px; padding:0 17px; border-color:var(--blue); color:#fff; background:var(--blue); font-weight:900; cursor:pointer; }
+        .public-note-search-submit:hover { background:#0e55bd; }
+        .public-note-search-submit:disabled { opacity:.55; cursor:wait; }
+        .public-note-search-status { min-height:18px; margin:9px 1px 0; color:var(--muted); font-size:11px; font-weight:760; }
+        .public-note-search-status.error { color:#ad3743; }
+        .public-note-search-results { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:3px; }
+        .public-note-search-results[hidden] { display:none; }
+        .public-note-result { display:grid; grid-template-columns:138px minmax(0,1fr); min-width:0; min-height:158px; overflow:hidden; border:1px solid var(--line); border-radius:10px; background:#fbfdff; }
+        .public-note-result-thumb { position:relative; display:grid; min-width:0; min-height:158px; padding:0; place-items:center; overflow:hidden; border:0; border-right:1px solid var(--line); background:#eef3f8; cursor:pointer; }
+        .public-note-result-thumb img { width:100%; height:100%; max-height:180px; object-fit:contain; background:#fff; }
+        .public-note-result-page { position:absolute; left:7px; bottom:7px; padding:4px 6px; border-radius:5px; color:#fff; background:rgba(16,42,67,.82); font-size:9px; font-weight:900; }
+        .public-note-result-body { min-width:0; padding:13px 14px; }
+        .public-note-result-title { margin:0; color:var(--ink); font-size:14px; line-height:1.45; letter-spacing:0; }
+        .public-note-result-meta,.public-note-result-badges { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+        .public-note-result-meta span { color:var(--muted); font-size:10px; font-weight:780; }
+        .public-note-result-badge { padding:3px 6px; border:1px solid #c8dcf6; border-radius:5px; color:#0d56bd; background:var(--blue-soft); font-size:9px; font-weight:900; }
+        .public-note-result-badge.example { color:#8a5700; border-color:#ead096; background:var(--amber-soft); }
+        .public-note-result-badge.formula { color:#08777a; border-color:#a9dfe0; background:var(--teal-soft); }
+        .public-note-result-excerpt { display:-webkit-box; margin:9px 0 0; overflow:hidden; color:#4f647a; font-size:11px; line-height:1.6; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+        .public-note-result-open { margin-top:9px; padding:0; color:var(--blue); border:0; background:transparent; font:inherit; font-size:11px; font-weight:900; cursor:pointer; }
+        .public-note-search-empty { grid-column:1/-1; padding:24px; color:var(--muted); border:1px dashed #cbd9e8; border-radius:10px; background:#f8fbfe; font-size:12px; text-align:center; }
+        [data-public-math] { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+        [data-public-math] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; }
+        [data-public-math] .katex-display { width:100%; margin:.45em 0; overflow-x:auto; overflow-y:hidden; }
+        body.public-note-preview-open { overflow:hidden; }
+        .public-note-preview { position:fixed; z-index:1100; inset:0; display:grid; padding:20px; place-items:center; background:rgba(8,25,43,.64); backdrop-filter:blur(8px); }
+        .public-note-preview[hidden] { display:none; }
+        .public-note-preview-dialog { width:min(940px,100%); max-height:calc(100vh - 40px); overflow:hidden; border:1px solid rgba(219,230,242,.92); border-radius:16px; background:#fff; box-shadow:0 28px 80px rgba(8,25,43,.28); }
+        .public-note-preview-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:16px 18px; border-bottom:1px solid var(--line); }
+        .public-note-preview-title { margin:0; font-size:17px; letter-spacing:0; }
+        .public-note-preview-meta { margin-top:4px; color:var(--muted); font-size:10px; font-weight:780; }
+        .public-note-preview-close { display:grid; width:34px; height:34px; flex:0 0 auto; padding:0; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:#fff; font-size:21px; cursor:pointer; }
+        .public-note-preview-body { max-height:calc(100vh - 120px); padding:14px; overflow:auto; background:#eef3f8; }
+        .public-note-preview-image-wrap { position:relative; width:max-content; max-width:100%; margin:0 auto; background:#fff; }
+        .public-note-preview-image { display:block; width:auto; max-width:100%; height:auto; max-height:none; }
+        .public-note-preview-highlight { position:absolute; left:0; right:0; border:2px solid rgba(209,53,69,.62); background:rgba(209,53,69,.10); pointer-events:none; }
         @media (max-width: 980px) {
             .public-calendar-insight { border-radius: 24px 24px 0 0; }
+            .public-note-search-form { grid-template-columns:minmax(220px,1fr) 140px 140px; }
+            .public-note-search-submit { grid-column:1/-1; width:100%; }
+            .public-note-search-results { grid-template-columns:1fr; }
         }
         @media (max-width: 620px) {
             .shell { padding: 12px 13px 42px; }
@@ -398,6 +450,17 @@
             .public-calendar { border-radius: 20px; }
             .public-calendar-insight { border-radius: 20px 20px 0 0; }
             .pace-panel, .today-log-panel, .week-progress-panel { border-radius: 18px; }
+            .public-note-search { padding:17px 14px; border-radius:18px; }
+            .public-note-search-head { align-items:flex-start; }
+            .public-note-search-form { grid-template-columns:1fr 1fr; }
+            .public-note-search-input-wrap { grid-column:1/-1; }
+            .public-note-search-submit { grid-column:1/-1; }
+            .public-note-result { grid-template-columns:104px minmax(0,1fr); min-height:142px; }
+            .public-note-result-thumb { min-height:142px; }
+            .public-note-result-body { padding:11px; }
+            .public-note-preview { padding:8px; place-items:end center; }
+            .public-note-preview-dialog { max-height:calc(100vh - 16px); border-radius:15px 15px 9px 9px; }
+            .public-note-preview-body { max-height:calc(100vh - 94px); padding:8px; }
         }
         @media (prefers-reduced-motion: reduce) {
             .runner-person, .runner-shadow, .calendar-dialog { animation: none; }
@@ -434,6 +497,40 @@
             <article class="stat-card"><div class="stat-label">觀看時數</div><div class="stat-value">{{ (summary.total_watched / 60)|round(1) }}<small>/ {{ total_hours }} 小時</small></div></article>
             <article class="stat-card"><div class="stat-label">已完成影片</div><div class="stat-value">{{ summary.completed_videos }}<small>/ {{ summary.total_videos }} 支</small></div></article>
         </section>
+
+        <section class="panel public-note-search" data-public-note-search data-search-url="{{ url_for('public_study_recall_search') }}" aria-labelledby="public-note-search-title">
+            <div class="public-note-search-head">
+                <h2 id="public-note-search-title">搜尋筆記庫</h2>
+                <span class="public-note-search-count" data-public-note-search-count></span>
+            </div>
+            <form class="public-note-search-form" data-public-note-search-form>
+                <div class="public-note-search-input-wrap"><input name="q" type="search" maxlength="160" autocomplete="off" placeholder="搜尋觀念、公式、例題或原文" aria-label="搜尋公開筆記庫" required></div>
+                <select name="subject" aria-label="搜尋科目">
+                    <option value="">全部科目</option>
+                    {% for subject in study_subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}
+                </select>
+                <select name="type" aria-label="內容類型">
+                    <option value="all">全部內容</option>
+                    <option value="source">原始筆記</option>
+                    <option value="formula">公式</option>
+                    <option value="example">例題與解法</option>
+                    <option value="concept">觀念卡</option>
+                </select>
+                <button class="public-note-search-submit" type="submit">搜尋</button>
+            </form>
+            <p class="public-note-search-status" data-public-note-search-status aria-live="polite"></p>
+            <div class="public-note-search-results" data-public-note-search-results role="list" hidden></div>
+        </section>
+
+        <div class="public-note-preview" data-public-note-preview hidden>
+            <section class="public-note-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="public-note-preview-title">
+                <header class="public-note-preview-head">
+                    <div><h2 class="public-note-preview-title" id="public-note-preview-title" data-public-note-preview-title></h2><div class="public-note-preview-meta" data-public-note-preview-meta></div></div>
+                    <button class="public-note-preview-close" type="button" data-public-note-preview-close aria-label="關閉筆記預覽">×</button>
+                </header>
+                <div class="public-note-preview-body"><div class="public-note-preview-image-wrap"><img class="public-note-preview-image" data-public-note-preview-image alt=""><span class="public-note-preview-highlight" data-public-note-preview-highlight hidden></span></div></div>
+            </section>
+        </div>
 
         <section class="panel public-calendar" data-public-study-calendar aria-label="每月影片觀看熱度月曆">
             <aside class="public-calendar-insight">
@@ -678,6 +775,180 @@
         </section>
     </main>
     <script>
+        (() => {
+            const root = document.querySelector('[data-public-note-search]');
+            if (!root) return;
+            const form = root.querySelector('[data-public-note-search-form]');
+            const input = form.querySelector('input[name="q"]');
+            const subject = form.querySelector('select[name="subject"]');
+            const type = form.querySelector('select[name="type"]');
+            const submit = form.querySelector('button[type="submit"]');
+            const status = root.querySelector('[data-public-note-search-status]');
+            const count = root.querySelector('[data-public-note-search-count]');
+            const results = root.querySelector('[data-public-note-search-results]');
+            const preview = document.querySelector('[data-public-note-preview]');
+            const previewTitle = preview.querySelector('[data-public-note-preview-title]');
+            const previewMeta = preview.querySelector('[data-public-note-preview-meta]');
+            const previewImage = preview.querySelector('[data-public-note-preview-image]');
+            const previewHighlight = preview.querySelector('[data-public-note-preview-highlight]');
+            const previewClose = preview.querySelector('[data-public-note-preview-close]');
+            let activeRequest = null;
+            let searchTimer = null;
+            let lastPreviewTrigger = null;
+
+            window.renderPublicStudyMath = (scope = document) => {
+                if (!window.renderMathInElement) return;
+                scope.querySelectorAll('[data-public-math]').forEach((element) => {
+                    if (element.dataset.mathRendered === 'true') return;
+                    window.renderMathInElement(element, {
+                        delimiters: [
+                            { left: '\\[', right: '\\]', display: true },
+                            { left: '\\(', right: '\\)', display: false },
+                            { left: '$$', right: '$$', display: true },
+                        ],
+                        throwOnError: false,
+                        strict: false,
+                    });
+                    element.dataset.mathRendered = 'true';
+                });
+            };
+            const appendText = (parent, tag, className, text) => {
+                const node = document.createElement(tag);
+                node.className = className;
+                node.textContent = text;
+                parent.appendChild(node);
+                return node;
+            };
+            const closePreview = () => {
+                if (preview.hidden) return;
+                preview.hidden = true;
+                previewImage.removeAttribute('src');
+                document.body.classList.remove('public-note-preview-open');
+                lastPreviewTrigger?.focus();
+            };
+            const openPreview = (item, trigger) => {
+                lastPreviewTrigger = trigger;
+                previewTitle.textContent = item.concept_title || item.title || '筆記原圖';
+                previewTitle.dataset.publicMath = '';
+                delete previewTitle.dataset.mathRendered;
+                previewMeta.textContent = [item.subject, item.study_date, `${item.title}・第 ${item.image_index} 張`].filter(Boolean).join('・');
+                previewImage.alt = `${item.title}第 ${item.image_index} 張原始筆記`;
+                previewImage.src = item.image_url;
+                if (item.bbox) {
+                    const top = Math.max(0, Math.min(100, Number(item.bbox.top) / 10));
+                    const bottom = Math.max(top, Math.min(100, Number(item.bbox.bottom) / 10));
+                    previewHighlight.style.top = `${top}%`;
+                    previewHighlight.style.height = `${Math.max(1.5, bottom - top)}%`;
+                    previewHighlight.hidden = false;
+                } else {
+                    previewHighlight.hidden = true;
+                }
+                preview.hidden = false;
+                document.body.classList.add('public-note-preview-open');
+                window.renderPublicStudyMath(preview);
+                previewClose.focus();
+            };
+            const renderResults = (items) => {
+                results.replaceChildren();
+                if (!items.length) {
+                    appendText(results, 'div', 'public-note-search-empty', '找不到相關頁面，請換一個觀念名稱、公式或例題關鍵字。');
+                    results.hidden = false;
+                    return;
+                }
+                items.forEach((item) => {
+                    const article = document.createElement('article');
+                    article.className = 'public-note-result';
+                    article.setAttribute('role', 'listitem');
+                    const thumbnail = document.createElement('button');
+                    thumbnail.type = 'button';
+                    thumbnail.className = 'public-note-result-thumb';
+                    thumbnail.setAttribute('aria-label', `預覽${item.title}第 ${item.image_index} 張`);
+                    const image = document.createElement('img');
+                    image.src = item.image_url;
+                    image.alt = '';
+                    image.loading = 'lazy';
+                    thumbnail.appendChild(image);
+                    appendText(thumbnail, 'span', 'public-note-result-page', `第 ${item.image_index} 張`);
+                    thumbnail.addEventListener('click', () => openPreview(item, thumbnail));
+                    article.appendChild(thumbnail);
+                    const body = document.createElement('div');
+                    body.className = 'public-note-result-body';
+                    const title = appendText(body, 'h3', 'public-note-result-title', item.concept_title || item.title || '相關筆記');
+                    title.dataset.publicMath = '';
+                    const meta = document.createElement('div');
+                    meta.className = 'public-note-result-meta';
+                    [item.subject, item.study_date, `${item.title}・第 ${item.image_index} 張`, item.match_reason]
+                        .filter(Boolean)
+                        .forEach((value) => appendText(meta, 'span', '', value));
+                    body.appendChild(meta);
+                    const badges = document.createElement('div');
+                    badges.className = 'public-note-result-badges';
+                    if (item.topic) appendText(badges, 'span', 'public-note-result-badge', item.topic);
+                    if (item.card_type === 'example') appendText(badges, 'span', 'public-note-result-badge example', '例題');
+                    if (item.has_formula) appendText(badges, 'span', 'public-note-result-badge formula', '公式');
+                    if (badges.childElementCount) body.appendChild(badges);
+                    const excerpt = appendText(body, 'p', 'public-note-result-excerpt', item.excerpt || '已找到相關頁面。');
+                    excerpt.dataset.publicMath = '';
+                    const open = appendText(body, 'button', 'public-note-result-open', '查看原圖');
+                    open.type = 'button';
+                    open.addEventListener('click', () => openPreview(item, open));
+                    article.appendChild(body);
+                    results.appendChild(article);
+                });
+                results.hidden = false;
+                window.renderPublicStudyMath(results);
+            };
+            const performSearch = async () => {
+                window.clearTimeout(searchTimer);
+                const query = input.value.trim();
+                if (query.length < 2) {
+                    activeRequest?.abort();
+                    results.hidden = true;
+                    results.replaceChildren();
+                    count.textContent = '';
+                    status.textContent = query ? '請至少輸入 2 個字。' : '';
+                    status.className = 'public-note-search-status';
+                    return;
+                }
+                activeRequest?.abort();
+                activeRequest = new AbortController();
+                submit.disabled = true;
+                status.textContent = '搜尋中…';
+                status.className = 'public-note-search-status';
+                const params = new URLSearchParams({ q: query, subject: subject.value, type: type.value });
+                try {
+                    const response = await fetch(`${root.dataset.searchUrl}?${params}`, {
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        signal: activeRequest.signal,
+                        headers: { Accept: 'application/json' },
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || !payload.ok) throw new Error(payload.error || '搜尋失敗，請稍後再試。');
+                    renderResults(Array.isArray(payload.results) ? payload.results : []);
+                    count.textContent = `${Number(payload.result_count) || 0} 頁`;
+                    status.textContent = payload.result_count ? `已找到最相關的 ${payload.result_count} 頁` : '';
+                } catch (error) {
+                    if (error.name === 'AbortError') return;
+                    results.hidden = true;
+                    count.textContent = '';
+                    status.textContent = error.message || '搜尋失敗，請稍後再試。';
+                    status.className = 'public-note-search-status error';
+                } finally {
+                    submit.disabled = false;
+                }
+            };
+            form.addEventListener('submit', (event) => { event.preventDefault(); performSearch(); });
+            input.addEventListener('input', () => {
+                window.clearTimeout(searchTimer);
+                searchTimer = window.setTimeout(performSearch, 420);
+            });
+            subject.addEventListener('change', () => { if (input.value.trim().length >= 2) performSearch(); });
+            type.addEventListener('change', () => { if (input.value.trim().length >= 2) performSearch(); });
+            previewClose.addEventListener('click', closePreview);
+            preview.addEventListener('click', (event) => { if (event.target === preview) closePreview(); });
+            document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !preview.hidden) closePreview(); });
+        })();
         (() => {
             const root = document.querySelector('[data-public-study-calendar]');
             const dataNode = root?.querySelector('[data-public-calendar-data]');

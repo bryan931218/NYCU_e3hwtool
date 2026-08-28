@@ -342,6 +342,93 @@ class StudyRecallSearchTests(unittest.TestCase):
             finally:
                 storage._engine.dispose()
 
+    def test_public_search_is_anonymous_read_only_and_can_preview_source_page(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+            storage = app.extensions["e3_storage"]
+            try:
+                session_id = storage.create_study_recall_session(
+                    study_date="2026-08-28",
+                    subject="資料結構",
+                    title="最短路徑",
+                    image_filenames=["dijkstra.png"],
+                    summary="Dijkstra 最短路徑演算法",
+                    source_transcription=[
+                        {
+                            "image_index": 1,
+                            "transcription": "Dijkstra 每次選擇距離最小的未確定頂點。",
+                        }
+                    ],
+                    key_concepts=[
+                        {
+                            "concept": "Dijkstra 鬆弛",
+                            "topic": "最短路徑",
+                            "core_summary": r"若 \(d[u]+w(u,v)<d[v]\)，就更新距離。",
+                            "source_refs": [
+                                {
+                                    "image_index": 1,
+                                    "evidence": "Dijkstra 每次選擇距離最小的未確定頂點。",
+                                    "bbox": {
+                                        "source_image_index": 1,
+                                        "left": 20,
+                                        "top": 120,
+                                        "right": 980,
+                                        "bottom": 360,
+                                        "confidence": 90,
+                                        "version": 1,
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                )
+                image_dir = Path(temp_dir) / "study_note_images" / str(session_id)
+                image_dir.mkdir(parents=True)
+                image_bytes = b"public-note-image"
+                (image_dir / "dijkstra.png").write_bytes(image_bytes)
+                client = app.test_client()
+
+                response = client.get(
+                    "/study-progress/notes/search",
+                    query_string={"q": "Dijkstra", "subject": "資料結構"},
+                )
+                payload = response.get_json()
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("no-store", response.headers["Cache-Control"])
+                self.assertIn("max-age=0", response.headers["Cache-Control"])
+                self.assertTrue(payload["results"])
+                result = payload["results"][0]
+                self.assertNotIn("session_id", result)
+                self.assertNotIn("note_url", result)
+                self.assertNotIn("evidence", result)
+                self.assertEqual(result["bbox"]["top"], 120)
+                image_response = client.get(result["image_url"])
+                self.assertEqual(image_response.status_code, 200)
+                self.assertEqual(image_response.data, image_bytes)
+                image_response.close()
+                self.assertEqual(
+                    client.get(
+                        f"/study-progress/notes/{session_id}/image/not-allowed.png"
+                    ).status_code,
+                    404,
+                )
+
+                public_page = client.get("/study-progress").get_data(as_text=True)
+                self.assertIn("搜尋筆記庫", public_page)
+                self.assertIn("/study-progress/notes/search", public_page)
+                self.assertIn("資料結構", public_page)
+            finally:
+                storage._engine.dispose()
+
 
 if __name__ == "__main__":
     unittest.main()

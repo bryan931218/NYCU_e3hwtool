@@ -172,7 +172,8 @@ STUDY_PLAN_DAY_CUTOFF_HOUR = 8
 STUDY_NOTE_MAX_IMAGE_BYTES = 2 * 1024 * 1024
 STUDY_NOTE_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 STUDY_NOTE_AI_BATCH_SIZE = 8
-STUDY_NOTE_STAGING_TTL_SECONDS = 6 * 60 * 60
+STUDY_NOTE_STAGING_TTL_SECONDS = 24 * 60 * 60
+STUDY_NOTE_BATCH_CHECKPOINT_VERSION = 1
 STUDY_UPLOAD_ANALYSIS_START_PROGRESS = 10
 STUDY_UPLOAD_BATCHES_END_PROGRESS = 94
 
@@ -202,6 +203,72 @@ def _study_upload_parallel_progress(batch_progress: Iterable[int]) -> int:
     return STUDY_UPLOAD_ANALYSIS_START_PROGRESS + round(
         (sum(ratios) / len(ratios)) * progress_span
     )
+
+
+def _study_note_batch_signature(
+    images: Iterable[Tuple[str, bytes, str]],
+    *,
+    batch_start: int,
+) -> str:
+    digest = hashlib.sha256()
+    digest.update(f"v{STUDY_NOTE_BATCH_CHECKPOINT_VERSION}:{int(batch_start)}".encode("ascii"))
+    for filename, image_bytes, mime_type in images:
+        digest.update(str(filename or "").encode("utf-8", errors="replace"))
+        digest.update(b"\0")
+        digest.update(str(mime_type or "").encode("ascii", errors="replace"))
+        digest.update(b"\0")
+        digest.update(image_bytes)
+    return digest.hexdigest()
+
+
+def _load_study_note_batch_checkpoint(
+    directory: Optional[Path],
+    *,
+    batch_index: int,
+    signature: str,
+) -> Optional[Dict[str, Any]]:
+    if directory is None:
+        return None
+    checkpoint_path = directory / f"analysis-batch-{int(batch_index) + 1:04d}.json"
+    try:
+        payload = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    if (
+        not isinstance(payload, dict)
+        or int(payload.get("version") or 0) != STUDY_NOTE_BATCH_CHECKPOINT_VERSION
+        or str(payload.get("signature") or "") != signature
+        or not isinstance(payload.get("analysis"), dict)
+    ):
+        return None
+    return payload["analysis"]
+
+
+def _save_study_note_batch_checkpoint(
+    directory: Optional[Path],
+    *,
+    batch_index: int,
+    signature: str,
+    analysis: Dict[str, Any],
+) -> None:
+    if directory is None:
+        return
+    directory.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = directory / f"analysis-batch-{int(batch_index) + 1:04d}.json"
+    temporary_path = checkpoint_path.with_suffix(".tmp")
+    temporary_path.write_text(
+        json.dumps(
+            {
+                "version": STUDY_NOTE_BATCH_CHECKPOINT_VERSION,
+                "signature": signature,
+                "analysis": analysis,
+                "saved_at": time.time(),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    temporary_path.replace(checkpoint_path)
 
 
 def _offset_study_note_batch_analysis(analysis: Dict[str, Any], image_offset: int) -> None:
@@ -2153,6 +2220,43 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         except OSError:
             return False
         return True
+
+    def _find_study_upload_staging_for_job(
+        job_id: str,
+        username: str,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Path]]:
+        try:
+            directories = list(study_upload_staging_root.iterdir())
+        except OSError:
+            return None, None
+        for directory in directories:
+            if not directory.is_dir():
+                continue
+            try:
+                manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+            if (
+                isinstance(manifest, dict)
+                and str(manifest.get("username") or "") == username
+                and str(manifest.get("job_id") or "") == job_id
+            ):
+                return manifest, directory
+        return None, None
+
+    def _study_upload_job_can_resume(job_id: str, username: str) -> bool:
+        manifest, directory = _find_study_upload_staging_for_job(job_id, username)
+        if manifest is None or directory is None:
+            return False
+        expected_count = int(manifest.get("expected_count") or 0)
+        files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+        if expected_count < 1 or len(files) != expected_count:
+            return False
+        return all(
+            isinstance(files.get(str(index)), dict)
+            and (directory / secure_filename(str(files[str(index)].get("stored_name") or ""))).is_file()
+            for index in range(1, expected_count + 1)
+        )
 
     def _cleanup_expired_study_upload_staging() -> None:
         cutoff = time.time() - STUDY_NOTE_STAGING_TTL_SECONDS
@@ -10227,13 +10331,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
             if remaining_example_items:
                 app.logger.warning(
-                    "Tool-composed example coverage validation failed: %s",
+                    "Tool-composed note has partially uncovered examples; preserving validated cards: %s",
                     [item.get("id") for item in remaining_example_items],
                 )
-                return None, (
-                    f"仍有 {len(remaining_example_items)} 個來源中的例題未能可靠建立區塊，"
-                    "系統已保留原筆記，請稍後重試。"
-                )
+                validated["processing_warnings"] = [
+                    (
+                        f"有 {len(remaining_example_items)} 個疑似例題區塊未能可靠轉成卡片；"
+                        "其餘已驗證內容已完整保留。"
+                    )
+                ]
             validated["source_transcription"] = source_pages
             validated["uncertain_fragments"] = [
                 {"image_index": page["image_index"], "text": fragment}
@@ -11886,13 +11992,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         )
         if remaining_example_items:
             app.logger.warning(
-                "Final example coverage validation failed; refusing an incomplete note: %s",
+                "Final example coverage is partial; preserving validated cards: %s",
                 [item.get("id") for item in remaining_example_items],
             )
-            return None, (
-                f"仍有 {len(remaining_example_items)} 個例題未能可靠建立卡片，"
-                "系統已保留原筆記，請稍後重試。"
-            )
+            validated["processing_warnings"] = [
+                (
+                    f"有 {len(remaining_example_items)} 個疑似例題區塊未能可靠轉成卡片；"
+                    "其餘已驗證內容已完整保留。"
+                )
+            ]
         validated["source_transcription"] = source_pages
         validated["uncertain_fragments"] = [
             {"image_index": page["image_index"], "text": fragment}
@@ -12163,6 +12271,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         subject: str,
         allow_corrections: bool,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        checkpoint_directory: Optional[Path] = None,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         def materialize(selected_images: List[Tuple[str, Any, str]]) -> List[Tuple[str, bytes, str]]:
             prepared: List[Tuple[str, bytes, str]] = []
@@ -12222,14 +12331,33 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
             try:
                 _raise_if_study_upload_cancelled()
+                materialized_images = materialize(batch_images)
+                checkpoint_signature = _study_note_batch_signature(
+                    materialized_images,
+                    batch_start=batch_start,
+                )
+                checkpoint = _load_study_note_batch_checkpoint(
+                    checkpoint_directory,
+                    batch_index=batch_index,
+                    signature=checkpoint_signature,
+                )
+                if checkpoint is not None:
+                    report_batch_progress(100, "已載入先前完成的批次，從中斷處繼續。")
+                    return batch_index, checkpoint, None
                 analysis, error = _analyze_study_note_image_batch(
-                    materialize(batch_images),
+                    materialized_images,
                     subject=subject,
                     allow_corrections=allow_corrections,
                     progress_callback=report_batch_progress,
                 )
                 if analysis:
                     _offset_study_note_batch_analysis(analysis, batch_start)
+                    _save_study_note_batch_checkpoint(
+                        checkpoint_directory,
+                        batch_index=batch_index,
+                        signature=checkpoint_signature,
+                        analysis=analysis,
+                    )
                 return batch_index, analysis, error
             finally:
                 if hasattr(study_upload_context, "cancel_event"):
@@ -12294,6 +12422,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "correction_records": [
                 record for analysis in analyses for record in analysis.get("correction_records") or []
             ],
+            "processing_warnings": list(
+                dict.fromkeys(
+                    str(warning).strip()
+                    for analysis in analyses
+                    for warning in analysis.get("processing_warnings") or []
+                    if str(warning).strip()
+                )
+            ),
             "organization_mode": "faithful",
         }
         if progress_callback:
@@ -13093,6 +13229,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             share_url=request.url,
             is_admin=bool(user and user.get("is_admin")),
             admin_user=user,
+            study_subjects=STUDY_PLAN_SUBJECTS,
         )
 
     @app.get("/public/study-progress")
@@ -13563,39 +13700,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             sort=sort_mode,
             limit=16,
         )
-        search_results: List[Dict[str, Any]] = []
-        for result in raw_results:
-            session_id = int(result["session_id"])
-            image_index = int(result["image_index"])
-            concept_index = result.get("concept_index")
-            note_url = url_for("admin_study_recall", session_id=session_id)
-            note_url = f"{note_url}#concept-{int(concept_index)}" if concept_index is not None else f"{note_url}#note-review"
-            search_results.append(
-                {
-                    "session_id": session_id,
-                    "study_date": result["study_date"],
-                    "subject": result["subject"],
-                    "title": result["title"],
-                    "image_index": image_index,
-                    "image_url": url_for(
-                        "admin_study_recall_image",
-                        session_id=session_id,
-                        filename=result["image_filename"],
-                    ),
-                    "note_url": note_url,
-                    "concept_title": _normalize_study_math_markup(result.get("concept_title")),
-                    "topic": _normalize_study_math_markup(result.get("topic")),
-                    "card_type": result.get("card_type") or "",
-                    "has_formula": bool(result.get("has_formula")),
-                    "excerpt": _normalize_study_math_markup(result.get("excerpt")),
-                    "evidence": _normalize_study_math_markup(result.get("evidence")),
-                    "match_reason": result.get("match_reason") or "相關內容",
-                    "bbox": _validated_study_source_bbox(
-                        result.get("bbox"),
-                        expected_image_index=image_index,
-                    ),
-                }
-            )
+        search_results = _serialize_study_recall_search_results(raw_results)
         record_ui_event(
             "study_recall_library_search",
             meta={
@@ -13613,6 +13718,92 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "elapsed_ms": max(1, round((time.perf_counter() - started_at) * 1000)),
             "results": search_results,
         }
+
+    def _serialize_study_recall_search_results(
+        raw_results: Iterable[Dict[str, Any]],
+        *,
+        public: bool = False,
+    ) -> List[Dict[str, Any]]:
+        search_results: List[Dict[str, Any]] = []
+        for result in raw_results:
+            session_id = int(result["session_id"])
+            image_index = int(result["image_index"])
+            concept_index = result.get("concept_index")
+            payload: Dict[str, Any] = {
+                "study_date": result["study_date"],
+                "subject": result["subject"],
+                "title": result["title"],
+                "image_index": image_index,
+                "image_url": url_for(
+                    "public_study_recall_image" if public else "admin_study_recall_image",
+                    session_id=session_id,
+                    filename=result["image_filename"],
+                ),
+                "concept_title": _normalize_study_math_markup(result.get("concept_title")),
+                "topic": _normalize_study_math_markup(result.get("topic")),
+                "card_type": result.get("card_type") or "",
+                "has_formula": bool(result.get("has_formula")),
+                "excerpt": _normalize_study_math_markup(result.get("excerpt")),
+                "match_reason": result.get("match_reason") or "相關內容",
+                "bbox": _validated_study_source_bbox(
+                    result.get("bbox"),
+                    expected_image_index=image_index,
+                ),
+            }
+            if not public:
+                note_url = url_for("admin_study_recall", session_id=session_id)
+                note_url = (
+                    f"{note_url}#concept-{int(concept_index)}"
+                    if concept_index is not None
+                    else f"{note_url}#note-review"
+                )
+                payload.update(
+                    session_id=session_id,
+                    note_url=note_url,
+                    evidence=_normalize_study_math_markup(result.get("evidence")),
+                )
+            search_results.append(payload)
+        return search_results
+
+    @app.get("/study-progress/notes/search")
+    def public_study_recall_search():
+        search_query = " ".join(str(request.args.get("q") or "").split()).strip()[:160]
+        subject_filter = str(request.args.get("subject") or "").strip()
+        content_type = str(request.args.get("type") or "all").strip().lower()
+        if len(search_query) < 2:
+            return {"ok": False, "error": "請至少輸入 2 個字。"}, 400
+        if subject_filter and subject_filter not in STUDY_PLAN_SUBJECTS:
+            return {"ok": False, "error": "搜尋科目無效。"}, 400
+        if content_type not in {"all", "source", "formula", "example", "concept"}:
+            return {"ok": False, "error": "內容類型篩選無效。"}, 400
+        started_at = time.perf_counter()
+        raw_results = storage.search_study_recall_pages(
+            query=search_query,
+            subject=subject_filter or None,
+            content_type=content_type,
+            sort="relevance",
+            limit=8,
+        )
+        search_results = _serialize_study_recall_search_results(
+            raw_results,
+            public=True,
+        )
+        record_ui_event(
+            "public_study_recall_search",
+            meta={
+                "query_length": len(search_query),
+                "subject": subject_filter or "all",
+                "content_type": content_type,
+                "result_count": len(search_results),
+            },
+        )
+        return {
+            "ok": True,
+            "query": search_query,
+            "result_count": len(search_results),
+            "elapsed_ms": max(1, round((time.perf_counter() - started_at) * 1000)),
+            "results": search_results,
+        }, 200, {"Cache-Control": "no-store, max-age=0"}
 
     @app.post("/admin/study-recall/library-ask")
     @admin_required
@@ -13957,6 +14148,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not image_path.is_file():
             return Response("Not Found", status=404, mimetype="text/plain")
         return send_file(image_path, conditional=True, max_age=0)
+
+    @app.get("/study-progress/notes/<int:session_id>/image/<filename>")
+    def public_study_recall_image(session_id: int, filename: str):
+        recall_session = storage.get_study_recall_session(session_id)
+        allowed_names = set((recall_session or {}).get("image_filenames") or [])
+        if filename not in allowed_names or Path(filename).name != filename:
+            return Response("Not Found", status=404, mimetype="text/plain")
+        image_path = study_upload_root / str(session_id) / filename
+        if not image_path.is_file():
+            return Response("Not Found", status=404, mimetype="text/plain")
+        return send_file(image_path, conditional=True, max_age=3600)
 
     def _study_visual_region(
         recall_session: Dict[str, Any],
@@ -14672,6 +14874,186 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             removed = _remove_study_upload_staging(upload_id, username)
         return {"ok": True, "removed": removed}
 
+    def _launch_study_note_upload_job(
+        *,
+        username: str,
+        study_date: str,
+        subject: str,
+        requested_title: str,
+        allow_corrections: bool,
+        skip_relation_rebuild: bool,
+        images: List[Tuple[str, Any, str]],
+        staging_directory: Optional[Path],
+        staging_upload_id: str,
+        existing_job_id: Optional[str] = None,
+    ) -> str:
+        job_id = existing_job_id or secrets.token_urlsafe(18)
+        now = time.time()
+        cancel_event = threading.Event()
+        with study_upload_jobs_lock:
+            previous = study_upload_jobs.get(job_id) or {}
+            study_upload_jobs[job_id] = {
+                "username": username,
+                "status": "running",
+                "progress": STUDY_UPLOAD_ANALYSIS_START_PROGRESS,
+                "message": "照片已接收，正在從最近的完成點開始整理。",
+                "cancel_event": cancel_event,
+                "created_at": float(previous.get("created_at") or now),
+                "updated_at": now,
+            }
+        _set_study_upload_job(job_id)
+
+        if staging_directory is not None and staging_directory.is_dir():
+            with study_upload_staging_lock:
+                manifest, _directory = _read_study_upload_manifest(staging_upload_id, username)
+                if manifest is not None:
+                    manifest.update(
+                        {
+                            "job_id": job_id,
+                            "study_date": study_date,
+                            "subject": subject,
+                            "requested_title": requested_title,
+                            "allow_corrections": bool(allow_corrections),
+                            "skip_relation_rebuild": bool(skip_relation_rebuild),
+                            "updated_at": now,
+                        }
+                    )
+                    _write_study_upload_manifest(staging_directory, manifest)
+
+        def _run_study_upload() -> None:
+            recall_id: Optional[int] = None
+            destination: Optional[Path] = None
+            remove_staging_after_run = False
+            study_upload_context.cancel_event = cancel_event
+            study_upload_context.job_id = job_id
+
+            def report_progress(progress: int, message: str) -> None:
+                _raise_if_study_upload_cancelled()
+                _set_study_upload_job(job_id, progress=progress, message=message)
+
+            def cleanup_partial_upload() -> None:
+                if recall_id is not None:
+                    storage.delete_study_recall_session(recall_id)
+                if destination is not None and destination.is_dir():
+                    try:
+                        shutil.rmtree(destination)
+                    except OSError:
+                        pass
+
+            try:
+                _raise_if_study_upload_cancelled()
+                analysis, error = _analyze_study_note_images(
+                    images,
+                    subject=subject,
+                    allow_corrections=allow_corrections,
+                    progress_callback=report_progress,
+                    checkpoint_directory=staging_directory,
+                )
+                if error or not analysis:
+                    raise RuntimeError(error or "筆記分析失敗。")
+                report_progress(98, "來源驗證與原圖定位完成，正在儲存原始圖片與卡片。")
+                stored_names = [
+                    f"{index + 1:02d}-{secrets.token_hex(5)}{Path(name).suffix.lower()}"
+                    for index, (name, _bytes, _mime) in enumerate(images)
+                ]
+                title = requested_title or str(analysis.get("detected_topic") or "").strip()[:120] or f"{subject}筆記"
+                _raise_if_study_upload_cancelled()
+                recall_id = storage.create_study_recall_session(
+                    study_date=study_date,
+                    subject=subject,
+                    title=title,
+                    image_filenames=stored_names,
+                    summary=analysis["summary"],
+                    key_concepts=analysis["key_concepts"],
+                    source_transcription=analysis.get("source_transcription") or [],
+                    uncertain_fragments=analysis.get("uncertain_fragments") or [],
+                    correction_records=analysis.get("correction_records") or [],
+                    organization_mode=str(analysis.get("organization_mode") or "faithful"),
+                )
+                _raise_if_study_upload_cancelled()
+                destination = _ensure_private_dir(study_upload_root / str(recall_id))
+                for stored_name, (_original_name, image_source, _mime_type) in zip(stored_names, images):
+                    _raise_if_study_upload_cancelled()
+                    target = destination / stored_name
+                    if isinstance(image_source, Path):
+                        shutil.copyfile(image_source, target)
+                    else:
+                        target.write_bytes(image_source)
+                if skip_relation_rebuild:
+                    relation_error = None
+                    final_message = "重點卡已完成；批次結束時會統一更新關聯與聯想。"
+                else:
+                    report_progress(99, "正在重新分析所有新舊重點卡的關聯與聯想。")
+                    _raise_if_study_upload_cancelled()
+                    with study_relation_rebuild_lock:
+                        _raise_if_study_upload_cancelled()
+                        relation_error = _rebuild_all_study_recall_relations()
+                    _raise_if_study_upload_cancelled()
+                    final_message = (
+                        f"重點卡已完成；{relation_error}"
+                        if relation_error
+                        else "重點卡已完成，所有新舊卡片的關聯與聯想也已更新。"
+                    )
+                processing_warnings = [
+                    str(warning).strip()
+                    for warning in analysis.get("processing_warnings") or []
+                    if str(warning).strip()
+                ]
+                if processing_warnings:
+                    final_message = f"{final_message} {' '.join(processing_warnings)}"
+                _set_study_upload_job(
+                    job_id,
+                    status="success",
+                    progress=100,
+                    message=final_message,
+                    session_id=recall_id,
+                )
+                remove_staging_after_run = True
+                record_ui_event(
+                    "study_recall_note_analyzed",
+                    meta={"username": username, "session_id": recall_id, "subject": subject, "image_count": len(images)},
+                )
+            except _StudyUploadCancelled:
+                cleanup_partial_upload()
+                remove_staging_after_run = True
+                _set_study_upload_job(
+                    job_id,
+                    status="cancelled",
+                    message="已取消這次筆記處理，可以立即上傳下一份筆記。",
+                )
+                record_ui_event("study_recall_note_analyzed", "cancelled", {"username": username})
+            except Exception as exc:  # pragma: no cover - guarded by route-level integration tests
+                cleanup_partial_upload()
+                message = str(exc).strip() or "筆記背景處理失敗，請稍後重試。"
+                _set_study_upload_job(job_id, status="error", message=message[:240])
+                if staging_directory is not None and staging_directory.is_dir():
+                    with study_upload_staging_lock:
+                        manifest, _directory = _read_study_upload_manifest(staging_upload_id, username)
+                        if manifest is not None:
+                            manifest.update(
+                                {
+                                    "job_id": job_id,
+                                    "status": "error",
+                                    "last_error": message[:500],
+                                    "updated_at": time.time(),
+                                }
+                            )
+                            _write_study_upload_manifest(staging_directory, manifest)
+                record_ui_event("study_recall_note_analyzed", "error", {"username": username, "reason": message[:160]})
+            finally:
+                if remove_staging_after_run and staging_directory is not None and staging_directory.is_dir():
+                    try:
+                        shutil.rmtree(staging_directory)
+                    except OSError:
+                        pass
+                if hasattr(study_upload_context, "cancel_event"):
+                    del study_upload_context.cancel_event
+                if hasattr(study_upload_context, "job_id"):
+                    del study_upload_context.job_id
+
+        threading.Thread(target=_run_study_upload, daemon=True).start()
+        return job_id
+
     @app.post("/admin/study-recall/upload")
     @admin_required
     def admin_study_recall_upload():
@@ -14745,129 +15127,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if not image_bytes or len(image_bytes) > STUDY_NOTE_MAX_IMAGE_BYTES:
                     return _study_upload_error("每張筆記照片壓縮後必須小於 2MB。")
                 images.append((filename, image_bytes, mime_type))
-        job_id = secrets.token_urlsafe(18)
-        now = time.time()
-        cancel_event = threading.Event()
-        with study_upload_jobs_lock:
-            study_upload_jobs[job_id] = {
-                "username": username,
-                "status": "running",
-                "progress": 10,
-                "message": "照片已接收，等待 AI 開始整理。",
-                "cancel_event": cancel_event,
-                "created_at": now,
-                "updated_at": now,
-            }
-        _set_study_upload_job(job_id)
-
-        def _run_study_upload() -> None:
-            recall_id: Optional[int] = None
-            destination: Optional[Path] = None
-            study_upload_context.cancel_event = cancel_event
-            study_upload_context.job_id = job_id
-
-            def report_progress(progress: int, message: str) -> None:
-                _raise_if_study_upload_cancelled()
-                _set_study_upload_job(job_id, progress=progress, message=message)
-
-            def cleanup_partial_upload() -> None:
-                if recall_id is not None:
-                    storage.delete_study_recall_session(recall_id)
-                if destination is not None and destination.is_dir():
-                    try:
-                        shutil.rmtree(destination)
-                    except OSError:
-                        pass
-
-            try:
-                _raise_if_study_upload_cancelled()
-                analysis, error = _analyze_study_note_images(
-                    images,
-                    subject=subject,
-                    allow_corrections=allow_corrections,
-                    progress_callback=report_progress,
-                )
-                if error or not analysis:
-                    raise RuntimeError(error or "筆記分析失敗。")
-                report_progress(98, "來源驗證與原圖定位完成，正在儲存原始圖片與卡片。")
-                stored_names = [
-                    f"{index + 1:02d}-{secrets.token_hex(5)}{Path(name).suffix.lower()}"
-                    for index, (name, _bytes, _mime) in enumerate(images)
-                ]
-                title = requested_title or str(analysis.get("detected_topic") or "").strip()[:120] or f"{subject}筆記"
-                _raise_if_study_upload_cancelled()
-                recall_id = storage.create_study_recall_session(
-                    study_date=study_date,
-                    subject=subject,
-                    title=title,
-                    image_filenames=stored_names,
-                    summary=analysis["summary"],
-                    key_concepts=analysis["key_concepts"],
-                    source_transcription=analysis.get("source_transcription") or [],
-                    uncertain_fragments=analysis.get("uncertain_fragments") or [],
-                    correction_records=analysis.get("correction_records") or [],
-                    organization_mode=str(analysis.get("organization_mode") or "faithful"),
-                )
-                _raise_if_study_upload_cancelled()
-                destination = _ensure_private_dir(study_upload_root / str(recall_id))
-                for stored_name, (_original_name, image_source, _mime_type) in zip(stored_names, images):
-                    _raise_if_study_upload_cancelled()
-                    target = destination / stored_name
-                    if isinstance(image_source, Path):
-                        shutil.copyfile(image_source, target)
-                    else:
-                        target.write_bytes(image_source)
-                if skip_relation_rebuild:
-                    relation_error = None
-                    final_message = "重點卡已完成；批次結束時會統一更新關聯與聯想。"
-                else:
-                    report_progress(99, "正在重新分析所有新舊重點卡的關聯與聯想。")
-                    _raise_if_study_upload_cancelled()
-                    with study_relation_rebuild_lock:
-                        _raise_if_study_upload_cancelled()
-                        relation_error = _rebuild_all_study_recall_relations()
-                    _raise_if_study_upload_cancelled()
-                    final_message = (
-                        f"重點卡已完成；{relation_error}"
-                        if relation_error
-                        else "重點卡已完成，所有新舊卡片的關聯與聯想也已更新。"
-                    )
-                _set_study_upload_job(
-                    job_id,
-                    status="success",
-                    progress=100,
-                    message=final_message,
-                    session_id=recall_id,
-                )
-                record_ui_event(
-                    "study_recall_note_analyzed",
-                    meta={"username": username, "session_id": recall_id, "subject": subject, "image_count": len(images)},
-                )
-            except _StudyUploadCancelled:
-                cleanup_partial_upload()
-                _set_study_upload_job(
-                    job_id,
-                    status="cancelled",
-                    message="已取消這次筆記處理，可以立即上傳下一份筆記。",
-                )
-                record_ui_event("study_recall_note_analyzed", "cancelled", {"username": username})
-            except Exception as exc:  # pragma: no cover - guarded by route-level integration tests
-                cleanup_partial_upload()
-                message = str(exc).strip() or "筆記背景處理失敗，請稍後重試。"
-                _set_study_upload_job(job_id, status="error", message=message[:240])
-                record_ui_event("study_recall_note_analyzed", "error", {"username": username, "reason": message[:160]})
-            finally:
-                if staging_directory is not None and staging_directory.is_dir():
-                    try:
-                        shutil.rmtree(staging_directory)
-                    except OSError:
-                        pass
-                if hasattr(study_upload_context, "cancel_event"):
-                    del study_upload_context.cancel_event
-                if hasattr(study_upload_context, "job_id"):
-                    del study_upload_context.job_id
-
-        threading.Thread(target=_run_study_upload, daemon=True).start()
+        job_id = _launch_study_note_upload_job(
+            username=username,
+            study_date=study_date,
+            subject=subject,
+            requested_title=requested_title,
+            allow_corrections=allow_corrections,
+            skip_relation_rebuild=skip_relation_rebuild,
+            images=images,
+            staging_directory=staging_directory,
+            staging_upload_id=staging_upload_id,
+        )
         if _is_study_upload_request():
             return {
                 "ok": True,
@@ -14898,6 +15168,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if job.get("status") == "success" and job.get("session_id"):
             payload["session_id"] = int(job["session_id"])
             payload["redirect_url"] = url_for("admin_study_recall", session_id=int(job["session_id"]))
+        elif job.get("status") == "error":
+            payload["can_resume"] = _study_upload_job_can_resume(
+                job_id,
+                str(user.get("username") or ""),
+            )
         return payload
 
     @app.get("/admin/study-recall/upload-jobs/current")
@@ -14921,7 +15196,79 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "admin_study_recall",
                 session_id=int(job["session_id"]),
             )
+        elif job.get("status") == "error":
+            payload["can_resume"] = _study_upload_job_can_resume(
+                str(job.get("job_id") or ""),
+                username,
+            )
         return payload
+
+    @app.post("/admin/study-recall/upload-jobs/<job_id>/resume")
+    @admin_required
+    def admin_study_recall_resume_upload_job(job_id: str):
+        user = current_user() or {}
+        username = str(user.get("username") or "")
+        job = storage.get_study_note_upload_job(job_id)
+        if not job or str(job.get("username") or "") != username:
+            return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
+        if str(job.get("status") or "") != "error":
+            return {"ok": False, "error": "只有失敗的筆記工作可以從中斷處繼續。"}, 409
+        active_job_id = _active_study_upload_job(username)
+        if active_job_id:
+            return {"ok": False, "error": "已有一份筆記正在背景整理。"}, 409
+
+        with study_upload_staging_lock:
+            manifest, staging_directory = _find_study_upload_staging_for_job(job_id, username)
+            if manifest is None or staging_directory is None:
+                return {"ok": False, "error": "可續跑資料已過期，請重新上傳原圖。"}, 410
+            expected_count = int(manifest.get("expected_count") or 0)
+            files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+            if expected_count < 1 or len(files) != expected_count:
+                return {"ok": False, "error": "原始圖片暫存不完整，請重新上傳。"}, 410
+            images: List[Tuple[str, Any, str]] = []
+            for image_index in range(1, expected_count + 1):
+                metadata = files.get(str(image_index))
+                if not isinstance(metadata, dict):
+                    return {"ok": False, "error": "原始圖片暫存不完整，請重新上傳。"}, 410
+                stored_name = secure_filename(str(metadata.get("stored_name") or ""))
+                image_path = (staging_directory / stored_name).resolve()
+                if image_path.parent != staging_directory.resolve() or not image_path.is_file():
+                    return {"ok": False, "error": "原始圖片暫存已遺失，請重新上傳。"}, 410
+                images.append(
+                    (
+                        secure_filename(str(metadata.get("original_name") or "")) or f"note-{image_index}",
+                        image_path,
+                        str(metadata.get("mime_type") or "image/jpeg"),
+                    )
+                )
+
+        study_date = str(manifest.get("study_date") or "")
+        subject = str(manifest.get("subject") or "")
+        if subject not in STUDY_PLAN_SUBJECTS:
+            return {"ok": False, "error": "原工作科目資料不正確，請重新上傳。"}, 410
+        try:
+            date.fromisoformat(study_date)
+        except ValueError:
+            return {"ok": False, "error": "原工作日期資料不正確，請重新上傳。"}, 410
+
+        resumed_job_id = _launch_study_note_upload_job(
+            username=username,
+            study_date=study_date,
+            subject=subject,
+            requested_title=str(manifest.get("requested_title") or "")[:120],
+            allow_corrections=bool(manifest.get("allow_corrections")),
+            skip_relation_rebuild=bool(manifest.get("skip_relation_rebuild")),
+            images=images,
+            staging_directory=staging_directory,
+            staging_upload_id=staging_directory.name,
+            existing_job_id=job_id,
+        )
+        return {
+            "ok": True,
+            "background": True,
+            "job_id": resumed_job_id,
+            "message": "已從最近完成的批次繼續整理。",
+        }, 202
 
     @app.post("/admin/study-recall/upload-jobs/<job_id>/cancel")
     @admin_required
