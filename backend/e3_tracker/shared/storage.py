@@ -510,6 +510,23 @@ study_plan_replan_settings_table = Table(
     Column("updated_at", String(64), nullable=False),
 )
 
+study_assistant_actions_table = Table(
+    "study_assistant_actions",
+    metadata,
+    Column("action_id", String(48), primary_key=True),
+    Column("username", String(191), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("action_type", String(48), nullable=False),
+    Column("action_payload", Text, nullable=False),
+    Column("before_state", Text, nullable=False),
+    Column("after_state", Text),
+    Column("summary", String(280), nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+)
+Index("ix_study_assistant_actions_user", study_assistant_actions_table.c.username)
+Index("ix_study_assistant_actions_status", study_assistant_actions_table.c.status)
+
 study_recall_sessions_table = Table(
     "study_recall_sessions",
     metadata,
@@ -1726,6 +1743,178 @@ class PersistentStorage:
                 delete(study_time_sessions_table).where(
                     study_time_sessions_table.c.session_key == key
                 )
+            )
+        return bool(result.rowcount)
+
+    def get_study_time_session(self, session_key: str) -> Optional[Dict[str, Any]]:
+        key = str(session_key or "").strip()[:80]
+        if not key:
+            return None
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(study_time_sessions_table).where(
+                    study_time_sessions_table.c.session_key == key
+                )
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "session_id": str(row.session_key),
+            "day": str(row.day),
+            "kind": str(row.kind),
+            "video_id": int(row.video_id) if row.video_id is not None else None,
+            "label": str(row.label or ""),
+            "elapsed_seconds": max(0.0, float(row.elapsed_seconds or 0)),
+            "completed": bool(row.completed),
+            "started_at": str(row.started_at or ""),
+            "updated_at": str(row.updated_at or ""),
+        }
+
+    def update_study_time_session_elapsed(
+        self,
+        *,
+        session_key: str,
+        elapsed_seconds: float,
+        expected_updated_at: str,
+    ) -> Optional[Dict[str, Any]]:
+        key = str(session_key or "").strip()[:80]
+        try:
+            elapsed = float(elapsed_seconds)
+        except (TypeError, ValueError):
+            return None
+        if not key or not math.isfinite(elapsed) or elapsed < 0 or elapsed > 24 * 60 * 60:
+            return None
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            row = conn.execute(
+                select(study_time_sessions_table).where(
+                    study_time_sessions_table.c.session_key == key
+                )
+            ).fetchone()
+            if not row:
+                return None
+            current_updated_at = str(row.updated_at or "")
+            if current_updated_at != str(expected_updated_at or ""):
+                return {
+                    "stale": True,
+                    "session_id": key,
+                    "elapsed_seconds": max(0.0, float(row.elapsed_seconds or 0)),
+                    "updated_at": current_updated_at,
+                }
+            conn.execute(
+                update(study_time_sessions_table)
+                .where(study_time_sessions_table.c.session_key == key)
+                .values(elapsed_seconds=elapsed, updated_at=now)
+            )
+        return {
+            "stale": False,
+            "session_id": key,
+            "elapsed_seconds": elapsed,
+            "updated_at": now,
+        }
+
+    def create_study_assistant_action(
+        self,
+        *,
+        action_id: str,
+        username: str,
+        action_type: str,
+        action_payload: Dict[str, Any],
+        before_state: Dict[str, Any],
+        summary: str,
+    ) -> Optional[Dict[str, Any]]:
+        normalized_id = str(action_id or "").strip()[:48]
+        normalized_user = str(username or "").strip()[:191]
+        normalized_type = str(action_type or "").strip()[:48]
+        normalized_summary = " ".join(str(summary or "").split()).strip()[:280]
+        if not normalized_id or not normalized_user or not normalized_type or not normalized_summary:
+            return None
+        now = self._now_iso()
+        try:
+            with self._lock, self._engine.begin() as conn:
+                conn.execute(
+                    insert(study_assistant_actions_table).values(
+                        action_id=normalized_id,
+                        username=normalized_user,
+                        status="pending",
+                        action_type=normalized_type,
+                        action_payload=json.dumps(action_payload, ensure_ascii=False, sort_keys=True),
+                        before_state=json.dumps(before_state, ensure_ascii=False, sort_keys=True),
+                        after_state=None,
+                        summary=normalized_summary,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        except IntegrityError:
+            return None
+        return self.get_study_assistant_action(normalized_id, username=normalized_user)
+
+    def get_study_assistant_action(
+        self,
+        action_id: str,
+        *,
+        username: str,
+    ) -> Optional[Dict[str, Any]]:
+        normalized_id = str(action_id or "").strip()[:48]
+        normalized_user = str(username or "").strip()[:191]
+        if not normalized_id or not normalized_user:
+            return None
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(study_assistant_actions_table)
+                .where(study_assistant_actions_table.c.action_id == normalized_id)
+                .where(study_assistant_actions_table.c.username == normalized_user)
+            ).fetchone()
+        if not row:
+            return None
+
+        def decode(value: Any) -> Dict[str, Any]:
+            try:
+                parsed = json.loads(str(value or "{}"))
+            except (TypeError, ValueError):
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+
+        return {
+            "action_id": str(row.action_id),
+            "username": str(row.username),
+            "status": str(row.status),
+            "action_type": str(row.action_type),
+            "action_payload": decode(row.action_payload),
+            "before_state": decode(row.before_state),
+            "after_state": decode(row.after_state),
+            "summary": str(row.summary or ""),
+            "created_at": str(row.created_at or ""),
+            "updated_at": str(row.updated_at or ""),
+        }
+
+    def transition_study_assistant_action(
+        self,
+        action_id: str,
+        *,
+        username: str,
+        expected_status: str,
+        next_status: str,
+        after_state: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        normalized_id = str(action_id or "").strip()[:48]
+        normalized_user = str(username or "").strip()[:191]
+        if not normalized_id or not normalized_user:
+            return False
+        values: Dict[str, Any] = {
+            "status": str(next_status or "")[:16],
+            "updated_at": self._now_iso(),
+        }
+        if after_state is not None:
+            values["after_state"] = json.dumps(after_state, ensure_ascii=False, sort_keys=True)
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                update(study_assistant_actions_table)
+                .where(study_assistant_actions_table.c.action_id == normalized_id)
+                .where(study_assistant_actions_table.c.username == normalized_user)
+                .where(study_assistant_actions_table.c.status == str(expected_status or ""))
+                .values(**values)
             )
         return bool(result.rowcount)
 

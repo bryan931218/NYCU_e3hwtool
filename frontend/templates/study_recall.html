@@ -281,6 +281,28 @@
         .ai-message-tools { display:flex; gap:5px; padding:0 2px; }
         .ai-message-copy { min-height:24px; padding:0 6px; color:#6a7e92; border:0; border-radius:5px; background:transparent; font-size:9px; font-weight:800; cursor:pointer; }
         .ai-message-copy:hover,.ai-message-copy:focus-visible { color:var(--blue); background:#eaf2fb; outline:0; }
+        .ai-action-card { grid-column:1 / -1; width:min(100%,420px); padding:13px; border:1px solid #b9d3f1; border-left:4px solid var(--blue); border-radius:8px; background:#fff; box-shadow:0 5px 16px rgba(23,105,216,.08); }
+        .ai-action-card.is-applied { border-color:#b8dfca; border-left-color:var(--green); }
+        .ai-action-card.is-reverted { border-color:var(--line); border-left-color:#8293a6; opacity:.86; }
+        .ai-action-card.is-error { border-color:#ecc8cb; border-left-color:var(--red); }
+        .ai-action-head { display:flex; align-items:start; justify-content:space-between; gap:10px; }
+        .ai-action-head strong { font-size:13px; line-height:1.4; }
+        .ai-action-badge { flex:0 0 auto; padding:3px 6px; color:var(--blue); border-radius:4px; background:var(--blue-soft); font-size:9px; font-weight:900; }
+        .ai-action-card.is-applied .ai-action-badge { color:var(--green); background:var(--green-soft); }
+        .ai-action-card.is-reverted .ai-action-badge { color:var(--muted); background:#eef2f6; }
+        .ai-action-card.is-error .ai-action-badge { color:var(--red); background:#fff1f2; }
+        .ai-action-summary { margin:5px 0 10px; color:var(--muted); font-size:11px; line-height:1.55; }
+        .ai-action-changes { display:grid; gap:6px; margin:0; }
+        .ai-action-change { display:grid; grid-template-columns:72px minmax(0,1fr); gap:8px; align-items:baseline; padding:7px 8px; border-radius:5px; background:#f5f8fb; font-size:11px; }
+        .ai-action-change dt { color:var(--muted); font-weight:800; }
+        .ai-action-change dd { min-width:0; margin:0; overflow-wrap:anywhere; }
+        .ai-action-arrow { padding:0 4px; color:var(--blue); font-weight:900; }
+        .ai-action-result { margin:9px 0 0; color:var(--green); font-size:11px; font-weight:800; line-height:1.5; }
+        .ai-action-card.is-error .ai-action-result { color:var(--red); }
+        .ai-action-buttons { display:flex; justify-content:flex-end; gap:7px; margin-top:11px; }
+        .ai-action-button { min-height:34px; padding:0 11px; border:1px solid #b8c8da; border-radius:5px; color:#36516c; background:#fff; font-size:11px; font-weight:900; cursor:pointer; }
+        .ai-action-button.primary { color:#fff; border-color:var(--blue); background:var(--blue); }
+        .ai-action-button:disabled { opacity:.55; cursor:wait; }
         .ai-thinking { display:flex; align-items:center; gap:4px; height:18px; }
         .ai-thinking span { width:6px; height:6px; border-radius:50%; background:#5b9d9e; animation:ai-thinking 1s ease-in-out infinite; }
         .ai-thinking span:nth-child(2) { animation-delay:.15s; }.ai-thinking span:nth-child(3) { animation-delay:.3s; }
@@ -1801,9 +1823,10 @@
             const storageKey = 'e3-study-ai-conversations-v2';
             const suggestionSets = {
                 general: [
-                    ['拆解問題', '請幫我把這個問題拆成清楚的思考步驟：'],
-                    ['比較觀念', '請比較以下兩個觀念的差異與適用情況：'],
-                    ['制定步驟', '請把以下目標整理成可執行的步驟：'],
+                    ['修正進度', '請幫我修正某支影片的最後觀看位置：'],
+                    ['修正時數', '請幫我檢查並修正這筆實際學習時間：'],
+                    ['調整計畫', '請幫我調整讀書計畫的日期或每日影片時數：'],
+                    ['一般問答', '請幫我分析這個問題：'],
                 ],
                 card: [
                     ['白話解釋', '請用更白話的方式解釋這張重點卡。'],
@@ -1910,7 +1933,10 @@
                     const isCard = key.startsWith(`${window.location.origin}/admin/study-recall/`) && key.endsWith('/ask');
                     if (!isGeneral && !isCard) return;
                     const messages = Array.isArray(value.messages) ? value.messages.slice(-24).filter((message) => (
-                        message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string'
+                        message && (
+                            (['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
+                            || (message.role === 'proposal' && message.proposal && typeof message.proposal === 'object')
+                        )
                     )) : [];
                     const history = Array.isArray(value.history) ? value.history.slice(-12).filter((message) => (
                         message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string'
@@ -2035,6 +2061,98 @@
                 }
                 messageList.append(row);
             };
+            const appendProposal = (proposal) => {
+                const statusValue = ['pending', 'applying', 'applied', 'undoing', 'reverted', 'error'].includes(proposal.status)
+                    ? proposal.status
+                    : 'pending';
+                const row = document.createElement('div');
+                row.className = 'ai-message-row assistant';
+                const avatar = document.createElement('span');
+                avatar.className = 'ai-message-avatar';
+                avatar.textContent = 'AI';
+                avatar.setAttribute('aria-hidden', 'true');
+                row.append(avatar);
+                const card = document.createElement('section');
+                card.className = 'ai-action-card';
+                if (statusValue === 'applied') card.classList.add('is-applied');
+                if (statusValue === 'reverted') card.classList.add('is-reverted');
+                if (statusValue === 'error') card.classList.add('is-error');
+                const head = document.createElement('div');
+                head.className = 'ai-action-head';
+                const title = document.createElement('strong');
+                title.textContent = proposal.title || '資料變更';
+                const badge = document.createElement('span');
+                badge.className = 'ai-action-badge';
+                badge.textContent = {
+                    pending: '待確認', applying: '套用中', applied: '已套用', undoing: '復原中', reverted: '已復原', error: '未完成',
+                }[statusValue];
+                head.append(title, badge);
+                card.append(head);
+                if (proposal.summary) {
+                    const summary = document.createElement('p');
+                    summary.className = 'ai-action-summary';
+                    summary.textContent = proposal.summary;
+                    card.append(summary);
+                }
+                if (Array.isArray(proposal.changes) && proposal.changes.length) {
+                    const changes = document.createElement('dl');
+                    changes.className = 'ai-action-changes';
+                    proposal.changes.forEach((change) => {
+                        const item = document.createElement('div');
+                        item.className = 'ai-action-change';
+                        const label = document.createElement('dt');
+                        label.textContent = change.label || '變更';
+                        const value = document.createElement('dd');
+                        const before = document.createElement('span');
+                        before.textContent = change.before || '無';
+                        const arrow = document.createElement('span');
+                        arrow.className = 'ai-action-arrow';
+                        arrow.textContent = '→';
+                        const after = document.createElement('strong');
+                        after.textContent = change.after || '無';
+                        value.append(before, arrow, after);
+                        item.append(label, value);
+                        changes.append(item);
+                    });
+                    card.append(changes);
+                }
+                if (proposal.resultMessage) {
+                    const result = document.createElement('p');
+                    result.className = 'ai-action-result';
+                    result.textContent = proposal.resultMessage;
+                    card.append(result);
+                }
+                const actions = document.createElement('div');
+                actions.className = 'ai-action-buttons';
+                if (statusValue === 'pending' || statusValue === 'applying') {
+                    const apply = document.createElement('button');
+                    apply.type = 'button';
+                    apply.className = 'ai-action-button primary';
+                    apply.textContent = statusValue === 'applying' ? '套用中…' : '確認套用';
+                    apply.disabled = statusValue === 'applying';
+                    apply.dataset.aiActionApply = proposal.apply_url || '';
+                    apply.dataset.aiProposalId = proposal.id || '';
+                    actions.append(apply);
+                } else if (statusValue === 'applied' && proposal.undo?.url) {
+                    const undo = document.createElement('button');
+                    undo.type = 'button';
+                    undo.className = 'ai-action-button';
+                    undo.textContent = proposal.undo.label || '復原這次變更';
+                    undo.dataset.aiActionUndo = proposal.undo.url;
+                    undo.dataset.aiProposalId = proposal.id || '';
+                    actions.append(undo);
+                } else if (statusValue === 'undoing') {
+                    const undoing = document.createElement('button');
+                    undoing.type = 'button';
+                    undoing.className = 'ai-action-button';
+                    undoing.textContent = '復原中…';
+                    undoing.disabled = true;
+                    actions.append(undoing);
+                }
+                if (actions.childElementCount) card.append(actions);
+                row.append(card);
+                messageList.append(row);
+            };
             const renderSuggestions = (conversation) => {
                 suggestions.replaceChildren();
                 if (conversation.messages.length || conversation.pending) return;
@@ -2056,7 +2174,10 @@
                         { copyable: false },
                     );
                 }
-                conversation.messages.forEach((message) => appendMessage(message.role, message.content));
+                conversation.messages.forEach((message) => {
+                    if (message.role === 'proposal') appendProposal(message.proposal);
+                    else appendMessage(message.role, message.content);
+                });
                 if (conversation.pending) appendMessage('pending', '');
                 renderSuggestions(conversation);
                 status.textContent = conversation.pending ? '回答中' : (conversation.error || '');
@@ -2155,6 +2276,12 @@
                     if (!response.ok || !result.ok) throw new Error(result.error || 'AI 助教暫時無法回答，請稍後再試。');
                     const assistantMessage = { role: 'assistant', content: result.answer };
                     conversation.messages.push(assistantMessage);
+                    if (result.proposal) {
+                        conversation.messages.push({
+                            role: 'proposal',
+                            proposal: { ...result.proposal, status: 'pending', resultMessage: '' },
+                        });
+                    }
                     conversation.history.push(userMessage, assistantMessage);
                     conversation.history = conversation.history.slice(-12);
                     conversation.lastFailedQuestion = '';
@@ -2229,6 +2356,43 @@
                 sendQuestion(conversation.lastFailedQuestion, { retrying: true });
             });
             messageList.addEventListener('click', async (event) => {
+                const actionButton = event.target.closest('[data-ai-action-apply],[data-ai-action-undo]');
+                if (actionButton) {
+                    const conversation = conversations.get(activeKey);
+                    const proposalId = actionButton.dataset.aiProposalId || '';
+                    const proposalMessage = conversation?.messages.find((message) => (
+                        message.role === 'proposal' && message.proposal?.id === proposalId
+                    ));
+                    if (!conversation || !proposalMessage || conversation.pending) return;
+                    const proposal = proposalMessage.proposal;
+                    const isUndo = Boolean(actionButton.dataset.aiActionUndo);
+                    const endpoint = isUndo ? actionButton.dataset.aiActionUndo : actionButton.dataset.aiActionApply;
+                    if (!endpoint) return;
+                    proposal.status = isUndo ? 'undoing' : 'applying';
+                    proposal.resultMessage = '';
+                    conversation.pending = true;
+                    renderConversation(conversation);
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: { Accept: 'application/json' },
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result.ok) throw new Error(result.error || '資料變更失敗。');
+                        proposal.status = isUndo ? 'reverted' : 'applied';
+                        proposal.resultMessage = result.message || (isUndo ? '已復原這次變更。' : '資料已更新。');
+                        if (!isUndo && result.undo) proposal.undo = result.undo;
+                    } catch (error) {
+                        proposal.status = 'error';
+                        proposal.resultMessage = error.message || '資料變更失敗。';
+                    } finally {
+                        conversation.pending = false;
+                        persistConversations();
+                        renderConversation(conversation);
+                    }
+                    return;
+                }
                 const button = event.target.closest('[data-ai-copy-message]');
                 if (!button) return;
                 const value = button.dataset.aiCopyMessage || '';

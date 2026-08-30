@@ -14711,6 +14711,194 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         )
         return {"ok": True, "answer": answer}
 
+    def _study_assistant_time_label(seconds: Any) -> str:
+        total_minutes = max(0, int(round(_study_plan_nonnegative_number(seconds) / 60)))
+        hours, minutes = divmod(total_minutes, 60)
+        if hours and minutes:
+            return f"{hours} 小時 {minutes} 分鐘"
+        if hours:
+            return f"{hours} 小時"
+        return f"{minutes} 分鐘"
+
+    def _build_study_assistant_proposal(
+        *,
+        username: str,
+        raw_action: Any,
+        videos: List[Dict[str, Any]],
+        current_settings: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not username or not isinstance(raw_action, dict):
+            return None
+        action_type = str(raw_action.get("type") or "none").strip()
+        if action_type == "none":
+            return None
+        action_id = secrets.token_urlsafe(24)[:48]
+        reason = " ".join(str(raw_action.get("reason") or "").split()).strip()[:240]
+        action_payload: Dict[str, Any]
+        before_state: Dict[str, Any]
+        title: str
+        summary: str
+        changes: List[Dict[str, str]]
+
+        if action_type == "set_video_progress":
+            subject = str(raw_action.get("subject") or "").strip()
+            try:
+                sequence = int(raw_action.get("video_sequence") or 0)
+                target_seconds = float(raw_action.get("target_minutes") or 0) * 60
+            except (TypeError, ValueError):
+                return None
+            candidates = [
+                video
+                for video in videos
+                if str(video.get("subject") or "") == subject
+                and int(video.get("sequence") or 0) == sequence
+            ]
+            if len(candidates) != 1 or not math.isfinite(target_seconds):
+                return None
+            video = candidates[0]
+            duration_seconds = max(0.0, float(video.get("duration_seconds") or 0))
+            if target_seconds < 0 or target_seconds > duration_seconds + 1:
+                return None
+            target_seconds = min(target_seconds, duration_seconds)
+            before_state = {
+                "video_id": int(video["id"]),
+                "watched_seconds": max(0.0, float(video.get("watched_seconds") or 0)),
+                "progress_version": max(0, int(video.get("progress_version") or 0)),
+            }
+            action_payload = {
+                "video_id": int(video["id"]),
+                "target_seconds": target_seconds,
+                "expected_version": before_state["progress_version"],
+            }
+            title = f"修正 {subject}影片 {sequence} 進度"
+            summary = f"將最後觀看位置改為 {_study_assistant_time_label(target_seconds)}"
+            changes = [{
+                "label": "觀看位置",
+                "before": _study_assistant_time_label(before_state["watched_seconds"]),
+                "after": _study_assistant_time_label(target_seconds),
+            }]
+        elif action_type == "set_study_time_session":
+            session_id = str(raw_action.get("session_id") or "").strip()
+            try:
+                target_seconds = float(raw_action.get("target_minutes") or 0) * 60
+            except (TypeError, ValueError):
+                return None
+            item = storage.get_study_time_session(session_id)
+            if not item or not math.isfinite(target_seconds) or not (0 <= target_seconds <= 24 * 60 * 60):
+                return None
+            try:
+                item_day = datetime.strptime(str(item.get("day") or ""), "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                return None
+            if (_study_plan_business_date() - item_day).days not in range(14):
+                return None
+            before_state = dict(item)
+            action_payload = {
+                "session_id": session_id,
+                "target_seconds": target_seconds,
+                "expected_updated_at": str(item.get("updated_at") or ""),
+            }
+            title = "修正實際學習時間"
+            summary = f"{item.get('day')} · {item.get('label')}"
+            changes = [{
+                "label": "實際時間",
+                "before": _study_assistant_time_label(item.get("elapsed_seconds")),
+                "after": _study_assistant_time_label(target_seconds),
+            }]
+        elif action_type == "update_study_plan":
+            start_default = (
+                str(current_settings.get("start_date"))
+                if current_settings
+                else (_study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)).isoformat()
+            )
+            end_default = str((current_settings or {}).get("end_date") or STUDY_PLAN_END)
+            start_value = str(raw_action.get("start_date") or "").strip() or start_default
+            end_value = str(raw_action.get("end_date") or "").strip() or end_default
+            try:
+                start_day = datetime.strptime(start_value, "%Y-%m-%d").date()
+                end_day = datetime.strptime(end_value, "%Y-%m-%d").date()
+                weekday_hours = float(raw_action.get("weekday_hours") or 0)
+                weekend_hours = float(raw_action.get("weekend_hours") or 0)
+            except (TypeError, ValueError):
+                return None
+            current_weekday = float((current_settings or {}).get("weekday_minutes") or 180) / 60
+            current_weekend = float((current_settings or {}).get("weekend_minutes") or 120) / 60
+            weekday_hours = weekday_hours or current_weekday
+            weekend_hours = weekend_hours or current_weekend
+            if (
+                end_day < start_day + timedelta(days=6)
+                or end_day > start_day + timedelta(days=366)
+                or not (0.25 <= weekday_hours <= 12)
+                or not (0.25 <= weekend_hours <= 12)
+            ):
+                return None
+            if current_settings:
+                baseline_by_subject = dict(current_settings.get("baseline_by_subject") or {})
+                subject_targets = dict(current_settings.get("subject_targets") or {})
+            else:
+                baseline_by_subject = {}
+                subject_targets = {}
+                for subject in STUDY_PLAN_SUBJECTS:
+                    subject_videos = [video for video in videos if str(video.get("subject") or "") == subject]
+                    watched = sum(
+                        min(float(video.get("watched_seconds") or 0), float(video.get("duration_seconds") or 0))
+                        for video in subject_videos
+                    )
+                    remaining = sum(float(video.get("duration_seconds") or 0) for video in subject_videos) - watched
+                    baseline_by_subject[subject] = max(0.0, watched)
+                    if remaining > 0.001:
+                        subject_targets[subject] = remaining
+            if not subject_targets:
+                return None
+            before_state = {
+                "exists": bool(current_settings),
+                "settings": dict(current_settings or {}),
+            }
+            action_payload = {
+                "start_date": start_day.isoformat(),
+                "end_date": end_day.isoformat(),
+                "weekday_minutes": weekday_hours * 60,
+                "weekend_minutes": weekend_hours * 60,
+                "baseline_by_subject": baseline_by_subject,
+                "subject_targets": subject_targets,
+            }
+            title = "調整讀書計畫"
+            summary = reason or "更新計畫日期與每日影片時數"
+            changes = []
+            old_start = str((current_settings or {}).get("start_date") or start_default)
+            old_end = str((current_settings or {}).get("end_date") or end_default)
+            for label, before, after in (
+                ("計畫起日", old_start, start_day.isoformat()),
+                ("計畫迄日", old_end, end_day.isoformat()),
+                ("平日每日", f"{current_weekday:g} 小時", f"{weekday_hours:g} 小時"),
+                ("假日每日", f"{current_weekend:g} 小時", f"{weekend_hours:g} 小時"),
+            ):
+                if before != after:
+                    changes.append({"label": label, "before": before, "after": after})
+            if not changes:
+                return None
+        else:
+            return None
+
+        stored = storage.create_study_assistant_action(
+            action_id=action_id,
+            username=username,
+            action_type=action_type,
+            action_payload=action_payload,
+            before_state=before_state,
+            summary=summary,
+        )
+        if not stored:
+            return None
+        return {
+            "id": action_id,
+            "title": title,
+            "summary": summary,
+            "reason": reason,
+            "changes": changes,
+            "apply_url": url_for("admin_study_assistant_action_apply", action_id=action_id),
+        }
+
     @app.post("/admin/study-recall/assistant/ask")
     @admin_required
     def admin_study_recall_ask_general():
@@ -14747,43 +14935,160 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             f"{'使用者' if entry['role'] == 'user' else '助理'}：{entry['content']}"
             for entry in history
         )
+        data_nouns = ("影片", "進度", "觀看", "學習時間", "讀書時間", "時數", "分鐘", "小時", "計畫", "資料庫", "紀錄")
+        mutation_verbs = ("修正", "更正", "修改", "調整", "改成", "設成", "更新", "刪除", "重設", "對調")
+        personal_markers = ("我的", "我今天", "我昨天", "網站", "目前", "現在", "資料庫")
+        has_data_noun = any(term in question for term in data_nouns)
+        data_request = has_data_noun and (
+            any(term in question for term in mutation_verbs)
+            or any(term in question for term in personal_markers)
+        )
+        if not data_request:
+            prompt = (
+                "你是可靠、直接且善於教學的繁體中文 AI 助手。這是一般問答模式，沒有指定筆記或重點卡；"
+                "請依可靠知識回答使用者的實際問題，不要假裝看過使用者的筆記，也不要自行捏造來源。"
+                "若資訊不足或問題有多種合理解讀，先說明必要假設；若內容可能過時，清楚提醒需要查證。"
+                f"回答要完整收尾並避免冗長。{style_instruction}數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
+                "獨立公式用 \\[ ... \\]。除非使用者需要，否則不要加入多餘標題或結尾邀請。\n\n"
+                f"最近對話：\n{conversation or '尚無'}\n\n"
+                f"使用者這次的問題：{question}"
+            )
+            try:
+                response = requests.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": openai_model,
+                        "store": False,
+                        "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+                        "reasoning": {"effort": normalize_openai_reasoning_effort(openai_model, "low")},
+                        "max_output_tokens": 3200,
+                    },
+                    timeout=90,
+                )
+                response.raise_for_status()
+                response_payload = response.json()
+                answer = _extract_openai_text(response_payload).strip()[:8000]
+                incomplete = response_payload.get("status") == "incomplete"
+            except requests.HTTPError as exc:
+                error_code, error_type, error_message = _openai_error_details(exc.response)
+                if _is_openai_quota_error(error_code, error_type, error_message):
+                    return {"ok": False, "error": "OpenAI API 額度不足，請管理員補充額度後再使用 AI 助手。"}, 503
+                return {"ok": False, "error": "AI 助手暫時無法回答，請稍後再試。"}, 502
+            except (requests.RequestException, ValueError, TypeError):
+                return {"ok": False, "error": "AI 助手暫時無法回答，請稍後再試。"}, 502
+            if incomplete:
+                return {"ok": False, "error": "回答內容過長，請縮小問題範圍後再試。"}, 502
+            if not answer:
+                return {"ok": False, "error": "AI 助手沒有產生有效回答，請換個方式提問。"}, 502
+            record_ui_event(
+                "study_recall_general_question",
+                meta={"history_count": len(history), "response_style": response_style, "data_mode": False},
+            )
+            return {"ok": True, "answer": _normalize_study_math_markup(answer), "proposal": None}
+
+        business_today = _study_plan_business_date()
+        videos = storage.list_study_plan_videos_with_records()
+        compact_videos = [
+            {
+                "subject": str(video.get("subject") or ""),
+                "sequence": int(video.get("sequence") or 0),
+                "title": str(video.get("title") or "")[:80],
+                "duration_minutes": round(float(video.get("duration_seconds") or 0) / 60, 2),
+                "current_position_minutes": round(float(video.get("watched_seconds") or 0) / 60, 2),
+            }
+            for video in videos
+        ]
+        recent_sessions: List[Dict[str, Any]] = []
+        for offset in range(14):
+            day = (business_today - timedelta(days=offset)).isoformat()
+            for item in storage.list_study_time_sessions(day=day, limit=100):
+                recent_sessions.append(
+                    {
+                        "session_id": str(item.get("session_id") or ""),
+                        "day": day,
+                        "kind": str(item.get("kind") or ""),
+                        "subject": str(item.get("subject") or ""),
+                        "video_sequence": int(item.get("sequence") or 0),
+                        "label": str(item.get("label") or "")[:90],
+                        "minutes": round(float(item.get("elapsed_seconds") or 0) / 60, 2),
+                    }
+                )
+        replan_settings = storage.get_study_plan_replan_settings()
+        data_context = {
+            "today": business_today.isoformat(),
+            "subjects": list(STUDY_PLAN_SUBJECTS),
+            "videos": compact_videos,
+            "recent_study_sessions": recent_sessions,
+            "study_plan": (
+                {
+                    "start_date": replan_settings.get("start_date"),
+                    "end_date": replan_settings.get("end_date"),
+                    "weekday_hours": round(float(replan_settings.get("weekday_minutes") or 0) / 60, 2),
+                    "weekend_hours": round(float(replan_settings.get("weekend_minutes") or 0) / 60, 2),
+                }
+                if replan_settings
+                else None
+            ),
+        }
         prompt = (
-            "你是可靠、直接且善於教學的繁體中文 AI 助手。這是一般問答模式，沒有指定筆記或重點卡；"
+            "你是可靠、直接且善於教學的繁體中文 AI 助手，也能協助管理這個學習網站的資料。"
+            "這是一般問答模式，沒有指定筆記或重點卡。"
             "請依可靠知識回答使用者的實際問題，不要假裝看過使用者的筆記，也不要自行捏造來源。"
             "若資訊不足或問題有多種合理解讀，先說明必要假設；若內容可能過時，清楚提醒需要查證。"
             f"回答要完整收尾並避免冗長。{style_instruction}數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
             "獨立公式用 \\[ ... \\]。除非使用者需要，否則不要加入多餘標題或結尾邀請。\n\n"
+            "你只能提出以下一個待確認動作，不能聲稱已經修改，也不能要求或產生 SQL：\n"
+            "1. set_video_progress：修正某科目某支影片的最後觀看位置。subject、video_sequence、target_minutes 必須明確。\n"
+            "2. set_study_time_session：修正最近 14 天內某筆實際學習時間。session_id、target_minutes 必須明確。\n"
+            "3. update_study_plan：調整計畫起日、迄日、平日或假日每日影片時數；未變更欄位使用空字串或 0。\n"
+            "只有使用者明確要求修改，而且資料能唯一對應時，action.type 才能不是 none。"
+            "如果使用者只是在詢問、診斷、比較、描述錯誤，或對象／數值不明確，action.type 必須是 none，"
+            "並在 answer 中說明還需要哪個資訊。answer 不得說已完成、已修正或已套用，只能說準備修改或請確認。\n\n"
+            f"網站目前可用資料：\n{json.dumps(data_context, ensure_ascii=False)}\n\n"
             f"最近對話：\n{conversation or '尚無'}\n\n"
             f"使用者這次的問題：{question}"
         )
-
-        def request_answer(request_prompt: str) -> Tuple[str, bool]:
-            response = requests.post(
-                "https://api.openai.com/v1/responses",
-                headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": openai_model,
-                    "store": False,
-                    "input": [{"role": "user", "content": [{"type": "input_text", "text": request_prompt}]}],
-                    "reasoning": {
-                        "effort": normalize_openai_reasoning_effort(openai_model, "low")
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["answer", "action"],
+            "properties": {
+                "answer": {"type": "string", "maxLength": 8000},
+                "action": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "type", "subject", "video_sequence", "session_id", "target_minutes",
+                        "start_date", "end_date", "weekday_hours", "weekend_hours", "reason",
+                    ],
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["none", "set_video_progress", "set_study_time_session", "update_study_plan"],
+                        },
+                        "subject": {"type": "string"},
+                        "video_sequence": {"type": "integer", "minimum": 0},
+                        "session_id": {"type": "string"},
+                        "target_minutes": {"type": "number", "minimum": 0},
+                        "start_date": {"type": "string"},
+                        "end_date": {"type": "string"},
+                        "weekday_hours": {"type": "number", "minimum": 0},
+                        "weekend_hours": {"type": "number", "minimum": 0},
+                        "reason": {"type": "string", "maxLength": 240},
                     },
-                    "max_output_tokens": 3200,
                 },
-                timeout=90,
-            )
-            response.raise_for_status()
-            response_payload = response.json()
-            return _extract_openai_text(response_payload).strip()[:8000], response_payload.get("status") == "incomplete"
-
+            },
+        }
         try:
-            answer, incomplete = request_answer(prompt)
-            if incomplete:
-                answer, incomplete = request_answer(
-                    prompt
-                    + "\n\n上一次回答因長度限制而不完整。請重新從頭回答，不要接續殘句；"
-                    "保留必要條件與結論，壓縮內容並以完整句子收尾。"
-                )
+            ai_result = _call_openai_json(
+                name="study_data_assistant",
+                schema=schema,
+                content=[{"type": "input_text", "text": prompt}],
+                timeout=90,
+                reasoning_effort="low",
+                max_output_tokens=3600,
+            )
         except requests.HTTPError as exc:
             error_code, error_type, error_message = _openai_error_details(exc.response)
             if _is_openai_quota_error(error_code, error_type, error_message):
@@ -14791,16 +15096,252 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "AI 助手暫時無法回答，請稍後再試。"}, 502
         except (requests.RequestException, ValueError, TypeError):
             return {"ok": False, "error": "AI 助手暫時無法回答，請稍後再試。"}, 502
-        if incomplete:
-            return {"ok": False, "error": "回答內容仍過長，請縮小問題範圍後再試。"}, 502
+        answer = str(ai_result.get("answer") or "").strip()[:8000]
         if not answer:
             return {"ok": False, "error": "AI 助手沒有產生有效回答，請換個方式提問。"}, 502
         answer = _normalize_study_math_markup(answer)
+        proposal = _build_study_assistant_proposal(
+            username=str((current_user() or {}).get("username") or ""),
+            raw_action=ai_result.get("action"),
+            videos=videos,
+            current_settings=replan_settings,
+        )
         record_ui_event(
             "study_recall_general_question",
-            meta={"history_count": len(history), "response_style": response_style},
+            meta={
+                "history_count": len(history),
+                "response_style": response_style,
+                "proposed_action": str((ai_result.get("action") or {}).get("type") or "none"),
+            },
         )
-        return {"ok": True, "answer": answer}
+        return {"ok": True, "answer": answer, "proposal": proposal}
+
+    def _study_assistant_restore_action_status(
+        action_id: str,
+        username: str,
+        *,
+        current: str,
+        restored: str,
+    ) -> None:
+        storage.transition_study_assistant_action(
+            action_id,
+            username=username,
+            expected_status=current,
+            next_status=restored,
+        )
+
+    @app.post("/admin/study-recall/assistant/actions/<action_id>/apply")
+    @admin_required
+    def admin_study_assistant_action_apply(action_id: str):
+        username = str((current_user() or {}).get("username") or "")
+        action = storage.get_study_assistant_action(action_id, username=username)
+        if not action:
+            return {"ok": False, "error": "找不到這次變更提案。"}, 404
+        if action.get("status") != "pending":
+            return {"ok": False, "error": "這次變更已處理，不能重複套用。"}, 409
+        if not storage.transition_study_assistant_action(
+            action_id,
+            username=username,
+            expected_status="pending",
+            next_status="applying",
+        ):
+            return {"ok": False, "error": "這次變更正在處理或已經完成。"}, 409
+
+        action_type = str(action.get("action_type") or "")
+        payload = dict(action.get("action_payload") or {})
+        before = dict(action.get("before_state") or {})
+        after: Dict[str, Any] = {}
+        conflict_message = "資料已在其他頁面更新，請重新向 AI 提出修改，以免覆蓋較新的紀錄。"
+        try:
+            if action_type == "set_video_progress":
+                result = storage.update_study_plan_video_progress(
+                    video_id=int(payload.get("video_id") or 0),
+                    watched_seconds=float(payload.get("target_seconds") or 0),
+                    expected_version=int(payload.get("expected_version") or 0),
+                )
+                if not result:
+                    raise LookupError("找不到要修改的影片。")
+                if result.get("stale"):
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="applying", restored="failed"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
+                after = {
+                    "video_id": int(result["video_id"]),
+                    "watched_seconds": float(result["watched_seconds"]),
+                    "progress_version": int(result["progress_version"]),
+                }
+            elif action_type == "set_study_time_session":
+                result = storage.update_study_time_session_elapsed(
+                    session_key=str(payload.get("session_id") or ""),
+                    elapsed_seconds=float(payload.get("target_seconds") or 0),
+                    expected_updated_at=str(payload.get("expected_updated_at") or ""),
+                )
+                if not result:
+                    raise LookupError("找不到要修改的學習紀錄。")
+                if result.get("stale"):
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="applying", restored="failed"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
+                after = dict(result)
+            elif action_type == "update_study_plan":
+                current = storage.get_study_plan_replan_settings()
+                expected_exists = bool(before.get("exists"))
+                expected_settings = before.get("settings") if isinstance(before.get("settings"), dict) else {}
+                if expected_exists != bool(current) or (
+                    expected_exists
+                    and str((current or {}).get("updated_at") or "")
+                    != str(expected_settings.get("updated_at") or "")
+                ):
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="applying", restored="failed"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
+                storage.save_study_plan_replan_settings(
+                    start_date=str(payload.get("start_date") or ""),
+                    end_date=str(payload.get("end_date") or ""),
+                    weekday_minutes=float(payload.get("weekday_minutes") or 0),
+                    weekend_minutes=float(payload.get("weekend_minutes") or 0),
+                    baseline_by_subject=dict(payload.get("baseline_by_subject") or {}),
+                    subject_targets=dict(payload.get("subject_targets") or {}),
+                )
+                after = {"settings": storage.get_study_plan_replan_settings() or {}}
+            else:
+                raise ValueError("不支援的資料修改類型。")
+        except (LookupError, ValueError, TypeError) as exc:
+            _study_assistant_restore_action_status(
+                action_id, username, current="applying", restored="failed"
+            )
+            return {"ok": False, "error": str(exc) or "資料修改失敗。"}, 400
+        except Exception:
+            app.logger.exception("Failed to apply study assistant action %s", action_id)
+            _study_assistant_restore_action_status(
+                action_id, username, current="applying", restored="failed"
+            )
+            return {"ok": False, "error": "資料修改失敗，原資料未被標記為完成。"}, 500
+
+        if not storage.transition_study_assistant_action(
+            action_id,
+            username=username,
+            expected_status="applying",
+            next_status="applied",
+            after_state=after,
+        ):
+            app.logger.error("Study assistant action applied but audit transition failed: %s", action_id)
+            return {"ok": False, "error": "資料已修改，但稽核狀態更新失敗；請勿重複操作。"}, 500
+        _invalidate_study_progress_context()
+        record_ui_event(
+            "study_assistant_action_applied",
+            meta={"action_id": action_id, "action_type": action_type},
+        )
+        return {
+            "ok": True,
+            "message": f"已套用：{action.get('summary')}",
+            "undo": {
+                "label": "復原這次變更",
+                "url": url_for("admin_study_assistant_action_undo", action_id=action_id),
+            },
+        }
+
+    @app.post("/admin/study-recall/assistant/actions/<action_id>/undo")
+    @admin_required
+    def admin_study_assistant_action_undo(action_id: str):
+        username = str((current_user() or {}).get("username") or "")
+        action = storage.get_study_assistant_action(action_id, username=username)
+        if not action:
+            return {"ok": False, "error": "找不到這次變更紀錄。"}, 404
+        if action.get("status") != "applied":
+            return {"ok": False, "error": "這次變更目前無法復原。"}, 409
+        if not storage.transition_study_assistant_action(
+            action_id,
+            username=username,
+            expected_status="applied",
+            next_status="reverting",
+        ):
+            return {"ok": False, "error": "這次變更正在處理或已復原。"}, 409
+
+        action_type = str(action.get("action_type") or "")
+        before = dict(action.get("before_state") or {})
+        after = dict(action.get("after_state") or {})
+        conflict_message = "資料套用後又有新的變更，為避免覆蓋最新紀錄，這次無法自動復原。"
+        try:
+            if action_type == "set_video_progress":
+                result = storage.update_study_plan_video_progress(
+                    video_id=int(before.get("video_id") or 0),
+                    watched_seconds=float(before.get("watched_seconds") or 0),
+                    expected_version=int(after.get("progress_version") or -1),
+                )
+                if not result:
+                    raise LookupError("找不到原本的影片紀錄。")
+                if result.get("stale"):
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="reverting", restored="applied"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
+            elif action_type == "set_study_time_session":
+                result = storage.update_study_time_session_elapsed(
+                    session_key=str(before.get("session_id") or ""),
+                    elapsed_seconds=float(before.get("elapsed_seconds") or 0),
+                    expected_updated_at=str(after.get("updated_at") or ""),
+                )
+                if not result:
+                    raise LookupError("找不到原本的學習紀錄。")
+                if result.get("stale"):
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="reverting", restored="applied"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
+            elif action_type == "update_study_plan":
+                current = storage.get_study_plan_replan_settings()
+                after_settings = after.get("settings") if isinstance(after.get("settings"), dict) else {}
+                if (
+                    not current
+                    or str(current.get("updated_at") or "") != str(after_settings.get("updated_at") or "")
+                ):
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="reverting", restored="applied"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
+                old_settings = before.get("settings") if isinstance(before.get("settings"), dict) else {}
+                if before.get("exists"):
+                    storage.save_study_plan_replan_settings(
+                        start_date=str(old_settings.get("start_date") or ""),
+                        end_date=str(old_settings.get("end_date") or ""),
+                        weekday_minutes=float(old_settings.get("weekday_minutes") or 0),
+                        weekend_minutes=float(old_settings.get("weekend_minutes") or 0),
+                        baseline_by_subject=dict(old_settings.get("baseline_by_subject") or {}),
+                        subject_targets=dict(old_settings.get("subject_targets") or {}),
+                    )
+                else:
+                    storage.delete_study_plan_replan_settings()
+            else:
+                raise ValueError("不支援的資料修改類型。")
+        except (LookupError, ValueError, TypeError) as exc:
+            _study_assistant_restore_action_status(
+                action_id, username, current="reverting", restored="applied"
+            )
+            return {"ok": False, "error": str(exc) or "無法復原資料。"}, 400
+        except Exception:
+            app.logger.exception("Failed to undo study assistant action %s", action_id)
+            _study_assistant_restore_action_status(
+                action_id, username, current="reverting", restored="applied"
+            )
+            return {"ok": False, "error": "復原失敗，請重新檢查目前資料。"}, 500
+
+        if not storage.transition_study_assistant_action(
+            action_id,
+            username=username,
+            expected_status="reverting",
+            next_status="reverted",
+        ):
+            return {"ok": False, "error": "資料已復原，但稽核狀態更新失敗。"}, 500
+        _invalidate_study_progress_context()
+        record_ui_event(
+            "study_assistant_action_reverted",
+            meta={"action_id": action_id, "action_type": action_type},
+        )
+        return {"ok": True, "message": "已復原這次變更。"}
 
     @app.post("/admin/study-recall/<int:session_id>/delete")
     @admin_required

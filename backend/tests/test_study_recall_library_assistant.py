@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import tempfile
 import unittest
@@ -295,6 +296,9 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertIn("window.normalizeStudyMathText", html)
                 self.assertIn("toggle.classList.remove('has-unread')", html)
                 self.assertIn("toggle.classList.add('has-unread')", html)
+                self.assertIn("data-ai-action-apply", html)
+                self.assertIn("確認套用", html)
+                self.assertIn("復原這次變更", html)
             finally:
                 storage._engine.dispose()
 
@@ -331,7 +335,208 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertIn("採詳細回答", request_prompt)
                 self.assertIn("我正在複習資料結構", request_prompt)
                 self.assertNotIn("重點卡資料", request_prompt)
+                self.assertNotIn("set_video_progress", request_prompt)
                 self.assertEqual(openai_post.call_args.kwargs["json"]["max_output_tokens"], 3200)
+                self.assertIsNone(payload["proposal"])
+            finally:
+                storage._engine.dispose()
+
+    def test_data_assistant_requires_confirmation_and_can_undo_video_progress(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = storage.list_study_plan_videos_with_records()[0]
+                client = app.test_client()
+                self.login_admin(app, client)
+                ai_payload = {
+                    "answer": "已準備把影片位置修正為 12 分鐘，請確認變更。",
+                    "action": {
+                        "type": "set_video_progress",
+                        "subject": video["subject"],
+                        "video_sequence": video["sequence"],
+                        "session_id": "",
+                        "target_minutes": 12,
+                        "start_date": "",
+                        "end_date": "",
+                        "weekday_hours": 0,
+                        "weekend_hours": 0,
+                        "reason": "修正錯誤位置",
+                    },
+                }
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
+                ):
+                    ask_response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": f"把{video['subject']}影片{video['sequence']}改成12分鐘"},
+                    )
+
+                proposal = ask_response.get_json()["proposal"]
+                unchanged = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertEqual(ask_response.status_code, 200)
+                self.assertIsNotNone(proposal)
+                self.assertEqual(unchanged["watched_seconds"], 0)
+
+                apply_response = client.post(proposal["apply_url"])
+                changed = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertEqual(apply_response.status_code, 200)
+                self.assertEqual(changed["watched_seconds"], 720)
+                self.assertEqual(client.post(proposal["apply_url"]).status_code, 409)
+
+                undo_url = apply_response.get_json()["undo"]["url"]
+                undo_response = client.post(undo_url)
+                restored = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertEqual(undo_response.status_code, 200)
+                self.assertEqual(restored["watched_seconds"], 0)
+                self.assertEqual(client.post(undo_url).status_code, 409)
+            finally:
+                storage._engine.dispose()
+
+    def test_data_assistant_can_correct_and_undo_study_time(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                session_id = "assistant_time_session"
+                storage.record_study_time_session(
+                    session_key=session_id,
+                    kind="practice",
+                    label="演算法練習",
+                    elapsed_seconds=3600,
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+                ai_payload = {
+                    "answer": "找到這筆紀錄，準備改為 35 分鐘。",
+                    "action": {
+                        "type": "set_study_time_session",
+                        "subject": "",
+                        "video_sequence": 0,
+                        "session_id": session_id,
+                        "target_minutes": 35,
+                        "start_date": "",
+                        "end_date": "",
+                        "weekday_hours": 0,
+                        "weekend_hours": 0,
+                        "reason": "實際只讀了35分鐘",
+                    },
+                }
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
+                ):
+                    proposal = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "演算法練習其實只有35分鐘，幫我修正"},
+                    ).get_json()["proposal"]
+
+                self.assertEqual(storage.get_study_time_session(session_id)["elapsed_seconds"], 3600)
+                applied = client.post(proposal["apply_url"])
+                self.assertEqual(applied.status_code, 200)
+                self.assertEqual(storage.get_study_time_session(session_id)["elapsed_seconds"], 2100)
+                self.assertEqual(client.post(applied.get_json()["undo"]["url"]).status_code, 200)
+                self.assertEqual(storage.get_study_time_session(session_id)["elapsed_seconds"], 3600)
+            finally:
+                storage._engine.dispose()
+
+    def test_data_assistant_does_not_overwrite_newer_video_progress(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = storage.list_study_plan_videos_with_records()[0]
+                client = app.test_client()
+                self.login_admin(app, client)
+                ai_payload = {
+                    "answer": "準備修正觀看位置。",
+                    "action": {
+                        "type": "set_video_progress",
+                        "subject": video["subject"],
+                        "video_sequence": video["sequence"],
+                        "session_id": "",
+                        "target_minutes": 12,
+                        "start_date": "",
+                        "end_date": "",
+                        "weekday_hours": 0,
+                        "weekend_hours": 0,
+                        "reason": "修正位置",
+                    },
+                }
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
+                ):
+                    proposal = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": f"把{video['subject']}影片{video['sequence']}改成12分鐘"},
+                    ).get_json()["proposal"]
+
+                newer = storage.update_study_plan_video_progress(
+                    video_id=video["id"],
+                    watched_seconds=300,
+                    expected_version=0,
+                )
+                self.assertFalse(newer["stale"])
+                response = client.post(proposal["apply_url"])
+                current = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(current["watched_seconds"], 300)
+            finally:
+                storage._engine.dispose()
+
+    def test_data_assistant_can_update_and_undo_study_plan(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                ai_payload = {
+                    "answer": "準備將平日調整為 3.5 小時、假日 4 小時。",
+                    "action": {
+                        "type": "update_study_plan",
+                        "subject": "",
+                        "video_sequence": 0,
+                        "session_id": "",
+                        "target_minutes": 0,
+                        "start_date": "2026-09-07",
+                        "end_date": "2026-12-31",
+                        "weekday_hours": 3.5,
+                        "weekend_hours": 4,
+                        "reason": "調整每日可用時間",
+                    },
+                }
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
+                ):
+                    proposal = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "把計畫改成平日3.5小時，假日4小時，到年底"},
+                    ).get_json()["proposal"]
+
+                self.assertIsNone(storage.get_study_plan_replan_settings())
+                applied = client.post(proposal["apply_url"])
+                settings = storage.get_study_plan_replan_settings()
+                self.assertEqual(applied.status_code, 200)
+                self.assertEqual(settings["weekday_minutes"], 210)
+                self.assertEqual(settings["weekend_minutes"], 240)
+                self.assertEqual(client.post(applied.get_json()["undo"]["url"]).status_code, 200)
+                self.assertIsNone(storage.get_study_plan_replan_settings())
             finally:
                 storage._engine.dispose()
 
