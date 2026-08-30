@@ -341,6 +341,130 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             finally:
                 storage._engine.dispose()
 
+    def test_subject_progress_is_answered_directly_without_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item
+                    for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學"
+                )
+                storage.update_study_plan_video_progress(
+                    video_id=video["id"],
+                    watched_seconds=min(600, video["duration_seconds"]),
+                    expected_version=0,
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "我要查詢離散的進度"},
+                    )
+
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("離散數學目前已看", payload["answer"])
+                self.assertIn("完成", payload["answer"])
+                self.assertIn("目前看到影片", payload["answer"])
+                self.assertNotIn("確認", payload["answer"])
+                self.assertNotIn("video_sequence", payload["answer"])
+                self.assertIsNone(payload["proposal"])
+                openai_post.assert_not_called()
+            finally:
+                storage._engine.dispose()
+
+    def test_short_confirmation_keeps_the_previous_data_query_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={
+                            "question": "確認",
+                            "history": [
+                                {"role": "user", "content": "離散數學的進度"},
+                                {"role": "assistant", "content": "請確認是否要查詢。"},
+                            ],
+                        },
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("離散數學目前已看", response.get_json()["answer"])
+                self.assertNotIn("授權", response.get_json()["answer"])
+                openai_post.assert_not_called()
+            finally:
+                storage._engine.dispose()
+
+    def test_vague_time_correction_asks_one_natural_question(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "可以幫我修正時數嗎"},
+                    )
+
+                answer = response.get_json()["answer"]
+                self.assertEqual(
+                    answer,
+                    "可以。請告訴我哪一天、哪一筆學習紀錄，以及正確應該是多少分鐘。",
+                )
+                self.assertNotIn("session_id", answer)
+                self.assertNotIn("set_", answer)
+                openai_post.assert_not_called()
+            finally:
+                storage._engine.dispose()
+
+    def test_data_assistant_hides_internal_names_from_model_answer(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                ai_payload = {
+                    "answer": "請提供 session_id 與 target_minutes，我會使用 set_study_time_session。",
+                    "action": {
+                        "type": "none",
+                        "subject": "",
+                        "video_sequence": 0,
+                        "session_id": "",
+                        "target_minutes": 0,
+                        "start_date": "",
+                        "end_date": "",
+                        "weekday_hours": 0,
+                        "weekend_hours": 0,
+                        "reason": "",
+                    },
+                }
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
+                ):
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "我目前的學習時間紀錄正常嗎"},
+                    )
+
+                answer = response.get_json()["answer"]
+                self.assertNotIn("session_id", answer)
+                self.assertNotIn("target_minutes", answer)
+                self.assertNotIn("set_study_time_session", answer)
+                self.assertIn("學習時間紀錄", answer)
+            finally:
+                storage._engine.dispose()
+
     def test_data_assistant_requires_confirmation_and_can_undo_video_progress(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.build_app(temp_dir)
@@ -380,6 +504,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 )
                 self.assertEqual(ask_response.status_code, 200)
                 self.assertIsNotNone(proposal)
+                self.assertEqual(
+                    ask_response.get_json()["answer"],
+                    "已整理好變更，確認後就會套用。",
+                )
                 self.assertEqual(unchanged["watched_seconds"], 0)
 
                 apply_response = client.post(proposal["apply_url"])

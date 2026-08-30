@@ -14720,6 +14720,100 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return f"{hours} 小時"
         return f"{minutes} 分鐘"
 
+    def _study_assistant_subject_from_text(value: Any) -> str:
+        normalized = re.sub(r"\s+", "", str(value or "")).casefold()
+        aliases = {
+            "線性代數": ("線性代數", "線代"),
+            "離散數學": ("離散數學", "離散"),
+            "資料結構": ("資料結構", "datastructure", "ds"),
+            "作業系統": ("作業系統", "operatingsystem", "os"),
+            "計算機組織": ("計算機組織", "計組", "computerorganization"),
+            "演算法": ("演算法", "algorithm", "algo"),
+        }
+        for subject, names in aliases.items():
+            if any(name.casefold() in normalized for name in names):
+                return subject
+        return ""
+
+    def _study_assistant_subject_progress_answer(
+        subject: str,
+        videos: List[Dict[str, Any]],
+    ) -> Optional[str]:
+        subject_videos = [
+            video for video in videos if str(video.get("subject") or "") == subject
+        ]
+        if not subject_videos:
+            return None
+        total_seconds = sum(
+            max(0.0, float(video.get("duration_seconds") or 0))
+            for video in subject_videos
+        )
+        watched_seconds = sum(
+            min(
+                max(0.0, float(video.get("watched_seconds") or 0)),
+                max(0.0, float(video.get("duration_seconds") or 0)),
+            )
+            for video in subject_videos
+        )
+        completed = sum(
+            1
+            for video in subject_videos
+            if _study_plan_video_is_complete(
+                video.get("duration_seconds"), video.get("watched_seconds")
+            )
+        )
+        completion = min(100.0, watched_seconds / total_seconds * 100) if total_seconds else 0.0
+        unfinished = [
+            video
+            for video in subject_videos
+            if not _study_plan_video_is_complete(
+                video.get("duration_seconds"), video.get("watched_seconds")
+            )
+        ]
+        active = next(
+            (
+                video
+                for video in unfinished
+                if float(video.get("watched_seconds") or 0) > 0
+            ),
+            unfinished[0] if unfinished else None,
+        )
+        summary = (
+            f"{subject}目前已看 {_study_assistant_time_label(watched_seconds)} / "
+            f"{_study_assistant_time_label(total_seconds)}，完成 {completion:.1f}%（{completed}/{len(subject_videos)} 支）。"
+        )
+        if not active:
+            return summary + "全部影片都已完成。"
+        sequence = int(active.get("sequence") or 0)
+        title = str(active.get("title") or "").strip()
+        position = float(active.get("watched_seconds") or 0)
+        if position > 0:
+            return (
+                summary
+                + f"目前看到影片 {sequence}「{title}」的 {_study_assistant_time_label(position)}。"
+            )
+        return summary + f"下一支是影片 {sequence}「{title}」。"
+
+    def _sanitize_study_assistant_answer(value: Any) -> str:
+        answer = str(value or "")
+        replacements = {
+            "set_video_progress": "影片進度",
+            "set_study_time_session": "學習時間紀錄",
+            "update_study_plan": "讀書計畫",
+            "recent_study_sessions": "最近學習紀錄",
+            "video_sequence": "影片序號",
+            "target_minutes": "分鐘數",
+            "weekday_hours": "平日每日時數",
+            "weekend_hours": "假日每日時數",
+            "start_date": "計畫起日",
+            "end_date": "計畫迄日",
+            "session_id": "紀錄",
+            "subject": "科目",
+        }
+        for internal_name, display_name in replacements.items():
+            answer = re.sub(re.escape(internal_name), display_name, answer, flags=re.IGNORECASE)
+        return _normalize_study_math_markup(answer)
+
     def _build_study_assistant_proposal(
         *,
         username: str,
@@ -14935,13 +15029,25 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             f"{'使用者' if entry['role'] == 'user' else '助理'}：{entry['content']}"
             for entry in history
         )
+        previous_user_messages = [
+            entry["content"] for entry in history if entry.get("role") == "user"
+        ]
+        short_confirmation = question.casefold() in {
+            "確認", "確定", "好", "可以", "是", "對", "沒錯", "就這個", "照這個"
+        }
+        intent_text = question
+        if short_confirmation and previous_user_messages:
+            intent_text = f"{previous_user_messages[-1]} {question}"
         data_nouns = ("影片", "進度", "觀看", "學習時間", "讀書時間", "時數", "分鐘", "小時", "計畫", "資料庫", "紀錄")
         mutation_verbs = ("修正", "更正", "修改", "調整", "改成", "設成", "更新", "刪除", "重設", "對調")
         personal_markers = ("我的", "我今天", "我昨天", "網站", "目前", "現在", "資料庫")
-        has_data_noun = any(term in question for term in data_nouns)
+        read_markers = ("查", "多少", "完成率", "看到哪", "目前進度", "現在進度", "進度")
+        has_data_noun = any(term in intent_text for term in data_nouns)
+        has_mutation_intent = any(term in intent_text for term in mutation_verbs)
         data_request = has_data_noun and (
-            any(term in question for term in mutation_verbs)
-            or any(term in question for term in personal_markers)
+            has_mutation_intent
+            or any(term in intent_text for term in personal_markers)
+            or any(term in intent_text for term in read_markers)
         )
         if not data_request:
             prompt = (
@@ -14989,6 +15095,39 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
         business_today = _study_plan_business_date()
         videos = storage.list_study_plan_videos_with_records()
+        requested_subject = _study_assistant_subject_from_text(intent_text)
+        subject_progress_request = bool(
+            requested_subject
+            and not has_mutation_intent
+            and any(term in intent_text for term in read_markers)
+        )
+        if subject_progress_request:
+            answer = _study_assistant_subject_progress_answer(requested_subject, videos)
+            if answer:
+                record_ui_event(
+                    "study_recall_general_question",
+                    meta={
+                        "history_count": len(history),
+                        "response_style": response_style,
+                        "data_mode": True,
+                        "direct_subject_progress": requested_subject,
+                    },
+                )
+                return {"ok": True, "answer": answer, "proposal": None}
+
+        vague_time_correction = bool(
+            has_mutation_intent
+            and any(term in intent_text for term in ("時數", "學習時間", "讀書時間", "分鐘", "小時"))
+            and not re.search(r"\d", intent_text)
+            and not requested_subject
+        )
+        if vague_time_correction:
+            return {
+                "ok": True,
+                "answer": "可以。請告訴我哪一天、哪一筆學習紀錄，以及正確應該是多少分鐘。",
+                "proposal": None,
+            }
+
         compact_videos = [
             {
                 "subject": str(video.get("subject") or ""),
@@ -15035,9 +15174,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "你是可靠、直接且善於教學的繁體中文 AI 助手，也能協助管理這個學習網站的資料。"
             "這是一般問答模式，沒有指定筆記或重點卡。"
             "請依可靠知識回答使用者的實際問題，不要假裝看過使用者的筆記，也不要自行捏造來源。"
-            "若資訊不足或問題有多種合理解讀，先說明必要假設；若內容可能過時，清楚提醒需要查證。"
-            f"回答要完整收尾並避免冗長。{style_instruction}數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
+            "網站目前可用資料就是你已獲授權讀取的真實資料，不得聲稱無法存取、要求使用者再次授權或要求貼上資料。"
+            "唯讀查詢要直接回答，不得要求確認。修改資訊不足時，只能用一句自然中文追問一個必要問題，"
+            "不得列出選單、操作格式或必要欄位清單。能從對話與資料判斷時就直接判斷。"
+            "資料查詢與修改回答最多三個短句，不重述使用者整段問題。"
+            "數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
             "獨立公式用 \\[ ... \\]。除非使用者需要，否則不要加入多餘標題或結尾邀請。\n\n"
+            "對使用者只能使用自然名稱。絕對不可顯示英文動作名稱、資料欄位、session id、JSON、資料表或 SQL；"
+            "不可提到 set_video_progress、set_study_time_session、update_study_plan、session_id、subject、"
+            "video_sequence、target_minutes、start_date、end_date、weekday_hours、weekend_hours。\n\n"
             "你只能提出以下一個待確認動作，不能聲稱已經修改，也不能要求或產生 SQL：\n"
             "1. set_video_progress：修正某科目某支影片的最後觀看位置。subject、video_sequence、target_minutes 必須明確。\n"
             "2. set_study_time_session：修正最近 14 天內某筆實際學習時間。session_id、target_minutes 必須明確。\n"
@@ -15099,19 +15244,28 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         answer = str(ai_result.get("answer") or "").strip()[:8000]
         if not answer:
             return {"ok": False, "error": "AI 助手沒有產生有效回答，請換個方式提問。"}, 502
-        answer = _normalize_study_math_markup(answer)
+        answer = _sanitize_study_assistant_answer(answer)
         proposal = _build_study_assistant_proposal(
             username=str((current_user() or {}).get("username") or ""),
             raw_action=ai_result.get("action"),
             videos=videos,
             current_settings=replan_settings,
         )
+        proposed_type = str((ai_result.get("action") or {}).get("type") or "none")
+        if proposed_type != "none" and not proposal:
+            answer = {
+                "set_video_progress": "請告訴我要修改的科目、影片序號，以及正確的觀看分鐘數。",
+                "set_study_time_session": "請告訴我哪一天、哪一筆學習紀錄，以及正確的分鐘數。",
+                "update_study_plan": "請告訴我要調整的日期或每日可讀時數。",
+            }.get(proposed_type, "這筆資料目前無法安全修改，請再說明要改哪一筆與正確數值。")
+        elif proposal:
+            answer = "已整理好變更，確認後就會套用。"
         record_ui_event(
             "study_recall_general_question",
             meta={
                 "history_count": len(history),
                 "response_style": response_style,
-                "proposed_action": str((ai_result.get("action") or {}).get("type") or "none"),
+                "proposed_action": proposed_type,
             },
         )
         return {"ok": True, "answer": answer, "proposal": proposal}
