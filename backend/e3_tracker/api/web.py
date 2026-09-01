@@ -13821,12 +13821,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "log(n!) 的漸進階",
                 "由 Stirling 公式可得 ln(n!)=n ln n−n+O(ln n)，因此 ln(n!)=Θ(n ln n)，且 ln(n!)/(n ln n)→1。對其他固定底數的對數只相差常數因子。",
             )
-        elif canonical.strip().casefold() == "stirling":
+        elif "stirling" in folded:
             replacement = (
                 "Stirling 公式",
                 "當 n→∞ 時，n!∼√(2πn)(n/e)^n；符號 ∼ 表示兩側比值趨近 1。等價地，ln(n!)=n ln n−n+(1/2)ln(2πn)+o(1)。",
             )
-        elif canonical == "調和級數":
+        elif "調和級數" in canonical or "harmonic series" in folded:
             replacement = (
                 "調和數 Hₙ",
                 "第 n 個調和數定義為 Hₙ=∑_{k=1}^n 1/k，且 Hₙ=ln n+γ+o(1)，所以 Hₙ=Θ(log n)。無窮調和級數 ∑_{k=1}^∞1/k 則發散。",
@@ -13841,6 +13841,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             finalized["explanation_kind"] = "標準定義"
             finalized["confidence"] = 100
         return finalized
+
+    def _glossary_target_score(entry: Dict[str, Any]) -> int:
+        score = int(entry.get("confidence") or 0)
+        card_title = str(entry.get("card_title") or "")
+        canonical = str(entry.get("canonical_term") or "")
+        title = str(entry.get("title") or "")
+        if "定義" in card_title:
+            score += 30
+        compact_card = re.sub(r"\s+", "", card_title).casefold()
+        for candidate in (canonical, title):
+            compact_candidate = re.sub(r"[\s（）()/_-]+", "", candidate).casefold()
+            if len(compact_candidate) >= 3 and compact_candidate in compact_card:
+                score += 10
+                break
+        return score
 
     def _generate_verified_glossary(
         subject: str,
@@ -13977,7 +13992,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 for entry in accepted_terms:
                     key = entry["title"].casefold()
                     existing = partial_unique.get(key)
-                    if not existing or int(entry["confidence"]) > int(existing["confidence"]):
+                    if not existing or _glossary_target_score(entry) > _glossary_target_score(existing):
                         partial_unique[key] = entry
                 progress_callback(sorted(
                     partial_unique.values(),
@@ -13987,7 +14002,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         for entry in accepted_terms:
             key = entry["title"].casefold()
             existing = unique.get(key)
-            if not existing or int(entry["confidence"]) > int(existing["confidence"]):
+            if not existing or _glossary_target_score(entry) > _glossary_target_score(existing):
                 unique[key] = entry
         return sorted(unique.values(), key=lambda item: (-len(item["title"]), item["title"].casefold()))
 
@@ -14029,7 +14044,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         continue
                     key = str(item.get("title") or "").casefold()
                     existing_item = merged.get(key)
-                    if not existing_item or int(item.get("confidence") or 0) >= int(existing_item.get("confidence") or 0):
+                    if not existing_item or _glossary_target_score(item) >= _glossary_target_score(existing_item):
                         merged[key] = item
                 storage.save_study_recall_glossary(
                     subject=subject,
