@@ -65,11 +65,15 @@ class StudyRecallGlossaryTests(unittest.TestCase):
                 {
                     "concept": "生成函數（generating function）定義",
                     "explanation": "生成函數是用冪級數的係數編碼一個數列。",
-                    "search_keywords": ["母函數", "GF"],
+                    "search_keywords": ["母函數", "GF", "S(m,n)"],
                 },
                 {
                     "concept": "三階遞迴的特徵方程與係數解法例題",
                     "explanation": "先建立特徵方程，再由初始條件求係數。",
+                },
+                {
+                    "concept": "全集與性質符號",
+                    "explanation": "以全集 U 建立事件集合，並以 N 表示集合基數。",
                 },
             ],
         )
@@ -102,6 +106,7 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         self.assertIn("GF", terms)
         self.assertIn("特徵方程", terms)
         self.assertNotIn("定義", terms)
+        self.assertNotIn("S(m,n)", terms)
         self.assertNotIn(r"\(A^T A\)", terms)
         self.assertEqual(
             terms["Dijkstra 鬆弛"]["url"],
@@ -139,6 +144,12 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         )
         self.assertEqual(gf_entry["explanation_kind"], "相關重點卡")
         self.assertIn("生成函數", gf_entry["explanation"])
+        universal_set_entry = next(
+            entry
+            for entry in payload["terms"]
+            if entry["title"] == "全集" and entry["subject"] == "線性代數"
+        )
+        self.assertEqual(universal_set_entry["explanation_kind"], "筆記原句")
 
     def test_recall_page_loads_the_wikipedia_style_glossary_runtime(self):
         session_id = self.storage.create_study_recall_session(

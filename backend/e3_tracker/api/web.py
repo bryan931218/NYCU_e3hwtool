@@ -13699,6 +13699,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "例子",
             "乘法",
             "反例",
+            "非負",
             "ex",
             "example",
         }
@@ -13773,6 +13774,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 or folded in generic_titles
                 or re.fullmatch(r"第?[一二三四五六七八九十\d]+(?:類|項|頁|章)?", term)
                 or re.fullmatch(r"\d+\s*[×xX]\s*\d+", term)
+                or (
+                    bool(re.fullmatch(r"[A-Za-z]+\([^)]*\)(?:[+\-*/].*)?", term))
+                    and bool(re.search(r"[, +\-*/]", term))
+                )
                 or re.search(r"[\\${}^_=]", term)
                 or not re.search(r"[A-Za-z0-9\u3400-\u9fff]", term)
             ):
@@ -13827,18 +13832,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             term: str, record: Dict[str, Any]
         ) -> Tuple[str, str]:
             concept = record["concept"]
-            definition_markers = (
-                "是指",
-                "指的是",
-                "定義為",
-                "定義成",
-                "稱為",
-                "叫做",
-                "表示",
-                "代表",
-                "用來",
-                "意指",
-            )
             sentence_candidates: List[Tuple[int, str, bool]] = []
             for field, field_score in (
                 ("explanation", 36),
@@ -13854,14 +13847,22 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     sentence = re.sub(r"\s+", " ", sentence).strip()
                     if not sentence or not term_occurs(term, sentence):
                         continue
-                    definition_like = any(
-                        marker in sentence for marker in definition_markers
-                    ) or bool(
+                    term_pattern = re.escape(term)
+                    definition_like = bool(
                         re.search(
-                            rf"{re.escape(term)}\s*(?:是|為|指)",
+                            rf"{term_pattern}.{{0,12}}(?:是指|指的是|定義為|定義成|稱為|叫做|表示|代表|用來|意指|是|為)",
                             sentence,
                             flags=re.IGNORECASE,
                         )
+                    ) or bool(
+                        re.search(
+                            rf"(?:稱為|叫做|定義為|定義成|意指).{{0,16}}{term_pattern}",
+                            sentence,
+                            flags=re.IGNORECASE,
+                        )
+                    ) or bool(
+                        re.search(r"(?:定義|基本概念)", record["card_title"])
+                        and term_occurs(term, record["card_title"])
                     )
                     score = field_score + (55 if definition_like else 0)
                     score += max(0, 18 - abs(len(sentence) - 72) // 8)
