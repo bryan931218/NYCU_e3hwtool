@@ -14133,6 +14133,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             _start_glossary_refresh(stale_subjects, catalog_by_subject)
             for subject in stale_subjects:
                 statuses[subject] = "building"
+        best_target_by_concept: Dict[str, Dict[str, Any]] = {}
+        for entry in ready_terms:
+            concept_key = f"{str(entry.get('subject') or '').casefold()}\0{str(entry.get('canonical_term') or '').casefold()}"
+            existing = best_target_by_concept.get(concept_key)
+            if not existing or _glossary_target_score(entry) > _glossary_target_score(existing):
+                best_target_by_concept[concept_key] = entry
+        for entry in ready_terms:
+            concept_key = f"{str(entry.get('subject') or '').casefold()}\0{str(entry.get('canonical_term') or '').casefold()}"
+            preferred = best_target_by_concept.get(concept_key)
+            if not preferred:
+                continue
+            for field in ("card_title", "session_title", "session_id", "concept_index", "url"):
+                entry[field] = preferred.get(field)
         overall_status = (
             "building"
             if any(value == "building" for value in statuses.values())
