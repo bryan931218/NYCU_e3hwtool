@@ -13770,8 +13770,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         candidates = list(catalog.get("candidates") or [])
         by_id = {item["candidate_id"]: item for item in candidates}
         accepted_terms: List[Dict[str, Any]] = []
-        for start in range(0, len(candidates), 18):
-            batch = candidates[start : start + 18]
+        for start in range(0, len(candidates), 10):
+            batch = candidates[start : start + 10]
             compact_batch = [
                 {
                     "candidate_id": item["candidate_id"],
@@ -13798,8 +13798,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     ),
                 }],
                 timeout=180,
-                reasoning_effort="medium",
-                max_output_tokens=9000,
+                reasoning_effort="low",
+                max_output_tokens=7000,
             )
             audit_input = {
                 "subject": subject,
@@ -13821,8 +13821,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     ),
                 }],
                 timeout=180,
-                reasoning_effort="high",
-                max_output_tokens=9000,
+                reasoning_effort="medium",
+                max_output_tokens=10000,
             )
             for item in audited.get("items") or []:
                 candidate_id = str(item.get("candidate_id") or "")
@@ -13976,6 +13976,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             else:
                 statuses[subject] = str(cached.get("status") if cached else "missing")
                 stale_subjects.append(subject)
+        if request.args.get("retry") == "1":
+            for subject in subjects:
+                if statuses.get(subject) == "failed" and subject not in stale_subjects:
+                    stale_subjects.append(subject)
         if stale_subjects and openai_api_key:
             _start_glossary_refresh(stale_subjects, catalog_by_subject)
             for subject in stale_subjects:
