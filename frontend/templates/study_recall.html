@@ -1155,6 +1155,7 @@
                 })
                 .then((payload) => {
                     const entries = Array.isArray(payload.terms) ? payload.terms : [];
+                    state.byFirst.clear();
                     entries.forEach((entry) => {
                         const title = String(entry.title || '').trim();
                         if (!title) return;

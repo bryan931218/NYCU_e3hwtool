@@ -13762,7 +13762,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         },
     }
 
-    def _generate_verified_glossary(subject: str, catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_verified_glossary(
+        subject: str,
+        catalog: Dict[str, Any],
+        progress_callback: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
+    ) -> List[Dict[str, Any]]:
         candidates = list(catalog.get("candidates") or [])
         by_id = {item["candidate_id"]: item for item in candidates}
         accepted_terms: List[Dict[str, Any]] = []
@@ -13862,6 +13866,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "session_id": target["session_id"],
                         "concept_index": target["concept_index"],
                     })
+            if progress_callback:
+                partial_unique: Dict[str, Dict[str, Any]] = {}
+                for entry in accepted_terms:
+                    key = entry["title"].casefold()
+                    existing = partial_unique.get(key)
+                    if not existing or int(entry["confidence"]) > int(existing["confidence"]):
+                        partial_unique[key] = entry
+                progress_callback(sorted(
+                    partial_unique.values(),
+                    key=lambda value: (-len(value["title"]), value["title"].casefold()),
+                ))
         unique: Dict[str, Dict[str, Any]] = {}
         for entry in accepted_terms:
             key = entry["title"].casefold()
@@ -13892,7 +13907,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             for subject in pending:
                 catalog = catalog_by_subject[subject]
                 try:
-                    terms = _generate_verified_glossary(subject, catalog)
+                    terms = _generate_verified_glossary(
+                        subject,
+                        catalog,
+                        progress_callback=lambda partial_terms, current_subject=subject, current_catalog=catalog: storage.save_study_recall_glossary(
+                            subject=current_subject,
+                            source_signature=current_catalog["signature"],
+                            status="building",
+                            terms=partial_terms,
+                        ),
+                    )
                     storage.save_study_recall_glossary(
                         subject=subject,
                         source_signature=catalog["signature"],
@@ -13922,15 +13946,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         ready_terms: List[Dict[str, Any]] = []
         stale_subjects: List[str] = []
         statuses: Dict[str, str] = {}
+        diagnostics: Dict[str, str] = {}
         for subject in subjects:
             catalog = catalog_by_subject[subject]
             cached = storage.get_study_recall_glossary(subject)
-            if (
-                cached
-                and cached.get("status") == "ready"
-                and cached.get("source_signature") == catalog["signature"]
-            ):
-                statuses[subject] = "ready"
+            cache_matches = bool(
+                cached and cached.get("source_signature") == catalog["signature"]
+            )
+            if cache_matches:
+                cached_status = str(cached.get("status") or "missing")
+                statuses[subject] = cached_status
+                if cached.get("error"):
+                    diagnostics[subject] = str(cached.get("error"))[:500]
                 for entry in cached.get("terms") or []:
                     if not isinstance(entry, dict):
                         continue
@@ -13941,6 +13968,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "url": url_for("admin_study_recall", session_id=session_id)
                         + f"#concept-{concept_index}",
                     })
+                if cached_status == "building":
+                    with glossary_jobs_lock:
+                        locally_running = subject in glossary_jobs
+                    if not locally_running:
+                        stale_subjects.append(subject)
             else:
                 statuses[subject] = str(cached.get("status") if cached else "missing")
                 stale_subjects.append(subject)
@@ -13971,6 +14003,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 </style></head><body>
                 <h1>詞典稽核</h1>
                 <p class="status">狀態：{{ overall_status }}｜科目：{{ statuses }}｜共 {{ terms|length }} 個顯示詞</p>
+                {% if diagnostics %}<p class="status bad">錯誤：{{ diagnostics }}</p>{% endif %}
                 <table><thead><tr><th>#</th><th>科目</th><th>顯示詞</th><th>標準詞名</th><th class="definition">已審核定義</th><th>信心</th><th>目標卡</th></tr></thead>
                 <tbody>{% for term in terms %}<tr><td>{{ loop.index }}</td><td>{{ term.subject }}</td><td>{{ term.title }}</td>
                 <td>{{ term.canonical_term }}</td><td class="definition">{{ term.explanation }}</td><td>{{ term.confidence }}</td>
@@ -13979,6 +14012,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 """,
                 overall_status=overall_status,
                 statuses=statuses,
+                diagnostics=diagnostics,
                 terms=ready_terms,
             )
             response = Response(audit_html, mimetype="text/html")
@@ -13990,6 +14024,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "terms": ready_terms,
                     "status": overall_status,
                     "subjects": statuses,
+                    "diagnostics": diagnostics,
                     "source_signatures": {
                         subject: catalog_by_subject[subject]["signature"]
                         for subject in subjects
