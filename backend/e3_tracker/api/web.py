@@ -13955,6 +13955,35 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if any(value in {"missing", "failed"} for value in statuses.values())
             else "ready"
         )
+        if request.args.get("audit") == "1":
+            audit_html = render_template_string(
+                """
+                <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+                <meta name="viewport" content="width=device-width,initial-scale=1">
+                {% if overall_status == 'building' %}<meta http-equiv="refresh" content="6">{% endif %}
+                <title>詞典稽核</title>
+                <style>
+                body{font-family:system-ui,sans-serif;margin:24px;color:#17324d;background:#f5f9fc}
+                h1{font-size:24px}.status{padding:10px 14px;border-radius:10px;background:#fff;border:1px solid #d7e3ec}
+                table{width:100%;margin-top:16px;border-collapse:collapse;background:#fff;font-size:13px}
+                th,td{padding:10px;border:1px solid #d7e3ec;text-align:left;vertical-align:top;line-height:1.55}
+                th{position:sticky;top:0;background:#eaf4f6}.definition{min-width:360px}.bad{color:#a23b32}
+                </style></head><body>
+                <h1>詞典稽核</h1>
+                <p class="status">狀態：{{ overall_status }}｜科目：{{ statuses }}｜共 {{ terms|length }} 個顯示詞</p>
+                <table><thead><tr><th>#</th><th>科目</th><th>顯示詞</th><th>標準詞名</th><th class="definition">已審核定義</th><th>信心</th><th>目標卡</th></tr></thead>
+                <tbody>{% for term in terms %}<tr><td>{{ loop.index }}</td><td>{{ term.subject }}</td><td>{{ term.title }}</td>
+                <td>{{ term.canonical_term }}</td><td class="definition">{{ term.explanation }}</td><td>{{ term.confidence }}</td>
+                <td><a href="{{ term.url }}">{{ term.session_title }}／{{ term.card_title }}</a></td></tr>{% endfor %}</tbody></table>
+                </body></html>
+                """,
+                overall_status=overall_status,
+                statuses=statuses,
+                terms=ready_terms,
+            )
+            response = Response(audit_html, mimetype="text/html")
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
         response = Response(
             json.dumps(
                 {
