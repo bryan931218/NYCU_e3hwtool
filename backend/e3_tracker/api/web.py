@@ -14002,11 +14002,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not pending:
             return
         for subject in pending:
+            existing = storage.get_study_recall_glossary(subject)
+            preserved_terms = (
+                list(existing.get("terms") or [])
+                if existing and existing.get("source_signature") == catalog_by_subject[subject]["signature"]
+                else []
+            )
             storage.save_study_recall_glossary(
                 subject=subject,
                 source_signature=catalog_by_subject[subject]["signature"],
                 status="building",
-                terms=[],
+                terms=preserved_terms,
             )
 
         def _run() -> None:
