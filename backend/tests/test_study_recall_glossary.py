@@ -73,6 +73,20 @@ class StudyRecallGlossaryTests(unittest.TestCase):
                 },
             ],
         )
+        third_id = self.storage.create_study_recall_session(
+            study_date="2026-09-01",
+            subject="資料結構",
+            title="另一科的同名詞",
+            image_filenames=[],
+            summary="",
+            source_transcription=[],
+            key_concepts=[
+                {
+                    "concept": "生成函數定義",
+                    "explanation": "這張卡用來驗證同名詞依科目分開索引。",
+                }
+            ],
+        )
 
         response = self.client.get("/admin/study-recall/glossary")
         payload = response.get_json()
@@ -95,6 +109,17 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         )
         self.assertEqual(terms["線性獨立"]["session_id"], second_id)
         self.assertIn("所有係數", terms["線性獨立"]["explanation"])
+        scoped_generating_functions = [
+            entry for entry in payload["terms"] if entry["title"] == "生成函數"
+        ]
+        self.assertEqual(
+            {entry["subject"] for entry in scoped_generating_functions},
+            {"線性代數", "資料結構"},
+        )
+        self.assertEqual(
+            {entry["session_id"] for entry in scoped_generating_functions},
+            {second_id, third_id},
+        )
 
     def test_recall_page_loads_the_wikipedia_style_glossary_runtime(self):
         session_id = self.storage.create_study_recall_session(
@@ -120,6 +145,8 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         self.assertIn('data-study-glossary-tooltip', page)
         self.assertIn('data-glossary-url="/admin/study-recall/glossary"', page)
         self.assertIn("window.applyStudyGlossary", page)
+        self.assertIn("subjectBySession", page)
+        self.assertIn("entry.subject !== currentSubject", page)
         self.assertIn(".glossary-term", page)
 
 

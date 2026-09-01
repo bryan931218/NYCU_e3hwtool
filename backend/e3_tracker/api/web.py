@@ -13689,6 +13689,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "生成",
             "分解",
             "恆等",
+            "判定",
+            "判準",
+            "線性",
+            "運算",
+            "基本",
+            "表述",
+            "展開代入",
+            "例子",
+            "乘法",
+            "反例",
             "ex",
             "example",
         }
@@ -13762,6 +13772,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 or compact_length > 42
                 or folded in generic_titles
                 or re.fullmatch(r"第?[一二三四五六七八九十\d]+(?:類|項|頁|章)?", term)
+                or re.fullmatch(r"\d+\s*[×xX]\s*\d+", term)
                 or re.search(r"[\\${}^_=]", term)
                 or not re.search(r"[A-Za-z0-9\u3400-\u9fff]", term)
             ):
@@ -13851,15 +13862,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if not term:
                     continue
                 folded_term = term.casefold()
+                subject_key = str(record["subject"]).casefold()
+                scoped_term_key = f"{subject_key}\u0000{folded_term}"
                 score = base_score
                 if folded_term == canonical_folded:
                     score += 40
                 if is_definition_card and folded_term in canonical_folded:
                     score += 24
-                existing = entries_by_title.get(folded_term)
+                existing = entries_by_title.get(scoped_term_key)
                 if existing is not None and int(existing["_score"]) >= score:
                     continue
-                entries_by_title[folded_term] = {
+                entries_by_title[scoped_term_key] = {
                     "title": term,
                     "card_title": canonical_title,
                     "explanation": record["explanation"],

@@ -971,13 +971,14 @@
             const titleNode = tooltip.querySelector('[data-glossary-title]');
             const explanationNode = tooltip.querySelector('[data-glossary-explanation]');
             const metaNode = tooltip.querySelector('[data-glossary-meta]');
-            const state = { byFirst: new Map(), active: null, hideTimer: 0 };
+            const state = { byFirst: new Map(), subjectBySession: new Map(), active: null, hideTimer: 0 };
             const asciiWord = /[A-Za-z0-9_]/;
             const targetSelector = [
                 '.concept-fold-body [data-math-content][data-math-rendered="true"]',
                 '[data-recall-card] [data-math-content][data-math-rendered="true"]',
             ].join(',');
-            const entryKey = (entry) => `${entry.session_id}:${entry.concept_index}`;
+            const targetKey = (entry) => `${entry.session_id}:${entry.concept_index}`;
+            const entryKey = (entry) => `${targetKey(entry)}:${String(entry.title || '').toLocaleLowerCase()}`;
             const cardIdentity = (element) => {
                 const selectedCard = element.closest('.concept-fold[id^="concept-"]');
                 if (selectedCard) {
@@ -1012,6 +1013,7 @@
                 const text = node.nodeValue || '';
                 const folded = text.toLocaleLowerCase();
                 const currentCard = cardIdentity(container);
+                const currentSubject = state.subjectBySession.get(currentCard.split(':')[0]) || '';
                 const fragment = document.createDocumentFragment();
                 let plainStart = 0;
                 let cursor = 0;
@@ -1019,7 +1021,12 @@
                 while (cursor < text.length) {
                     const candidates = state.byFirst.get(folded[cursor]) || [];
                     const match = candidates.find((entry) => {
-                        if (seen.has(entry.key) || entry.key === currentCard) return false;
+                        if (
+                            !currentSubject
+                            || entry.subject !== currentSubject
+                            || seen.has(entry.key)
+                            || entry.targetKey === currentCard
+                        ) return false;
                         const end = cursor + entry.title.length;
                         return folded.slice(cursor, end) === entry.folded
                             && hasBoundary(text, cursor, end, entry.title);
@@ -1138,8 +1145,13 @@
                         const title = String(entry.title || '').trim();
                         if (!title) return;
                         entry.title = title;
+                        entry.subject = String(entry.subject || '').trim();
                         entry.folded = title.toLocaleLowerCase();
+                        entry.targetKey = targetKey(entry);
                         entry.key = entryKey(entry);
+                        if (entry.subject) {
+                            state.subjectBySession.set(String(entry.session_id), entry.subject);
+                        }
                         const first = entry.folded[0];
                         if (!state.byFirst.has(first)) state.byFirst.set(first, []);
                         state.byFirst.get(first).push(entry);
