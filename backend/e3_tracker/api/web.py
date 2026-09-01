@@ -13719,15 +13719,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 })
         result: Dict[str, Dict[str, Any]] = {}
         for subject, candidates in grouped.items():
-            signature_source = [
-                {
-                    "id": item["candidate_id"],
-                    "title": item["card_title"],
-                    "terms": item["proposed_terms"],
-                    "context": item["context"],
-                }
-                for item in candidates
-            ]
+            signature_source = {
+                "definition_policy": "verified-general-v3",
+                "cards": [
+                    {
+                        "id": item["candidate_id"],
+                        "title": item["card_title"],
+                        "terms": item["proposed_terms"],
+                        "context": item["context"],
+                    }
+                    for item in candidates
+                ],
+            }
             result[subject] = {
                 "candidates": candidates,
                 "signature": hashlib.sha256(
@@ -13741,13 +13744,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         "additionalProperties": False,
         "required": [
             "candidate_id", "canonical_term", "aliases", "definition",
-            "accepted", "confidence", "rejection_reason",
+            "definition_scope", "accepted", "confidence", "rejection_reason",
         ],
         "properties": {
             "candidate_id": {"type": "string"},
             "canonical_term": {"type": "string"},
             "aliases": {"type": "array", "items": {"type": "string"}},
             "definition": {"type": "string"},
+            "definition_scope": {
+                "type": "string",
+                "enum": ["general", "special_case", "example", "description"],
+            },
             "accepted": {"type": "boolean"},
             "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
             "rejection_reason": {"type": "string"},
@@ -13792,7 +13799,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "教科書式且精確的定義。定義必須回答『這個名詞是什麼』，不可只是說本卡介紹、"
                         "用來計算、包含哪些內容或重述章節標題。需要條件時直接寫入定義。不要引用來源編號。\n"
                         "aliases 只放確定同義的中文、英文全名或通用縮寫；不要放上位詞、相關詞、公式或例題名稱。"
-                        "若卡片只是例題、步驟、公式彙整，或脈絡不足以可靠辨認單一名詞，accepted=false。"
+                        "條件片段（如『不允許空像』）、描述片段（如『含重複組合數』）絕不是 aliases。"
+                        "若卡片同時明確定義多個概念，請為每個概念輸出獨立項目（candidate_id 可重複，最多 3 項），"
+                        "不可用『A 與 B』拼成一個不存在的總稱。若筆記只呈現某個標準概念的特例，canonical_term "
+                        "應改用一般標準概念，definition 先給一般定義，不可把特例冒充完整定義。"
+                        "definition_scope 只有在定義適用該名詞的一般情況時才填 general；只適用特定集合數量、"
+                        "特定數值或單一題目時分別填 special_case 或 example。若卡片只是例題、步驟、公式彙整，"
+                        "或脈絡不足以可靠辨認名詞，accepted=false。"
                         "candidate_id 必須原樣保留。confidence 表示定義與卡片對應的信心。\n\n"
                         + json.dumps(compact_batch, ensure_ascii=False)
                     ),
@@ -13813,9 +13826,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "type": "input_text",
                     "text": (
                         "你是嚴格的研究所教材編審。逐項審核下列詞條，必要時直接修正 canonical_term、"
-                        "aliases 與 definition。只接受標準、無歧義、能獨立回答『是什麼』的定義，"
+                        "aliases、definition 與 definition_scope。只接受標準、無歧義、能獨立回答『是什麼』的定義，"
                         "並確認它真的對應指定 candidate_id 的卡片。摘要、用途描述、學習提示、例題敘述、"
                         "循環定義、把相關詞誤當同義詞，一律 accepted=false。數學或演算法名詞要保留成立條件。"
+                        "定義若只涵蓋特定數值、三集合等有限特例，而詞名其實指一般概念，必須修成一般定義並將 "
+                        "definition_scope 設為 general，否則拒絕。複合卡片中的不同概念要拆成多個項目，"
+                        "不可創造『A 與 B』式總稱。aliases 中的條件、用途、章節片段必須移除。"
                         "僅在 confidence>=80 且無實質疑問時接受。不要因原草稿標示 accepted 就放寬。\n\n"
                         + json.dumps(audit_input, ensure_ascii=False)
                     ),
@@ -13840,6 +13856,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if (
                     not target
                     or not item.get("accepted")
+                    or item.get("definition_scope") != "general"
                     or confidence < 80
                     or not canonical
                     or len(definition) < 12
@@ -13850,6 +13867,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 aliases: List[str] = []
                 for alias in [canonical, *(item.get("aliases") or [])]:
                     cleaned = _study_glossary_clean_term(alias)
+                    if cleaned.casefold() != canonical.casefold() and re.search(
+                        r"^(?:含|不含|允許|不允許|使用|利用|求|計算|所有|具有|沒有)|(?:例題|範例|推導|做法|基礎|條件|情況)$|(?:全集與性質符號)$",
+                        cleaned,
+                    ):
+                        continue
                     if cleaned and cleaned.casefold() not in {value.casefold() for value in aliases}:
                         aliases.append(cleaned)
                 for term in aliases[:10]:
