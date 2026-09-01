@@ -25,6 +25,18 @@
         .example-section.simple { border-left-color:var(--amber); background:var(--amber-soft); }
         .concept:has(> .example-badge) .recall-answer > .concept-detail:not(:has(.reasoning-steps)),.concept:has(> .example-badge) .note-card-sections > .concept-detail:not(:has(.reasoning-steps)) { display:none; }
         [data-math-content] { min-width:0; max-width:100%; overflow-wrap:anywhere; } [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; } [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:thin; } [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0 auto; overflow:visible; text-align:left; }
+        .glossary-term { position:relative; display:inline; padding:0 2px; color:#076f75; border-radius:3px; background:linear-gradient(180deg,transparent 58%,rgba(8,127,128,.16) 58%); box-decoration-break:clone; -webkit-box-decoration-break:clone; font-weight:750; text-decoration:underline; text-decoration-color:rgba(8,127,128,.48); text-decoration-style:dotted; text-decoration-thickness:1.5px; text-underline-offset:3px; cursor:pointer; }
+        .glossary-term:hover,.glossary-term:focus-visible { color:#075e65; background:rgba(8,127,128,.12); text-decoration-color:var(--teal); outline:0; }
+        .study-glossary-tooltip { position:fixed; z-index:1200; width:min(330px,calc(100vw - 24px)); padding:14px 15px 13px; color:var(--ink); border:1px solid #b8d5d5; border-radius:11px; background:rgba(255,255,255,.98); box-shadow:0 18px 48px rgba(23,32,51,.2); pointer-events:none; transform-origin:top left; animation:glossary-in .13s ease-out; }
+        .study-glossary-tooltip[hidden] { display:none; }
+        .glossary-tooltip-kicker { display:flex; align-items:center; gap:6px; color:var(--teal); font-size:10px; font-weight:900; letter-spacing:.07em; }
+        .glossary-tooltip-kicker::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--teal); box-shadow:0 0 0 3px var(--teal-soft); }
+        .study-glossary-tooltip h3 { margin:7px 0 0; font-size:16px; line-height:1.35; overflow-wrap:anywhere; }
+        .glossary-tooltip-explanation { display:-webkit-box; margin:7px 0 0; overflow:hidden; color:#475971; font-size:12.5px; line-height:1.65; -webkit-box-orient:vertical; -webkit-line-clamp:4; }
+        .glossary-tooltip-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:9px; color:var(--muted); border-top:1px solid var(--line); font-size:10.5px; }
+        .glossary-tooltip-meta span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .glossary-tooltip-jump { flex:0 0 auto; color:var(--teal); font-weight:900; }
+        @keyframes glossary-in { from { opacity:0; transform:translateY(3px) scale(.985); } to { opacity:1; transform:none; } }
         .study-code-block { width:100%; max-width:100%; margin:10px 0; overflow:hidden; border:1px solid #cbd7e5; border-left:3px solid var(--teal); border-radius:5px; background:#172033; box-shadow:0 5px 14px rgba(23,32,51,.08); text-align:left; }
         .study-code-head { min-height:34px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 8px 5px 11px; border-bottom:1px solid #dce4ef; background:#f4f7fb; }
         .study-code-language { min-width:0; overflow:hidden; color:#53657d; font-size:10px; font-weight:900; letter-spacing:.04em; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
@@ -902,6 +914,12 @@
             </aside>
         </section>
     </main>
+    <aside id="study-glossary-tooltip" class="study-glossary-tooltip" role="tooltip" data-study-glossary-tooltip data-glossary-url="{{ url_for('admin_study_recall_glossary') }}" data-selected-session-id="{{ selected_session.id if selected_session else '' }}" hidden>
+        <span class="glossary-tooltip-kicker">筆記詞條</span>
+        <h3 data-glossary-title></h3>
+        <p class="glossary-tooltip-explanation" data-glossary-explanation></p>
+        <div class="glossary-tooltip-meta"><span data-glossary-meta></span><span class="glossary-tooltip-jump">點擊查看重點卡 →</span></div>
+    </aside>
     <dialog id="relation-dialog" class="relation-dialog" aria-labelledby="relation-dialog-title">
         <div class="relation-dialog-body">
             <div class="relation-dialog-head"><div><span class="relation-dialog-kicker">關聯與聯想</span><h2 id="relation-dialog-title"></h2></div><button class="dialog-close" type="button" data-relation-close aria-label="關閉" title="關閉">×</button></div>
@@ -947,6 +965,194 @@
     </section>
     <button id="card-ai-toggle" class="ai-floating-toggle" type="button" aria-controls="card-ai-dialog" aria-expanded="false" aria-label="開啟 AI 助教" title="開啟 AI 助教"><svg class="ai-toggle-assistant" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg><svg class="ai-toggle-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
     <script>
+        (() => {
+            const tooltip = document.querySelector('[data-study-glossary-tooltip]');
+            if (!tooltip) return;
+            const titleNode = tooltip.querySelector('[data-glossary-title]');
+            const explanationNode = tooltip.querySelector('[data-glossary-explanation]');
+            const metaNode = tooltip.querySelector('[data-glossary-meta]');
+            const state = { byFirst: new Map(), active: null, hideTimer: 0 };
+            const asciiWord = /[A-Za-z0-9_]/;
+            const targetSelector = [
+                '.concept-fold-body [data-math-content][data-math-rendered="true"]',
+                '[data-recall-card] [data-math-content][data-math-rendered="true"]',
+            ].join(',');
+            const entryKey = (entry) => `${entry.session_id}:${entry.concept_index}`;
+            const cardIdentity = (element) => {
+                const selectedCard = element.closest('.concept-fold[id^="concept-"]');
+                if (selectedCard) {
+                    return `${tooltip.dataset.selectedSessionId}:${selectedCard.id.slice('concept-'.length)}`;
+                }
+                const reviewCard = element.closest('[data-recall-card]');
+                const ratingForm = reviewCard?.querySelector('form[data-recall-rating-form]');
+                const actionMatch = ratingForm?.action.match(/\/admin\/study-recall\/(\d+)\/rate-cards/);
+                const ratingName = reviewCard?.querySelector('input[name^="rating_"]')?.name || '';
+                const indexMatch = ratingName.match(/^rating_(\d+)$/);
+                return actionMatch && indexMatch ? `${actionMatch[1]}:${indexMatch[1]}` : '';
+            };
+            const hasBoundary = (text, start, end, term) => {
+                if (asciiWord.test(term[0] || '') && asciiWord.test(text[start - 1] || '')) return false;
+                if (asciiWord.test(term[term.length - 1] || '') && asciiWord.test(text[end] || '')) return false;
+                return true;
+            };
+            const makeLink = (entry, label) => {
+                const link = document.createElement('a');
+                link.className = 'glossary-term';
+                link.href = entry.url;
+                link.textContent = label;
+                link.dataset.glossaryKey = entryKey(entry);
+                link.dataset.glossaryTitle = entry.title;
+                link.dataset.glossaryExplanation = entry.explanation;
+                link.dataset.glossaryMeta = `${entry.subject}・${entry.session_title}`;
+                link.setAttribute('aria-describedby', tooltip.id);
+                link.setAttribute('aria-label', `${entry.title}，前往重點卡`);
+                return link;
+            };
+            const linkTextNode = (node, container, seen) => {
+                const text = node.nodeValue || '';
+                const folded = text.toLocaleLowerCase();
+                const currentCard = cardIdentity(container);
+                const fragment = document.createDocumentFragment();
+                let plainStart = 0;
+                let cursor = 0;
+                let changed = false;
+                while (cursor < text.length) {
+                    const candidates = state.byFirst.get(folded[cursor]) || [];
+                    const match = candidates.find((entry) => {
+                        if (seen.has(entry.key) || entry.key === currentCard) return false;
+                        const end = cursor + entry.title.length;
+                        return folded.slice(cursor, end) === entry.folded
+                            && hasBoundary(text, cursor, end, entry.title);
+                    });
+                    if (!match) {
+                        cursor += 1;
+                        continue;
+                    }
+                    if (cursor > plainStart) fragment.append(document.createTextNode(text.slice(plainStart, cursor)));
+                    const end = cursor + match.title.length;
+                    fragment.append(makeLink(match, text.slice(cursor, end)));
+                    seen.add(match.key);
+                    cursor = end;
+                    plainStart = end;
+                    changed = true;
+                }
+                if (!changed) return;
+                if (plainStart < text.length) fragment.append(document.createTextNode(text.slice(plainStart)));
+                node.replaceWith(fragment);
+            };
+            window.applyStudyGlossary = (root = document) => {
+                if (!state.byFirst.size) return;
+                const containers = [
+                    ...(root.matches?.(targetSelector) ? [root] : []),
+                    ...root.querySelectorAll(targetSelector),
+                ];
+                containers.forEach((container) => {
+                    if (container.closest('[data-study-glossary-tooltip]')) return;
+                    const card = container.closest('.concept-fold,[data-recall-card]') || container;
+                    const seen = new Set(
+                        [...card.querySelectorAll('.glossary-term[data-glossary-key]')]
+                            .map((link) => link.dataset.glossaryKey),
+                    );
+                    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+                        acceptNode: (node) => {
+                            if (!node.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
+                            const parent = node.parentElement;
+                            if (!parent || parent.closest('a,button,code,pre,.katex,[data-study-glossary-tooltip]')) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            return NodeFilter.FILTER_ACCEPT;
+                        },
+                    });
+                    const textNodes = [];
+                    while (walker.nextNode()) textNodes.push(walker.currentNode);
+                    textNodes.forEach((node) => linkTextNode(node, container, seen));
+                });
+            };
+            const positionTooltip = (link) => {
+                const rect = link.getBoundingClientRect();
+                const margin = 12;
+                const gap = 9;
+                const left = Math.max(
+                    margin,
+                    Math.min(rect.left, window.innerWidth - tooltip.offsetWidth - margin),
+                );
+                const below = rect.bottom + gap;
+                const top = below + tooltip.offsetHeight <= window.innerHeight - margin
+                    ? below
+                    : Math.max(margin, rect.top - tooltip.offsetHeight - gap);
+                tooltip.style.left = `${Math.round(left)}px`;
+                tooltip.style.top = `${Math.round(top)}px`;
+            };
+            const showTooltip = (link) => {
+                window.clearTimeout(state.hideTimer);
+                state.active = link;
+                titleNode.textContent = link.dataset.glossaryTitle || link.textContent;
+                explanationNode.textContent = link.dataset.glossaryExplanation || '';
+                explanationNode.removeAttribute('data-math-rendered');
+                explanationNode.dataset.mathContent = '';
+                metaNode.textContent = link.dataset.glossaryMeta || '';
+                tooltip.hidden = false;
+                window.renderStudyMath?.(explanationNode);
+                positionTooltip(link);
+            };
+            const hideTooltip = (immediate = false) => {
+                window.clearTimeout(state.hideTimer);
+                const hide = () => {
+                    tooltip.hidden = true;
+                    state.active = null;
+                };
+                if (immediate) hide();
+                else state.hideTimer = window.setTimeout(hide, 90);
+            };
+            document.addEventListener('pointerover', (event) => {
+                const link = event.target.closest?.('.glossary-term');
+                if (link) showTooltip(link);
+            });
+            document.addEventListener('pointerout', (event) => {
+                const link = event.target.closest?.('.glossary-term');
+                if (link && !link.contains(event.relatedTarget)) hideTooltip();
+            });
+            document.addEventListener('focusin', (event) => {
+                const link = event.target.closest?.('.glossary-term');
+                if (link) showTooltip(link);
+            });
+            document.addEventListener('focusout', (event) => {
+                if (event.target.closest?.('.glossary-term')) hideTooltip();
+            });
+            document.addEventListener('pointerdown', (event) => {
+                if (event.target.closest?.('.glossary-term')) hideTooltip(true);
+            });
+            window.addEventListener('scroll', () => hideTooltip(true), true);
+            window.addEventListener('resize', () => hideTooltip(true));
+            fetch(tooltip.dataset.glossaryUrl, {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            })
+                .then((response) => {
+                    if (!response.ok) throw new Error('glossary-unavailable');
+                    return response.json();
+                })
+                .then((payload) => {
+                    const entries = Array.isArray(payload.terms) ? payload.terms : [];
+                    entries.forEach((entry) => {
+                        const title = String(entry.title || '').trim();
+                        if (!title) return;
+                        entry.title = title;
+                        entry.folded = title.toLocaleLowerCase();
+                        entry.key = entryKey(entry);
+                        const first = entry.folded[0];
+                        if (!state.byFirst.has(first)) state.byFirst.set(first, []);
+                        state.byFirst.get(first).push(entry);
+                    });
+                    state.byFirst.forEach((entriesForLetter) => {
+                        entriesForLetter.sort((left, right) => right.title.length - left.title.length);
+                    });
+                    window.applyStudyGlossary(document);
+                })
+                .catch(() => {
+                    state.byFirst.clear();
+                });
+        })();
         const STUDY_CODE_LANGUAGE_LABELS = Object.freeze({
             c: 'C', cpp: 'C++', 'c++': 'C++', cs: 'C#', csharp: 'C#',
             py: 'Python', python: 'Python', js: 'JavaScript', javascript: 'JavaScript',
@@ -1083,6 +1289,7 @@
                 });
                 element.dataset.mathRendered = 'true';
             });
+            window.applyStudyGlossary?.(root);
         };
         document.addEventListener('toggle', (event) => {
             const detail = event.target;

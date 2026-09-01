@@ -13641,6 +13641,105 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             nav_active="recall",
         )
 
+    @app.get("/admin/study-recall/glossary")
+    @admin_required
+    def admin_study_recall_glossary():
+        """Build a live glossary from every existing recall card.
+
+        The response is generated from current storage instead of being written
+        back into individual notes, so old and newly uploaded notes share the
+        same cross-note vocabulary immediately.
+        """
+        generic_titles = {
+            "定義",
+            "例題",
+            "性質",
+            "公式",
+            "結論",
+            "重點",
+            "補充",
+            "注意",
+            "觀念",
+            "方法",
+            "步驟",
+            "證明",
+        }
+
+        def preview_text(value: Any) -> str:
+            text_value = _normalize_study_math_markup(
+                _strip_study_process_narration(value)
+            )
+            text_value = re.sub(r"\s+", " ", text_value).strip()
+            if len(text_value) <= 240:
+                return text_value
+            punctuation_end = max(
+                text_value.rfind(mark, 60, 241) for mark in "。！？；"
+            )
+            if punctuation_end >= 60:
+                return text_value[: punctuation_end + 1]
+            return text_value[:237].rstrip() + "…"
+
+        entries_by_title: Dict[str, Dict[str, Any]] = {}
+        for recall_session in storage.list_study_recall_sessions(limit=None):
+            session_id = int(recall_session.get("id") or 0)
+            if session_id <= 0:
+                continue
+            for concept_index, concept in enumerate(
+                recall_session.get("key_concepts") or []
+            ):
+                if not _is_recall_concept_eligible(concept):
+                    continue
+                title = " ".join(
+                    _normalize_study_concept_title(
+                        concept.get("concept"), concept.get("topic")
+                    ).split()
+                ).strip()
+                if (
+                    len(title) < 2
+                    or len(title) > 80
+                    or title in generic_titles
+                    or re.search(r"[\\${}]", title)
+                    or not re.search(r"[A-Za-z0-9\u3400-\u9fff]", title)
+                ):
+                    continue
+                folded_title = title.casefold()
+                if folded_title in entries_by_title:
+                    continue
+                explanation = preview_text(
+                    concept.get("core_summary")
+                    or concept.get("explanation")
+                    or concept.get("simple_example")
+                    or concept.get("recall_cue")
+                )
+                if not explanation:
+                    explanation = f"「{title}」的完整觀念與筆記內容。"
+                entries_by_title[folded_title] = {
+                    "title": title,
+                    "explanation": explanation,
+                    "subject": str(recall_session.get("subject") or "未分類"),
+                    "session_title": str(
+                        recall_session.get("title") or "未命名筆記"
+                    ),
+                    "session_id": session_id,
+                    "concept_index": concept_index,
+                    "url": url_for(
+                        "admin_study_recall",
+                        session_id=session_id,
+                    )
+                    + f"#concept-{concept_index}",
+                }
+
+        terms = sorted(
+            entries_by_title.values(),
+            key=lambda entry: (-len(entry["title"]), entry["title"].casefold()),
+        )
+        response = Response(
+            json.dumps({"terms": terms}, ensure_ascii=False, separators=(",", ":")),
+            mimetype="application/json",
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
     @app.get("/admin/study-recall/quick-review")
     @admin_required
     def admin_study_recall_quick_review():
