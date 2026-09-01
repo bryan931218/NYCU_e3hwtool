@@ -92,64 +92,67 @@ class StudyRecallGlossaryTests(unittest.TestCase):
             ],
         )
 
+        initial = self.client.get("/admin/study-recall/glossary")
+        initial_payload = initial.get_json()
+        self.assertEqual(initial_payload["definition_policy"], "verified-only")
+        self.assertEqual(initial_payload["terms"], [])
+
+        verified_by_subject = {
+            "離散數學": [
+                {
+                    "title": "Dijkstra 鬆弛",
+                    "canonical_term": "Dijkstra 鬆弛",
+                    "aliases": [],
+                    "card_title": "Dijkstra 鬆弛",
+                    "explanation": "Dijkstra 鬆弛是以目前最短距離加上邊權重，嘗試降低相鄰頂點距離估計值的更新操作。",
+                    "explanation_kind": "已審核定義",
+                    "confidence": 96,
+                    "subject": "離散數學",
+                    "session_title": "圖論筆記",
+                    "session_id": first_id,
+                    "concept_index": 0,
+                }
+            ],
+            "線性代數": [
+                {
+                    "title": "線性獨立",
+                    "canonical_term": "線性獨立",
+                    "aliases": [],
+                    "card_title": "線性獨立",
+                    "explanation": "一組向量線性獨立，是指其線性組合等於零向量時，所有係數必須全為零。",
+                    "explanation_kind": "已審核定義",
+                    "confidence": 99,
+                    "subject": "線性代數",
+                    "session_title": "向量空間筆記",
+                    "session_id": second_id,
+                    "concept_index": 0,
+                }
+            ],
+            "資料結構": [],
+        }
+        for subject, terms_for_subject in verified_by_subject.items():
+            self.storage.save_study_recall_glossary(
+                subject=subject,
+                source_signature=initial_payload["source_signatures"][subject],
+                status="ready",
+                terms=terms_for_subject,
+            )
+
         response = self.client.get("/admin/study-recall/glossary")
         payload = response.get_json()
         terms = {entry["title"]: entry for entry in payload["terms"]}
-
         self.assertEqual(response.status_code, 200)
         self.assertIn("no-store", response.headers["Cache-Control"])
-        self.assertIn("Dijkstra 鬆弛", terms)
-        self.assertIn("線性獨立", terms)
-        self.assertIn("生成函數", terms)
-        self.assertIn("generating function", terms)
-        self.assertIn("母函數", terms)
-        self.assertIn("GF", terms)
-        self.assertIn("特徵方程", terms)
-        self.assertNotIn("定義", terms)
-        self.assertNotIn("S(m,n)", terms)
-        self.assertNotIn(r"\(A^T A\)", terms)
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(set(terms), {"Dijkstra 鬆弛", "線性獨立"})
+        self.assertEqual(terms["Dijkstra 鬆弛"]["explanation_kind"], "已審核定義")
+        self.assertIn("更新操作", terms["Dijkstra 鬆弛"]["explanation"])
         self.assertEqual(
             terms["Dijkstra 鬆弛"]["url"],
             f"/admin/study-recall?session_id={first_id}#concept-0",
         )
         self.assertEqual(terms["線性獨立"]["session_id"], second_id)
-        self.assertIn("所有係數", terms["線性獨立"]["explanation"])
-        scoped_generating_functions = [
-            entry for entry in payload["terms"] if entry["title"] == "生成函數"
-        ]
-        self.assertEqual(
-            {entry["subject"] for entry in scoped_generating_functions},
-            {"線性代數", "資料結構"},
-        )
-        self.assertEqual(
-            {entry["session_id"] for entry in scoped_generating_functions},
-            {second_id, third_id},
-        )
-        linear_generating_function = next(
-            entry
-            for entry in scoped_generating_functions
-            if entry["subject"] == "線性代數"
-        )
-        self.assertEqual(
-            linear_generating_function["explanation_kind"], "筆記直接說明"
-        )
-        self.assertEqual(
-            linear_generating_function["explanation"],
-            "生成函數是用冪級數的係數編碼一個數列。",
-        )
-        gf_entry = next(
-            entry
-            for entry in payload["terms"]
-            if entry["title"] == "GF" and entry["subject"] == "線性代數"
-        )
-        self.assertEqual(gf_entry["explanation_kind"], "相關重點卡")
-        self.assertIn("生成函數", gf_entry["explanation"])
-        universal_set_entry = next(
-            entry
-            for entry in payload["terms"]
-            if entry["title"] == "全集" and entry["subject"] == "線性代數"
-        )
-        self.assertEqual(universal_set_entry["explanation_kind"], "筆記原句")
+        self.assertNotIn("生成函數", terms)
 
     def test_recall_page_loads_the_wikipedia_style_glossary_runtime(self):
         session_id = self.storage.create_study_recall_session(

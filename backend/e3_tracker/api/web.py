@@ -13641,7 +13641,353 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             nav_active="recall",
         )
 
+    glossary_jobs_lock = threading.Lock()
+    glossary_jobs: Set[str] = set()
+
+    def _study_glossary_clean_term(value: Any) -> str:
+        term = " ".join(_normalize_study_concept_title(value, "").split()).strip()
+        term = term.strip(" \t\r\n，。；：、:;|/·・-–—")
+        for suffix in ("定義", "基本定義", "基礎", "公式", "性質", "總覽", "例題", "範例"):
+            if term.endswith(suffix) and len(term) > len(suffix) + 1:
+                term = term[: -len(suffix)].rstrip(" 的之：:、，-/")
+                break
+        compact = re.sub(r"\s+", "", term)
+        generic = {
+            "定義", "例題", "範例", "性質", "公式", "結論", "重點", "補充",
+            "注意", "觀念", "方法", "步驟", "證明", "應用", "基礎", "函數",
+        }
+        if (
+            len(compact) < 2
+            or len(compact) > 48
+            or term.casefold() in generic
+            or re.search(r"[\\${}^_=]", term)
+            or not re.search(r"[A-Za-z0-9\u3400-\u9fff]", term)
+        ):
+            return ""
+        return term
+
+    def _study_glossary_catalog() -> Dict[str, Dict[str, Any]]:
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for recall_session in storage.list_study_recall_sessions(limit=None):
+            subject = str(recall_session.get("subject") or "未分類").strip()
+            session_id = int(recall_session.get("id") or 0)
+            if not subject or session_id <= 0:
+                continue
+            for concept_index, concept in enumerate(recall_session.get("key_concepts") or []):
+                if not isinstance(concept, dict) or not _is_recall_concept_eligible(concept):
+                    continue
+                raw_title = " ".join(
+                    _normalize_study_concept_title(
+                        concept.get("concept"), concept.get("topic")
+                    ).split()
+                ).strip()
+                if not raw_title:
+                    continue
+                proposed_terms: List[str] = []
+                for candidate in (
+                    raw_title,
+                    re.sub(r"[（(][^（）()]{1,80}[）)]", " ", raw_title),
+                    *re.findall(r"[（(]([^（）()]{2,60})[）)]", raw_title),
+                    *(concept.get("search_keywords") if isinstance(concept.get("search_keywords"), list) else []),
+                ):
+                    cleaned = _study_glossary_clean_term(candidate)
+                    if cleaned and cleaned.casefold() not in {item.casefold() for item in proposed_terms}:
+                        proposed_terms.append(cleaned)
+                if not proposed_terms:
+                    continue
+                context_parts = []
+                for field in (
+                    "core_summary", "explanation", "common_confusion", "simple_example",
+                    "example_problem", "example_method", "recall_cue",
+                ):
+                    value = re.sub(
+                        r"\s+", " ",
+                        _normalize_study_math_markup(
+                            _strip_study_process_narration(concept.get(field))
+                        ),
+                    ).strip()
+                    if value:
+                        context_parts.append(f"{field}: {value[:700]}")
+                grouped.setdefault(subject, []).append({
+                    "candidate_id": f"s{session_id}c{concept_index}",
+                    "session_id": session_id,
+                    "concept_index": concept_index,
+                    "session_title": str(recall_session.get("title") or "未命名筆記"),
+                    "card_title": raw_title,
+                    "proposed_terms": proposed_terms[:12],
+                    "context": "\n".join(context_parts)[:2800],
+                })
+        result: Dict[str, Dict[str, Any]] = {}
+        for subject, candidates in grouped.items():
+            signature_source = [
+                {
+                    "id": item["candidate_id"],
+                    "title": item["card_title"],
+                    "terms": item["proposed_terms"],
+                    "context": item["context"],
+                }
+                for item in candidates
+            ]
+            result[subject] = {
+                "candidates": candidates,
+                "signature": hashlib.sha256(
+                    json.dumps(signature_source, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                ).hexdigest(),
+            }
+        return result
+
+    _glossary_item_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "candidate_id", "canonical_term", "aliases", "definition",
+            "accepted", "confidence", "rejection_reason",
+        ],
+        "properties": {
+            "candidate_id": {"type": "string"},
+            "canonical_term": {"type": "string"},
+            "aliases": {"type": "array", "items": {"type": "string"}},
+            "definition": {"type": "string"},
+            "accepted": {"type": "boolean"},
+            "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+            "rejection_reason": {"type": "string"},
+        },
+    }
+    _glossary_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["items"],
+        "properties": {
+            "items": {"type": "array", "items": _glossary_item_schema},
+        },
+    }
+
+    def _generate_verified_glossary(subject: str, catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
+        candidates = list(catalog.get("candidates") or [])
+        by_id = {item["candidate_id"]: item for item in candidates}
+        accepted_terms: List[Dict[str, Any]] = []
+        for start in range(0, len(candidates), 18):
+            batch = candidates[start : start + 18]
+            compact_batch = [
+                {
+                    "candidate_id": item["candidate_id"],
+                    "card_title": item["card_title"],
+                    "possible_names": item["proposed_terms"],
+                    "note_context": item["context"],
+                }
+                for item in batch
+            ]
+            draft = _call_openai_json(
+                name="study_glossary_definition_draft",
+                schema=_glossary_schema,
+                content=[{
+                    "type": "input_text",
+                    "text": (
+                        f"你正在建立「{subject}」研究所考試筆記的專有名詞辭典。\n"
+                        "每個輸入項目是一張重點卡。請辨認它真正教授的核心專有名詞，給出可獨立理解、"
+                        "教科書式且精確的定義。定義必須回答『這個名詞是什麼』，不可只是說本卡介紹、"
+                        "用來計算、包含哪些內容或重述章節標題。需要條件時直接寫入定義。不要引用來源編號。\n"
+                        "aliases 只放確定同義的中文、英文全名或通用縮寫；不要放上位詞、相關詞、公式或例題名稱。"
+                        "若卡片只是例題、步驟、公式彙整，或脈絡不足以可靠辨認單一名詞，accepted=false。"
+                        "candidate_id 必須原樣保留。confidence 表示定義與卡片對應的信心。\n\n"
+                        + json.dumps(compact_batch, ensure_ascii=False)
+                    ),
+                }],
+                timeout=180,
+                reasoning_effort="medium",
+                max_output_tokens=9000,
+            )
+            audit_input = {
+                "subject": subject,
+                "source_cards": compact_batch,
+                "drafts": draft.get("items") or [],
+            }
+            audited = _call_openai_json(
+                name="study_glossary_definition_audit",
+                schema=_glossary_schema,
+                content=[{
+                    "type": "input_text",
+                    "text": (
+                        "你是嚴格的研究所教材編審。逐項審核下列詞條，必要時直接修正 canonical_term、"
+                        "aliases 與 definition。只接受標準、無歧義、能獨立回答『是什麼』的定義，"
+                        "並確認它真的對應指定 candidate_id 的卡片。摘要、用途描述、學習提示、例題敘述、"
+                        "循環定義、把相關詞誤當同義詞，一律 accepted=false。數學或演算法名詞要保留成立條件。"
+                        "僅在 confidence>=80 且無實質疑問時接受。不要因原草稿標示 accepted 就放寬。\n\n"
+                        + json.dumps(audit_input, ensure_ascii=False)
+                    ),
+                }],
+                timeout=180,
+                reasoning_effort="high",
+                max_output_tokens=9000,
+            )
+            for item in audited.get("items") or []:
+                candidate_id = str(item.get("candidate_id") or "")
+                target = by_id.get(candidate_id)
+                definition = re.sub(r"\s+", " ", str(item.get("definition") or "")).strip()
+                canonical = _study_glossary_clean_term(item.get("canonical_term"))
+                try:
+                    confidence = int(item.get("confidence") or 0)
+                except (TypeError, ValueError):
+                    confidence = 0
+                narration_like = bool(re.search(
+                    r"(?:本卡|此卡|這張卡|本節|本章|本文|這份筆記|筆記中|主要介紹|主要說明|內容包含)",
+                    definition,
+                ))
+                if (
+                    not target
+                    or not item.get("accepted")
+                    or confidence < 80
+                    or not canonical
+                    or len(definition) < 12
+                    or len(definition) > 320
+                    or narration_like
+                ):
+                    continue
+                aliases: List[str] = []
+                for alias in [canonical, *(item.get("aliases") or [])]:
+                    cleaned = _study_glossary_clean_term(alias)
+                    if cleaned and cleaned.casefold() not in {value.casefold() for value in aliases}:
+                        aliases.append(cleaned)
+                for term in aliases[:10]:
+                    accepted_terms.append({
+                        "title": term,
+                        "canonical_term": canonical,
+                        "aliases": [value for value in aliases if value.casefold() != canonical.casefold()],
+                        "card_title": target["card_title"],
+                        "explanation": definition,
+                        "explanation_kind": "已審核定義",
+                        "confidence": confidence,
+                        "subject": subject,
+                        "session_title": target["session_title"],
+                        "session_id": target["session_id"],
+                        "concept_index": target["concept_index"],
+                    })
+        unique: Dict[str, Dict[str, Any]] = {}
+        for entry in accepted_terms:
+            key = entry["title"].casefold()
+            existing = unique.get(key)
+            if not existing or int(entry["confidence"]) > int(existing["confidence"]):
+                unique[key] = entry
+        return sorted(unique.values(), key=lambda item: (-len(item["title"]), item["title"].casefold()))
+
+    def _start_glossary_refresh(subjects: List[str], catalog_by_subject: Dict[str, Dict[str, Any]]) -> None:
+        pending: List[str] = []
+        with glossary_jobs_lock:
+            for subject in subjects:
+                if subject in glossary_jobs or subject not in catalog_by_subject:
+                    continue
+                glossary_jobs.add(subject)
+                pending.append(subject)
+        if not pending:
+            return
+        for subject in pending:
+            storage.save_study_recall_glossary(
+                subject=subject,
+                source_signature=catalog_by_subject[subject]["signature"],
+                status="building",
+                terms=[],
+            )
+
+        def _run() -> None:
+            for subject in pending:
+                catalog = catalog_by_subject[subject]
+                try:
+                    terms = _generate_verified_glossary(subject, catalog)
+                    storage.save_study_recall_glossary(
+                        subject=subject,
+                        source_signature=catalog["signature"],
+                        status="ready",
+                        terms=terms,
+                    )
+                except Exception as exc:
+                    app.logger.exception("Failed to build glossary for %s", subject)
+                    storage.save_study_recall_glossary(
+                        subject=subject,
+                        source_signature=catalog["signature"],
+                        status="failed",
+                        terms=[],
+                        error=str(exc),
+                    )
+                finally:
+                    with glossary_jobs_lock:
+                        glossary_jobs.discard(subject)
+        threading.Thread(target=_run, daemon=True).start()
+
     @app.get("/admin/study-recall/glossary")
+    @admin_required
+    def admin_study_recall_glossary_verified():
+        catalog_by_subject = _study_glossary_catalog()
+        requested_subject = str(request.args.get("subject") or "").strip()
+        subjects = [requested_subject] if requested_subject in catalog_by_subject else list(catalog_by_subject)
+        ready_terms: List[Dict[str, Any]] = []
+        stale_subjects: List[str] = []
+        statuses: Dict[str, str] = {}
+        for subject in subjects:
+            catalog = catalog_by_subject[subject]
+            cached = storage.get_study_recall_glossary(subject)
+            if (
+                cached
+                and cached.get("status") == "ready"
+                and cached.get("source_signature") == catalog["signature"]
+            ):
+                statuses[subject] = "ready"
+                for entry in cached.get("terms") or []:
+                    if not isinstance(entry, dict):
+                        continue
+                    session_id = int(entry.get("session_id") or 0)
+                    concept_index = int(entry.get("concept_index") or 0)
+                    ready_terms.append({
+                        **entry,
+                        "url": url_for("admin_study_recall", session_id=session_id)
+                        + f"#concept-{concept_index}",
+                    })
+            else:
+                statuses[subject] = str(cached.get("status") if cached else "missing")
+                stale_subjects.append(subject)
+        if stale_subjects and openai_api_key:
+            _start_glossary_refresh(stale_subjects, catalog_by_subject)
+            for subject in stale_subjects:
+                statuses[subject] = "building"
+        overall_status = (
+            "building"
+            if any(value == "building" for value in statuses.values())
+            else "unavailable"
+            if any(value in {"missing", "failed"} for value in statuses.values())
+            else "ready"
+        )
+        response = Response(
+            json.dumps(
+                {
+                    "terms": ready_terms,
+                    "status": overall_status,
+                    "subjects": statuses,
+                    "source_signatures": {
+                        subject: catalog_by_subject[subject]["signature"]
+                        for subject in subjects
+                    },
+                    "definition_policy": "verified-only",
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            mimetype="application/json",
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
+    @app.post("/admin/study-recall/glossary/refresh")
+    @admin_required
+    def admin_study_recall_glossary_refresh():
+        catalog_by_subject = _study_glossary_catalog()
+        payload = request.get_json(silent=True) or {}
+        requested_subject = str(payload.get("subject") or "").strip()
+        subjects = [requested_subject] if requested_subject in catalog_by_subject else list(catalog_by_subject)
+        if not openai_api_key:
+            return {"ok": False, "error": "AI 定義服務尚未設定。"}, 503
+        _start_glossary_refresh(subjects, catalog_by_subject)
+        return {"ok": True, "status": "building", "subjects": subjects}
+
+    @app.get("/admin/study-recall/glossary-legacy")
     @admin_required
     def admin_study_recall_glossary():
         """Build a live glossary from every existing recall card.

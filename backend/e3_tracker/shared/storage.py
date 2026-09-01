@@ -551,6 +551,18 @@ study_recall_sessions_table = Table(
 )
 Index("ix_study_recall_sessions_next_review", study_recall_sessions_table.c.next_review_at)
 
+study_recall_glossaries_table = Table(
+    "study_recall_glossaries",
+    metadata,
+    Column("subject", String(64), primary_key=True),
+    Column("source_signature", String(64), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("terms", Text, nullable=False),
+    Column("error", Text),
+    Column("updated_at", String(64), nullable=False),
+)
+Index("ix_study_recall_glossaries_status", study_recall_glossaries_table.c.status)
+
 study_note_upload_jobs_table = Table(
     "study_note_upload_jobs",
     metadata,
@@ -2932,9 +2944,66 @@ class PersistentStorage:
                 "next_review_at": row.next_review_at,
                 "review_count": int(row.review_count or 0),
                 "created_at": row.created_at,
+                "updated_at": row.updated_at,
             }
             for row in rows
         ]
+
+    def get_study_recall_glossary(self, subject: str) -> Optional[Dict[str, Any]]:
+        normalized_subject = str(subject or "").strip()[:64]
+        if not normalized_subject:
+            return None
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(study_recall_glossaries_table).where(
+                    study_recall_glossaries_table.c.subject == normalized_subject
+                )
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "subject": row.subject,
+            "source_signature": row.source_signature,
+            "status": row.status,
+            "terms": self._decode_json_list(row.terms),
+            "error": row.error,
+            "updated_at": row.updated_at,
+        }
+
+    def save_study_recall_glossary(
+        self,
+        *,
+        subject: str,
+        source_signature: str,
+        status: str,
+        terms: List[Dict[str, Any]],
+        error: Optional[str] = None,
+    ) -> None:
+        normalized_subject = str(subject or "").strip()[:64]
+        if not normalized_subject:
+            raise ValueError("Glossary subject is required")
+        values = {
+            "subject": normalized_subject,
+            "source_signature": str(source_signature or "")[:64],
+            "status": str(status or "ready")[:16],
+            "terms": json.dumps(terms or [], ensure_ascii=False),
+            "error": str(error or "")[:1000] or None,
+            "updated_at": self._now_iso(),
+        }
+        with self._lock, self._engine.begin() as conn:
+            existing = conn.execute(
+                select(study_recall_glossaries_table.c.subject).where(
+                    study_recall_glossaries_table.c.subject == normalized_subject
+                )
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    update(study_recall_glossaries_table)
+                    .where(study_recall_glossaries_table.c.subject == normalized_subject)
+                    .values(**{key: value for key, value in values.items() if key != "subject"})
+                )
+            else:
+                conn.execute(insert(study_recall_glossaries_table).values(**values))
 
     def record_study_recall_attempt(
         self,

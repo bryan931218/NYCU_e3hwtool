@@ -915,7 +915,7 @@
             </aside>
         </section>
     </main>
-    <aside id="study-glossary-tooltip" class="study-glossary-tooltip" role="tooltip" data-study-glossary-tooltip data-glossary-url="{{ url_for('admin_study_recall_glossary') }}" data-selected-session-id="{{ selected_session.id if selected_session else '' }}" hidden>
+    <aside id="study-glossary-tooltip" class="study-glossary-tooltip" role="tooltip" data-study-glossary-tooltip data-glossary-url="{{ url_for('admin_study_recall_glossary_verified') }}" data-selected-session-id="{{ selected_session.id if selected_session else '' }}" data-selected-subject="{{ selected_session.subject if selected_session else '' }}" hidden>
         <span class="glossary-tooltip-kicker">筆記詞條</span>
         <h3 data-glossary-title></h3>
         <span class="glossary-tooltip-kind" data-glossary-kind></span>
@@ -1001,16 +1001,17 @@
             };
             const makeLink = (entry, label) => {
                 const link = document.createElement('a');
+                const canonicalTerm = String(entry.canonical_term || entry.title || '').trim();
                 link.className = 'glossary-term';
                 link.href = entry.url;
                 link.textContent = label;
                 link.dataset.glossaryKey = entryKey(entry);
-                link.dataset.glossaryTitle = entry.title;
+                link.dataset.glossaryTitle = canonicalTerm;
                 link.dataset.glossaryExplanation = entry.explanation;
-                link.dataset.glossaryKind = entry.explanation_kind || '重點卡摘要';
-                link.dataset.glossaryMeta = `${entry.subject}・${entry.session_title}`;
+                link.dataset.glossaryKind = entry.explanation_kind || '已審核定義';
+                link.dataset.glossaryMeta = `${entry.subject}・${entry.session_title}${canonicalTerm.toLocaleLowerCase() !== entry.title.toLocaleLowerCase() ? `・文中詞：${entry.title}` : ''}`;
                 link.setAttribute('aria-describedby', tooltip.id);
-                link.setAttribute('aria-label', `${entry.title}，前往重點卡`);
+                link.setAttribute('aria-label', `${canonicalTerm}，前往重點卡`);
                 return link;
             };
             const linkTextNode = (node, container, seen) => {
@@ -1098,7 +1099,7 @@
                 window.clearTimeout(state.hideTimer);
                 state.active = link;
                 titleNode.textContent = link.dataset.glossaryTitle || link.textContent;
-                kindNode.textContent = link.dataset.glossaryKind || '重點卡摘要';
+                kindNode.textContent = link.dataset.glossaryKind || '已審核定義';
                 explanationNode.textContent = link.dataset.glossaryExplanation || '';
                 explanationNode.removeAttribute('data-math-rendered');
                 explanationNode.dataset.mathContent = '';
@@ -1136,10 +1137,18 @@
             });
             window.addEventListener('scroll', () => hideTooltip(true), true);
             window.addEventListener('resize', () => hideTooltip(true));
-            fetch(tooltip.dataset.glossaryUrl, {
-                credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
-            })
+            const selectedSubject = String(tooltip.dataset.selectedSubject || '').trim();
+            if (selectedSubject && tooltip.dataset.selectedSessionId) {
+                state.subjectBySession.set(String(tooltip.dataset.selectedSessionId), selectedSubject);
+            }
+            let glossaryPollCount = 0;
+            const loadGlossary = () => {
+                const glossaryUrl = new URL(tooltip.dataset.glossaryUrl, window.location.origin);
+                if (selectedSubject) glossaryUrl.searchParams.set('subject', selectedSubject);
+                return fetch(glossaryUrl, {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                })
                 .then((response) => {
                     if (!response.ok) throw new Error('glossary-unavailable');
                     return response.json();
@@ -1165,10 +1174,16 @@
                         entriesForLetter.sort((left, right) => right.title.length - left.title.length);
                     });
                     window.applyStudyGlossary(document);
+                    if (payload.status === 'building' && glossaryPollCount < 45) {
+                        glossaryPollCount += 1;
+                        window.setTimeout(loadGlossary, 2000);
+                    }
                 })
                 .catch(() => {
                     state.byFirst.clear();
                 });
+            };
+            loadGlossary();
         })();
         const STUDY_CODE_LANGUAGE_LABELS = Object.freeze({
             c: 'C', cpp: 'C++', 'c++': 'C++', cs: 'C#', csharp: 'C#',
