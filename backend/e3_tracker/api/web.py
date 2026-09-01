@@ -13653,6 +13653,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         generic_titles = {
             "定義",
             "例題",
+            "例",
             "性質",
             "公式",
             "結論",
@@ -13663,7 +13664,46 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "方法",
             "步驟",
             "證明",
+            "函數",
+            "應用",
+            "基礎",
+            "查表",
+            "第一類",
+            "第二類",
+            "齊次",
+            "非齊次",
+            "ex",
+            "example",
         }
+        glossary_suffixes = (
+            "係數解法例題",
+            "計數公式",
+            "解法例題",
+            "一般形式",
+            "通解形式",
+            "生成函數例題",
+            "數值表",
+            "值表",
+            "小值查表",
+            "未完成展開",
+            "定義",
+            "公式",
+            "性質",
+            "表示",
+            "推導",
+            "做法",
+            "例題",
+            "範例",
+            "示例",
+            "例示",
+            "應用",
+            "技巧",
+            "口訣",
+            "查表",
+            "集合",
+            "計算",
+            "基礎",
+        )
 
         def preview_text(value: Any) -> str:
             text_value = _normalize_study_math_markup(
@@ -13684,7 +13724,61 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 return text_value
             return text_value[:237].rstrip() + "…"
 
-        entries_by_title: Dict[str, Dict[str, Any]] = {}
+        def clean_term(value: Any) -> str:
+            term = " ".join(
+                _normalize_study_concept_title(value, "").split()
+            ).strip(" \t\r\n，。；：、:;|/·・-–—")
+            if not term:
+                return ""
+            changed = True
+            while changed:
+                changed = False
+                for suffix in glossary_suffixes:
+                    if term.endswith(suffix) and len(term) > len(suffix) + 1:
+                        term = term[: -len(suffix)].rstrip(" 的之：:、，-/")
+                        changed = True
+                        break
+            folded = term.casefold()
+            compact_length = len(re.sub(r"\s+", "", term))
+            if (
+                compact_length < 2
+                or compact_length > 42
+                or folded in generic_titles
+                or re.fullmatch(r"第?[一二三四五六七八九十\d]+(?:類|項|頁|章)?", term)
+                or re.search(r"[\\${}^_=]", term)
+                or not re.search(r"[A-Za-z0-9\u3400-\u9fff]", term)
+            ):
+                return ""
+            return term
+
+        def title_terms(title: str, concept: Dict[str, Any]) -> List[Tuple[str, int]]:
+            candidates: List[Tuple[str, int]] = [(title, 120)]
+            parenthetical_parts = re.findall(r"[（(]([^（）()]{2,60})[）)]", title)
+            candidates.extend((part, 88) for part in parenthetical_parts)
+            title_without_parentheses = re.sub(
+                r"[（(][^（）()]{1,80}[）)]", " ", title
+            )
+            candidates.append((title_without_parentheses, 76))
+            candidates.extend(
+                (part, 82)
+                for part in re.split(
+                    r"(?:的|之|與|以及|及|：|:|、|，|；|/|\|)",
+                    title_without_parentheses,
+                )
+            )
+            candidates.extend(
+                (acronym, 96)
+                for acronym in re.findall(
+                    r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]{1,9}(?![A-Za-z0-9])",
+                    title,
+                )
+            )
+            search_keywords = concept.get("search_keywords")
+            if isinstance(search_keywords, list):
+                candidates.extend((keyword, 102) for keyword in search_keywords[:20])
+            return candidates
+
+        card_records: List[Dict[str, Any]] = []
         for recall_session in storage.list_study_recall_sessions(limit=None):
             session_id = int(recall_session.get("id") or 0)
             if session_id <= 0:
@@ -13699,16 +13793,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         concept.get("concept"), concept.get("topic")
                     ).split()
                 ).strip()
-                if (
-                    len(title) < 2
-                    or len(title) > 80
-                    or title in generic_titles
-                    or re.search(r"[\\${}]", title)
-                    or not re.search(r"[A-Za-z0-9\u3400-\u9fff]", title)
-                ):
-                    continue
-                folded_title = title.casefold()
-                if folded_title in entries_by_title:
+                if not title:
                     continue
                 explanation = preview_text(
                     concept.get("explanation")
@@ -13718,8 +13803,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 )
                 if not explanation:
                     explanation = f"「{title}」的完整觀念與筆記內容。"
-                entries_by_title[folded_title] = {
-                    "title": title,
+                card_records.append({
+                    "card_title": title,
                     "explanation": explanation,
                     "subject": str(recall_session.get("subject") or "未分類"),
                     "session_title": str(
@@ -13732,10 +13817,48 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         session_id=session_id,
                     )
                     + f"#concept-{concept_index}",
+                    "concept": concept,
+                })
+
+        entries_by_title: Dict[str, Dict[str, Any]] = {}
+        for record in card_records:
+            canonical_title = str(record["card_title"])
+            canonical_folded = canonical_title.casefold()
+            is_definition_card = bool(
+                re.search(r"(?:定義|基本|基礎|總覽|一般形式)", canonical_title)
+            )
+            for raw_term, base_score in title_terms(
+                canonical_title, record["concept"]
+            ):
+                term = clean_term(raw_term)
+                if not term:
+                    continue
+                folded_term = term.casefold()
+                score = base_score
+                if folded_term == canonical_folded:
+                    score += 40
+                if is_definition_card and folded_term in canonical_folded:
+                    score += 24
+                existing = entries_by_title.get(folded_term)
+                if existing is not None and int(existing["_score"]) >= score:
+                    continue
+                entries_by_title[folded_term] = {
+                    "title": term,
+                    "card_title": canonical_title,
+                    "explanation": record["explanation"],
+                    "subject": record["subject"],
+                    "session_title": record["session_title"],
+                    "session_id": record["session_id"],
+                    "concept_index": record["concept_index"],
+                    "url": record["url"],
+                    "_score": score,
                 }
 
         terms = sorted(
-            entries_by_title.values(),
+            (
+                {key: value for key, value in entry.items() if key != "_score"}
+                for entry in entries_by_title.values()
+            ),
             key=lambda entry: (-len(entry["title"]), entry["title"].casefold()),
         )
         response = Response(

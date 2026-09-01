@@ -62,6 +62,15 @@ class StudyRecallGlossaryTests(unittest.TestCase):
                     "explanation": "只有所有係數皆為零時，線性組合才等於零向量。",
                 },
                 {"concept": r"\(A^T A\)", "explanation": "公式標題不直接連結。"},
+                {
+                    "concept": "生成函數（generating function）定義",
+                    "explanation": "用冪級數的係數編碼一個數列。",
+                    "search_keywords": ["母函數", "GF"],
+                },
+                {
+                    "concept": "三階遞迴的特徵方程與係數解法例題",
+                    "explanation": "先建立特徵方程，再由初始條件求係數。",
+                },
             ],
         )
 
@@ -73,6 +82,11 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         self.assertIn("no-store", response.headers["Cache-Control"])
         self.assertIn("Dijkstra 鬆弛", terms)
         self.assertIn("線性獨立", terms)
+        self.assertIn("生成函數", terms)
+        self.assertIn("generating function", terms)
+        self.assertIn("母函數", terms)
+        self.assertIn("GF", terms)
+        self.assertIn("特徵方程", terms)
         self.assertNotIn("定義", terms)
         self.assertNotIn(r"\(A^T A\)", terms)
         self.assertEqual(
