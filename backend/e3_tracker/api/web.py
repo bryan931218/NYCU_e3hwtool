@@ -13773,7 +13773,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         finalized = dict(entry)
         canonical = re.sub(r"\s+", " ", str(finalized.get("canonical_term") or "")).strip()
         folded = canonical.casefold()
-        if not canonical or any(
+        descriptive_or_special = bool(re.search(
+            r"(?:二維|三維|2\s*[×x]\s*2).*展開|矩陣跡與特徵值的關係|正定自伴矩陣的特徵值|"
+            r"矩陣平方根與\s*gram\s*因子化|常用.*恆等式|加權和的.*生成函數表示|"
+            r"奇數\s*/\s*偶數.*生成函數表示|包含-排除記號與性質集合表示法|"
+            r"一對一函數.*與排列|亂序的漸近行為|^從(?:集合\s*)?a\s*到(?:集合\s*)?b",
+            folded,
+            flags=re.IGNORECASE,
+        ))
+        if not canonical or descriptive_or_special or any(
             marker in folded
             for marker in (
                 "對數與指數的等價恆等式",
