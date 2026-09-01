@@ -13720,7 +13720,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         result: Dict[str, Dict[str, Any]] = {}
         for subject, candidates in grouped.items():
             signature_source = {
-                "definition_policy": "verified-general-v3",
+                "definition_policy": "verified-general-v4",
                 "cards": [
                     {
                         "id": item["candidate_id"],
@@ -13806,6 +13806,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "definition_scope 只有在定義適用該名詞的一般情況時才填 general；只適用特定集合數量、"
                         "特定數值或單一題目時分別填 special_case 或 example。若卡片只是例題、步驟、公式彙整，"
                         "或脈絡不足以可靠辨認名詞，accepted=false。"
+                        "所有公式的圓括號、方括號與大括號必須成對，中文敘述必須通順。"
                         "candidate_id 必須原樣保留。confidence 表示定義與卡片對應的信心。\n\n"
                         + json.dumps(compact_batch, ensure_ascii=False)
                     ),
@@ -13853,6 +13854,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     r"(?:本卡|此卡|這張卡|本節|本章|本文|這份筆記|筆記中|主要介紹|主要說明|內容包含)",
                     definition,
                 ))
+                unbalanced_symbols = any(
+                    definition.count(left) != definition.count(right)
+                    for left, right in (("(", ")"), ("[", "]"), ("{", "}"), ("（", "）"))
+                )
+                special_case_name = bool(re.search(
+                    r"^(?:二|三|四|五|六|七|八|九|十)集合|全集與性質(?:集合)?(?:記號|符號)",
+                    canonical,
+                ))
                 if (
                     not target
                     or not item.get("accepted")
@@ -13862,6 +13871,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     or len(definition) < 12
                     or len(definition) > 320
                     or narration_like
+                    or unbalanced_symbols
+                    or special_case_name
                 ):
                     continue
                 aliases: List[str] = []
