@@ -131,7 +131,7 @@ class StudyRecallGlossaryTests(unittest.TestCase):
             if entry["subject"] == "線性代數"
         )
         self.assertEqual(
-            linear_generating_function["explanation_kind"], "筆記中的定義"
+            linear_generating_function["explanation_kind"], "筆記直接說明"
         )
         self.assertEqual(
             linear_generating_function["explanation"],

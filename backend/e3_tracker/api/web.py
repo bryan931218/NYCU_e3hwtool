@@ -13860,9 +13860,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                             sentence,
                             flags=re.IGNORECASE,
                         )
-                    ) or bool(
-                        re.search(r"(?:定義|基本概念)", record["card_title"])
-                        and term_occurs(term, record["card_title"])
                     )
                     score = field_score + (55 if definition_like else 0)
                     score += max(0, 18 - abs(len(sentence) - 72) // 8)
@@ -13872,7 +13869,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     sentence_candidates, key=lambda candidate: candidate[0]
                 )
                 return preview_text(sentence), (
-                    "筆記中的定義" if definition_like else "筆記原句"
+                    "筆記直接說明" if definition_like else "筆記原句"
                 )
             if term_occurs(term, record["card_title"]):
                 return record["explanation"], "重點卡摘要"
