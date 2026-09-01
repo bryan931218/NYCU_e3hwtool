@@ -13806,6 +13806,80 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 candidates.extend((keyword, 102) for keyword in search_keywords[:20])
             return candidates
 
+        def term_occurs(term: str, value: Any) -> bool:
+            text_value = str(value or "")
+            if not text_value:
+                return False
+            escaped = re.escape(term)
+            if re.match(r"[A-Za-z0-9_]", term) or re.search(
+                r"[A-Za-z0-9_]$", term
+            ):
+                return bool(
+                    re.search(
+                        rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])",
+                        text_value,
+                        flags=re.IGNORECASE,
+                    )
+                )
+            return term.casefold() in text_value.casefold()
+
+        def grounded_explanation(
+            term: str, record: Dict[str, Any]
+        ) -> Tuple[str, str]:
+            concept = record["concept"]
+            definition_markers = (
+                "是指",
+                "指的是",
+                "定義為",
+                "定義成",
+                "稱為",
+                "叫做",
+                "表示",
+                "代表",
+                "用來",
+                "意指",
+            )
+            sentence_candidates: List[Tuple[int, str, bool]] = []
+            for field, field_score in (
+                ("explanation", 36),
+                ("core_summary", 32),
+                ("common_confusion", 18),
+                ("simple_example", 12),
+                ("example_method", 10),
+            ):
+                field_text = _normalize_study_math_markup(
+                    _strip_study_process_narration(concept.get(field))
+                )
+                for sentence in re.split(r"(?<=[。！？；])|[\r\n]+", field_text):
+                    sentence = re.sub(r"\s+", " ", sentence).strip()
+                    if not sentence or not term_occurs(term, sentence):
+                        continue
+                    definition_like = any(
+                        marker in sentence for marker in definition_markers
+                    ) or bool(
+                        re.search(
+                            rf"{re.escape(term)}\s*(?:是|為|指)",
+                            sentence,
+                            flags=re.IGNORECASE,
+                        )
+                    )
+                    score = field_score + (55 if definition_like else 0)
+                    score += max(0, 18 - abs(len(sentence) - 72) // 8)
+                    sentence_candidates.append((score, sentence, definition_like))
+            if sentence_candidates:
+                _, sentence, definition_like = max(
+                    sentence_candidates, key=lambda candidate: candidate[0]
+                )
+                return preview_text(sentence), (
+                    "筆記中的定義" if definition_like else "筆記原句"
+                )
+            if term_occurs(term, record["card_title"]):
+                return record["explanation"], "重點卡摘要"
+            return (
+                f"「{term}」收錄於重點卡「{record['card_title']}」。點擊可查看筆記中的完整脈絡。",
+                "相關重點卡",
+            )
+
         card_records: List[Dict[str, Any]] = []
         for recall_session in storage.list_study_recall_sessions(limit=None):
             session_id = int(recall_session.get("id") or 0)
@@ -13872,10 +13946,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 existing = entries_by_title.get(scoped_term_key)
                 if existing is not None and int(existing["_score"]) >= score:
                     continue
+                explanation, explanation_kind = grounded_explanation(term, record)
                 entries_by_title[scoped_term_key] = {
                     "title": term,
                     "card_title": canonical_title,
-                    "explanation": record["explanation"],
+                    "explanation": explanation,
+                    "explanation_kind": explanation_kind,
                     "subject": record["subject"],
                     "session_title": record["session_title"],
                     "session_id": record["session_id"],

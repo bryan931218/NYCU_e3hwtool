@@ -64,7 +64,7 @@ class StudyRecallGlossaryTests(unittest.TestCase):
                 {"concept": r"\(A^T A\)", "explanation": "公式標題不直接連結。"},
                 {
                     "concept": "生成函數（generating function）定義",
-                    "explanation": "用冪級數的係數編碼一個數列。",
+                    "explanation": "生成函數是用冪級數的係數編碼一個數列。",
                     "search_keywords": ["母函數", "GF"],
                 },
                 {
@@ -120,6 +120,25 @@ class StudyRecallGlossaryTests(unittest.TestCase):
             {entry["session_id"] for entry in scoped_generating_functions},
             {second_id, third_id},
         )
+        linear_generating_function = next(
+            entry
+            for entry in scoped_generating_functions
+            if entry["subject"] == "線性代數"
+        )
+        self.assertEqual(
+            linear_generating_function["explanation_kind"], "筆記中的定義"
+        )
+        self.assertEqual(
+            linear_generating_function["explanation"],
+            "生成函數是用冪級數的係數編碼一個數列。",
+        )
+        gf_entry = next(
+            entry
+            for entry in payload["terms"]
+            if entry["title"] == "GF" and entry["subject"] == "線性代數"
+        )
+        self.assertEqual(gf_entry["explanation_kind"], "相關重點卡")
+        self.assertIn("生成函數", gf_entry["explanation"])
 
     def test_recall_page_loads_the_wikipedia_style_glossary_runtime(self):
         session_id = self.storage.create_study_recall_session(
@@ -147,6 +166,7 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         self.assertIn("window.applyStudyGlossary", page)
         self.assertIn("subjectBySession", page)
         self.assertIn("entry.subject !== currentSubject", page)
+        self.assertIn("data-glossary-kind", page)
         self.assertIn(".glossary-term", page)
 
 
