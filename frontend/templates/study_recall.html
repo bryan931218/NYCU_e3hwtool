@@ -508,6 +508,249 @@
         @media (max-width:760px) { .library-ai-scope { grid-template-columns:1fr 1fr; }.library-ai-field.note { grid-column:1 / -1; }.library-ai-range-separator { display:none; } }
         @media (max-width:620px) { .library-ai-head { padding:19px 16px 0; }.library-ai-body { padding:15px 16px 18px; }.library-ai-badge { display:none; }.library-ai-title { gap:10px; }.library-ai-mark { width:38px; height:38px; border-radius:12px; }.library-ai-title h2 { font-size:19px; }.library-ai-scope { grid-template-columns:1fr 1fr; }.library-ai-field.subject,.library-ai-field.note { grid-column:1 / -1; }.library-ai-actions { align-items:stretch; flex-direction:column; }.library-ai-submit { width:100%; }.library-ai-result-head { align-items:flex-start; }.library-ai-result-meta span { white-space:normal; }.library-ai-answer { padding:16px 14px; }.library-ai-source-list { display:grid; grid-template-columns:1fr; }.library-ai-source { width:100%; } }
     </style>
+    <style>
+        /* 2026 note workspace: clearer hierarchy, quieter surfaces, denser navigation. */
+        :root {
+            --recall-navy:#0c2742;
+            --recall-blue:#1967d2;
+            --recall-aqua:#0b8b88;
+            --recall-surface:#ffffff;
+            --recall-soft:#f5f8fc;
+            --recall-border:#d9e4ef;
+            --recall-shadow:0 12px 34px rgba(15,39,66,.065);
+        }
+        body { background:linear-gradient(180deg,#f8fbfe 0,#f1f6fb 520px,#f4f7fa 100%); }
+        .shell { width:min(1480px,100%); padding-top:26px; }
+        .page-head {
+            min-height:158px;
+            margin-bottom:14px;
+            padding:25px 28px;
+            border-color:#d4e3f1;
+            border-radius:22px;
+            background:
+                radial-gradient(circle at 88% 12%,rgba(55,145,232,.16),transparent 27%),
+                linear-gradient(135deg,#fff 0%,#f5faff 68%,#eef8f8 100%);
+            box-shadow:var(--recall-shadow);
+        }
+        .page-head::after { right:-78px; bottom:-148px; width:300px; height:300px; }
+        .page-head h1 { color:var(--recall-navy); font-size:clamp(34px,3vw,42px); letter-spacing:-.045em; }
+        .page-head .intro { max-width:620px; margin-top:10px; font-size:13px; }
+        .today { color:#476179; border-color:#d5e2ed; box-shadow:none; }
+        .recall-overview {
+            display:grid;
+            grid-template-columns:repeat(4,minmax(0,1fr));
+            gap:10px;
+            margin-bottom:18px;
+        }
+        .overview-card {
+            position:relative;
+            min-width:0;
+            min-height:88px;
+            display:flex;
+            align-items:center;
+            gap:13px;
+            padding:15px 17px;
+            overflow:hidden;
+            border:1px solid var(--recall-border);
+            border-radius:17px;
+            background:rgba(255,255,255,.9);
+            box-shadow:0 8px 24px rgba(15,39,66,.045);
+        }
+        .overview-icon {
+            flex:0 0 auto;
+            width:38px;
+            height:38px;
+            display:grid;
+            place-items:center;
+            color:#155fbf;
+            border-radius:12px;
+            background:#eaf3ff;
+            font-size:15px;
+            font-weight:950;
+        }
+        .overview-card.review .overview-icon { color:#087875; background:#e6f7f5; }
+        .overview-card.current .overview-icon { color:#7753b6; background:#f0ebfb; }
+        .overview-card.load .overview-icon { color:#a25d00; background:#fff2dc; }
+        .overview-copy { min-width:0; }
+        .overview-label { display:block; color:#6a7c90; font-size:10px; font-weight:900; letter-spacing:.04em; }
+        .overview-value { display:block; margin-top:3px; overflow:hidden; color:var(--recall-navy); font-size:20px; font-weight:950; letter-spacing:-.035em; text-overflow:ellipsis; white-space:nowrap; }
+        .overview-detail { display:block; margin-top:2px; overflow:hidden; color:#6c7f93; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+        .layout { grid-template-columns:minmax(0,1fr) 316px; gap:20px; }
+        .main-stack {
+            display:grid;
+            grid-template-columns:minmax(0,1.42fr) minmax(330px,.88fr);
+            grid-auto-flow:row;
+            gap:16px;
+        }
+        .main-stack > .recall-shortcuts { grid-column:1 / -1; }
+        #note-library-assistant { grid-column:1; grid-row:2 / span 2; }
+        #note-library-search { grid-column:2; grid-row:2; }
+        #new-note { grid-column:2; grid-row:3; align-self:start; }
+        .quick-review-launch,#review-zone,#selected-note-panel,.main-stack > .empty { grid-column:1 / -1; }
+        .panel { border-color:var(--recall-border); border-radius:18px; box-shadow:var(--recall-shadow); }
+        .panel h2 { color:var(--recall-navy); }
+        .caption { color:#687b8f; }
+        .recall-shortcuts {
+            top:82px;
+            gap:3px;
+            padding:6px;
+            border-radius:14px;
+            box-shadow:0 8px 24px rgba(15,39,66,.055);
+        }
+        .recall-shortcuts::before {
+            content:"工作區";
+            align-self:center;
+            padding:0 9px;
+            color:#8a99a8;
+            font-size:9px;
+            font-weight:950;
+            letter-spacing:.08em;
+        }
+        .recall-shortcuts a { min-height:35px; padding:0 11px; border-radius:9px; font-size:11px; }
+        .recall-shortcuts a:first-of-type { color:#fff; background:linear-gradient(135deg,#1c70df,#0e5bbd); box-shadow:0 6px 15px rgba(25,103,210,.2); }
+        .recall-shortcuts a:first-of-type strong { color:#dff7f4; }
+        .library-ai { border-color:#c7dced; background:linear-gradient(155deg,#fbfdff,#fff 56%,#f3fbfa); }
+        .library-ai-head { padding:21px 21px 0; }
+        .library-ai-body { padding:15px 21px 21px; }
+        .library-ai-mark { width:39px; height:39px; border-radius:12px; }
+        .library-ai-title h2 { font-size:20px; }
+        .library-ai-textarea { min-height:96px; }
+        .library-ai-scope { grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); }
+        .library-ai-field.note { grid-column:auto; }
+        .library-ai-range-separator { display:none; }
+        .library-ai-actions { margin-top:11px; }
+        #note-library-search .panel-static-head { padding:19px 18px 0; }
+        #note-library-search .note-search-body { padding:15px 18px 18px; }
+        #note-library-search .note-search-primary { grid-template-columns:1fr; }
+        #note-library-search .note-search-primary .submit { width:100%; min-height:43px; }
+        #note-library-search .note-search-primary input { min-height:45px; }
+        #note-library-search .note-search-filters { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+        #note-library-search .note-search-support { display:block; }
+        #note-library-search .note-search-history { justify-content:flex-start; margin-top:7px; }
+        #new-note .panel-fold-summary { padding:18px; }
+        #new-note .panel-fold-summary .caption { max-width:270px; }
+        .quick-review-launch {
+            min-height:148px;
+            padding:22px 24px;
+            border-radius:18px;
+            background:radial-gradient(circle at 90% 8%,rgba(130,224,221,.24),transparent 27%),linear-gradient(135deg,#0b2c4c,#125a91 58%,#0b7b78);
+            box-shadow:0 14px 34px rgba(13,66,103,.16);
+        }
+        .quick-review-copy h2 { font-size:23px; }
+        .quick-review-copy p { margin-top:6px; }
+        .review-zone { border-color:#cdddec; }
+        .review-zone .panel-fold-summary { background:linear-gradient(135deg,#f7faff,#fff); }
+        .review-zone .concepts { grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); padding:0 20px 20px; }
+        .review-zone .concept { border-radius:14px; box-shadow:none; }
+        .side-stack { top:84px; gap:14px; }
+        .side-stack .panel { border-radius:17px; box-shadow:0 9px 26px rgba(15,39,66,.05); }
+        .side-stack .panel-head { padding:18px 18px 0; }
+        .side-stack .queue { padding:10px 14px 15px; }
+        .side-stack .queue-item { padding:10px 7px; border-radius:0; border-bottom:1px solid #e6edf4; }
+        .side-stack .queue-item:last-child { border-bottom:0; }
+        .side-stack .history { max-height:min(470px,calc(100dvh - 106px)); }
+        .library-panel { border-color:#cadceb !important; }
+        .library-panel .compact-fold > summary { position:sticky; z-index:2; top:0; padding:17px 18px; background:rgba(255,255,255,.96); backdrop-filter:blur(10px); }
+        .library-panel .session-topic > summary { padding:10px 14px; background:#f7fafc; }
+        .library-panel .history-note { padding:0 7px; }
+        .library-panel .history-note .queue-item { min-width:0; }
+        .schedule-panel .queue-title { color:#29455f; }
+        .schedule-panel .queue-meta { width:max-content; margin-top:4px; padding:2px 6px; color:#087875; border-radius:999px; background:#e8f7f5; font-weight:900; }
+        .rhythm-panel .compact-fold > summary { padding:17px 18px; }
+        .rhythm-panel .how { padding:0 18px 18px; border-top:0; line-height:1.8; }
+        #selected-note-panel { overflow:visible; }
+        .session-head {
+            padding:23px 23px 19px;
+            border-bottom-color:#dbe6f0;
+            border-radius:18px 18px 0 0;
+            background:linear-gradient(135deg,#fff 0%,#f7fbff 72%,#eef9f7 100%);
+        }
+        .session-title-row { align-items:center; }
+        .session-title-row h2 { font-size:clamp(22px,2.2vw,28px); }
+        .session-meta .chip { padding:5px 9px; background:rgba(255,255,255,.9); }
+        .session-actions { gap:6px; }
+        .note-settings { margin:12px 22px 0; border:1px solid #dbe5ee; border-radius:12px; background:#f8fafc; }
+        .note-settings > summary { display:flex; align-items:center; justify-content:space-between; min-height:42px; padding:0 12px; list-style:none; color:#587086; font-size:11px; font-weight:900; cursor:pointer; }
+        .note-settings > summary::-webkit-details-marker { display:none; }
+        .note-settings > summary::after { content:"＋"; color:#7b8da0; font-size:15px; }
+        .note-settings[open] > summary::after { content:"－"; }
+        .note-settings .rename-note-panel { margin:0; padding:0 11px 11px; border:0; background:transparent; }
+        .topic-index {
+            position:sticky;
+            z-index:12;
+            top:130px;
+            gap:6px;
+            padding:11px 22px;
+            border-top:1px solid #e2eaf2;
+            background:rgba(246,250,253,.95);
+            backdrop-filter:blur(12px);
+        }
+        .topic-index a { min-height:31px; padding:0 10px; border-color:#d5e1ec; border-radius:9px; background:#fff; }
+        .topic-section { counter-increment:recall-topic; }
+        #selected-note-panel { counter-reset:recall-topic; }
+        .topic-section-head { min-height:64px; padding:14px 22px; }
+        .topic-section-head h3 { display:flex; align-items:center; gap:9px; font-size:16px; }
+        .topic-section-head h3::before { content:counter(recall-topic,decimal-leading-zero); color:#7e91a5; font-size:10px; font-weight:950; letter-spacing:.04em; }
+        .topic-section[open] > .topic-section-head { background:#f8fbfe; }
+        .topic-section-body { padding:0 22px 20px; }
+        .topic-section .concepts { grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:9px; }
+        .concept-fold { border-radius:12px; box-shadow:none; }
+        .concept-fold-head { min-height:48px; }
+        .concept-fold[open] { border-color:#b9d1e8; box-shadow:0 8px 22px rgba(15,39,66,.045); }
+        .summary-section { margin-top:8px; padding:18px 0; }
+        .summary-section h3 { color:var(--recall-navy); }
+        .audit-section { padding-top:0; }
+        .note-fold { background:#f8fafc; }
+        .delete-note { color:#a9424d; border-color:#ead3d7; background:rgba(255,255,255,.9); }
+        @media (max-width:1180px) {
+            .layout { grid-template-columns:1fr; }
+            .side-stack { position:static; grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .side-stack .history { max-height:430px; }
+        }
+        @media (max-width:900px) {
+            .recall-overview { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .main-stack { grid-template-columns:1fr; }
+            #note-library-assistant,#note-library-search,#new-note,.quick-review-launch,#review-zone,#selected-note-panel,.main-stack > .empty { grid-column:1; grid-row:auto; }
+            .library-ai-scope { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .side-stack { grid-template-columns:1fr 1fr; }
+            .library-panel { grid-column:1 / -1; }
+            .topic-index { top:136px; }
+        }
+        @media (max-width:620px) {
+            .shell { padding-top:14px; }
+            .page-head { min-height:0; margin-bottom:10px; padding:20px 17px; border-radius:17px; }
+            .page-head h1 { font-size:32px; }
+            .page-head .intro { margin-top:8px; font-size:12px; }
+            .recall-overview { gap:7px; margin-bottom:12px; }
+            .overview-card { min-height:74px; gap:9px; padding:12px; border-radius:14px; }
+            .overview-icon { width:32px; height:32px; border-radius:10px; font-size:12px; }
+            .overview-value { font-size:17px; }
+            .overview-detail { display:none; }
+            .recall-shortcuts::before { display:none; }
+            .recall-shortcuts { padding:5px; }
+            .main-stack { gap:12px; }
+            .library-ai-head { padding-top:17px; }
+            .library-ai-body { padding-top:13px; }
+            .library-ai-scope { grid-template-columns:1fr 1fr; }
+            #note-library-search .note-search-filters { grid-template-columns:1fr 1fr; }
+            .quick-review-launch { padding:20px 17px; }
+            .quick-review-steps { display:none; }
+            .review-zone .concepts { grid-template-columns:1fr; padding:0 14px 14px; }
+            .side-stack { grid-template-columns:1fr; }
+            .library-panel { grid-column:auto; }
+            .side-stack .history { max-height:420px; overflow-y:auto; }
+            .session-head { padding:19px 15px 16px; }
+            .session-title-row { align-items:flex-start; }
+            .session-title-row h2 { font-size:21px; }
+            .note-settings { margin:10px 14px 0; }
+            .topic-index { position:static; padding:10px 14px; }
+            .topic-section-head { padding:13px 14px; }
+            .topic-section-body { padding:0 14px 15px; }
+            .topic-section .concepts { grid-template-columns:1fr; }
+            .summary-section { margin-left:14px; margin-right:14px; }
+            .audit-section { padding-left:14px; padding-right:14px; }
+        }
+    </style>
 </head>
 <body>
     {% macro render_visual_refs(refs) -%}
@@ -536,8 +779,14 @@
     <main class="shell">
         {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
         <section class="page-head">
-            <div><p class="eyebrow">NOTE LIBRARY</p><h1>筆記彙整</h1><p class="intro">搜尋舊筆記、上傳新內容，並處理今天到期的重點卡。</p></div>
+            <div><p class="eyebrow">NOTE WORKSPACE</p><h1>筆記彙整</h1><p class="intro">所有筆記、搜尋、複習與考題，都從這裡開始。</p></div>
             <div class="today">今天 {{ today }}</div>
+        </section>
+        <section class="recall-overview" aria-label="筆記彙整摘要">
+            <div class="overview-card"><span class="overview-icon" aria-hidden="true">冊</span><div class="overview-copy"><span class="overview-label">筆記庫</span><strong class="overview-value">{{ sessions|length }} 份</strong><span class="overview-detail">最近整理的筆記</span></div></div>
+            <div class="overview-card review"><span class="overview-icon" aria-hidden="true">✓</span><div class="overview-copy"><span class="overview-label">今日複習</span><strong class="overview-value">{{ review_cards|length }} 張</strong><span class="overview-detail">到期重點卡</span></div></div>
+            <div class="overview-card current"><span class="overview-icon" aria-hidden="true">◎</span><div class="overview-copy"><span class="overview-label">目前筆記</span><strong class="overview-value">{% if selected_session %}{{ selected_session.key_concepts|length }} 張{% else %}尚未選擇{% endif %}</strong><span class="overview-detail">{% if selected_session %}{{ selected_session.title }}{% else %}從右側筆記庫開啟{% endif %}</span></div></div>
+            <div class="overview-card load"><span class="overview-icon" aria-hidden="true">7D</span><div class="overview-copy"><span class="overview-label">未來七天</span><strong class="overview-value">{{ review_schedule|sum(attribute='count') }} 張</strong><span class="overview-detail">預計複習負載</span></div></div>
         </section>
         <section class="layout">
             <div class="main-stack">
@@ -550,7 +799,7 @@
                 </nav>
                 <article id="note-library-assistant" class="panel library-ai" data-library-ai data-ask-url="{{ url_for('admin_study_recall_library_ask') }}" data-ai-enabled="{{ '1' if openai_ready else '0' }}">
                     <header class="library-ai-head">
-                        <div class="library-ai-title"><span class="library-ai-mark" aria-hidden="true">✦</span><div><p class="eyebrow">NOTE INTELLIGENCE</p><h2>問整個筆記庫</h2><p class="caption">指定科目、筆記或頁碼，答案會附上可回查的原始頁面。</p></div></div>
+                        <div class="library-ai-title"><span class="library-ai-mark" aria-hidden="true">✦</span><div><p class="eyebrow">NOTE INTELLIGENCE</p><h2>問整個筆記庫</h2><p class="caption">指定範圍，快速整理成可回查的答案。</p></div></div>
                         <span class="library-ai-badge">根據你的筆記回答</span>
                     </header>
                     <div class="library-ai-body">
@@ -581,7 +830,7 @@
                     </div>
                 </article>
                 <article id="note-library-search" class="panel">
-                    <div class="panel-static-head"><h2>搜尋筆記庫</h2><p class="caption">輸入關鍵字、公式或問題，直接找出最相關的筆記頁面。</p></div>
+                    <div class="panel-static-head"><h2>搜尋筆記庫</h2><p class="caption">直接找到觀念、公式與例題。</p></div>
                         <div class="panel-static-content note-search-body">
                         <form class="note-search-form" data-note-search-form data-search-url="{{ url_for('admin_study_recall_search') }}">
                             <div class="note-search-primary">
@@ -607,7 +856,7 @@
                 </article>
                 <article id="new-note" class="panel">
                     <details class="panel-fold" data-recall-fold="upload">
-                        <summary class="panel-fold-summary"><div><h2>新增筆記</h2><p class="caption">照片會在背景上傳與整理，開始後可直接切換頁面。</p></div><span class="fold-arrow" aria-hidden="true">+</span></summary>
+                        <summary class="panel-fold-summary"><div><h2>新增筆記</h2><p class="caption">上傳照片，自動整理重點卡。</p></div><span class="fold-arrow" aria-hidden="true">+</span></summary>
                         <div class="panel-fold-content">
                     <form id="recall-upload-form" class="upload-body" method="post" action="{{ url_for('admin_study_recall_upload') }}" data-stage-url="{{ url_for('admin_study_recall_upload_staging') }}" enctype="multipart/form-data">
                         <div class="form-grid">
@@ -624,11 +873,11 @@
                     </details>
                 </article>
                 <article class="quick-review-launch" aria-labelledby="quick-review-title">
-                    <div class="quick-review-copy"><p class="eyebrow">GRAD EXAM DRILL</p><h2 id="quick-review-title">用研究所考題，把觀念練成得分能力</h2><p>優先出有唯一正解的單選、是非與來源計算題；作答後立即判分，答錯的題目會在本回合結尾再考一次。</p><div class="quick-review-steps" aria-label="考場快測流程"><span>客觀作答</span><span>立即判分</span><span>看來源正解</span><span>錯題再考</span></div></div>
+                    <div class="quick-review-copy"><p class="eyebrow">GRAD EXAM DRILL</p><h2 id="quick-review-title">用研究所考題，把觀念練成得分能力</h2><p>單選、是非與計算題即時判分，錯題會在回合結尾再考一次。</p><div class="quick-review-steps" aria-label="考場快測流程"><span>客觀作答</span><span>立即判分</span><span>來源正解</span><span>錯題再考</span></div></div>
                     {% if review_cards %}<div class="quick-review-actions"><a class="quick-review-primary" href="{{ url_for('admin_study_recall_quick_review', size=5) }}">3 分鐘・5 題</a><a class="quick-review-secondary" href="{{ url_for('admin_study_recall_quick_review', size=10) }}">7 分鐘・10 題</a></div>{% else %}<div class="quick-review-done">今天已複習完成</div>{% endif %}
                 </article>
                 <article id="review-zone" class="panel review-zone">
-                    {% if review_cards|length > 4 %}<details class="panel-fold review-zone-fold"><summary class="panel-fold-summary"><div><h2>現在需要複習的重點</h2><p class="caption">只顯示今天到期的卡片；每張卡會依這次印象分獨立安排。</p></div><div class="topic-section-tools"><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span><span class="fold-arrow" aria-hidden="true">+</span></div></summary>{% else %}<div class="panel-fold-summary"><div><h2>現在需要複習的重點</h2><p class="caption">只顯示今天到期的卡片；每張卡會依這次印象分獨立安排。</p></div><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span></div>{% endif %}
+                    {% if review_cards|length > 4 %}<details class="panel-fold review-zone-fold"><summary class="panel-fold-summary"><div><h2>今日到期重點</h2><p class="caption">回想、揭示、自評，系統會安排下次複習。</p></div><div class="topic-section-tools"><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span><span class="fold-arrow" aria-hidden="true">+</span></div></summary>{% else %}<div class="panel-fold-summary"><div><h2>今日到期重點</h2><p class="caption">回想、揭示、自評，系統會安排下次複習。</p></div><span class="chip" data-recall-due-count data-count-label="張">{{ review_cards|length }} 張</span></div>{% endif %}
                     <div class="panel-fold-content review-zone-content">
                     <div class="review-progress" data-recall-progress data-total="{{ review_cards|length }}" {% if not review_cards %}hidden{% endif %}><span data-recall-progress-label>本次完成 0 張，剩 {{ review_cards|length }} 張</span><div class="review-progress-track" aria-hidden="true"><div class="review-progress-bar" data-recall-progress-bar></div></div></div>
                     <div class="concepts" data-recall-card-list {% if not review_cards %}hidden{% endif %}>{% for item in review_cards %}{% set concept = item.concept_data %}<article class="concept review-card" data-recall-card><div class="review-card-title"><strong>{{ concept.concept }}</strong><span class="chip">{{ concept.topic or item.subject }}</span></div>{% if concept.card_type == 'example' %}<span class="example-badge">例題</span>{% endif %}<div class="recall-prompt"><span>回想線索</span><p data-math-content>{{ concept.recall_cue }}</p></div><button class="recall-reveal" type="button" data-recall-reveal aria-expanded="false">揭示重點</button><div class="recall-answer" data-recall-answer hidden>{% if concept.card_type == 'example' and concept.example_problem %}<div class="example-section"><span class="concept-section-label">具體題目示例</span><p data-math-content>{{ concept.example_problem }}</p></div>{% endif %}{% if concept.card_type == 'example' and concept.example_method %}<div class="example-section method"><span class="concept-section-label">解題方法</span><p data-math-content>{{ concept.example_method }}</p></div>{% endif %}{% if concept.card_type != 'example' and concept.simple_example %}<div class="example-section simple"><span class="concept-section-label">簡單例子</span><p data-math-content>{{ concept.simple_example }}</p></div>{% endif %}{% if concept.core_summary %}<div class="core-summary"><span class="concept-section-label">重點總結</span><p data-math-content>{{ concept.core_summary }}</p></div>{% endif %}<div class="concept-detail"><span class="concept-section-label">{% if concept.card_type == 'example' %}觀念補充{% else %}觀念脈絡{% endif %}</span><p data-math-content>{{ concept.explanation }}</p></div>{% if concept.reasoning_steps %}<div class="concept-detail"><span class="concept-section-label">{% if concept.card_type == 'example' %}解題步驟{% else %}必要步驟{% endif %}</span><ol class="reasoning-steps">{% for step in concept.reasoning_steps %}<li data-math-content>{{ step }}</li>{% endfor %}</ol></div>{% endif %}{% if concept.common_confusion %}<div class="common-confusion" data-math-content><strong>易混淆：</strong>{{ concept.common_confusion }}</div>{% endif %}{% if concept.memory_hint %}<div class="hint" data-math-content>記憶線索：{{ concept.memory_hint }}</div>{% endif %}{% if concept.visual_refs %}{{ render_visual_refs(concept.visual_refs) }}{% endif %}{% if concept.source_refs %}<div class="source-refs"><span class="source-label">原文</span>{% for source in concept.source_refs %}{% if source.bbox %}<button class="source-tag" type="button" data-source-locator data-source-image-url="{{ source.image_url }}" data-source-image-index="{{ source.image_index }}" data-source-evidence="{{ source.evidence }}" data-source-left="{{ source.bbox.left }}" data-source-top="{{ source.bbox.top }}" data-source-right="{{ source.bbox.right }}" data-source-bottom="{{ source.bbox.bottom }}" title="在原始筆記中定位">定位第 {{ source.image_index }} 張</button>{% else %}<a class="source-tag" href="{{ source.image_url }}" target="_blank" rel="noopener" title="{{ source.evidence }}">查看第 {{ source.image_index }} 張</a>{% endif %}{% endfor %}</div>{% endif %}{% if concept.related_cards %}<div class="related-cards"><span class="related-label">關聯</span><div class="related-tags">{% for related in concept.related_cards %}<button class="related-tag" type="button" data-math-content data-related-card data-related-title="{{ related.title }}" data-related-association="{{ related.association }}" data-related-url="{{ url_for('admin_study_recall', session_id=related.session_id) }}#concept-{{ related.index }}">{{ related.title }}</button>{% endfor %}</div></div>{% endif %}<div class="card-review"><div class="review-meta"><span>{{ item.session_title }}</span>{% if concept.review.last_rating is not none %}<strong>上次印象 {{ concept.review.last_rating }}/5</strong>{% endif %}{% if concept.review.stability_label %}<span>{{ concept.review.stability_label }}</span>{% endif %}{% if concept.review.trend_label %}<span>{{ concept.review.trend_label }}</span>{% endif %}</div><div class="curve"><span class="curve-label">印象曲線<br>{{ concept.review.history_label }}</span>{% if concept.review.history %}<svg viewBox="0 0 100 42" role="img" aria-label="{{ concept.concept }} 的印象曲線"><line x1="0" y1="36" x2="100" y2="36"></line>{% if concept.review.history|length > 1 %}<polyline points="{{ concept.review.curve_points }}"></polyline>{% endif %}<circle cx="{% if concept.review.history|length > 1 %}94{% else %}50{% endif %}" cy="{{ concept.review.latest_curve_y }}" r="3"></circle></svg>{% else %}<span class="curve-label">首次複習</span>{% endif %}</div></div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><div class="rating-key"><span>1 完全想不起</span><span>5 能完整運用</span></div><div class="card-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% set rating_labels = ['完全想不起', '看到內容才想起', '大致能重建', '能完整說明', '能完整運用'] %}{% for rating in range(1, 6) %}<label title="{{ rating_labels[rating - 1] }}"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" data-rating-description="{{ rating_labels[rating - 1] }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="rating-choice" data-rating-choice aria-live="polite"></p><p class="rating-status" data-recall-rating-status aria-live="polite"></p><button class="submit" type="submit">送出並安排下次</button></form></div></article>{% endfor %}</div>
@@ -639,7 +888,7 @@
                 {% if selected_session %}
                 <article id="selected-note-panel" class="panel">
                     <div id="note-review" class="session-head"><p class="eyebrow">NOTE {{ selected_session.study_date }}</p><div class="session-title-row"><h2>{{ selected_session.title }}</h2><form method="post" action="{{ url_for('admin_study_recall_delete', session_id=selected_session.id) }}" onsubmit="return window.confirm('確定刪除這份筆記及所有重點卡、複習紀錄與原始圖片？');"><button class="delete-note" type="submit">刪除筆記</button></form></div><div class="session-meta"><span class="chip">{{ selected_session.subject }}</span><span class="chip">{{ selected_session.image_filenames|length }} 張照片</span><span class="chip">複習 {{ selected_session.review_count }} 次</span>{% if selected_session.next_review_at %}<span class="chip">下次 {{ selected_session.next_review_at }}</span>{% endif %}</div><div class="session-actions"><button class="fold-command" type="button" data-fold-action="open" data-fold-scope="#selected-note-panel">展開重點</button><button class="fold-command" type="button" data-fold-action="close" data-fold-scope="#selected-note-panel">收合重點</button>{% if selected_session.source_location_total %}<button class="source-localize-button" type="button" data-source-localize-url="{{ url_for('admin_study_recall_localize_sources', session_id=selected_session.id) }}?force=1" {% if not openai_ready %}disabled title="AI 來源定位尚未啟用"{% endif %}>{% if selected_session.source_location_refined_count < selected_session.source_location_total %}改善定位 {{ selected_session.source_location_count }}/{{ selected_session.source_location_total }}{% else %}重新定位{% endif %}</button><span class="source-localize-status" data-source-localize-status aria-live="polite"></span>{% endif %}</div></div>
-                    <div class="rename-note-panel"><form class="rename-note-form" method="post" action="{{ url_for('admin_study_recall_rename', session_id=selected_session.id) }}"><input name="title" type="text" value="{{ selected_session.title }}" maxlength="120" aria-label="筆記名稱" required><button class="rename-note-save" type="submit">儲存名稱</button></form></div>
+                    <details class="note-settings"><summary>重新命名筆記</summary><div class="rename-note-panel"><form class="rename-note-form" method="post" action="{{ url_for('admin_study_recall_rename', session_id=selected_session.id) }}"><input name="title" type="text" value="{{ selected_session.title }}" maxlength="120" aria-label="筆記名稱" required><button class="rename-note-save" type="submit">儲存名稱</button></form></div></details>
                     <nav class="topic-index" aria-label="目前筆記的觀念主題">{% for group in selected_session.concept_groups %}<a href="#concept-{{ group.concepts[0].display_index }}">{{ group.topic }} <span>{{ group.concepts|length }} 張</span></a>{% endfor %}</nav>
                     {% for group in selected_session.concept_groups %}<details class="topic-section" data-recall-fold="topic"><summary class="topic-section-head"><div><span class="topic-kicker">觀念主題</span><h3>{{ group.topic }}</h3></div><div class="topic-section-tools"><span class="chip">{{ group.concepts|length }} 張</span><span class="fold-arrow" aria-hidden="true">+</span></div></summary><div class="topic-section-body"><div class="concepts">{% for concept in group.concepts %}<details id="concept-{{ concept.display_index }}" class="concept concept-fold" data-recall-fold="concept"><summary class="concept-fold-head"><span class="concept-fold-title">{{ concept.concept }}</span><span class="concept-fold-actions">{% if concept.card_type == 'example' %}<span class="example-badge">例題</span>{% endif %}<span class="fold-arrow" aria-hidden="true">+</span></span></summary><div class="concept-fold-body"><div class="note-card-sections">{% if concept.card_type == 'example' and concept.example_problem %}<div class="example-section"><span class="concept-section-label">具體題目示例</span><p data-math-content>{{ concept.example_problem }}</p></div>{% endif %}{% if concept.card_type == 'example' and concept.example_method %}<div class="example-section method"><span class="concept-section-label">解題方法</span><p data-math-content>{{ concept.example_method }}</p></div>{% endif %}{% if concept.card_type != 'example' and concept.simple_example %}<div class="example-section simple"><span class="concept-section-label">簡單例子</span><p data-math-content>{{ concept.simple_example }}</p></div>{% endif %}{% if concept.core_summary %}<div class="core-summary"><span class="concept-section-label">重點總結</span><p data-math-content>{{ concept.core_summary }}</p></div>{% endif %}<div class="concept-detail"><span class="concept-section-label">{% if concept.card_type == 'example' %}觀念補充{% else %}觀念說明{% endif %}</span><p data-math-content>{{ concept.explanation }}</p></div>{% if concept.reasoning_steps %}<div class="concept-detail"><span class="concept-section-label">{% if concept.card_type == 'example' %}解題步驟{% else %}必要步驟{% endif %}</span><ol class="reasoning-steps">{% for step in concept.reasoning_steps %}<li data-math-content>{{ step }}</li>{% endfor %}</ol></div>{% endif %}{% if concept.common_confusion %}<div class="common-confusion" data-math-content><strong>易混淆：</strong>{{ concept.common_confusion }}</div>{% endif %}</div>{% if concept.memory_hint %}<div class="hint" data-math-content>記憶線索：{{ concept.memory_hint }}</div>{% endif %}{% if concept.visual_refs %}{{ render_visual_refs(concept.visual_refs) }}{% endif %}{% if concept.source_refs %}<div class="source-refs"><span class="source-label">原文</span>{% for source in concept.source_refs %}{% if source.bbox %}<button class="source-tag" type="button" data-source-locator data-source-image-url="{{ source.image_url }}" data-source-image-index="{{ source.image_index }}" data-source-evidence="{{ source.evidence }}" data-source-left="{{ source.bbox.left }}" data-source-top="{{ source.bbox.top }}" data-source-right="{{ source.bbox.right }}" data-source-bottom="{{ source.bbox.bottom }}" title="在原始筆記中定位">定位第 {{ source.image_index }} 張</button>{% else %}<a class="source-tag" href="{{ source.image_url }}" target="_blank" rel="noopener" title="{{ source.evidence }}">查看第 {{ source.image_index }} 張</a>{% endif %}{% endfor %}</div>{% endif %}{% if concept.related_cards %}<div class="related-cards"><span class="related-label">關聯</span><div class="related-tags">{% for related in concept.related_cards %}<button class="related-tag" type="button" data-math-content data-related-card data-related-title="{{ related.title }}" data-related-association="{{ related.association }}" data-related-url="{{ url_for('admin_study_recall', session_id=related.session_id) }}#concept-{{ related.index }}">{{ related.title }}</button>{% endfor %}</div></div>{% endif %}<div class="card-review">{% if concept.review.history %}<div class="review-meta"><span>上次複習 {{ concept.review.history[-1].created_at[:10] }}</span><strong>下次複習 {{ concept.review.next_review_at }}</strong>{% if concept.review.stability_label %}<span>{{ concept.review.stability_label }}</span>{% endif %}{% if concept.review.trend_label %}<span>{{ concept.review.trend_label }}</span>{% endif %}</div>{% else %}<div class="review-meta"><span>尚未複習</span><span>完成首次自評後會安排日期</span></div>{% endif %}<div class="curve"><span class="curve-label">印象曲線<br>{{ concept.review.history_label }}</span>{% if concept.review.history %}<svg viewBox="0 0 100 42" role="img" aria-label="{{ concept.concept }} 的印象曲線"><line x1="0" y1="36" x2="100" y2="36"></line>{% if concept.review.history|length > 1 %}<polyline points="{{ concept.review.curve_points }}"></polyline>{% endif %}<circle cx="{% if concept.review.history|length > 1 %}94{% else %}50{% endif %}" cy="{{ concept.review.latest_curve_y }}" r="3"></circle></svg>{% else %}<span class="curve-label">尚未建立記憶曲線</span>{% endif %}</div></div></div></details>{% endfor %}</div></div></details>{% endfor %}
                     <section class="summary-section"><h3>重點總結</h3><p class="summary" data-math-content>{{ selected_session.summary }}</p></section><section class="audit-section">{% if selected_session.source_transcription %}<details class="note-fold"><summary>忠實轉錄與來源核對（{{ selected_session.source_transcription|length }} 頁）</summary><div>{% for page in selected_session.source_transcription %}<section id="source-page-{{ page.image_index }}" class="audit-page"><div class="audit-page-head"><span>第 {{ page.image_index }} 頁</span>{% if page.image_url %}<a href="{{ page.image_url }}" target="_blank" rel="noopener">查看原圖</a>{% endif %}</div><p class="audit-text" data-math-content>{{ page.transcription }}</p></section>{% endfor %}</div></details>{% endif %}{% if selected_session.correction_records %}<details class="note-fold"><summary>高信心校正（{{ selected_session.correction_records|length }} 處）</summary><div>{% for record in selected_session.correction_records %}<div class="audit-record"><strong>{{ record.concept }}</strong>：<span data-math-content>{{ record.original }} → {{ record.corrected }}</span><br>{{ record.reason }}{% if record.image_url %}・<a href="{{ record.image_url }}" target="_blank" rel="noopener">第 {{ record.image_index }} 張原圖</a>{% endif %}</div>{% endfor %}</div></details>{% endif %}{% if selected_session.uncertain_fragments %}<details class="note-fold"><summary>上下文補全與未解片段（{{ selected_session.uncertain_fragments|length }} 處）</summary><div>{% for record in selected_session.uncertain_fragments %}<div class="audit-record">第 {{ record.image_index }} 張：{{ record.text }}{% if record.image_url %}・<a href="{{ record.image_url }}" target="_blank" rel="noopener">查看原圖</a>{% endif %}</div>{% endfor %}</div></details>{% endif %}<details class="note-fold"><summary>原始筆記圖片（{{ selected_session.image_urls|length }} 張）</summary><div class="note-images">{% for image_url in selected_session.image_urls %}<a href="{{ image_url }}" target="_blank" rel="noopener"><img src="{{ image_url }}" alt="{{ selected_session.title }} 原始筆記 {{ loop.index }}" loading="lazy"></a>{% endfor %}</div></details></section>
@@ -647,9 +896,9 @@
                 {% else %}<article class="panel empty">上傳第一份筆記後，重點卡與各卡的複習安排會顯示在這裡。</article>{% endif %}
             </div>
             <aside class="side-stack">
-                <article class="panel"><div class="panel-head"><div><h2>未來 7 天負載</h2><p class="caption">各日期需要複習的重點數量。</p></div></div><div class="queue">{% for day in review_schedule %}<div class="queue-item"><div class="queue-title">{{ day.date }}{% if day.is_today %}・今天{% endif %}</div><div class="queue-meta">{{ day.count }} 張</div></div>{% endfor %}</div></article>
-                <article class="panel"><div class="panel-head"><div><h2>複習節奏</h2><p class="caption">依印象分自動拉開間隔。</p></div></div><div class="how"><strong>1 分</strong>：明天<br><strong>2 分</strong>：至少 2 天後<br><strong>3 分</strong>：至少 3 天後<br><strong>4-5 分</strong>：依記憶穩定度延長</div></article>
-                <article class="panel history"><details class="panel-fold compact-fold" data-recall-fold="library"><summary><div class="panel-head"><div><h2>筆記主題</h2><p class="caption">AI 主題分組・最近 36 份</p></div></div><span class="fold-arrow" aria-hidden="true">+</span></summary><div class="queue">{% if session_groups %}{% for group in session_groups %}<details class="session-topic" data-recall-fold="library-topic"><summary><span class="session-topic-head">{{ group.topic }}・{{ group.sessions|length }} 份</span><span class="fold-arrow" aria-hidden="true">+</span></summary><div class="queue">{% for item in group.sessions %}<div class="history-note"><a class="queue-item" href="{{ url_for('admin_study_recall', session_id=item.id) }}"><div class="queue-title">{{ item.title }}</div><div class="queue-meta">{{ item.subject }}・{{ item.study_date }}{% if item.next_review_at %}・下次 {{ item.next_review_at }}{% endif %}</div></a><form method="post" action="{{ url_for('admin_study_recall_delete', session_id=item.id) }}" onsubmit="return window.confirm('確定刪除這份筆記及所有重點卡、複習紀錄與原始圖片？');"><button class="delete-note" type="submit">刪除</button></form></div>{% endfor %}</div></details>{% endfor %}{% else %}<div class="empty">尚無筆記紀錄。</div>{% endif %}</div></details></article>
+                <article class="panel history library-panel"><details class="panel-fold compact-fold" data-recall-fold="library" open><summary><div class="panel-head"><div><h2>我的筆記</h2><p class="caption">依主題分組・最近 {{ sessions|length }} 份</p></div></div><span class="fold-arrow" aria-hidden="true">+</span></summary><div class="queue">{% if session_groups %}{% for group in session_groups %}<details class="session-topic" data-recall-fold="library-topic"><summary><span class="session-topic-head">{{ group.topic }}・{{ group.sessions|length }} 份</span><span class="fold-arrow" aria-hidden="true">+</span></summary><div class="queue">{% for item in group.sessions %}<div class="history-note"><a class="queue-item" href="{{ url_for('admin_study_recall', session_id=item.id) }}"><div class="queue-title">{{ item.title }}</div><div class="queue-meta">{{ item.subject }}・{{ item.study_date }}{% if item.next_review_at %}・下次 {{ item.next_review_at }}{% endif %}</div></a><form method="post" action="{{ url_for('admin_study_recall_delete', session_id=item.id) }}" onsubmit="return window.confirm('確定刪除這份筆記及所有重點卡、複習紀錄與原始圖片？');"><button class="delete-note" type="submit">刪除</button></form></div>{% endfor %}</div></details>{% endfor %}{% else %}<div class="empty">尚無筆記紀錄。</div>{% endif %}</div></details></article>
+                <article class="panel schedule-panel"><div class="panel-head"><div><h2>未來 7 天</h2><p class="caption">每日到期重點卡</p></div></div><div class="queue">{% for day in review_schedule %}<div class="queue-item"><div class="queue-title">{{ day.date }}{% if day.is_today %}・今天{% endif %}</div><div class="queue-meta">{{ day.count }} 張</div></div>{% endfor %}</div></article>
+                <article class="panel rhythm-panel"><details class="panel-fold compact-fold"><summary><div class="panel-head"><div><h2>複習節奏</h2><p class="caption">印象越深，間隔越長</p></div></div><span class="fold-arrow" aria-hidden="true">+</span></summary><div class="how"><strong>1 分</strong>：明天<br><strong>2 分</strong>：至少 2 天後<br><strong>3 分</strong>：至少 3 天後<br><strong>4–5 分</strong>：依穩定度延長</div></details></article>
             </aside>
         </section>
     </main>
