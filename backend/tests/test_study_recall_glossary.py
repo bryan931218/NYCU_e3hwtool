@@ -128,7 +128,21 @@ class StudyRecallGlossaryTests(unittest.TestCase):
                     "concept_index": 0,
                 }
             ],
-            "資料結構": [],
+            "資料結構": [
+                {
+                    "title": "Big-O",
+                    "canonical_term": "Big-Oh 表示法（O-notation）",
+                    "aliases": ["O-notation"],
+                    "card_title": "生成函數定義",
+                    "explanation": "這是一段不夠精確的舊說明。",
+                    "explanation_kind": "已審核定義",
+                    "confidence": 82,
+                    "subject": "資料結構",
+                    "session_title": "另一科的同名詞",
+                    "session_id": third_id,
+                    "concept_index": 0,
+                }
+            ],
         }
         for subject, terms_for_subject in verified_by_subject.items():
             self.storage.save_study_recall_glossary(
@@ -144,7 +158,7 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("no-store", response.headers["Cache-Control"])
         self.assertEqual(payload["status"], "ready")
-        self.assertEqual(set(terms), {"Dijkstra 鬆弛", "線性獨立"})
+        self.assertEqual(set(terms), {"Dijkstra 鬆弛", "線性獨立", "Big-O"})
         self.assertEqual(terms["Dijkstra 鬆弛"]["explanation_kind"], "已審核定義")
         self.assertIn("更新操作", terms["Dijkstra 鬆弛"]["explanation"])
         self.assertEqual(
@@ -153,6 +167,9 @@ class StudyRecallGlossaryTests(unittest.TestCase):
         )
         self.assertEqual(terms["線性獨立"]["session_id"], second_id)
         self.assertNotIn("生成函數", terms)
+        self.assertEqual(terms["Big-O"]["canonical_term"], "Big-O（漸進上界）")
+        self.assertEqual(terms["Big-O"]["confidence"], 100)
+        self.assertIn("最終非負", terms["Big-O"]["explanation"])
 
     def test_recall_page_loads_the_wikipedia_style_glossary_runtime(self):
         session_id = self.storage.create_study_recall_session(

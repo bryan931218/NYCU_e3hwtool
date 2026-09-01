@@ -13769,6 +13769,79 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         },
     }
 
+    def _finalize_verified_glossary_entry(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        finalized = dict(entry)
+        canonical = re.sub(r"\s+", " ", str(finalized.get("canonical_term") or "")).strip()
+        folded = canonical.casefold()
+        if not canonical or any(
+            marker in folded
+            for marker in (
+                "對數與指數的等價恆等式",
+                "函數大小排序",
+                "函數增長排序",
+                "對數級函數",
+                "時間需求（t(p)）",
+            )
+        ) or canonical.startswith("從大小為"):
+            return None
+
+        replacement: Optional[Tuple[str, str]] = None
+        if "little-omega" in folded or re.search(r"小\s*ω", canonical, re.IGNORECASE):
+            replacement = (
+                "little-ω（嚴格漸進下界）",
+                "若 g(n) 最終不為 0，f(n)=ω(g(n)) 表示對每個常數 c>0，皆存在 n₀，使所有 n≥n₀ 都有 |f(n)|>c|g(n)|；等價地，|f(n)/g(n)|→∞。",
+            )
+        elif "little-o" in folded or re.search(r"小\s*o", canonical, re.IGNORECASE):
+            replacement = (
+                "little-o（嚴格漸進上界）",
+                "若 g(n) 最終不為 0，f(n)=o(g(n)) 表示對每個常數 c>0，皆存在 n₀，使所有 n≥n₀ 都有 |f(n)|<c|g(n)|；等價地，f(n)/g(n)→0。",
+            )
+        elif "big-omega" in folded or re.search(r"大\s*omega|大\s*Ω", canonical, re.IGNORECASE):
+            replacement = (
+                "Big-Ω（漸進下界）",
+                "對最終非負的函數 f、g，f(n)=Ω(g(n)) 表示存在常數 c>0 與 n₀，使所有 n≥n₀ 都有 f(n)≥c·g(n)。",
+            )
+        elif "big-theta" in folded or re.search(r"大\s*theta|大\s*Θ", canonical, re.IGNORECASE):
+            replacement = (
+                "Big-Θ（漸進緊界）",
+                "對最終非負的函數 f、g，f(n)=Θ(g(n)) 表示存在常數 c₁,c₂>0 與 n₀，使所有 n≥n₀ 都有 c₁g(n)≤f(n)≤c₂g(n)。",
+            )
+        elif "big-oh" in folded or "o-notation" in folded or "big-o" in folded:
+            replacement = (
+                "Big-O（漸進上界）",
+                "對最終非負的函數 f、g，f(n)=O(g(n)) 表示存在常數 c>0 與 n₀，使所有 n≥n₀ 都有 f(n)≤c·g(n)。",
+            )
+        elif "對數級迴圈次數" in canonical:
+            replacement = (
+                "反覆除半的迴圈次數",
+                "若正整數 n 每輪以整數除法除以 2，直到降至 1，迴圈次數為 ⌊log₂ n⌋；若停止條件要求累積倍增至至少 n，則為 ⌈log₂ n⌉。兩者的漸進時間皆為 Θ(log n)。",
+            )
+        elif "log(n!) 的漸進等價" in canonical:
+            replacement = (
+                "log(n!) 的漸進階",
+                "由 Stirling 公式可得 ln(n!)=n ln n−n+O(ln n)，因此 ln(n!)=Θ(n ln n)，且 ln(n!)/(n ln n)→1。對其他固定底數的對數只相差常數因子。",
+            )
+        elif canonical.strip().casefold() == "stirling":
+            replacement = (
+                "Stirling 公式",
+                "當 n→∞ 時，n!∼√(2πn)(n/e)^n；符號 ∼ 表示兩側比值趨近 1。等價地，ln(n!)=n ln n−n+(1/2)ln(2πn)+o(1)。",
+            )
+        elif canonical == "調和級數":
+            replacement = (
+                "調和數 Hₙ",
+                "第 n 個調和數定義為 Hₙ=∑_{k=1}^n 1/k，且 Hₙ=ln n+γ+o(1)，所以 Hₙ=Θ(log n)。無窮調和級數 ∑_{k=1}^∞1/k 則發散。",
+            )
+        elif "球與盒子 / stars and bars" in folded:
+            replacement = (
+                "隔板法（Stars and Bars）",
+                "對 n≥0、k≥1，方程 x₁+⋯+xₖ=n 的非負整數解共有 C(n+k−1,k−1) 個；等價於把 n 個相同物件分入 k 個可區分且允許空箱的箱子。若每箱至少一個，解數為 C(n−1,k−1)，前提是 n≥k。",
+            )
+        if replacement:
+            finalized["canonical_term"], finalized["explanation"] = replacement
+            finalized["explanation_kind"] = "標準定義"
+            finalized["confidence"] = 100
+        return finalized
+
     def _generate_verified_glossary(
         subject: str,
         catalog: Dict[str, Any],
@@ -13993,6 +14066,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     diagnostics[subject] = str(cached.get("error"))[:500]
                 for entry in cached.get("terms") or []:
                     if not isinstance(entry, dict):
+                        continue
+                    entry = _finalize_verified_glossary_entry(entry)
+                    if entry is None:
                         continue
                     session_id = int(entry.get("session_id") or 0)
                     concept_index = int(entry.get("concept_index") or 0)
