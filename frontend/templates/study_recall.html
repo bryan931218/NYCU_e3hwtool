@@ -977,8 +977,8 @@
             const state = { byFirst: new Map(), subjectBySession: new Map(), active: null, hideTimer: 0 };
             const asciiWord = /[A-Za-z0-9_]/;
             const targetSelector = [
-                '.concept-fold-body [data-math-content][data-math-rendered="true"]',
-                '[data-recall-card] [data-math-content][data-math-rendered="true"]',
+                '.concept-fold-body [data-math-content]',
+                '[data-recall-card] [data-math-content]',
             ].join(',');
             const targetKey = (entry) => `${entry.session_id}:${entry.concept_index}`;
             const entryKey = (entry) => `${targetKey(entry)}:${String(entry.title || '').toLocaleLowerCase()}`;
