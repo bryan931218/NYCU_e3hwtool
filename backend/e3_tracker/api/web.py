@@ -13780,7 +13780,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "函數大小排序",
                 "函數增長排序",
                 "對數級函數",
-                "時間需求（t(p)）",
+                "時間需求",
             )
         ) or canonical.startswith("從大小為"):
             return None
@@ -13811,7 +13811,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "Big-O（漸進上界）",
                 "對最終非負的函數 f、g，f(n)=O(g(n)) 表示存在常數 c>0 與 n₀，使所有 n≥n₀ 都有 f(n)≤c·g(n)。",
             )
-        elif "對數級迴圈次數" in canonical:
+        elif "對數級迴圈次數" in canonical or "除以二的迴圈次數" in canonical:
             replacement = (
                 "反覆除半的迴圈次數",
                 "若正整數 n 每輪以整數除法除以 2，直到降至 1，迴圈次數為 ⌊log₂ n⌋；若停止條件要求累積倍增至至少 n，則為 ⌈log₂ n⌉。兩者的漸進時間皆為 Θ(log n)。",
@@ -13993,6 +13993,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     def _start_glossary_refresh(subjects: List[str], catalog_by_subject: Dict[str, Dict[str, Any]]) -> None:
         pending: List[str] = []
+        preserved_by_subject: Dict[str, List[Dict[str, Any]]] = {}
         with glossary_jobs_lock:
             for subject in subjects:
                 if subject in glossary_jobs or subject not in catalog_by_subject:
@@ -14008,6 +14009,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if existing and existing.get("source_signature") == catalog_by_subject[subject]["signature"]
                 else []
             )
+            preserved_by_subject[subject] = preserved_terms
             storage.save_study_recall_glossary(
                 subject=subject,
                 source_signature=catalog_by_subject[subject]["signature"],
@@ -14016,17 +14018,34 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
 
         def _run() -> None:
+            def _merge_progress(
+                subject: str,
+                catalog: Dict[str, Any],
+                partial_terms: List[Dict[str, Any]],
+            ) -> None:
+                merged: Dict[str, Dict[str, Any]] = {}
+                for item in [*(preserved_by_subject.get(subject) or []), *partial_terms]:
+                    if not isinstance(item, dict):
+                        continue
+                    key = str(item.get("title") or "").casefold()
+                    existing_item = merged.get(key)
+                    if not existing_item or int(item.get("confidence") or 0) >= int(existing_item.get("confidence") or 0):
+                        merged[key] = item
+                storage.save_study_recall_glossary(
+                    subject=subject,
+                    source_signature=catalog["signature"],
+                    status="building",
+                    terms=list(merged.values()),
+                )
+
             for subject in pending:
                 catalog = catalog_by_subject[subject]
                 try:
                     terms = _generate_verified_glossary(
                         subject,
                         catalog,
-                        progress_callback=lambda partial_terms, current_subject=subject, current_catalog=catalog: storage.save_study_recall_glossary(
-                            subject=current_subject,
-                            source_signature=current_catalog["signature"],
-                            status="building",
-                            terms=partial_terms,
+                        progress_callback=lambda partial_terms, current_subject=subject, current_catalog=catalog: _merge_progress(
+                            current_subject, current_catalog, partial_terms
                         ),
                     )
                     storage.save_study_recall_glossary(
