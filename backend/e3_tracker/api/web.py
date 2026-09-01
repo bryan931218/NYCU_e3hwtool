@@ -13670,13 +13670,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 _strip_study_process_narration(value)
             )
             text_value = re.sub(r"\s+", " ", text_value).strip()
+            punctuation_positions = [
+                text_value.find(mark, 24, 241)
+                for mark in "。！？；"
+            ]
+            punctuation_positions = [
+                position for position in punctuation_positions if position >= 24
+            ]
+            if punctuation_positions:
+                punctuation_end = min(punctuation_positions)
+                return text_value[: punctuation_end + 1]
             if len(text_value) <= 240:
                 return text_value
-            punctuation_end = max(
-                text_value.rfind(mark, 60, 241) for mark in "。！？；"
-            )
-            if punctuation_end >= 60:
-                return text_value[: punctuation_end + 1]
             return text_value[:237].rstrip() + "…"
 
         entries_by_title: Dict[str, Dict[str, Any]] = {}
@@ -13706,8 +13711,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if folded_title in entries_by_title:
                     continue
                 explanation = preview_text(
-                    concept.get("core_summary")
-                    or concept.get("explanation")
+                    concept.get("explanation")
+                    or concept.get("core_summary")
                     or concept.get("simple_example")
                     or concept.get("recall_cue")
                 )
