@@ -24,6 +24,18 @@ class StudyRestDayToggleRuntimeTests(unittest.TestCase):
         self.assertIn('aria-pressed="true">休</button>', rendered)
         self.assertNotIn('>復</button>', rendered)
 
+    def test_both_focus_and_timeline_rest_buttons_are_cancellable(self):
+        template = (
+            '<section id="current-focus">' + RESTORE_BUTTON + '</section>'
+            '<section class="timeline">' + RESTORE_BUTTON + '</section>'
+        )
+
+        rendered = decorate_rest_day_toggle_markup(template)
+
+        self.assertEqual(rendered.count('aria-pressed="true">休</button>'), 2)
+        self.assertEqual(rendered.count('title="取消休息日"'), 2)
+        self.assertNotIn('>復</button>', rendered)
+
     def test_installer_decorates_study_template_before_render(self):
         captured = {}
 
