@@ -513,6 +513,13 @@ study_plan_replan_settings_table = Table(
     Column("updated_at", String(64), nullable=False),
 )
 
+study_plan_rest_days_table = Table(
+    "study_plan_rest_days",
+    metadata,
+    Column("study_date", String(10), primary_key=True),
+    Column("created_at", String(64), nullable=False),
+)
+
 study_assistant_actions_table = Table(
     "study_assistant_actions",
     metadata,
@@ -3927,6 +3934,52 @@ class PersistentStorage:
             result = conn.execute(
                 delete(study_plan_replan_settings_table).where(
                     study_plan_replan_settings_table.c.id == 1
+                )
+            )
+        return bool(result.rowcount)
+
+    def list_study_plan_rest_days(self) -> List[str]:
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(
+                select(study_plan_rest_days_table.c.study_date).order_by(
+                    study_plan_rest_days_table.c.study_date.asc()
+                )
+            ).fetchall()
+        return [str(row.study_date) for row in rows]
+
+    def add_study_plan_rest_day(self, study_date: str) -> bool:
+        try:
+            normalized = datetime.strptime(str(study_date or ""), "%Y-%m-%d").date().isoformat()
+        except (TypeError, ValueError):
+            return False
+        try:
+            with self._lock, self._engine.begin() as conn:
+                existing = conn.execute(
+                    select(study_plan_rest_days_table.c.study_date).where(
+                        study_plan_rest_days_table.c.study_date == normalized
+                    )
+                ).fetchone()
+                if existing:
+                    return False
+                conn.execute(
+                    insert(study_plan_rest_days_table).values(
+                        study_date=normalized,
+                        created_at=self._now_iso(),
+                    )
+                )
+        except IntegrityError:
+            return False
+        return True
+
+    def delete_study_plan_rest_day(self, study_date: str) -> bool:
+        try:
+            normalized = datetime.strptime(str(study_date or ""), "%Y-%m-%d").date().isoformat()
+        except (TypeError, ValueError):
+            return False
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                delete(study_plan_rest_days_table).where(
+                    study_plan_rest_days_table.c.study_date == normalized
                 )
             )
         return bool(result.rowcount)

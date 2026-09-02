@@ -599,6 +599,236 @@ class StudyPlanProgressTests(unittest.TestCase):
         self.assertAlmostEqual(allocated["資料結構"], 7200, places=3)
         self.assertEqual(weeks[-1]["end"].isoformat(), "2026-08-09")
 
+    def test_rest_day_moves_only_that_days_load_to_later_dates(self):
+        settings = {
+            "start_date": "2026-08-03",
+            "end_date": "2026-08-09",
+            "weekday_minutes": 180,
+            "weekend_minutes": 120,
+            "baseline_by_subject": {},
+            "subject_targets": {"離散數學": 7 * 3600, "資料結構": 7 * 3600},
+        }
+        original = _study_plan_schedule_definitions(STUDY_PLAN_VIDEO_INVENTORY, settings)
+        rested = _study_plan_schedule_definitions(
+            STUDY_PLAN_VIDEO_INVENTORY,
+            settings,
+            ["2026-08-05"],
+        )
+
+        def days_by_date(weeks):
+            return {
+                day["date"].isoformat(): day
+                for week in weeks
+                for day in week["daily_targets"]
+            }
+
+        original_days = days_by_date(original)
+        rested_days = days_by_date(rested)
+        self.assertEqual(
+            rested_days["2026-08-04"]["allocations"],
+            original_days["2026-08-04"]["allocations"],
+        )
+        self.assertEqual(rested_days["2026-08-05"]["allocations"], {})
+        self.assertTrue(rested_days["2026-08-05"]["is_rest_day"])
+        self.assertEqual(rested_days["2026-08-05"]["focus"], "休息日")
+        self.assertGreater(
+            rested_days["2026-08-06"]["allocations"]["離散數學"],
+            original_days["2026-08-06"]["allocations"]["離散數學"],
+        )
+
+        for subject in ("離散數學", "資料結構"):
+            original_total = sum(
+                day["allocations"].get(subject, 0) for day in original_days.values()
+            )
+            rested_total = sum(
+                day["allocations"].get(subject, 0) for day in rested_days.values()
+            )
+            self.assertAlmostEqual(rested_total, original_total, places=3)
+
+    def test_consecutive_rest_days_redistribute_once_and_preserve_total(self):
+        settings = {
+            "start_date": "2026-08-03",
+            "end_date": "2026-08-09",
+            "weekday_minutes": 60,
+            "weekend_minutes": 60,
+            "baseline_by_subject": {},
+            "subject_targets": {"離散數學": 7 * 3600},
+        }
+        weeks = _study_plan_schedule_definitions(
+            STUDY_PLAN_VIDEO_INVENTORY,
+            settings,
+            ["2026-08-04", "2026-08-05"],
+        )
+        days = {
+            day["date"].isoformat(): day
+            for week in weeks
+            for day in week["daily_targets"]
+        }
+
+        self.assertTrue(days["2026-08-04"]["is_rest_day"])
+        self.assertTrue(days["2026-08-05"]["is_rest_day"])
+        self.assertEqual(days["2026-08-04"]["allocations"], {})
+        self.assertEqual(days["2026-08-05"]["allocations"], {})
+        for day_key in ("2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09"):
+            self.assertAlmostEqual(
+                days[day_key]["allocations"]["離散數學"],
+                1.5 * 3600,
+                places=3,
+            )
+        self.assertAlmostEqual(
+            sum(
+                day["allocations"].get("離散數學", 0)
+                for day_key, day in days.items()
+                if "2026-08-03" <= day_key <= "2026-08-09"
+            ),
+            7 * 3600,
+            places=3,
+        )
+
+    def test_last_day_cannot_be_rest_and_does_not_drop_planned_time(self):
+        settings = {
+            "start_date": "2026-08-03",
+            "end_date": "2026-08-09",
+            "weekday_minutes": 60,
+            "weekend_minutes": 60,
+            "baseline_by_subject": {},
+            "subject_targets": {"離散數學": 7 * 3600},
+        }
+        weeks = _study_plan_schedule_definitions(
+            STUDY_PLAN_VIDEO_INVENTORY,
+            settings,
+            ["2026-08-08", "2026-08-09"],
+        )
+        days = {
+            day["date"].isoformat(): day
+            for week in weeks
+            for day in week["daily_targets"]
+        }
+
+        self.assertTrue(days["2026-08-08"]["is_rest_day"])
+        self.assertFalse(days["2026-08-09"]["is_rest_day"])
+        self.assertFalse(days["2026-08-09"]["can_be_rest_day"])
+        self.assertAlmostEqual(
+            days["2026-08-09"]["allocations"]["離散數學"],
+            2 * 3600,
+            places=3,
+        )
+        self.assertAlmostEqual(
+            sum(
+                day["allocations"].get("離散數學", 0)
+                for day_key, day in days.items()
+                if "2026-08-03" <= day_key <= "2026-08-09"
+            ),
+            7 * 3600,
+            places=3,
+        )
+
+    def test_rest_day_never_crosses_into_a_new_replan_segment(self):
+        settings = {
+            "start_date": "2026-08-03",
+            "end_date": "2026-08-09",
+            "weekday_minutes": 60,
+            "weekend_minutes": 60,
+            "baseline_by_subject": {},
+            "subject_targets": {"離散數學": 7 * 3600},
+        }
+        original = _study_plan_schedule_definitions(STUDY_PLAN_VIDEO_INVENTORY, settings)
+        requested = _study_plan_schedule_definitions(
+            STUDY_PLAN_VIDEO_INVENTORY,
+            settings,
+            ["2026-08-02"],
+        )
+
+        def by_date(weeks):
+            return {
+                day["date"].isoformat(): day
+                for week in weeks
+                for day in week["daily_targets"]
+            }
+
+        original_days = by_date(original)
+        requested_days = by_date(requested)
+        self.assertFalse(requested_days["2026-08-02"]["is_rest_day"])
+        self.assertFalse(requested_days["2026-08-02"]["can_be_rest_day"])
+        self.assertEqual(
+            requested_days["2026-08-03"]["allocations"],
+            original_days["2026-08-03"]["allocations"],
+        )
+
+    def test_admin_can_mark_a_selected_day_as_rest_day_and_restore_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+
+            storage = app.extensions["e3_storage"]
+            storage.save_study_plan_replan_settings(
+                start_date="2026-09-01",
+                end_date="2026-09-07",
+                weekday_minutes=60,
+                weekend_minutes=60,
+                baseline_by_subject={},
+                subject_targets={"離散數學": 7 * 3600},
+            )
+            token = "rest-day-test-session"
+            storage.save_web_session(token, "test-admin")
+            client = app.test_client()
+            with client.session_transaction() as browser_session:
+                browser_session["username"] = "test-admin"
+                browser_session["session_token"] = token
+                browser_session["is_admin"] = True
+
+            with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)):
+                response = client.post(
+                    "/admin/study-plan/rest-day",
+                    data={"subject": "離散數學", "study_date": "2026-09-03"},
+                    follow_redirects=True,
+                )
+                self.assertEqual(response.status_code, 200)
+                html = response.get_data(as_text=True)
+                self.assertIn("2026-09-03 已設為休息日", html)
+                self.assertIn("恢復 2026-09-03 的原定安排", html)
+                self.assertIn("將 2026-09-04 設為休息日", html)
+                self.assertNotIn("將 2026-09-07 設為休息日", html)
+                self.assertIn("休息日", html)
+                self.assertEqual(storage.list_study_plan_rest_days(), ["2026-09-03"])
+
+                restored = client.post(
+                    "/admin/study-plan/rest-day",
+                    data={
+                        "action": "restore",
+                        "subject": "離散數學",
+                        "study_date": "2026-09-03",
+                    },
+                    follow_redirects=True,
+                )
+                self.assertEqual(restored.status_code, 200)
+                self.assertIn("已恢復 2026-09-03 的原定進度", restored.get_data(as_text=True))
+                self.assertEqual(storage.list_study_plan_rest_days(), [])
+
+                rejected = client.post(
+                    "/admin/study-plan/rest-day",
+                    data={"subject": "離散數學", "study_date": "2026-09-01"},
+                    follow_redirects=True,
+                )
+                self.assertIn("不能再改設為休息日", rejected.get_data(as_text=True))
+                self.assertEqual(storage.list_study_plan_rest_days(), [])
+
+                malformed = client.post(
+                    "/admin/study-plan/rest-day",
+                    data={"subject": "離散數學", "study_date": "not-a-date"},
+                    follow_redirects=True,
+                )
+                self.assertIn("休息日日期格式不正確", malformed.get_data(as_text=True))
+                self.assertEqual(storage.list_study_plan_rest_days(), [])
+            storage._engine.dispose()
+
     def test_progress_race_compares_watched_time_with_target_time(self):
         race = _study_plan_progress_race(65 * 60, 71.5 * 60, 520 * 60)
 

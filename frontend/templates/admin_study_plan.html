@@ -96,8 +96,14 @@
         .day-chip.partial { border-color: #cabdf6; background: linear-gradient(180deg, #f7f4ff 0%, #ffffff 100%); }
         .day-chip.active { border-color: #9ebdf3; background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(20, 99, 217, .08); }
         .day-chip.behind { border-color: #f0d6a5; background: linear-gradient(180deg, #fff8e8 0%, #ffffff 100%); }
+        .day-chip.rest { border-color:#cbd7e2; background:repeating-linear-gradient(135deg,#f7f9fb 0 8px,#fff 8px 16px); }
         .day-chip.upcoming { background: #fbfdff; }
         .day-topline { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+        .day-top-actions { display:flex; align-items:center; justify-content:flex-end; gap:4px; }
+        .day-rest-form { margin:0; line-height:1; }
+        .day-rest-button { width:24px; height:24px; display:grid; place-items:center; padding:0; color:#536a7f; border:1px solid #cbd8e4; border-radius:50%; background:#fff; font-size:10px; font-weight:900; cursor:pointer; }
+        .day-rest-button:hover { color:var(--blue); border-color:#9ebdf3; background:var(--blue-soft); }
+        .day-rest-button.restore { color:#087979; border-color:#acd7d3; background:#f1fbfa; }
         .day-label { display: block; color: var(--muted); font-size: 11px; font-weight: 780; }
         .day-date { display: block; color: #8aa0b6; font-size: 10px; font-weight: 650; }
         .day-hours { display: block; margin-top: 5px; color: var(--ink); font-size: 17px; font-weight: 800; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
@@ -115,6 +121,8 @@
         .day-chip.partial .day-status { background: var(--purple-soft); color: var(--purple); }
         .day-chip.active .day-status { background: #fff; color: var(--blue); }
         .day-chip.behind .day-status { background: var(--amber-soft); color: var(--amber); }
+        .day-chip.rest .day-status { color:#52697d; background:#e9eff4; }
+        .day-chip.rest .day-hours,.day-chip.rest .day-focus { color:#6d8194; }
         .day-completion { display: flex; justify-content: space-between; gap: 6px; margin-top: 7px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
         .day-completion strong { color: var(--ink-2); }
         .day-progress { height: 5px; margin-top: 5px; border-radius: 99px; background: #e6edf4; overflow: hidden; }
@@ -147,8 +155,10 @@
         .week-row.behind .week-stat.remaining strong { color: var(--amber); }
         .week-daily { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; min-width: 0; }
         .week-daily .day-chip { padding: 6px; border-radius: 6px; }
+        .week-daily .day-chip[id] { scroll-margin-top:82px; }
         .week-daily .day-hours { font-size: 13px; }
         .week-daily .day-focus, .week-daily .day-date, .week-daily .day-status { display: none; }
+        .week-daily .day-chip.rest .day-status { display:inline-flex; }
         .week-daily .day-completion { justify-content: flex-end; margin-top: 4px; }
         .week-daily .day-completion span { display: none; }
         .week-daily .day-progress { height: 4px; }
@@ -664,7 +674,7 @@
                 {% if recall_widget %}{% if recall_widget.due_count > 4 %}<details class="recall-pocket"><summary><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></summary>{% else %}<section class="recall-pocket"><div class="recall-pocket-head"><strong>筆記複習</strong><span class="recall-count" data-recall-due-count data-count-label="張待複習">{{ recall_widget.due_count }} 張待複習</span></div>{% endif %}<div class="recall-items" data-recall-card-list {% if not recall_widget["cards"] %}hidden{% endif %}>{% for item in recall_widget["cards"] %}{% set concept = item.concept_data %}<article class="recall-card" data-recall-card><div class="recall-card-title">{{ concept.concept }}{% if concept.card_type == 'example' %}<span class="recall-example-badge">例題</span>{% endif %}</div><div class="recall-cue" data-math-content>{{ concept.recall_cue }}</div><button class="recall-reveal" type="button" data-recall-reveal aria-expanded="false">揭示重點</button><div class="recall-answer" data-recall-answer hidden>{% if concept.card_type == 'example' and concept.example_problem %}<div class="recall-example"><strong>具體題目示例</strong><div data-math-content>{{ concept.example_problem }}</div></div>{% endif %}{% if concept.card_type == 'example' and concept.example_method %}<div class="recall-example method"><strong>解題方法</strong><div data-math-content>{{ concept.example_method }}</div></div>{% endif %}{% if concept.card_type != 'example' and concept.simple_example %}<div class="recall-example simple"><strong>簡單例子</strong><div data-math-content>{{ concept.simple_example }}</div></div>{% endif %}{% if concept.core_summary %}<div class="recall-core" data-math-content>{{ concept.core_summary }}</div>{% endif %}<div class="recall-card-note" data-math-content>{{ concept.explanation }}</div><form method="post" action="{{ url_for('admin_study_recall_rate_cards', session_id=item.session_id) }}" data-recall-rating-form><input type="hidden" name="return_to" value="admin_study_plan"><div class="recall-rating" role="radiogroup" aria-label="{{ concept.concept }} 的印象分">{% for rating in range(1, 6) %}<label title="{{ rating }} 分"><input type="radio" name="rating_{{ item.concept_index }}" value="{{ rating }}" required><span>{{ rating }}</span></label>{% endfor %}</div><p class="recall-rate-status" data-recall-rating-status aria-live="polite"></p><button class="recall-rate" type="submit">送出印象分</button></form></div></article>{% endfor %}</div><div class="recall-empty" data-recall-empty {% if recall_widget["cards"] %}hidden{% endif %}>今天沒有需要複習的重點卡。</div>{% if recall_widget.due_count > 4 %}</details>{% else %}</section>{% endif %}{% endif %}
                 <div class="workspace">
                     <div class="column">
-                        <section class="panel">
+                        <section class="panel" id="current-focus">
                             <div class="panel-header"><h2 class="panel-title">目前專注科目</h2><span id="current-week-state" class="state {{ current_week.state }}">{{ current_week.state_label }}</span></div>
                             <div class="focus-body">
                                 <div class="focus-caption">第 {{ current_week.number }} 週・{{ current_week.start }} 至 {{ current_week.end }}</div>
@@ -683,7 +693,7 @@
                                 <div class="daily-plan" aria-label="本週每日建議與完成度">
                                     {% for day in current_week.daily_recommendations %}
                                     <div class="day-chip {{ day.state }}" data-focus-day-index="{{ loop.index0 }}" data-has-target="{{ 'true' if day.has_target else 'false' }}" style="--day-progress:{{ day.completion }}%">
-                                        <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-status">{{ day.state_label }}</span></div>
+                                        <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-top-actions"><span class="day-status">{{ day.state_label }}</span>{% if day.is_rest_day %}<form class="day-rest-form" method="post" action="{{ url_for('admin_study_plan_rest_day') }}"><input type="hidden" name="action" value="restore"><input type="hidden" name="study_date" value="{{ day.date }}"><input type="hidden" name="subject" value="{{ selected_subject }}"><button class="day-rest-button restore" type="submit" aria-label="恢復 {{ day.date }} 的原定安排" title="恢復原定安排">復</button></form>{% elif day.can_be_rest_day and day.date >= today_iso %}<form class="day-rest-form" method="post" action="{{ url_for('admin_study_plan_rest_day') }}" onsubmit="return confirm('將 {{ day.date }} 設為休息日，並把原定 {{ day.hours }} 小時平均分攤到後續日期？');"><input type="hidden" name="study_date" value="{{ day.date }}"><input type="hidden" name="subject" value="{{ selected_subject }}"><button class="day-rest-button" type="submit" aria-label="將 {{ day.date }} 設為休息日" title="設為休息日">休</button></form>{% endif %}</span></div>
                                         <span class="day-hours">{{ (day.hours ~ 'h') if day.has_target else '—' }}</span>
                                         <span class="day-focus">{{ day.focus }}</span>
                                         {% if day.subject_progress %}<div class="day-subject-list">{% for subject_progress in day.subject_progress %}<div class="day-subject-row" data-day-subject="{{ subject_progress.name }}"><div class="day-subject-head"><strong>{{ subject_progress.short }} {{ subject_progress.target_hours }}h</strong><span class="day-subject-value">{{ subject_progress.completion|round(0) }}%</span></div><div class="day-subject-track"><div class="day-subject-fill" style="--subject-progress:{{ subject_progress.completion }}%"></div></div></div>{% endfor %}</div>{% else %}<div class="day-completion"><span>完成度</span><strong>—</strong></div>{% endif %}
@@ -709,8 +719,8 @@
                                     </div>
                                     <div class="week-daily" aria-label="第 {{ week.number }} 週每日總時數與進度">
                                         {% for day in week.daily_recommendations %}
-                                        <div class="day-chip {{ day.state }}" data-timeline-day-date="{{ day.date }}" style="--day-progress:{{ day.completion }}%">
-                                            <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-status">{{ day.state_label }}</span></div>
+                                        <div class="day-chip {{ day.state }}" id="plan-day-{{ day.date }}" data-timeline-day-date="{{ day.date }}" style="--day-progress:{{ day.completion }}%">
+                                            <div class="day-topline"><span><span class="day-label">{{ day.label }}</span><span class="day-date">{{ day.short_date }}</span></span><span class="day-top-actions"><span class="day-status">{{ day.state_label }}</span>{% if day.is_rest_day %}<form class="day-rest-form" method="post" action="{{ url_for('admin_study_plan_rest_day') }}"><input type="hidden" name="action" value="restore"><input type="hidden" name="study_date" value="{{ day.date }}"><input type="hidden" name="subject" value="{{ selected_subject }}"><button class="day-rest-button restore" type="submit" aria-label="恢復 {{ day.date }} 的原定安排" title="恢復原定安排">復</button></form>{% elif day.can_be_rest_day and day.date >= today_iso %}<form class="day-rest-form" method="post" action="{{ url_for('admin_study_plan_rest_day') }}" onsubmit="return confirm('將 {{ day.date }} 設為休息日，並把原定 {{ day.hours }} 小時平均分攤到後續日期？');"><input type="hidden" name="study_date" value="{{ day.date }}"><input type="hidden" name="subject" value="{{ selected_subject }}"><button class="day-rest-button" type="submit" aria-label="將 {{ day.date }} 設為休息日" title="設為休息日">休</button></form>{% endif %}</span></div>
                                             <span class="day-hours">{{ (day.hours ~ 'h') if day.has_target else '—' }}</span>
                                             <div class="day-completion"><span>總進度</span><strong>{{ (day.completion|round(0) ~ '%') if day.has_target else '—' }}</strong></div>
                                             <div class="day-progress"><div class="day-progress-fill"></div></div>

@@ -250,6 +250,7 @@
         .day-chip.partial { border-color: #cabdf6; background: linear-gradient(180deg, #f7f4ff 0%, #ffffff 100%); }
         .day-chip.active { border-color: #9ebdf3; background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); box-shadow: 0 0 0 2px rgba(20, 99, 217, .07); }
         .day-chip.behind { border-color: #f0d6a5; background: linear-gradient(180deg, #fff8e8 0%, #ffffff 100%); }
+        .day-chip.rest { border-color:#cbd7e2; background:repeating-linear-gradient(135deg,#f7f9fb 0 8px,#fff 8px 16px); }
         .day-chip.upcoming { background: #fbfdff; }
         .day-topline { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
         .day-label { display: block; color: var(--ink-2); font-size: 14px; font-weight: 900; }
@@ -260,6 +261,8 @@
         .day-chip.partial .day-status { background: var(--purple-soft); color: var(--purple); }
         .day-chip.active .day-status { background: #fff; color: var(--blue); }
         .day-chip.behind .day-status { background: var(--amber-soft); color: var(--amber); }
+        .day-chip.rest .day-status { color:#52697d; background:#e9eff4; }
+        .day-chip.rest .day-hours,.day-chip.rest .day-focus { color:#6d8194; }
         .day-hours { display: block; margin-top: 18px; color: var(--ink); font-size: 28px; font-weight: 950; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
         .day-focus { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; font-weight: 760; }
         .day-completion { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 13px; color: var(--muted); font-size: 13px; font-weight: 760; font-variant-numeric: tabular-nums; }

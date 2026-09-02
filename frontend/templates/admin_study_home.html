@@ -537,6 +537,7 @@
         .status.active { color: var(--blue); background: var(--blue-soft); border-color: #a8c7f4; }
         .status.behind { color: var(--amber); background: var(--amber-soft); border-color: #f0d6a5; }
         .status.complete { color: var(--green); background: var(--green-soft); border-color: #b9e0c6; }
+        .status.rest { color:#52697d; background:#e9eff4; border-color:#cbd7e2; }
         .status.upcoming { color: var(--muted); background: #f4f7fa; }
 
         .journey-card { min-height: 652px; position: relative; }
@@ -1134,7 +1135,7 @@
                     <div class="today-task-stat"><div class="today-task-label">今日安排</div><div class="today-task-value">{{ today_study.target_hours }}h</div></div>
                     <div class="today-task-stat"><div class="today-task-label">影片進度</div><div class="today-task-value">{{ today_study.hours }}h</div></div>
                     <div class="today-task-stat"><div class="today-task-label">實際學習</div><div class="today-task-value">{{ today_study.learning_hours }}h</div></div>
-                    <div class="today-task-stat"><div class="today-task-label">尚需完成</div><div class="today-task-value">{% if today_study.target_hours <= 0 %}無排程{% elif today_study.remaining_hours <= 0 %}已完成{% else %}{{ today_study.remaining_hours }}h{% endif %}</div></div>
+                    <div class="today-task-stat"><div class="today-task-label">尚需完成</div><div class="today-task-value">{% if today_study.is_rest_day %}休息日{% elif today_study.target_hours <= 0 %}無排程{% elif today_study.remaining_hours <= 0 %}已完成{% else %}{{ today_study.remaining_hours }}h{% endif %}</div></div>
                 </div>
                 <div class="video-list">
                     {% for video in next_videos %}

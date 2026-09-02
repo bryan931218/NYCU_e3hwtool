@@ -956,6 +956,7 @@ def _study_plan_week_start(day: date) -> date:
 def _study_plan_schedule_definitions(
     videos: Iterable[Dict[str, Any]],
     replan_settings: Optional[Dict[str, Any]] = None,
+    rest_days: Optional[Iterable[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Build fixed daily targets without moving unused time between subjects."""
     video_rows = list(videos)
@@ -976,6 +977,7 @@ def _study_plan_schedule_definitions(
                 if float(seconds) > 0
             },
             "focus": focus,
+            "is_rest_day": False,
         }
 
     # Preserve the completed linear-algebra portion of the original plan.
@@ -1122,6 +1124,76 @@ def _study_plan_schedule_definitions(
 
     first_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
     last_scheduled_day = replan_end or max(item["date"] for item in days.values())
+
+    requested_rest_day_keys = {
+        str(value)
+        for value in (rest_days or [])
+        if str(value) in days and first_day <= days[str(value)]["date"] <= last_scheduled_day
+    }
+
+    # A rest day may only hand work to a later day in the same schedule segment.
+    # Resolve from the end so consecutive requests keep the final usable day active.
+    effective_rest_day_keys = set()
+    for rest_day_key in sorted(requested_rest_day_keys, reverse=True):
+        rest_row = days[rest_day_key]
+        schedule_segment = bool(rest_row.get("replanned"))
+        has_receiver = any(
+            key > rest_day_key
+            and key not in effective_rest_day_keys
+            and row["date"] <= last_scheduled_day
+            and bool(row.get("replanned")) == schedule_segment
+            for key, row in days.items()
+        )
+        if has_receiver:
+            effective_rest_day_keys.add(rest_day_key)
+
+    for rest_day_key in sorted(effective_rest_day_keys):
+        rest_row = days[rest_day_key]
+        moved_allocations = dict(rest_row["allocations"])
+        if not moved_allocations:
+            rest_row["focus"] = "休息日"
+            rest_row["is_rest_day"] = True
+            rest_row["redistributed_seconds"] = 0.0
+            rest_row["redistributed_day_count"] = 0
+            continue
+        future_rows = [
+            row
+            for key, row in sorted(days.items())
+            if key > rest_day_key
+            and key not in effective_rest_day_keys
+            and row["date"] <= last_scheduled_day
+            and bool(row.get("replanned")) == bool(rest_row.get("replanned"))
+        ]
+        if not future_rows:
+            continue
+        touched_dates = set()
+        for subject, seconds in moved_allocations.items():
+            candidates = [row for row in future_rows if subject in row["allocations"]] or future_rows
+            addition = seconds / len(candidates)
+            for candidate in candidates:
+                candidate["allocations"][subject] = candidate["allocations"].get(subject, 0.0) + addition
+                touched_dates.add(candidate["date"].isoformat())
+        rest_row["allocations"] = {}
+        rest_row["focus"] = "休息日"
+        rest_row["is_rest_day"] = True
+        rest_row["redistributed_seconds"] = sum(moved_allocations.values())
+        rest_row["redistributed_day_count"] = len(touched_dates)
+
+    for day_key, day_row in days.items():
+        schedule_segment = bool(day_row.get("replanned"))
+        day_row["rest_day_requested"] = day_key in requested_rest_day_keys
+        day_row["can_be_rest_day"] = bool(
+            day_row["allocations"]
+            and day_key not in effective_rest_day_keys
+            and any(
+                future_key > day_key
+                and future_key not in effective_rest_day_keys
+                and future_row["date"] <= last_scheduled_day
+                and bool(future_row.get("replanned")) == schedule_segment
+                for future_key, future_row in days.items()
+            )
+        )
+
     last_week_end = _study_plan_week_start(last_scheduled_day) + timedelta(days=6)
     day = first_day
     while day <= last_week_end:
@@ -1160,7 +1232,10 @@ def _study_plan_schedule_definitions(
     return weeks
 
 
-def _study_plan_replan_preview(settings: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _study_plan_replan_preview(
+    settings: Optional[Dict[str, Any]],
+    rest_days: Optional[Iterable[str]] = None,
+) -> Optional[Dict[str, Any]]:
     if not settings:
         return None
     try:
@@ -1179,8 +1254,12 @@ def _study_plan_replan_preview(settings: Optional[Dict[str, Any]]) -> Optional[D
     }
     weekday_count = 0
     weekend_count = 0
+    rest_day_keys = {str(value) for value in (rest_days or [])}
     cursor_day = start_day
     while cursor_day <= end_day:
+        if cursor_day.isoformat() in rest_day_keys and cursor_day < end_day:
+            cursor_day += timedelta(days=1)
+            continue
         if cursor_day.weekday() >= 5:
             weekend_count += 1
         else:
@@ -3115,6 +3194,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         start_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
         today = _study_plan_business_date()
         replan_settings = storage.get_study_plan_replan_settings()
+        rest_days = storage.list_study_plan_rest_days()
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {}
         for video in videos:
             subject = str(video.get("subject") or "")
@@ -3153,7 +3233,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         week_rows: List[Dict[str, Any]] = []
         planned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
         replanned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
-        for definition in _study_plan_schedule_definitions(videos, replan_settings):
+        for definition in _study_plan_schedule_definitions(videos, replan_settings, rest_days):
             week_start = definition["start"]
             week_end = definition["end"]
             subject_targets = dict(definition["subject_targets"])
@@ -3212,7 +3292,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 else:
                     completion = 0.0
                 current_day = daily_target["date"]
-                if not has_target:
+                is_rest_day = bool(daily_target.get("is_rest_day"))
+                if is_rest_day:
+                    state = "rest"
+                    state_label = "休息日"
+                elif not has_target:
                     if current_day == today:
                         state = "active"
                         state_label = "彈性日"
@@ -3247,6 +3331,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "allocations": allocations,
                         "subject_progress": daily_subject_progress,
                         "has_target": has_target,
+                        "is_rest_day": is_rest_day,
+                        "can_be_rest_day": bool(daily_target.get("can_be_rest_day")),
+                        "redistributed_seconds": float(daily_target.get("redistributed_seconds") or 0),
+                        "redistributed_day_count": int(daily_target.get("redistributed_day_count") or 0),
                         "target_seconds": target_seconds,
                         "credited_seconds": credited_seconds,
                         "hours": round(target_seconds / 3600, 2),
@@ -3353,6 +3441,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         current_week: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         today = _study_plan_business_date()
+        today_iso = today.isoformat()
+        today_schedule = next(
+            (
+                day
+                for week in week_rows
+                for day in week.get("daily_recommendations", [])
+                if str(day.get("date") or "") == today_iso
+            ),
+            None,
+        )
+        if today_schedule and today_schedule.get("is_rest_day"):
+            return []
         overdue_subjects: List[str] = []
         for subject in STUDY_PLAN_SUBJECTS:
             subject_videos = videos_by_subject.get(subject, [])
@@ -3906,7 +4006,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             100.0,
             (today_effective_hours / today_target_hours * 100) if today_target_hours else 0.0,
         )
-        if today_target_hours <= 0.001:
+        if today_row.get("is_rest_day"):
+            today_task_state, today_task_label = "rest", "今日休息"
+        elif today_target_hours <= 0.001:
             today_task_state, today_task_label = "upcoming", "今日無排程"
         elif today_remaining_hours <= 0.01:
             today_task_state, today_task_label = "complete", "今日已達標"
@@ -3951,6 +4053,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "target_completion": round(today_target_completion, 1),
             "task_state": today_task_state,
             "task_label": today_task_label,
+            "is_rest_day": bool(today_row.get("is_rest_day")),
             "progress_days": today_progress_days,
             "videos": today_videos,
             "learning_seconds": round(float(study_time_today["total_seconds"])),
@@ -15888,7 +15991,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 replan_start = None
         active_replan = bool(replan_start and today >= replan_start)
         expected = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
-        for week in _study_plan_schedule_definitions(videos, current_settings):
+        for week in _study_plan_schedule_definitions(
+            videos,
+            current_settings,
+            storage.list_study_plan_rest_days(),
+        ):
             for day_item in week.get("daily_targets") or []:
                 scheduled_date = day_item.get("date")
                 if (
@@ -18152,7 +18259,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if requested_marker and int(requested_marker.get("video_id") or 0) != selected_video_id:
             requested_marker = None
         replan_settings = storage.get_study_plan_replan_settings()
-        replan_preview = _study_plan_replan_preview(replan_settings)
+        rest_days = storage.list_study_plan_rest_days()
+        replan_preview = _study_plan_replan_preview(replan_settings, rest_days)
+        today_iso = _study_plan_business_date().isoformat()
         next_week_start = _study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)
         effective_plan_end = str((replan_settings or {}).get("end_date") or STUDY_PLAN_END)
         study_time_today = storage.get_study_time_summary(
@@ -18181,6 +18290,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             requested_marker=requested_marker,
             replan_settings=replan_settings,
             replan_preview=replan_preview,
+            today_iso=today_iso,
             study_time_today=study_time_today,
             study_time_sessions=study_time_sessions,
             openai_ready=bool(openai_api_key),
@@ -18191,6 +18301,98 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "weekend_hours": round(float((replan_settings or {}).get("weekend_minutes") or 120) / 60, 1),
             },
         )
+
+    @app.post("/admin/study-plan/rest-day")
+    @admin_required
+    def admin_study_plan_rest_day():
+        today = _study_plan_business_date()
+        today_iso = today.isoformat()
+        requested_date = str(request.form.get("study_date") or today_iso).strip()
+        try:
+            selected_day = datetime.strptime(requested_date, "%Y-%m-%d").date()
+        except ValueError:
+            flash("休息日日期格式不正確。", "error")
+            return redirect(url_for("admin_study_plan") + "#current-focus")
+        selected_day_iso = selected_day.isoformat()
+        action = str(request.form.get("action") or "skip").strip()
+        selected_subject = str(request.form.get("subject") or "").strip()
+        if selected_subject not in STUDY_PLAN_SUBJECTS:
+            selected_subject = STUDY_PLAN_SUBJECTS[0]
+        return_url = (
+            url_for("admin_study_plan", subject=selected_subject)
+            + f"#plan-day-{selected_day_iso}"
+        )
+
+        if action == "restore":
+            if storage.delete_study_plan_rest_day(selected_day_iso):
+                _invalidate_study_progress_context()
+                record_ui_event("study_plan_rest_day_restored", meta={"study_date": selected_day_iso})
+                flash(f"已恢復 {selected_day_iso} 的原定進度。", "success")
+            return redirect(return_url)
+
+        existing_rest_days = storage.list_study_plan_rest_days()
+        if selected_day < today:
+            flash("過去日期已有實際進度紀錄，不能再改設為休息日。", "error")
+            return redirect(return_url)
+        if selected_day_iso in existing_rest_days:
+            flash(f"{selected_day_iso} 已經是休息日。", "info")
+            return redirect(return_url)
+
+        videos = storage.list_study_plan_videos_with_records()
+        settings = storage.get_study_plan_replan_settings()
+        before_weeks = _study_plan_schedule_definitions(videos, settings, existing_rest_days)
+        before_day = next(
+            (
+                day
+                for week in before_weeks
+                for day in week.get("daily_targets", [])
+                if day["date"] == selected_day
+            ),
+            None,
+        )
+        original_seconds = sum((before_day or {}).get("allocations", {}).values())
+        if original_seconds <= 0.001:
+            flash("該日沒有可移動的計畫時數。", "info")
+            return redirect(return_url)
+        if not before_day or not before_day.get("can_be_rest_day"):
+            flash("該日之後沒有同一排程區段可承接進度，無法設為休息日。", "error")
+            return redirect(return_url)
+
+        proposed_weeks = _study_plan_schedule_definitions(
+            videos,
+            settings,
+            [*existing_rest_days, selected_day_iso],
+        )
+        proposed_day = next(
+            (
+                day
+                for week in proposed_weeks
+                for day in week.get("daily_targets", [])
+                if day["date"] == selected_day
+            ),
+            None,
+        )
+        if not proposed_day or not proposed_day.get("is_rest_day"):
+            flash("截止日前沒有其他日期可承接該日進度，無法設為休息日。", "error")
+            return redirect(return_url)
+
+        if storage.add_study_plan_rest_day(selected_day_iso):
+            _invalidate_study_progress_context()
+            moved_hours = original_seconds / 3600
+            redistributed_days = int(proposed_day.get("redistributed_day_count") or 0)
+            record_ui_event(
+                "study_plan_rest_day_added",
+                meta={
+                    "study_date": selected_day_iso,
+                    "moved_hours": round(moved_hours, 2),
+                    "redistributed_days": redistributed_days,
+                },
+            )
+            flash(
+                f"{selected_day_iso} 已設為休息日；原定 {moved_hours:.2f} 小時已分攤到後續 {redistributed_days} 天。",
+                "success",
+            )
+        return redirect(return_url)
 
     @app.post("/admin/study-plan/replan")
     @admin_required
