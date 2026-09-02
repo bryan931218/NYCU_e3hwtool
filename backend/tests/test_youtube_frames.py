@@ -10,6 +10,7 @@ from e3_tracker.services import youtube_frames
 from e3_tracker.services.youtube_frames import (
     YoutubeFrameError,
     _fetch_youtube_storyboard_frame,
+    fetch_youtube_audio_clip,
     fetch_youtube_cached_frame,
     fetch_youtube_precise_frame,
     fetch_youtube_storyboard_frame,
@@ -22,6 +23,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         youtube_frames._metadata_video_locks.clear()
         youtube_frames._frame_cache.clear()
         youtube_frames._frame_video_locks.clear()
+        youtube_frames._audio_metadata_cache.clear()
         youtube_frames._storyboard_catalog = None
 
     @staticmethod
@@ -278,6 +280,63 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertIn("b.mp4", run.call_args_list[1].args[0][run.call_args_list[1].args[0].index("-i") + 1])
 
+    def test_audio_clip_extracts_exactly_fifteen_seconds_on_each_side(self):
+        stream = {
+            "url": "https://example.test/audio.m4a",
+            "protocol": "https",
+            "acodec": "mp4a",
+            "vcodec": "none",
+            "http_headers": {"User-Agent": "test-agent"},
+        }
+        completed = Mock(returncode=0, stdout=b"RIFF" + b"\x00" * 2048, stderr=b"")
+        with patch.object(
+            youtube_frames,
+            "_youtube_audio_info",
+            return_value={"duration": 500.0, "streams": [stream]},
+        ), patch.object(
+            youtube_frames, "_ffmpeg_executable", return_value="/fake/ffmpeg"
+        ), patch.object(youtube_frames.subprocess, "run", return_value=completed) as run:
+            result = fetch_youtube_audio_clip(
+                "9dXuhVJ-L5k",
+                123.4,
+                radius_seconds=15.0,
+            )
+
+        command = run.call_args.args[0]
+        self.assertEqual(result["source"], "youtube_audio")
+        self.assertAlmostEqual(result["start_seconds"], 108.4)
+        self.assertAlmostEqual(result["end_seconds"], 138.4)
+        self.assertAlmostEqual(result["duration_seconds"], 30.0)
+        self.assertEqual(command[command.index("-ss") + 1], "108.400")
+        self.assertEqual(command[command.index("-t") + 1], "30.000")
+        self.assertEqual(command[command.index("-ac") + 1], "1")
+        self.assertEqual(command[command.index("-ar") + 1], "16000")
+
+    def test_audio_clip_clamps_window_at_video_start(self):
+        stream = {
+            "url": "https://example.test/audio.m4a",
+            "protocol": "https",
+            "acodec": "mp4a",
+            "vcodec": "none",
+        }
+        completed = Mock(returncode=0, stdout=b"RIFF" + b"\x00" * 2048, stderr=b"")
+        with patch.object(
+            youtube_frames,
+            "_youtube_audio_info",
+            return_value={"duration": 500.0, "streams": [stream]},
+        ), patch.object(
+            youtube_frames, "_ffmpeg_executable", return_value="/fake/ffmpeg"
+        ), patch.object(youtube_frames.subprocess, "run", return_value=completed):
+            result = fetch_youtube_audio_clip(
+                "9dXuhVJ-L5k",
+                5.0,
+                radius_seconds=15.0,
+            )
+
+        self.assertEqual(result["start_seconds"], 0.0)
+        self.assertEqual(result["end_seconds"], 20.0)
+        self.assertEqual(result["duration_seconds"], 20.0)
+
     def test_public_fetch_prefers_reliable_storyboard_frame(self):
         storyboard_frame = {
             "bytes": self._frame_bytes(),
@@ -477,7 +536,7 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         with patch.object(youtube_frames.shutil, "which", side_effect=lambda name: "/usr/bin/node" if name == "node" else None):
             options = youtube_frames._youtube_dl_options(None)
 
-        self.assertEqual(options["js_runtimes"], {"node": {}})
+        self.assertEqual(options["js_runtimes"], {"node": {"path": "/usr/bin/node"}})
         self.assertEqual(options["remote_components"], {"ejs:github"})
 
     def test_extracts_storyboard_metadata_directly_from_watch_page(self):

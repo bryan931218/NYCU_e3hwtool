@@ -505,6 +505,25 @@
         .marker-edit-actions button { min-height: 30px; padding: 0 8px; border: 1px solid #ccd9e6; border-radius: 7px; color: var(--muted); background: #fff; font-size: 10px; font-weight: 820; cursor: pointer; }
         .marker-edit-actions .marker-edit-save { color: #fff; border-color: var(--blue); background: var(--blue); }
         .marker-empty { padding: 4px 7px; color: var(--muted); border: 1px dashed #cad9e8; border-radius: 8px; font-size: 9px; line-height: 1.25; text-align: center; }
+        .marker-summary { grid-column: 2 / -1; min-width: 0; padding: 0 7px 5px; color: #60758b; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
+        .marker-summary-state { color: #7d8fa2; font-weight: 760; }
+        .marker-summary-retry { margin-left: 6px; padding: 2px 6px; border: 1px solid #cad9e8; border-radius: 5px; color: var(--blue); background: #fff; font-size: 9px; font-weight: 820; cursor: pointer; }
+        .marker-library { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+        .marker-library-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+        .marker-library-head h3 { margin: 0; font-size: 15px; }
+        .marker-library-count { color: var(--teal); font-size: 11px; font-weight: 850; }
+        .marker-library-tools { display: grid; grid-template-columns: minmax(180px,1fr) minmax(130px,180px); gap: 8px; margin-bottom: 8px; }
+        .marker-library-tools input, .marker-library-tools select { min-width: 0; min-height: 38px; padding: 7px 10px; border: 1px solid #cbd9e7; border-radius: 7px; color: var(--ink); background: #fff; font-size: 12px; }
+        .marker-library-list { max-height: 430px; overflow-y: auto; border-top: 1px solid #dbe5ef; }
+        .marker-library-item { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px 14px; padding: 13px 4px; border-bottom: 1px solid #e1e9f1; }
+        .marker-library-item[hidden] { display: none; }
+        .marker-library-main { min-width: 0; }
+        .marker-library-meta { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 760; }
+        .marker-library-subject { padding: 2px 6px; border-radius: 4px; color: #08786e; background: #e8f7f4; }
+        .marker-library-name { margin: 0; color: var(--ink); font-size: 13px; font-weight: 880; overflow-wrap: anywhere; }
+        .marker-library-summary { margin-top: 5px; color: #5f7388; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+        .marker-library-action { align-self: center; min-height: 32px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid #bdd4ee; border-radius: 6px; color: #0d56bd; background: #f5f9ff; font-size: 10px; font-weight: 850; white-space: nowrap; }
+        .marker-library-empty { padding: 24px 8px; color: var(--muted); font-size: 12px; text-align: center; }
         .frame-question-dialog { width:min(680px,calc(100vw - 28px)); max-height:min(720px,calc(100dvh - 28px)); overflow:hidden; padding:0; border:1px solid rgba(179,205,234,.8); border-radius:20px; color:var(--ink); background:#fff; box-shadow:0 30px 90px rgba(4,17,31,.36); }
         .frame-question-dialog::backdrop { background:rgba(2,10,20,.68); backdrop-filter:blur(5px); }
         .frame-question-shell { max-height:min(720px,calc(100dvh - 28px)); display:grid; grid-template-rows:auto minmax(0,1fr) auto; overflow:hidden; }
@@ -562,6 +581,9 @@
             .replan-badge { display: none; }
             .marker-compose { grid-template-columns: 1fr; }
             .marker-compose input, .marker-save { min-height: 40px; }
+            .marker-library-tools { grid-template-columns: 1fr; }
+            .marker-library-item { grid-template-columns: 1fr; }
+            .marker-library-action { justify-self: start; }
             .player-copy { height: auto; grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
             .player-copy > .player-title, .player-copy > .player-status, .player-copy > .marker-studio { grid-column: 1; }
             .focus-exit { width: 42px; height: 42px; padding: 0; }
@@ -814,7 +836,18 @@
                             </div>
                         </div>
                         <script type="application/json" id="video-markers-data">{{ video_markers|tojson }}</script>
+                        <script type="application/json" id="marker-library-data">{{ marker_library|tojson }}</script>
+                        <script type="application/json" id="requested-marker-data">{{ requested_marker|tojson }}</script>
                         <script type="application/json" id="today-task-videos-data">{{ today_task_videos|tojson }}</script>
+                        <section class="marker-library" aria-labelledby="marker-library-title">
+                            <div class="marker-library-head"><h3 id="marker-library-title">關鍵點總覽</h3><span class="marker-library-count" id="marker-library-count">{{ marker_library|length }} 個</span></div>
+                            <div class="marker-library-tools">
+                                <input id="marker-library-search" type="search" placeholder="搜尋關鍵點或摘要" autocomplete="off">
+                                <select id="marker-library-subject" aria-label="篩選關鍵點科目"><option value="">全部科目</option>{% for subject in subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}</select>
+                            </div>
+                            <div class="marker-library-list" id="marker-library-list"></div>
+                            <div class="marker-library-empty" id="marker-library-empty" hidden>沒有符合的關鍵點。</div>
+                        </section>
                         <form class="log-form" method="post" action="{{ url_for('admin_study_plan') }}">
                             <input type="hidden" name="action" value="save_video">
                             <input type="hidden" name="subject" value="{{ selected_subject }}">
@@ -1005,6 +1038,13 @@
             const markerStatus = document.getElementById('marker-status');
             const markerList = document.getElementById('marker-list');
             const markerCount = document.getElementById('marker-count');
+            const markerLibraryData = document.getElementById('marker-library-data');
+            const requestedMarkerData = document.getElementById('requested-marker-data');
+            const markerLibraryList = document.getElementById('marker-library-list');
+            const markerLibraryEmpty = document.getElementById('marker-library-empty');
+            const markerLibraryCount = document.getElementById('marker-library-count');
+            const markerLibrarySearch = document.getElementById('marker-library-search');
+            const markerLibrarySubject = document.getElementById('marker-library-subject');
             const focusPlayerFrame = document.getElementById('focus-player-frame');
             const focusLayer = document.getElementById('focus-layer');
             const focusKeyboardCapture = document.getElementById('focus-keyboard-capture');
@@ -1048,6 +1088,8 @@
             let queuedSaveCount = 0;
             let saveQueue = Promise.resolve();
             let videoMarkers = [];
+            let markerLibrary = [];
+            let requestedMarker = null;
             let markerSaving = false;
             let frameQuestionSubmitting = false;
             let frameQuestionRequestId = 0;
@@ -1070,6 +1112,18 @@
                 if (!Array.isArray(videoMarkers)) videoMarkers = [];
             } catch (error) {
                 videoMarkers = [];
+            }
+            try {
+                markerLibrary = JSON.parse(markerLibraryData ? markerLibraryData.textContent || '[]' : '[]');
+                if (!Array.isArray(markerLibrary)) markerLibrary = [];
+            } catch (error) {
+                markerLibrary = [];
+            }
+            try {
+                requestedMarker = JSON.parse(requestedMarkerData ? requestedMarkerData.textContent || 'null' : 'null');
+                if (!requestedMarker || typeof requestedMarker !== 'object') requestedMarker = null;
+            } catch (error) {
+                requestedMarker = null;
             }
             try {
                 studyTimeSessions = JSON.parse(studyTimeSessionsData ? studyTimeSessionsData.textContent || '[]' : '[]');
@@ -1698,6 +1752,142 @@
                     if (target) target.focus({ preventScroll: true });
                 }, 0);
             };
+            const enrichMarkerForLibrary = function (marker) {
+                const existing = markerLibrary.find(function (item) {
+                    return Number(item.id) === Number(marker.id);
+                }) || {};
+                const option = optionByValue(marker.video_id);
+                const subjectSelect = document.getElementById('subject');
+                return Object.assign({}, existing, marker, {
+                    subject: existing.subject || (subjectSelect ? subjectSelect.value : ''),
+                    sequence: Number(existing.sequence || (option ? option.dataset.sequence : 0) || 0),
+                    video_title: existing.video_title || (option ? option.dataset.title : ''),
+                    time_label: formatClock(marker.playback_seconds)
+                });
+            };
+            const mergeMarker = function (marker) {
+                let found = false;
+                videoMarkers = videoMarkers.map(function (item) {
+                    if (Number(item.id) !== Number(marker.id)) return item;
+                    found = true;
+                    return Object.assign({}, item, marker);
+                });
+                if (!found) videoMarkers.push(marker);
+                const libraryMarker = enrichMarkerForLibrary(marker);
+                const libraryIndex = markerLibrary.findIndex(function (item) {
+                    return Number(item.id) === Number(marker.id);
+                });
+                if (libraryIndex >= 0) markerLibrary[libraryIndex] = libraryMarker;
+                else markerLibrary.unshift(libraryMarker);
+            };
+            const requestMarkerSummary = function (marker) {
+                if (!marker || marker.summary_status === 'processing') return Promise.resolve(false);
+                mergeMarker(Object.assign({}, marker, { summary: '', summary_status: 'processing' }));
+                renderMarkers();
+                renderMarkerLibrary();
+                if (markerStatus) markerStatus.textContent = 'AI 正在聽取前後 15 秒並分析畫面…';
+                return fetch('{{ url_for("admin_study_plan_video_marker_summary", marker_id=0) }}'.replace('/0/summary', '/' + String(marker.id) + '/summary'), {
+                    method: 'POST'
+                }).then(function (response) {
+                    return response.json().catch(function () { return {}; }).then(function (data) {
+                        if (!response.ok || !data.marker) throw new Error(data.error || '摘要產生失敗');
+                        return data;
+                    });
+                }).then(function (data) {
+                    mergeMarker(data.marker);
+                    renderMarkers();
+                    renderMarkerLibrary();
+                    if (markerStatus) markerStatus.textContent = 'AI 摘要已更新。';
+                    return true;
+                }).catch(function (error) {
+                    mergeMarker(Object.assign({}, marker, { summary: '', summary_status: 'failed' }));
+                    renderMarkers();
+                    renderMarkerLibrary();
+                    if (markerStatus) markerStatus.textContent = error.message || '摘要產生失敗，稍後可重試。';
+                    return false;
+                });
+            };
+            const buildMarkerSummary = function (marker, className) {
+                const summary = document.createElement('div');
+                summary.className = className;
+                const status = String(marker.summary_status || '');
+                if (status === 'ready' && marker.summary) {
+                    summary.textContent = marker.summary;
+                    summary.dataset.mathContent = '';
+                } else {
+                    const state = document.createElement('span');
+                    state.className = 'marker-summary-state';
+                    state.textContent = status === 'processing'
+                        ? 'AI 整理中…'
+                        : status === 'needs_name'
+                            ? '重新命名後產生摘要'
+                            : status === 'unavailable'
+                                ? 'AI 尚未啟用'
+                                : '摘要尚未完成';
+                    summary.appendChild(state);
+                    if (!['processing', 'needs_name', 'unavailable'].includes(status)
+                        && marker.note && marker.note !== '關鍵片段') {
+                        const retry = document.createElement('button');
+                        retry.type = 'button';
+                        retry.className = 'marker-summary-retry';
+                        retry.textContent = '重試';
+                        retry.addEventListener('click', function () { requestMarkerSummary(marker); });
+                        summary.appendChild(retry);
+                    }
+                }
+                return summary;
+            };
+            const renderMarkerLibrary = function () {
+                if (!markerLibraryList || !markerLibraryCount || !markerLibraryEmpty) return;
+                const query = String(markerLibrarySearch ? markerLibrarySearch.value : '').trim().toLocaleLowerCase();
+                const subject = String(markerLibrarySubject ? markerLibrarySubject.value : '');
+                const items = markerLibrary
+                    .slice()
+                    .sort(function (left, right) {
+                        return String(right.updated_at || '').localeCompare(String(left.updated_at || ''))
+                            || Number(right.id || 0) - Number(left.id || 0);
+                    })
+                    .filter(function (marker) {
+                        if (subject && marker.subject !== subject) return false;
+                        if (!query) return true;
+                        return [marker.note, marker.summary, marker.subject, marker.video_title]
+                            .join(' ')
+                            .toLocaleLowerCase()
+                            .includes(query);
+                    });
+                markerLibraryList.replaceChildren();
+                markerLibraryCount.textContent = String(items.length) + ' 個';
+                markerLibraryEmpty.hidden = items.length > 0;
+                items.forEach(function (marker) {
+                    const row = document.createElement('article');
+                    row.className = 'marker-library-item';
+                    const main = document.createElement('div');
+                    main.className = 'marker-library-main';
+                    const meta = document.createElement('div');
+                    meta.className = 'marker-library-meta';
+                    const subjectBadge = document.createElement('span');
+                    subjectBadge.className = 'marker-library-subject';
+                    subjectBadge.textContent = marker.subject || '未分類';
+                    const videoMeta = document.createElement('span');
+                    videoMeta.textContent = '第 ' + String(Number(marker.sequence || 0)).padStart(3, '0') + ' 支・' + formatClock(marker.playback_seconds);
+                    meta.append(subjectBadge, videoMeta);
+                    const name = document.createElement('h4');
+                    name.className = 'marker-library-name';
+                    name.textContent = marker.note || '關鍵片段';
+                    main.append(meta, name, buildMarkerSummary(marker, 'marker-library-summary'));
+                    const open = document.createElement('a');
+                    open.className = 'marker-library-action';
+                    open.textContent = '前往片段';
+                    open.href = '{{ url_for("admin_study_plan") }}'
+                        + '?subject=' + encodeURIComponent(marker.subject || '')
+                        + '&video_id=' + encodeURIComponent(marker.video_id)
+                        + '&marker_id=' + encodeURIComponent(marker.id)
+                        + '#youtube-player-section';
+                    row.append(main, open);
+                    markerLibraryList.appendChild(row);
+                    if (window.renderStudyMath) window.renderStudyMath(row);
+                });
+            };
             const renderMarkers = function () {
                 if (!markerList || !markerCount) return;
                 const option = selectedOption();
@@ -1758,15 +1948,18 @@
                         }).then(function (response) {
                             if (!response.ok) throw new Error('delete_failed');
                             videoMarkers = videoMarkers.filter(function (item) { return Number(item.id) !== Number(marker.id); });
+                            markerLibrary = markerLibrary.filter(function (item) { return Number(item.id) !== Number(marker.id); });
                             renderMarkers();
+                            renderMarkerLibrary();
                             markerStatus.textContent = '關鍵點已刪除。';
                         }).catch(function () {
                             markerStatus.textContent = '刪除失敗，請再試一次。';
                             remove.disabled = false;
                         });
                     });
-                    row.append(seek, note, edit, remove);
+                    row.append(seek, note, edit, remove, buildMarkerSummary(marker, 'marker-summary'));
                     markerList.appendChild(row);
+                    if (window.renderStudyMath) window.renderStudyMath(row);
                 });
             };
             const startMarkerEdit = function (row, marker) {
@@ -1794,6 +1987,7 @@
                     if (save.disabled) return;
                     save.disabled = true;
                     cancel.disabled = true;
+                    markerStatus.textContent = '名稱儲存中，AI 正在聽取前後 15 秒…';
                     fetch('{{ url_for("admin_study_plan_video_marker_update", marker_id=0) }}'.replace(/0$/, String(marker.id)), {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
@@ -1803,11 +1997,12 @@
                         return response.json();
                     }).then(function (data) {
                         if (!data.ok || !data.marker) throw new Error('update_failed');
-                        videoMarkers = videoMarkers.map(function (item) {
-                            return Number(item.id) === Number(data.marker.id) ? data.marker : item;
-                        });
+                        mergeMarker(data.marker);
                         renderMarkers();
-                        markerStatus.textContent = '已更新。';
+                        renderMarkerLibrary();
+                        markerStatus.textContent = data.summary_error
+                            ? '名稱已更新；AI 摘要稍後可重試。'
+                            : '名稱與 AI 摘要已更新。';
                     }).catch(function () {
                         markerStatus.textContent = '更新失敗，請再試一次。';
                         save.disabled = false;
@@ -1863,8 +2058,9 @@
                     seconds = Math.max(0, Number(player.getCurrentTime() || 0));
                 }
                 setMarkerSaving(true);
-                markerStatus.textContent = '正在標記 ' + formatClock(seconds) + '…';
-                showFocusToast('正在標記 ' + formatClock(seconds) + '…', false);
+                const hasName = Boolean(markerNote && markerNote.value.trim());
+                markerStatus.textContent = hasName ? '正在標記並分析前後 15 秒影音…' : '正在標記 ' + formatClock(seconds) + '…';
+                showFocusToast(hasName ? '正在建立 AI 摘要…' : '正在標記 ' + formatClock(seconds) + '…', false);
                 return fetch('{{ url_for("admin_study_plan_video_markers") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1878,10 +2074,13 @@
                     return response.json();
                 }).then(function (data) {
                     if (!data.ok || !data.marker) throw new Error('save_failed');
-                    videoMarkers.push(data.marker);
+                    mergeMarker(data.marker);
                     if (markerNote) markerNote.value = '';
                     renderMarkers();
-                    const successMessage = '已記下 ' + formatClock(data.marker.playback_seconds) + '。';
+                    renderMarkerLibrary();
+                    const successMessage = data.summary_error
+                        ? '已記下；AI 摘要稍後可重試。'
+                        : '已記下 ' + formatClock(data.marker.playback_seconds) + '。';
                     markerStatus.textContent = successMessage;
                     showFocusToast('✓ ' + formatClock(data.marker.playback_seconds), false);
                     flashMarkerSuccess();
@@ -2185,7 +2384,16 @@
                 const option = selectedOption();
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 if (!youtubeId || !youtubeApiReady) return;
-                const startSeconds = Math.floor(Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0));
+                const hasRequestedMarker = Boolean(
+                    requestedMarker
+                    && Number(requestedMarker.video_id) === Number(option.value)
+                );
+                const requestedStartSeconds = hasRequestedMarker
+                    ? Math.max(0, Number(requestedMarker.playback_seconds || 0))
+                    : null;
+                const startSeconds = Math.floor(requestedStartSeconds !== null
+                    ? requestedStartSeconds
+                    : Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0));
                 activeRecordId = option.value;
                 playerEmpty.style.display = 'none';
                 if (!player) {
@@ -2195,6 +2403,11 @@
                         events: {
                             onReady: function () {
                                 playerSyncState.textContent = '播放器已就緒';
+                                if (requestedStartSeconds !== null && typeof player.seekTo === 'function') {
+                                    player.seekTo(requestedStartSeconds, true);
+                                    setPlayerPosition(requestedStartSeconds, Number(option.dataset.durationSeconds || 0));
+                                    requestedMarker = null;
+                                }
                             },
                             onStateChange: function (event) {
                                 if (event.data === YT.PlayerState.PLAYING) {
@@ -2225,6 +2438,10 @@
                     });
                 } else if (typeof player.loadVideoById === 'function') {
                     player.loadVideoById({ videoId: youtubeId, startSeconds: startSeconds > 5 ? startSeconds : 0 });
+                    if (requestedStartSeconds !== null) {
+                        setPlayerPosition(requestedStartSeconds, Number(option.dataset.durationSeconds || 0));
+                        requestedMarker = null;
+                    }
                 }
             };
             window.onYouTubeIframeAPIReady = function () {
@@ -2257,6 +2474,8 @@
                 loadNextVideo();
             });
             if (markerSave) markerSave.addEventListener('click', saveMarker);
+            if (markerLibrarySearch) markerLibrarySearch.addEventListener('input', renderMarkerLibrary);
+            if (markerLibrarySubject) markerLibrarySubject.addEventListener('change', renderMarkerLibrary);
             if (frameQuestionOpen) frameQuestionOpen.addEventListener('click', function () {
                 openFrameQuestion(frameQuestionOpen);
             });
@@ -2504,6 +2723,7 @@
             }
             sortVideoOptions();
             updateDuration();
+            renderMarkerLibrary();
             const smartReplan = document.getElementById('smart-replan');
             if (smartReplan && window.location.hash === '#smart-replan') smartReplan.open = true;
             focusVideoArea();

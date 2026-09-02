@@ -45,7 +45,9 @@ from ..services.youtube_playlists import (
     sync_known_youtube_playlists,
 )
 from ..services.youtube_frames import (
+    YoutubeAudioError,
     YoutubeFrameError,
+    fetch_youtube_audio_clip,
     fetch_youtube_cached_frame,
     fetch_youtube_storyboard_metadata,
 )
@@ -2151,6 +2153,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     legal_entity_name = env_defaults.get("legal_entity_name") or "E3 Homework Tracker Project"
     openai_api_key = (env_defaults.get("openai_api_key") or "").strip()
     openai_model = (env_defaults.get("openai_model") or DEFAULT_OPENAI_MODEL).strip()
+    openai_transcription_model = (
+        os.getenv("E3_OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
+        or "gpt-4o-mini-transcribe"
+    )
     configured_upload_dir = (env_defaults.get("study_upload_dir") or "").strip()
     study_upload_root = Path(configured_upload_dir).expanduser() if configured_upload_dir else data_root / "study_note_images"
     _ensure_private_dir(study_upload_root)
@@ -18077,6 +18083,41 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         selected_video_id = int((selected_video or {}).get("id") or 0)
         visible_video_ids = [int(video["id"]) for video in visible_videos]
         video_markers = storage.list_study_plan_video_markers(video_ids=visible_video_ids)
+        all_video_markers = storage.list_study_plan_video_markers()
+        video_lookup = {int(video["id"]): video for video in videos}
+        marker_library = []
+        for marker in all_video_markers:
+            marker_video = video_lookup.get(int(marker.get("video_id") or 0))
+            if not marker_video:
+                continue
+            marker_seconds = max(0.0, float(marker.get("playback_seconds") or 0))
+            marker_minutes, marker_remainder = divmod(int(round(marker_seconds)), 60)
+            marker_library.append(
+                {
+                    **marker,
+                    "subject": str(marker_video.get("subject") or ""),
+                    "sequence": int(marker_video.get("sequence") or 0),
+                    "video_title": str(marker_video.get("title") or ""),
+                    "time_label": f"{marker_minutes}:{marker_remainder:02d}",
+                }
+            )
+        marker_library.sort(
+            key=lambda item: (str(item.get("updated_at") or ""), int(item.get("id") or 0)),
+            reverse=True,
+        )
+        try:
+            requested_marker_id = int(request.args.get("marker_id") or 0)
+        except (TypeError, ValueError):
+            requested_marker_id = 0
+        requested_marker = next(
+            (
+                marker
+                for marker in all_video_markers
+                if int(marker.get("id") or 0) == requested_marker_id
+                and int(marker.get("video_id") or 0) == selected_video_id
+            ),
+            None,
+        )
         replan_settings = storage.get_study_plan_replan_settings()
         replan_preview = _study_plan_replan_preview(replan_settings)
         next_week_start = _study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)
@@ -18104,6 +18145,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             plan_end=effective_plan_end,
             recall_widget=_build_recall_widget_context(),
             video_markers=video_markers,
+            marker_library=marker_library,
+            requested_marker=requested_marker,
             replan_settings=replan_settings,
             replan_preview=replan_preview,
             study_time_today=study_time_today,
@@ -18190,6 +18233,263 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         flash("智慧重排已套用，既有觀看紀錄都已保留。", "success")
         return redirect(url_for("admin_study_plan", subject=selected_subject) + "#smart-replan")
 
+    def _transcribe_study_plan_marker_audio(
+        audio_clip: Dict[str, Any],
+        *,
+        subject: str,
+        video_title: str,
+        marker_name: str,
+    ) -> str:
+        audio_bytes = audio_clip.get("bytes")
+        if not isinstance(audio_bytes, bytes) or not audio_bytes:
+            raise ValueError("empty audio clip")
+        context_prompt = (
+            "研究所考試課程影片，請保留中文、英文專有名詞、公式念法與程式術語。"
+            f"科目：{subject[:48]}；影片：{video_title[:120]}；"
+            f"關鍵點：{marker_name[:160]}。"
+        )
+        response = requests.post(
+            "https://api.openai.com/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {openai_api_key}"},
+            files={
+                "file": (
+                    str(audio_clip.get("filename") or "marker-context.wav"),
+                    audio_bytes,
+                    str(audio_clip.get("mime_type") or "audio/wav"),
+                )
+            },
+            data={
+                "model": openai_transcription_model,
+                "language": "zh",
+                "response_format": "json",
+                "prompt": context_prompt,
+            },
+            timeout=90,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("invalid transcription response")
+        return " ".join(str(payload.get("text") or "").split()).strip()[:6000]
+
+    def _generate_study_plan_marker_summary(
+        marker: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], Optional[str]]:
+        marker_id = int(marker.get("id") or 0)
+        note = " ".join(str(marker.get("note") or "").split()).strip()
+        if not openai_api_key:
+            saved = storage.update_study_plan_video_marker_summary(
+                marker_id,
+                summary="",
+                status="unavailable",
+            )
+            return saved or marker, "尚未設定 OpenAI API 金鑰。"
+        if not note or note == "關鍵片段":
+            saved = storage.update_study_plan_video_marker_summary(
+                marker_id,
+                summary="",
+                status="needs_name",
+            )
+            return saved or marker, "請先替關鍵點命名。"
+
+        processing = storage.update_study_plan_video_marker_summary(
+            marker_id,
+            summary="",
+            status="processing",
+        ) or marker
+        video = next(
+            (
+                item
+                for item in storage.list_study_plan_videos_with_records()
+                if int(item.get("id") or 0) == int(marker.get("video_id") or 0)
+            ),
+            None,
+        )
+        if not video or not str(video.get("youtube_video_id") or "").strip():
+            failed = storage.update_study_plan_video_marker_summary(
+                marker_id,
+                summary="",
+                status="failed",
+            )
+            return failed or processing, "這部影片尚未對應 YouTube。"
+
+        youtube_video_id = str(video.get("youtube_video_id") or "").strip()
+        duration_seconds = max(0.0, float(video.get("duration_seconds") or 0))
+        playback_seconds = max(0.0, float(marker.get("playback_seconds") or 0))
+        if duration_seconds > 0:
+            playback_seconds = min(playback_seconds, duration_seconds)
+        window_start = max(0.0, playback_seconds - 15.0)
+        window_end = playback_seconds + 15.0
+        if duration_seconds > 0:
+            window_end = min(duration_seconds, window_end)
+
+        audio_transcript = ""
+        audio_error = ""
+        audio_clip: Optional[Dict[str, Any]] = None
+        try:
+            audio_clip = fetch_youtube_audio_clip(
+                youtube_video_id,
+                playback_seconds,
+                radius_seconds=15.0,
+            )
+            audio_transcript = _transcribe_study_plan_marker_audio(
+                audio_clip,
+                subject=str(video.get("subject") or ""),
+                video_title=str(video.get("title") or ""),
+                marker_name=note,
+            )
+            window_start = float(audio_clip.get("start_seconds") or window_start)
+            window_end = float(audio_clip.get("end_seconds") or window_end)
+        except (YoutubeAudioError, requests.RequestException, ValueError, TypeError) as exc:
+            audio_error = str(exc)
+            app.logger.warning(
+                "Video marker audio context unavailable for %s: %s",
+                youtube_video_id,
+                type(exc).__name__,
+            )
+
+        sample_points: List[float] = []
+        for offset in (-15.0, -7.5, 0.0, 7.5, 15.0):
+            point = max(0.0, playback_seconds + offset)
+            if duration_seconds > 0:
+                point = min(point, max(0.0, duration_seconds - 0.05))
+            if not any(abs(existing - point) < 0.5 for existing in sample_points):
+                sample_points.append(point)
+
+        storyboard_metadata = storage.get_youtube_storyboard_metadata(youtube_video_id)
+        sampled_frames: List[Dict[str, Any]] = []
+        frame_errors: List[str] = []
+        for sample_seconds in sample_points:
+            try:
+                frame = fetch_youtube_cached_frame(
+                    youtube_video_id,
+                    sample_seconds,
+                    storyboard_metadata=storyboard_metadata,
+                )
+            except YoutubeFrameError as exc:
+                frame_errors.append(str(exc))
+                continue
+            refreshed_metadata = frame.get("storyboard_metadata")
+            _persist_youtube_storyboard_metadata(storage, refreshed_metadata, app.logger)
+            if isinstance(refreshed_metadata, dict):
+                storyboard_metadata = refreshed_metadata
+            sampled_frames.append(frame)
+
+        if not sampled_frames and not audio_transcript:
+            failed = storage.update_study_plan_video_marker_summary(
+                marker_id,
+                summary="",
+                status="failed",
+            )
+            error = (
+                audio_error
+                or (frame_errors[0] if frame_errors else "無法取得關鍵點附近的聲音與畫面。")
+            )
+            return failed or processing, error
+
+        prompt = (
+            "你是研究所考試課程的影片筆記助教。請根據關鍵點前後各 15 秒的語音逐字稿"
+            "與依時間排列的影片畫面，"
+            "替學生已命名的關鍵點寫一段可快速複習的摘要。關鍵點名稱代表學生想記住的主題，"
+            "但不能凌駕於影音證據；請用畫面校正逐字稿中的同音字、符號與公式，並整合老師口頭講解、"
+            "定義、推導步驟、程式流程或解題技巧。只整理這 30 秒內能可靠判斷的內容，"
+            "不要補充課程外知識。若影音不足以支持完整結論，直接指出目前能確認的部分。"
+            "回答使用好理解的繁體中文，控制在 2 至 5 個短句，不要輸出標題、項目符號或開場白。"
+            "公式使用 LaTeX，行內公式用 \\( ... \\)，獨立公式用 \\[ ... \\]。\n\n"
+            f"科目：{str(video.get('subject') or '')[:48]}\n"
+            f"影片：第 {int(video.get('sequence') or 0):03d} 支・{str(video.get('title') or '')[:180]}\n"
+            f"關鍵點時間：{playback_seconds:.1f} 秒\n"
+            f"分析範圍：{window_start:.1f} 至 {window_end:.1f} 秒\n"
+            f"關鍵點名稱：{note[:280]}\n"
+            "語音逐字稿（可能含辨識錯字，需以畫面與上下文校正）：\n"
+            f"{audio_transcript or '音訊取得失敗，本次只能依畫面整理。'}"
+        )
+        content: List[Dict[str, Any]] = [{"type": "input_text", "text": prompt}]
+        for index, frame in enumerate(sampled_frames, start=1):
+            content.append(
+                {
+                    "type": "input_text",
+                    "text": (
+                        f"畫面 {index}，影片時間約 "
+                        f"{float(frame.get('frame_seconds') or 0):.1f} 秒："
+                    ),
+                }
+            )
+            content.append(
+                {
+                    "type": "input_image",
+                    "image_url": (
+                        f"data:{frame['mime_type']};base64,"
+                        + base64.b64encode(frame["bytes"]).decode("ascii")
+                    ),
+                    "detail": "high",
+                }
+            )
+        request_body = {
+            "model": openai_model,
+            "store": False,
+            "input": [{"role": "user", "content": content}],
+            "reasoning": {
+                "effort": normalize_openai_reasoning_effort(openai_model, "low")
+            },
+            "max_output_tokens": 900,
+        }
+        try:
+            response_payload = _request_openai_response(
+                name="video marker summary",
+                request_body=request_body,
+                timeout=90,
+            )
+            summary = _repair_study_decoded_text(
+                _extract_openai_text(response_payload)
+            ).strip()[:2400]
+        except requests.HTTPError as exc:
+            error_code, error_type, error_message = _openai_error_details(exc.response)
+            if _is_openai_quota_error(error_code, error_type, error_message):
+                error = "OpenAI API 額度不足。"
+            else:
+                error = "AI 暫時無法整理這個關鍵點。"
+            failed = storage.update_study_plan_video_marker_summary(
+                marker_id,
+                summary="",
+                status="failed",
+            )
+            return failed or processing, error
+        except (requests.RequestException, ValueError, TypeError):
+            failed = storage.update_study_plan_video_marker_summary(
+                marker_id,
+                summary="",
+                status="failed",
+            )
+            return failed or processing, "AI 暫時無法整理這個關鍵點。"
+        if not summary:
+            failed = storage.update_study_plan_video_marker_summary(
+                marker_id,
+                summary="",
+                status="failed",
+            )
+            return failed or processing, "AI 沒有產生有效摘要。"
+        ready = storage.update_study_plan_video_marker_summary(
+            marker_id,
+            summary=summary,
+            status="ready",
+        )
+        record_ui_event(
+            "study_plan_video_marker_summarized",
+            meta={
+                "marker_id": marker_id,
+                "frame_count": len(sampled_frames),
+                "audio_transcribed": bool(audio_transcript),
+                "audio_seconds": round(
+                    float((audio_clip or {}).get("duration_seconds") or 0),
+                    1,
+                ),
+                "window_start": round(window_start, 1),
+                "window_end": round(window_end, 1),
+            },
+        )
+        return ready or processing, None
+
     @app.post("/admin/study-plan/video-markers")
     @admin_required
     def admin_study_plan_video_markers():
@@ -18212,7 +18512,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "study_plan_video_marker_created",
             meta={"video_id": video_id, "playback_seconds": round(marker["playback_seconds"], 1)},
         )
-        return {"ok": True, "marker": marker}
+        requested_note = " ".join(str(payload.get("note") or "").split()).strip()
+        summary_error = None
+        if requested_note and bool(payload.get("auto_summary", True)):
+            marker, summary_error = _generate_study_plan_marker_summary(marker)
+        return {"ok": True, "marker": marker, "summary_error": summary_error}
 
     @app.post("/admin/study-plan/video-question")
     @admin_required
@@ -18426,7 +18730,23 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if not marker:
             return {"ok": False, "error": "marker_not_found"}, 404
         record_ui_event("study_plan_video_marker_updated", meta={"marker_id": marker_id})
-        return {"ok": True, "marker": marker}
+        summary_error = None
+        if bool(payload.get("auto_summary", True)):
+            marker, summary_error = _generate_study_plan_marker_summary(marker)
+        return {"ok": True, "marker": marker, "summary_error": summary_error}
+
+    @app.post("/admin/study-plan/video-markers/<int:marker_id>/summary")
+    @admin_required
+    def admin_study_plan_video_marker_summary(marker_id: int):
+        marker = storage.get_study_plan_video_marker(marker_id)
+        if not marker:
+            return {"ok": False, "error": "找不到這個關鍵點。"}, 404
+        marker, summary_error = _generate_study_plan_marker_summary(marker)
+        return {
+            "ok": summary_error is None,
+            "marker": marker,
+            "error": summary_error,
+        }, 200 if summary_error is None else 502
 
     @app.delete("/admin/study-plan/video-markers/<int:marker_id>")
     @admin_required

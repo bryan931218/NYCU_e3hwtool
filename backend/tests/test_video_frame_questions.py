@@ -1,12 +1,16 @@
 import io
+import json
 import os
+import re
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
+import requests
 from PIL import Image
 
 from e3_tracker.api.web import create_app
+from e3_tracker.services.youtube_frames import YoutubeAudioError
 
 
 class VideoFrameQuestionTests(unittest.TestCase):
@@ -151,6 +155,148 @@ class VideoFrameQuestionTests(unittest.TestCase):
         )
         self.assertEqual(missing_question.status_code, 400)
         self.assertEqual(missing_video.status_code, 404)
+
+    def test_renaming_marker_generates_summary_from_nearby_frames(self):
+        marker_response = self.client.post(
+            "/admin/study-plan/video-markers",
+            json={
+                "video_id": self.video["id"],
+                "playback_seconds": 123.4,
+                "note": "",
+                "auto_summary": False,
+            },
+        )
+        marker_id = marker_response.get_json()["marker"]["id"]
+        transcription_response = Mock()
+        transcription_response.raise_for_status.return_value = None
+        transcription_response.json.return_value = {
+            "text": "老師說奇異值分解會把線性轉換拆成旋轉、伸縮與旋轉。"
+        }
+        summary_response = Mock()
+        summary_response.raise_for_status.return_value = None
+        summary_response.json.return_value = {
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "先建立矩陣，再用 \\(A=U\\Sigma V^{T}\\) 分解比較各方向的伸縮。",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with patch(
+            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            return_value={
+                "bytes": b"RIFF" + b"\x00" * 2048,
+                "mime_type": "audio/wav",
+                "filename": "marker.wav",
+                "start_seconds": 108.4,
+                "end_seconds": 138.4,
+                "duration_seconds": 30.0,
+            },
+        ) as fetch_audio, patch(
+            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            side_effect=lambda _video_id, seconds, **_kwargs: {
+                **self._frame(),
+                "frame_seconds": seconds,
+            },
+        ) as fetch_frame, patch(
+            "e3_tracker.api.web.requests.post",
+            side_effect=[transcription_response, summary_response],
+        ) as post:
+            response = self.client.patch(
+                f"/admin/study-plan/video-markers/{marker_id}",
+                json={"note": "SVD 的幾何意義"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["summary_error"])
+        self.assertEqual(result["marker"]["summary_status"], "ready")
+        self.assertIn("A=U", result["marker"]["summary"])
+        fetch_audio.assert_called_once_with(
+            self.video["youtube_video_id"],
+            123.4,
+            radius_seconds=15.0,
+        )
+        self.assertEqual(fetch_frame.call_count, 5)
+        transcription_call = post.call_args_list[0]
+        self.assertEqual(
+            transcription_call.args[0],
+            "https://api.openai.com/v1/audio/transcriptions",
+        )
+        self.assertEqual(transcription_call.kwargs["data"]["language"], "zh")
+        self.assertIn("file", transcription_call.kwargs["files"])
+        content = post.call_args_list[1].kwargs["json"]["input"][0]["content"]
+        self.assertEqual(
+            len([item for item in content if item["type"] == "input_image"]),
+            5,
+        )
+        self.assertIn("SVD 的幾何意義", content[0]["text"])
+        self.assertIn("旋轉、伸縮與旋轉", content[0]["text"])
+        self.assertIn("108.4 至 138.4 秒", content[0]["text"])
+
+        page = self.client.get(
+            f"/admin/study-plan?subject={self.video['subject']}&video_id={self.video['id']}"
+        ).get_data(as_text=True)
+        self.assertIn('id="marker-library-data"', page)
+        self.assertIn("前往片段", page)
+        library_match = re.search(
+            r'<script type="application/json" id="marker-library-data">(.*?)</script>',
+            page,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(library_match)
+        library = json.loads(library_match.group(1))
+        self.assertTrue(any(item["note"] == "SVD 的幾何意義" for item in library))
+
+    def test_marker_name_is_saved_when_summary_generation_fails(self):
+        marker_response = self.client.post(
+            "/admin/study-plan/video-markers",
+            json={
+                "video_id": self.video["id"],
+                "playback_seconds": 80,
+                "note": "",
+                "auto_summary": False,
+            },
+        )
+        marker_id = marker_response.get_json()["marker"]["id"]
+        failed_response = Mock()
+        failed_response.status_code = 400
+        failed_response.json.return_value = {
+            "error": {"code": "invalid_request", "type": "invalid_request_error", "message": "bad request"}
+        }
+        failed_response.raise_for_status.side_effect = requests.HTTPError(
+            response=failed_response
+        )
+        with patch(
+            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            side_effect=YoutubeAudioError("audio unavailable"),
+        ), patch(
+            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            return_value=self._frame(),
+        ), patch(
+            "e3_tracker.api.web.requests.post",
+            return_value=failed_response,
+        ):
+            response = self.client.patch(
+                f"/admin/study-plan/video-markers/{marker_id}",
+                json={"note": "失敗時仍保留名稱"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        marker = response.get_json()["marker"]
+        self.assertEqual(marker["note"], "失敗時仍保留名稱")
+        self.assertEqual(marker["summary_status"], "failed")
+        self.assertTrue(response.get_json()["summary_error"])
+        saved = self.storage.get_study_plan_video_marker(marker_id)
+        self.assertEqual(saved["note"], "失敗時仍保留名稱")
 
     def test_page_renders_desktop_mobile_and_fullscreen_controls(self):
         page = self.client.get(

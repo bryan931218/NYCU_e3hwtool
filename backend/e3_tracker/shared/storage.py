@@ -486,6 +486,9 @@ study_plan_video_markers_table = Table(
     Column("video_id", Integer, nullable=False),
     Column("playback_seconds", Float, nullable=False),
     Column("note", String(280), nullable=False),
+    Column("summary", Text, nullable=False, default=""),
+    Column("summary_status", String(16), nullable=False, default=""),
+    Column("summary_generated_at", String(64)),
     Column("created_at", String(64), nullable=False),
     Column("updated_at", String(64), nullable=False),
 )
@@ -654,6 +657,26 @@ class PersistentStorage:
             metadata.tables["study_plan_activity_events"].create(self._engine, checkfirst=True)
         if not inspector.has_table("study_time_sessions"):
             metadata.tables["study_time_sessions"].create(self._engine, checkfirst=True)
+        if inspector.has_table("study_plan_video_markers"):
+            marker_columns = {
+                col["name"] for col in inspector.get_columns("study_plan_video_markers")
+            }
+            missing_marker_columns = []
+            if "summary" not in marker_columns:
+                missing_marker_columns.append(("summary", "TEXT NOT NULL DEFAULT ''"))
+            if "summary_status" not in marker_columns:
+                missing_marker_columns.append(("summary_status", "VARCHAR(16) NOT NULL DEFAULT ''"))
+            if "summary_generated_at" not in marker_columns:
+                missing_marker_columns.append(("summary_generated_at", "VARCHAR(64)"))
+            if missing_marker_columns:
+                with self._lock, self._engine.begin() as conn:
+                    for column_name, column_type in missing_marker_columns:
+                        conn.execute(
+                            text(
+                                "ALTER TABLE study_plan_video_markers "
+                                f"ADD COLUMN {column_name} {column_type}"
+                            )
+                        )
         if inspector.has_table("study_plan_video_records"):
             video_record_columns = {col["name"] for col in inspector.get_columns("study_plan_video_records")}
             if "playback_seconds" not in video_record_columns:
@@ -3633,6 +3656,9 @@ class PersistentStorage:
             study_plan_video_markers_table.c.video_id,
             study_plan_video_markers_table.c.playback_seconds,
             study_plan_video_markers_table.c.note,
+            study_plan_video_markers_table.c.summary,
+            study_plan_video_markers_table.c.summary_status,
+            study_plan_video_markers_table.c.summary_generated_at,
             study_plan_video_markers_table.c.created_at,
             study_plan_video_markers_table.c.updated_at,
         )
@@ -3654,6 +3680,9 @@ class PersistentStorage:
                 "video_id": int(row.video_id),
                 "playback_seconds": max(0.0, float(row.playback_seconds or 0)),
                 "note": str(row.note or ""),
+                "summary": str(row.summary or ""),
+                "summary_status": str(row.summary_status or ""),
+                "summary_generated_at": str(row.summary_generated_at or ""),
                 "created_at": str(row.created_at or ""),
                 "updated_at": str(row.updated_at or ""),
             }
@@ -3686,6 +3715,9 @@ class PersistentStorage:
                     video_id=int(video_id),
                     playback_seconds=normalized_seconds,
                     note=normalized_note,
+                    summary="",
+                    summary_status="",
+                    summary_generated_at=None,
                     created_at=now,
                     updated_at=now,
                 )
@@ -3696,6 +3728,9 @@ class PersistentStorage:
             "video_id": int(video_id),
             "playback_seconds": normalized_seconds,
             "note": normalized_note,
+            "summary": "",
+            "summary_status": "",
+            "summary_generated_at": "",
             "created_at": now,
             "updated_at": now,
         }
@@ -3716,7 +3751,13 @@ class PersistentStorage:
             result = conn.execute(
                 update(study_plan_video_markers_table)
                 .where(study_plan_video_markers_table.c.id == int(marker_id))
-                .values(note=normalized_note, updated_at=now)
+                .values(
+                    note=normalized_note,
+                    summary="",
+                    summary_status="pending",
+                    summary_generated_at=None,
+                    updated_at=now,
+                )
             )
             if not result.rowcount:
                 return None
@@ -3726,6 +3767,9 @@ class PersistentStorage:
                     study_plan_video_markers_table.c.video_id,
                     study_plan_video_markers_table.c.playback_seconds,
                     study_plan_video_markers_table.c.note,
+                    study_plan_video_markers_table.c.summary,
+                    study_plan_video_markers_table.c.summary_status,
+                    study_plan_video_markers_table.c.summary_generated_at,
                     study_plan_video_markers_table.c.created_at,
                     study_plan_video_markers_table.c.updated_at,
                 ).where(study_plan_video_markers_table.c.id == int(marker_id))
@@ -3737,9 +3781,67 @@ class PersistentStorage:
             "video_id": int(row.video_id),
             "playback_seconds": max(0.0, float(row.playback_seconds or 0)),
             "note": str(row.note or ""),
+            "summary": str(row.summary or ""),
+            "summary_status": str(row.summary_status or ""),
+            "summary_generated_at": str(row.summary_generated_at or ""),
             "created_at": str(row.created_at or ""),
             "updated_at": str(row.updated_at or ""),
         }
+
+    def get_study_plan_video_marker(self, marker_id: int) -> Optional[Dict[str, Any]]:
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(
+                    study_plan_video_markers_table.c.id,
+                    study_plan_video_markers_table.c.video_id,
+                    study_plan_video_markers_table.c.playback_seconds,
+                    study_plan_video_markers_table.c.note,
+                    study_plan_video_markers_table.c.summary,
+                    study_plan_video_markers_table.c.summary_status,
+                    study_plan_video_markers_table.c.summary_generated_at,
+                    study_plan_video_markers_table.c.created_at,
+                    study_plan_video_markers_table.c.updated_at,
+                ).where(study_plan_video_markers_table.c.id == int(marker_id))
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": int(row.id),
+            "video_id": int(row.video_id),
+            "playback_seconds": max(0.0, float(row.playback_seconds or 0)),
+            "note": str(row.note or ""),
+            "summary": str(row.summary or ""),
+            "summary_status": str(row.summary_status or ""),
+            "summary_generated_at": str(row.summary_generated_at or ""),
+            "created_at": str(row.created_at or ""),
+            "updated_at": str(row.updated_at or ""),
+        }
+
+    def update_study_plan_video_marker_summary(
+        self,
+        marker_id: int,
+        *,
+        summary: str,
+        status: str,
+    ) -> Optional[Dict[str, Any]]:
+        normalized_status = str(status or "").strip()[:16]
+        normalized_summary = str(summary or "").strip()[:2400]
+        now = self._now_iso()
+        generated_at = now if normalized_status == "ready" else None
+        with self._lock, self._engine.begin() as conn:
+            result = conn.execute(
+                update(study_plan_video_markers_table)
+                .where(study_plan_video_markers_table.c.id == int(marker_id))
+                .values(
+                    summary=normalized_summary,
+                    summary_status=normalized_status,
+                    summary_generated_at=generated_at,
+                    updated_at=now,
+                )
+            )
+        if not result.rowcount:
+            return None
+        return self.get_study_plan_video_marker(marker_id)
 
     def get_study_plan_replan_settings(self) -> Optional[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:

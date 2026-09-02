@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import logging
 import math
+import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import threading
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterator, List, Tuple
 
 import requests
 import yt_dlp
@@ -29,6 +32,13 @@ _SPRITE_DOWNLOAD_ATTEMPTS = 2
 _MAX_SPRITE_BYTES = 3 * 1024 * 1024
 _EXACT_FRAME_TIMEOUT_SECONDS = 18
 _EXACT_FRAME_MAX_STREAMS = 4
+_AUDIO_CLIP_TIMEOUT_SECONDS = 35
+_AUDIO_STREAM_MAX_ATTEMPTS = 4
+_AUDIO_METADATA_CACHE_TTL_SECONDS = 10 * 60
+_AUDIO_METADATA_CACHE_LIMIT = 16
+_POT_PROVIDER_VERSION = "1.3.2"
+_POT_PROVIDER_COMMIT = "7511309af023b09788dc8f2efc96cc3671291e6c"
+_POT_PROVIDER_REPOSITORY = "https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git"
 _MAX_FRAME_WIDTH = 1280
 _MIN_FRAME_WIDTH = 640
 _STORYBOARD_CATALOG_PATH = (
@@ -45,6 +55,10 @@ _metadata_lock = threading.Lock()
 _frame_cache: Dict[Tuple[str, float], Tuple[float, Dict[str, Any]]] = {}
 _frame_video_locks: Dict[Tuple[str, float], threading.Lock] = {}
 _frame_lock = threading.Lock()
+_audio_metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_pot_provider_home: str | None = None
+_pot_provider_last_failure = 0.0
+_pot_provider_lock = threading.Lock()
 _storyboard_catalog: Dict[str, Dict[str, Any]] | None = None
 _storyboard_catalog_lock = threading.Lock()
 _logger = logging.getLogger(__name__)
@@ -56,6 +70,10 @@ class YoutubeFrameError(RuntimeError):
 
 class YoutubeMetadataError(YoutubeFrameError):
     """Raised when YouTube blocks every metadata extraction strategy."""
+
+
+class YoutubeAudioError(YoutubeFrameError):
+    """Raised when a bounded YouTube audio clip cannot be obtained."""
 
 
 def _positive_int(value: Any) -> int:
@@ -116,6 +134,20 @@ def _stream_rank(item: Dict[str, Any]) -> Tuple[int, int, int, int, float]:
     return direct_http, height_score, progressive, mp4, -max(0.0, tbr)
 
 
+def _audio_stream_rank(item: Dict[str, Any]) -> Tuple[int, int, int, float]:
+    protocol = str(item.get("protocol") or "").lower()
+    ext = str(item.get("ext") or "").lower()
+    vcodec = str(item.get("vcodec") or "none").lower()
+    direct_http = int(protocol in {"https", "http", "http_dash_segments"})
+    audio_only = int(vcodec in {"", "none"})
+    preferred_container = int(ext in {"m4a", "mp4", "webm"})
+    try:
+        abr = float(item.get("abr") or item.get("tbr") or 0)
+    except (TypeError, ValueError):
+        abr = 0.0
+    return direct_http, audio_only, preferred_container, max(0.0, abr)
+
+
 def _video_metadata_lock(video_id: str) -> threading.Lock:
     with _metadata_lock:
         lock = _metadata_video_locks.get(video_id)
@@ -125,7 +157,11 @@ def _video_metadata_lock(video_id: str) -> threading.Lock:
         return lock
 
 
-def _youtube_dl_options(player_clients: Tuple[str, ...] | None) -> Dict[str, Any]:
+def _youtube_dl_options(
+    player_clients: Tuple[str, ...] | None,
+    *,
+    pot_server_home: str = "",
+) -> Dict[str, Any]:
     options: Dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
@@ -140,11 +176,12 @@ def _youtube_dl_options(player_clients: Tuple[str, ...] | None) -> Dict[str, Any
         "retries": 1,
         "extractor_retries": 1,
     }
-    available_runtimes = {
-        runtime: {}
-        for runtime in ("node", "deno")
-        if shutil.which(runtime)
-    }
+    configured_node = str(os.getenv("E3_YTDLP_NODE_PATH") or "").strip()
+    available_runtimes: Dict[str, Dict[str, str]] = {}
+    for runtime in ("node", "deno"):
+        executable = configured_node if runtime == "node" and configured_node else shutil.which(runtime)
+        if executable:
+            available_runtimes[runtime] = {"path": str(executable)}
     if available_runtimes:
         options["js_runtimes"] = available_runtimes
         # Current YouTube playback responses can require an external JS
@@ -155,7 +192,106 @@ def _youtube_dl_options(player_clients: Tuple[str, ...] | None) -> Dict[str, Any
         options["extractor_args"] = {
             "youtube": {"player_client": list(player_clients)}
         }
+    if pot_server_home:
+        options.setdefault("extractor_args", {})["youtubepot-bgutilscript"] = {
+            "server_home": [pot_server_home]
+        }
     return options
+
+
+def _ensure_youtube_pot_provider() -> str:
+    """Build the pinned yt-dlp token provider once in the application cache."""
+    global _pot_provider_home, _pot_provider_last_failure
+    configured = str(os.getenv("E3_YTDLP_POT_SERVER_HOME") or "").strip()
+    if configured and (Path(configured) / "build" / "generate_once.js").is_file():
+        return configured
+    if _pot_provider_home and (Path(_pot_provider_home) / "build" / "generate_once.js").is_file():
+        return _pot_provider_home
+    if _pot_provider_last_failure and time.monotonic() - _pot_provider_last_failure < 10 * 60:
+        return ""
+
+    with _pot_provider_lock:
+        if _pot_provider_home and (Path(_pot_provider_home) / "build" / "generate_once.js").is_file():
+            return _pot_provider_home
+        cache_root = Path(
+            os.getenv("E3_CACHE_DIR")
+            or (Path.home() / ".cache" / "e3hwtool")
+        )
+        provider_root = cache_root / f"bgutil-ytdlp-pot-provider-{_POT_PROVIDER_VERSION}"
+        server_home = provider_root / "server"
+        generated_script = server_home / "build" / "generate_once.js"
+        if generated_script.is_file():
+            _pot_provider_home = str(server_home)
+            return _pot_provider_home
+
+        git = str(shutil.which("git") or "")
+        npm = str(shutil.which("npm") or shutil.which("npm.cmd") or "")
+        node = str(os.getenv("E3_YTDLP_NODE_PATH") or shutil.which("node") or "")
+        if not all((git, npm, node)):
+            _pot_provider_last_failure = time.monotonic()
+            _logger.warning("YouTube audio token provider prerequisites are unavailable")
+            return ""
+        command_env = dict(os.environ)
+        command_env["PATH"] = str(Path(node).parent) + os.pathsep + command_env.get("PATH", "")
+        try:
+            cache_root.mkdir(parents=True, exist_ok=True)
+            if not (provider_root / ".git").is_dir():
+                subprocess.run(
+                    [
+                        git,
+                        "clone",
+                        "--depth",
+                        "1",
+                        "--branch",
+                        _POT_PROVIDER_VERSION,
+                        _POT_PROVIDER_REPOSITORY,
+                        str(provider_root),
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    timeout=90,
+                    env=command_env,
+                )
+            revision = subprocess.run(
+                [git, "rev-parse", "HEAD"],
+                cwd=str(provider_root),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=10,
+                env=command_env,
+                text=True,
+            ).stdout.strip()
+            if revision != _POT_PROVIDER_COMMIT:
+                raise RuntimeError("unexpected token provider revision")
+            subprocess.run(
+                [npm, "ci", "--no-audit", "--no-fund"],
+                cwd=str(server_home),
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=180,
+                env=command_env,
+            )
+            subprocess.run(
+                [npm, "exec", "tsc"],
+                cwd=str(server_home),
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=90,
+                env=command_env,
+            )
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            _pot_provider_last_failure = time.monotonic()
+            _logger.exception("YouTube audio token provider setup failed")
+            return ""
+        if not generated_script.is_file():
+            _pot_provider_last_failure = time.monotonic()
+            return ""
+        _pot_provider_home = str(server_home)
+        return _pot_provider_home
 
 
 def _watch_page_headers() -> Dict[str, str]:
@@ -438,6 +574,89 @@ def _extract_youtube_info(video_id: str) -> Dict[str, Any]:
             type(exc).__name__,
         )
     raise YoutubeMetadataError("YouTube 暫時無法提供這部影片的影格資訊，請稍後再試。") from last_error
+
+
+def _has_audio_formats(info: Dict[str, Any]) -> bool:
+    return any(
+        isinstance(item, dict)
+        and str(item.get("acodec") or "none").lower() not in {"", "none"}
+        and str(item.get("url") or "").startswith(("https://", "http://"))
+        for item in (info.get("formats") or [])
+    )
+
+
+def _extract_youtube_audio_info(video_id: str) -> Dict[str, Any]:
+    """Resolve playable audio streams without falling back to image-only metadata."""
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    last_error: BaseException | None = None
+    pot_server_home = _ensure_youtube_pot_provider()
+    strategies: Tuple[Tuple[str, ...] | None, ...] = _EXTRACTOR_STRATEGIES
+    if pot_server_home:
+        strategies = (("mweb",),) + strategies
+    for strategy_index, player_clients in enumerate(strategies):
+        try:
+            with yt_dlp.YoutubeDL(
+                _youtube_dl_options(
+                    player_clients,
+                    pot_server_home=pot_server_home if player_clients == ("mweb",) else "",
+                )
+            ) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if isinstance(info, dict) and _has_audio_formats(info):
+                return info
+            last_error = ValueError("audio formats missing")
+        except Exception as exc:
+            last_error = exc
+            _logger.warning(
+                "YouTube audio metadata attempt %s failed for %s: %s",
+                strategy_index + 1,
+                video_id,
+                type(exc).__name__,
+            )
+        if strategy_index + 1 < len(strategies):
+            time.sleep(0.25 * (strategy_index + 1))
+    raise YoutubeAudioError("YouTube 暫時無法提供這部影片的音訊，請稍後再試。") from last_error
+
+
+def _youtube_audio_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
+    now = time.monotonic()
+    if not force_refresh:
+        with _metadata_lock:
+            cached = _audio_metadata_cache.get(video_id)
+            if cached and now - cached[0] < _AUDIO_METADATA_CACHE_TTL_SECONDS:
+                return cached[1]
+
+    with _video_metadata_lock(video_id):
+        now = time.monotonic()
+        if not force_refresh:
+            with _metadata_lock:
+                cached = _audio_metadata_cache.get(video_id)
+                if cached and now - cached[0] < _AUDIO_METADATA_CACHE_TTL_SECONDS:
+                    return cached[1]
+        info = _extract_youtube_audio_info(video_id)
+        streams = [
+            item
+            for item in (info.get("formats") or [])
+            if isinstance(item, dict)
+            and str(item.get("acodec") or "none").lower() not in {"", "none"}
+            and str(item.get("url") or "").startswith(("https://", "http://"))
+        ]
+        streams.sort(key=_audio_stream_rank, reverse=True)
+        result = {
+            "duration": _positive_float(info.get("duration")),
+            "streams": streams,
+        }
+        if not streams:
+            raise YoutubeAudioError("這部影片目前沒有可用的音訊串流。")
+        with _metadata_lock:
+            if len(_audio_metadata_cache) >= _AUDIO_METADATA_CACHE_LIMIT:
+                oldest = min(
+                    _audio_metadata_cache,
+                    key=lambda key: _audio_metadata_cache[key][0],
+                )
+                _audio_metadata_cache.pop(oldest, None)
+            _audio_metadata_cache[video_id] = (time.monotonic(), result)
+        return result
 
 
 def _youtube_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
@@ -785,6 +1004,277 @@ def _ffmpeg_http_args(headers: Dict[str, str]) -> List[str]:
     if extra_lines:
         args.extend(["-headers", "\r\n".join(extra_lines) + "\r\n"])
     return args
+
+
+@contextmanager
+def _proxied_media_url(
+    source_url: str,
+    source_headers: Dict[str, str],
+    *,
+    timeout: int,
+) -> Iterator[str]:
+    """Proxy byte ranges through requests when FFmpeg is blocked by Googlevideo."""
+    upstream_headers = {
+        key: value
+        for key, value in source_headers.items()
+        if key.lower() not in {"accept-encoding", "content-length", "host", "range"}
+    }
+
+    class MediaProxyHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler API
+            request_headers = {**upstream_headers, "Range": "bytes=0-0"}
+            try:
+                with requests.get(
+                    source_url,
+                    headers=request_headers,
+                    stream=True,
+                    timeout=(5, max(5, int(timeout))),
+                ) as upstream:
+                    upstream.raise_for_status()
+                    content_range = str(upstream.headers.get("Content-Range") or "")
+                    total_size = content_range.rsplit("/", 1)[-1]
+                    self.send_response(200)
+                    if upstream.headers.get("Content-Type"):
+                        self.send_header("Content-Type", upstream.headers["Content-Type"])
+                    if total_size.isdigit():
+                        self.send_header("Content-Length", total_size)
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+            except requests.RequestException:
+                self.send_error(502)
+
+        def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+            requested_range = str(self.headers.get("Range") or "").strip()
+            open_ended = re.fullmatch(r"bytes=(\d+)-", requested_range)
+            try:
+                if open_ended or not requested_range:
+                    initial_start = int(open_ended.group(1)) if open_ended else 0
+                    chunk_start = initial_start
+                    total_size = 0
+                    headers_sent = False
+                    while total_size <= 0 or chunk_start < total_size:
+                        chunk_end = chunk_start + 1024 * 1024 - 1
+                        if total_size > 0:
+                            chunk_end = min(chunk_end, total_size - 1)
+                        request_headers = {
+                            **upstream_headers,
+                            "Range": f"bytes={chunk_start}-{chunk_end}",
+                        }
+                        with requests.get(
+                            source_url,
+                            headers=request_headers,
+                            stream=True,
+                            timeout=(5, max(5, int(timeout))),
+                        ) as upstream:
+                            upstream.raise_for_status()
+                            content_range = str(upstream.headers.get("Content-Range") or "")
+                            parsed_range = re.fullmatch(
+                                r"bytes\s+(\d+)-(\d+)/(\d+)",
+                                content_range,
+                            )
+                            if not parsed_range:
+                                raise requests.RequestException("invalid upstream range")
+                            returned_end = int(parsed_range.group(2))
+                            total_size = int(parsed_range.group(3))
+                            if not headers_sent:
+                                self.send_response(206 if requested_range else 200)
+                                if upstream.headers.get("Content-Type"):
+                                    self.send_header("Content-Type", upstream.headers["Content-Type"])
+                                self.send_header("Content-Length", str(total_size - initial_start))
+                                if requested_range:
+                                    self.send_header(
+                                        "Content-Range",
+                                        f"bytes {initial_start}-{total_size - 1}/{total_size}",
+                                    )
+                                self.send_header("Accept-Ranges", "bytes")
+                                self.send_header("Connection", "close")
+                                self.end_headers()
+                                headers_sent = True
+                            for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                                if chunk:
+                                    self.wfile.write(chunk)
+                            chunk_start = returned_end + 1
+                else:
+                    request_headers = {**upstream_headers, "Range": requested_range}
+                    with requests.get(
+                        source_url,
+                        headers=request_headers,
+                        stream=True,
+                        timeout=(5, max(5, int(timeout))),
+                    ) as upstream:
+                        upstream.raise_for_status()
+                        self.send_response(upstream.status_code)
+                        for name in (
+                            "Content-Type",
+                            "Content-Length",
+                            "Content-Range",
+                            "Accept-Ranges",
+                        ):
+                            value = upstream.headers.get(name)
+                            if value:
+                                self.send_header(name, value)
+                        self.send_header("Connection", "close")
+                        self.end_headers()
+                        for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                            if chunk:
+                                self.wfile.write(chunk)
+            except requests.RequestException as exc:
+                _logger.warning("YouTube audio proxy request failed: %s", type(exc).__name__)
+                if not self.wfile.closed:
+                    self.close_connection = True
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                self.close_connection = True
+
+        def log_message(self, _format: str, *args: Any) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), MediaProxyHandler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address[:2]
+        yield f"http://{host}:{port}/audio"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def _audio_clip_from_stream(
+    stream: Dict[str, Any],
+    *,
+    start_seconds: float,
+    duration_seconds: float,
+    timeout: int,
+) -> bytes:
+    ffmpeg = _ffmpeg_executable()
+    if not ffmpeg:
+        raise YoutubeAudioError("伺服器目前沒有可用的音訊擷取器。")
+    stream_url = str(stream.get("url") or "").strip()
+    if not stream_url.startswith(("https://", "http://")):
+        raise YoutubeAudioError("影片音訊串流網址無效。")
+    headers = _request_headers(stream.get("http_headers"))
+    try:
+        with _proxied_media_url(stream_url, headers, timeout=timeout) as media_url:
+            command = [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-rw_timeout",
+                str(max(1, int(timeout)) * 1_000_000),
+                "-ss",
+                f"{max(0.0, start_seconds):.3f}",
+                "-i",
+                media_url,
+                "-t",
+                f"{max(0.1, duration_seconds):.3f}",
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-sn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "pcm_s16le",
+                "-f",
+                "wav",
+                "pipe:1",
+            ]
+            completed = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=max(5, int(timeout) + 2),
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise YoutubeAudioError("目前無法擷取這段影片音訊。") from exc
+    if completed.returncode != 0 or len(completed.stdout) < 1024:
+        raise YoutubeAudioError("目前無法擷取這段影片音訊。")
+    return completed.stdout
+
+
+def fetch_youtube_audio_clip(
+    youtube_video_id: str,
+    playback_seconds: float,
+    *,
+    radius_seconds: float = 15.0,
+    timeout: int = _AUDIO_CLIP_TIMEOUT_SECONDS,
+) -> Dict[str, Any]:
+    """Return a mono WAV clip centered on playback time from a YouTube stream."""
+    video_id, requested_seconds = _validate_frame_request(
+        youtube_video_id,
+        playback_seconds,
+    )
+    try:
+        radius = float(radius_seconds)
+    except (TypeError, ValueError) as exc:
+        raise YoutubeAudioError("音訊範圍無效。") from exc
+    if not math.isfinite(radius) or radius <= 0 or radius > 60:
+        raise YoutubeAudioError("音訊範圍無效。")
+
+    deadline = time.monotonic() + max(8, int(timeout))
+    last_error: YoutubeAudioError | None = None
+    for metadata_attempt in range(2):
+        remaining = deadline - time.monotonic()
+        if remaining < 2:
+            break
+        try:
+            info = _youtube_audio_info(
+                video_id,
+                force_refresh=metadata_attempt > 0,
+            )
+        except YoutubeAudioError as exc:
+            last_error = exc
+            continue
+        source_duration = _positive_float(info.get("duration"))
+        center_seconds = requested_seconds
+        if source_duration > 0:
+            center_seconds = min(center_seconds, source_duration)
+        start_seconds = max(0.0, center_seconds - radius)
+        end_seconds = center_seconds + radius
+        if source_duration > 0:
+            end_seconds = min(source_duration, end_seconds)
+        clip_duration = end_seconds - start_seconds
+        if clip_duration < 0.1:
+            raise YoutubeAudioError("關鍵點附近沒有可擷取的音訊。")
+
+        streams = [item for item in (info.get("streams") or []) if isinstance(item, dict)]
+        for stream in streams[:_AUDIO_STREAM_MAX_ATTEMPTS]:
+            remaining = deadline - time.monotonic()
+            if remaining < 2:
+                last_error = YoutubeAudioError("音訊擷取逾時。")
+                break
+            try:
+                audio_bytes = _audio_clip_from_stream(
+                    stream,
+                    start_seconds=start_seconds,
+                    duration_seconds=clip_duration,
+                    timeout=max(2, min(15, int(math.ceil(remaining)))),
+                )
+                return {
+                    "bytes": audio_bytes,
+                    "mime_type": "audio/wav",
+                    "filename": f"{video_id}-{start_seconds:.1f}-{end_seconds:.1f}.wav",
+                    "requested_seconds": requested_seconds,
+                    "start_seconds": start_seconds,
+                    "end_seconds": end_seconds,
+                    "duration_seconds": clip_duration,
+                    "source": "youtube_audio",
+                }
+            except YoutubeAudioError as exc:
+                last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise YoutubeAudioError("目前無法擷取這段影片音訊。")
 
 
 def _frame_from_stream(
