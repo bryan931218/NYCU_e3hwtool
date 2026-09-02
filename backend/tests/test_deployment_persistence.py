@@ -185,7 +185,7 @@ class DeploymentPersistenceTests(unittest.TestCase):
                 conn.execute(text(
                     "INSERT INTO study_plan_activity_events "
                     "(day, video_id, previous_watched_seconds, watched_seconds, delta_seconds, updated_at) "
-                    "VALUES ('2026-09-02', :video_id, 11520, 12120, 600, '2026-09-02T12:00:00')"
+                    "VALUES ('2026-09-02', :video_id, 11520, 12092, 572, '2026-09-02T12:00:00')"
                 ), {"video_id": video_id})
 
             storage.sync_study_plan_videos(inventory)
@@ -198,7 +198,7 @@ class DeploymentPersistenceTests(unittest.TestCase):
                 if item["video_id"] == video_id
             )
             self.assertEqual(source["delta_seconds"], 169 * 60)
-            self.assertEqual(target["delta_seconds"], 33 * 60)
+            self.assertEqual(target["delta_seconds"], 572 + 23 * 60)
 
             # A later startup must leave the verified result unchanged.
             storage.sync_study_plan_videos(inventory)
@@ -206,7 +206,7 @@ class DeploymentPersistenceTests(unittest.TestCase):
                 item for item in storage.list_study_plan_activity_events(day="2026-09-02")
                 if item["video_id"] == video_id
             )
-            self.assertEqual(target_again["delta_seconds"], 33 * 60)
+            self.assertEqual(target_again["delta_seconds"], 572 + 23 * 60)
             with storage._lock, storage._engine.connect() as conn:
                 repair_count = conn.execute(text(
                     "SELECT COUNT(*) FROM e3_data_repairs "

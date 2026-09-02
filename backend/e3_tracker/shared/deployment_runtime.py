@@ -501,9 +501,11 @@ class DeploymentSafeStorage(PersistentStorage):
             for item in self.list_study_plan_activity_events(day=target_day)
             if int(item.get("video_id") or 0) == video_id
         )
-        # This exact ten-minute target is the production state the user showed.
-        # If anything has changed since then, fail closed instead of guessing.
-        if source_seconds + 0.5 < moved_seconds or abs(target_seconds - 10 * 60) > 0.5:
+        # The UI rounds the stored seconds to ten minutes (the actual value is
+        # about 9m32s for this video). Match only values that render as 10m; if
+        # anything has changed beyond that narrow interval, fail closed.
+        renders_as_ten_minutes = 9.5 * 60 <= target_seconds < 10.5 * 60
+        if source_seconds + 0.5 < moved_seconds or not renders_as_ten_minutes:
             return
         result = self.move_study_plan_activity_between_days(
             video_id=video_id,
