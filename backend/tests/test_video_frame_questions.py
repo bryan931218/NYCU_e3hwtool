@@ -252,6 +252,9 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn("關鍵點總覽", marker_page)
         self.assertIn("SVD 的幾何意義", marker_page)
         self.assertIn("A=U", marker_page)
+        self.assertIn('class="library-stats"', marker_page)
+        self.assertIn('id="load-more"', marker_page)
+        self.assertIn("filterRows();", marker_page)
         self.assertIn("前往片段", marker_page)
         self.assertIn(
             f"video_id={self.video['id']}&amp;marker_id={marker_id}",
@@ -309,6 +312,8 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn('id="frame-question-open"', html)
         self.assertIn('id="focus-frame-question"', html)
         self.assertIn('id="frame-question-dialog"', html)
+        self.assertIn("max-height: 214px", html)
+        self.assertIn("scrollbar-gutter: stable", html)
         self.assertIn("Q 問這一幕", html)
         self.assertIn("max-height:calc(100dvh - 18px)", html)
         self.assertIn("/admin/study-plan/video-question", html)

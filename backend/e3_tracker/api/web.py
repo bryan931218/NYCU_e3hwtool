@@ -18018,12 +18018,27 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @admin_required
     def admin_study_plan_markers():
         marker_library = _study_plan_marker_library()
+        ready_count = sum(
+            1 for marker in marker_library if marker.get("summary_status") == "ready"
+        )
         return render_template_string(
             STUDY_MARKERS_TEMPLATE,
             admin_user=current_user(),
             markers=marker_library,
             subjects=STUDY_PLAN_SUBJECTS,
             openai_ready=bool(openai_api_key),
+            marker_stats={
+                "total": len(marker_library),
+                "ready": ready_count,
+                "pending": len(marker_library) - ready_count,
+                "subjects": len(
+                    {
+                        str(marker.get("subject") or "")
+                        for marker in marker_library
+                        if marker.get("subject")
+                    }
+                ),
+            },
         )
 
     @app.route("/admin/study-plan", methods=["GET", "POST"])

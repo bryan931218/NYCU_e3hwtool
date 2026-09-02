@@ -8,7 +8,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
     <style>
-        :root { --ink:#102a43; --muted:#62778d; --line:#d9e4ef; --blue:#1769d2; --blue-soft:#eef6ff; --teal:#087f75; --teal-soft:#e9f8f4; --paper:#fff; --surface:#f5f8fb; --warning:#9a5c00; --warning-soft:#fff7e8; }
+        :root { --ink:#102a43; --ink-soft:#314b64; --muted:#687d91; --line:#d9e4ef; --line-strong:#c9d8e7; --blue:#1769d2; --blue-soft:#eef6ff; --teal:#087f75; --teal-soft:#e9f8f4; --paper:#fff; --surface:#f4f7fa; --warning:#9a5c00; --warning-soft:#fff7e8; --shadow:0 12px 34px rgba(29,55,82,.08); }
         * { box-sizing:border-box; }
         html { background:var(--surface); }
         body { margin:0; min-width:320px; color:var(--ink); background:var(--surface); font-family:Inter,"Noto Sans TC","Microsoft JhengHei",sans-serif; letter-spacing:0; }
@@ -21,42 +21,61 @@
         .nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }
         .nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }
         .admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
-        .content { width:min(1180px,100%); margin:0 auto; padding:36px 28px 56px; }
-        .page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:20px; }
-        .eyebrow { margin:0 0 6px; color:var(--teal); font-size:11px; font-weight:900; }
-        h1 { margin:0; font-size:30px; line-height:1.2; }
-        .total { flex:0 0 auto; color:var(--muted); font-size:13px; font-weight:800; }
-        .total strong { color:var(--ink); font-size:22px; }
-        .toolbar { position:sticky; top:0; z-index:5; display:grid; grid-template-columns:minmax(240px,1fr) minmax(150px,220px) minmax(140px,190px); gap:10px; padding:14px; background:rgba(255,255,255,.96); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(39,68,97,.06); backdrop-filter:blur(10px); }
-        .toolbar input,.toolbar select { width:100%; min-width:0; height:42px; padding:0 12px; color:var(--ink); background:#fff; border:1px solid #c8d6e5; border-radius:6px; outline:0; }
-        .toolbar input:focus,.toolbar select:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(23,105,210,.12); }
-        .result-line { display:flex; align-items:center; justify-content:space-between; min-height:42px; padding:10px 2px 4px; color:var(--muted); font-size:12px; font-weight:750; }
-        .clear-filter { border:0; padding:5px 0; color:var(--blue); background:transparent; cursor:pointer; font-weight:850; }
-        .marker-list { background:var(--paper); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-        .marker-row { display:grid; grid-template-columns:210px minmax(0,1fr) auto; gap:22px; align-items:start; padding:20px; border-bottom:1px solid var(--line); }
-        .marker-row:last-child { border-bottom:0; }
+        .content { width:min(1240px,100%); margin:0 auto; padding:34px 28px 64px; }
+        .page-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:28px; align-items:end; margin-bottom:18px; }
+        .eyebrow { margin:0 0 7px; color:var(--teal); font-size:10px; font-weight:950; }
+        h1 { margin:0; font-size:32px; line-height:1.15; }
+        .library-stats { display:flex; align-items:stretch; overflow:hidden; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(29,55,82,.05); }
+        .library-stat { min-width:92px; padding:10px 15px; border-left:1px solid var(--line); }
+        .library-stat:first-child { border-left:0; }
+        .library-stat span { display:block; color:var(--muted); font-size:9px; font-weight:850; }
+        .library-stat strong { display:block; margin-top:3px; color:var(--ink); font-size:18px; line-height:1; font-variant-numeric:tabular-nums; }
+        .library-stat.ready strong { color:var(--teal); }
+        .toolbar { position:sticky; top:0; z-index:5; display:grid; grid-template-columns:minmax(260px,1fr) minmax(160px,210px) minmax(150px,190px); gap:10px; padding:12px; background:rgba(255,255,255,.95); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow); backdrop-filter:blur(12px); }
+        .filter-field { min-width:0; }
+        .filter-field label { display:block; margin:0 0 5px 2px; color:#718397; font-size:9px; font-weight:850; }
+        .toolbar input,.toolbar select { width:100%; min-width:0; height:40px; padding:0 12px; color:var(--ink); background:#fdfefe; border:1px solid var(--line-strong); border-radius:6px; outline:0; }
+        .toolbar input::placeholder { color:#8a9caf; }
+        .toolbar input:focus,.toolbar select:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(23,105,210,.11); }
+        .result-line { display:flex; align-items:center; justify-content:space-between; min-height:46px; padding:12px 3px 5px; color:var(--muted); font-size:11px; font-weight:800; }
+        .clear-filter { border:0; padding:5px 0; color:var(--blue); background:transparent; cursor:pointer; font-size:11px; font-weight:900; }
+        .marker-list { display:grid; gap:10px; }
+        .marker-row { --subject-color:#087f75; --subject-soft:#e9f8f4; position:relative; display:grid; grid-template-columns:190px minmax(0,1fr) auto; gap:22px; align-items:center; padding:18px 18px 18px 20px; overflow:hidden; background:var(--paper); border:1px solid var(--line); border-radius:8px; box-shadow:0 4px 14px rgba(36,62,88,.035); transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
+        .marker-row::before { position:absolute; inset:0 auto 0 0; width:4px; content:""; background:var(--subject-color); }
+        .marker-row:hover { transform:translateY(-1px); border-color:#bfd1e3; box-shadow:0 10px 25px rgba(36,62,88,.08); }
         .marker-row[hidden] { display:none; }
+        .marker-row[data-subject="線性代數"] { --subject-color:#1769d2; --subject-soft:#eef6ff; }
+        .marker-row[data-subject="離散數學"] { --subject-color:#7a50bd; --subject-soft:#f4effc; }
+        .marker-row[data-subject="資料結構"] { --subject-color:#087f75; --subject-soft:#e9f8f4; }
+        .marker-row[data-subject="作業系統"] { --subject-color:#b56a08; --subject-soft:#fff5e5; }
+        .marker-row[data-subject="計算機組織"] { --subject-color:#b84755; --subject-soft:#fff0f2; }
+        .marker-row[data-subject="演算法"] { --subject-color:#08738c; --subject-soft:#e9f8fb; }
         .marker-meta { min-width:0; }
-        .subject { display:inline-flex; padding:4px 7px; color:var(--teal); background:var(--teal-soft); border-radius:4px; font-size:11px; font-weight:900; }
-        .video-label { display:block; margin-top:9px; color:var(--ink); font-size:12px; font-weight:850; }
-        .video-title { display:-webkit-box; margin-top:4px; overflow:hidden; color:var(--muted); font-size:11px; line-height:1.5; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow-wrap:anywhere; }
+        .subject { display:inline-flex; padding:4px 7px; color:var(--subject-color); background:var(--subject-soft); border-radius:4px; font-size:10px; font-weight:900; }
+        .video-position { display:flex; align-items:baseline; gap:7px; margin-top:8px; }
+        .video-label { color:var(--ink-soft); font-size:11px; font-weight:850; }
+        .marker-time { color:var(--subject-color); font-size:17px; font-weight:950; font-variant-numeric:tabular-nums; }
+        .video-title { display:-webkit-box; margin-top:4px; overflow:hidden; color:var(--muted); font-size:10px; line-height:1.5; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow-wrap:anywhere; }
         .marker-main { min-width:0; }
-        .marker-title-line { display:flex; align-items:flex-start; gap:9px; }
-        .marker-name { min-width:0; margin:0; font-size:16px; line-height:1.45; overflow-wrap:anywhere; }
-        .summary-state { flex:0 0 auto; margin-top:2px; padding:3px 6px; color:var(--warning); background:var(--warning-soft); border-radius:4px; font-size:10px; font-weight:850; }
-        .marker-summary { margin-top:8px; color:#516a82; font-size:13px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
+        .marker-title-line { display:flex; align-items:center; gap:9px; }
+        .marker-name { min-width:0; margin:0; color:var(--ink); font-size:15px; line-height:1.45; overflow-wrap:anywhere; }
+        .ready-dot { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:#19a385; box-shadow:0 0 0 3px #e5f7f2; }
+        .summary-state { flex:0 0 auto; padding:3px 6px; color:var(--warning); background:var(--warning-soft); border-radius:4px; font-size:9px; font-weight:850; }
+        .marker-summary { margin-top:7px; padding-left:11px; color:#516a82; border-left:2px solid var(--subject-soft); font-size:12px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
         .summary-actions { display:flex; align-items:center; gap:8px; margin-top:9px; }
         .retry { padding:6px 9px; color:var(--blue); background:var(--blue-soft); border:1px solid #c4d9f3; border-radius:5px; cursor:pointer; font-size:11px; font-weight:850; }
         .retry:disabled { cursor:wait; opacity:.65; }
-        .open-marker { align-self:center; display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; color:#fff; background:var(--blue); border:1px solid var(--blue); border-radius:6px; font-size:11px; font-weight:900; white-space:nowrap; }
-        .open-marker:hover { background:#0d58b5; }
-        .empty { padding:70px 20px; color:var(--muted); background:#fff; border:1px solid var(--line); border-radius:8px; text-align:center; font-size:13px; }
+        .open-marker { align-self:center; display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; color:var(--blue); background:var(--blue-soft); border:1px solid #c4d9f3; border-radius:6px; font-size:10px; font-weight:900; white-space:nowrap; }
+        .open-marker:hover { color:#fff; border-color:var(--blue); background:var(--blue); }
+        .load-more { width:100%; min-height:42px; margin-top:12px; color:var(--ink-soft); background:#fff; border:1px solid var(--line-strong); border-radius:7px; cursor:pointer; font-size:11px; font-weight:900; }
+        .load-more:hover { color:var(--blue); border-color:#a9c5e3; background:#f8fbff; }
+        .empty { padding:64px 20px; color:var(--muted); background:#fff; border:1px dashed var(--line-strong); border-radius:8px; text-align:center; font-size:12px; }
         [data-math-content] { min-width:0; max-width:100%; }
         [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; }
         [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
         [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0; overflow:visible; text-align:left; }
-        @media(max-width:900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; }.marker-row { grid-template-columns:160px minmax(0,1fr); }.open-marker { grid-column:2; justify-self:start; } }
-        @media(max-width:620px) { .study-nav { gap:8px; padding:12px 16px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; }.content { padding:24px 14px 42px; }.page-head { align-items:flex-start; }.toolbar { position:static; grid-template-columns:1fr; }.marker-row { grid-template-columns:1fr; gap:12px; padding:16px 14px; }.open-marker { grid-column:1; width:100%; }.video-title { -webkit-line-clamp:1; } }
+        @media(max-width:900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { width:100%; justify-content:flex-start; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }.nav-links::-webkit-scrollbar { display:none; }.nav-links a { flex:0 0 auto; }.marker-row { grid-template-columns:150px minmax(0,1fr); }.open-marker { grid-column:2; justify-self:start; } }
+        @media(max-width:620px) { .study-nav { gap:8px; padding:12px 16px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; }.content { padding:24px 14px 42px; }.page-head { grid-template-columns:1fr; gap:14px; }.library-stats { width:100%; }.library-stat { flex:1; min-width:0; padding:9px 10px; }.library-stat strong { font-size:16px; }.toolbar { position:static; grid-template-columns:1fr; }.marker-row { grid-template-columns:1fr; gap:12px; padding:16px 14px 14px 17px; }.marker-meta { padding-bottom:10px; border-bottom:1px solid #e4ebf2; }.video-title { -webkit-line-clamp:1; }.open-marker { grid-column:1; width:100%; }.marker-summary { font-size:12px; } }
     </style>
 </head>
 <body>
@@ -74,12 +93,16 @@
     <main class="content">
         <header class="page-head">
             <div><p class="eyebrow">VIDEO MARKERS</p><h1>關鍵點總覽</h1></div>
-            <div class="total"><strong>{{ markers|length }}</strong> 個關鍵點</div>
+            <div class="library-stats" aria-label="關鍵點摘要">
+                <div class="library-stat"><span>全部</span><strong>{{ marker_stats.total }}</strong></div>
+                <div class="library-stat ready"><span>已整理</span><strong>{{ marker_stats.ready }}</strong></div>
+                <div class="library-stat"><span>科目</span><strong>{{ marker_stats.subjects }}</strong></div>
+            </div>
         </header>
         <section class="toolbar" aria-label="篩選關鍵點">
-            <input id="marker-search" type="search" placeholder="搜尋關鍵點、摘要或影片" autocomplete="off">
-            <select id="marker-subject" aria-label="篩選科目"><option value="">全部科目</option>{% for subject in subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}</select>
-            <select id="marker-status" aria-label="篩選摘要狀態"><option value="">全部摘要</option><option value="ready">已整理</option><option value="pending">待整理</option></select>
+            <div class="filter-field"><label for="marker-search">搜尋</label><input id="marker-search" type="search" placeholder="關鍵點、摘要或影片" autocomplete="off"></div>
+            <div class="filter-field"><label for="marker-subject">科目</label><select id="marker-subject"><option value="">全部科目</option>{% for subject in subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}</select></div>
+            <div class="filter-field"><label for="marker-status">摘要狀態</label><select id="marker-status"><option value="">全部摘要</option><option value="ready">已整理</option><option value="pending">待整理</option></select></div>
         </section>
         <div class="result-line"><span id="result-count">顯示 {{ markers|length }} 個</span><button class="clear-filter" id="clear-filter" type="button" hidden>清除篩選</button></div>
         <section class="marker-list" id="marker-list" aria-live="polite">
@@ -87,11 +110,11 @@
             <article class="marker-row" data-marker-row data-subject="{{ marker.subject }}" data-status="{{ marker.summary_status or 'failed' }}" data-search="{{ (marker.note ~ ' ' ~ marker.summary ~ ' ' ~ marker.subject ~ ' ' ~ marker.video_title)|lower }}">
                 <div class="marker-meta">
                     <span class="subject">{{ marker.subject }}</span>
-                    <span class="video-label">第 {{ '%03d'|format(marker.sequence) }} 支・{{ marker.time_label }}</span>
+                    <div class="video-position"><span class="marker-time">{{ marker.time_label }}</span><span class="video-label">第 {{ '%03d'|format(marker.sequence) }} 支</span></div>
                     <span class="video-title">{{ marker.video_title }}</span>
                 </div>
                 <div class="marker-main">
-                    <div class="marker-title-line"><h2 class="marker-name">{{ marker.note or '關鍵片段' }}</h2>{% if marker.summary_status != 'ready' %}<span class="summary-state" data-summary-state>{% if marker.summary_status == 'processing' %}整理中{% elif marker.summary_status == 'needs_name' %}待命名{% elif marker.summary_status == 'unavailable' %}未啟用{% else %}待整理{% endif %}</span>{% endif %}</div>
+                    <div class="marker-title-line"><h2 class="marker-name">{{ marker.note or '關鍵片段' }}</h2>{% if marker.summary_status == 'ready' %}<span class="ready-dot" title="摘要已整理" aria-label="摘要已整理"></span>{% else %}<span class="summary-state" data-summary-state>{% if marker.summary_status == 'processing' %}整理中{% elif marker.summary_status == 'needs_name' %}待命名{% elif marker.summary_status == 'unavailable' %}未啟用{% else %}待整理{% endif %}</span>{% endif %}</div>
                     <div class="marker-summary" data-marker-summary data-math-content{% if not marker.summary %} hidden{% endif %}>{{ marker.summary }}</div>
                     {% if marker.summary_status not in ['ready', 'processing', 'needs_name', 'unavailable'] and marker.note and marker.note != '關鍵片段' and openai_ready %}<div class="summary-actions"><button class="retry" type="button" data-retry-url="{{ url_for('admin_study_plan_video_marker_summary', marker_id=marker.id) }}">重試摘要</button></div>{% endif %}
                 </div>
@@ -99,6 +122,7 @@
             </article>
             {% endfor %}
         </section>
+        <button class="load-more" id="load-more" type="button" hidden>顯示更多</button>
         <div class="empty" id="marker-empty"{% if markers %} hidden{% endif %}>{% if markers %}沒有符合的關鍵點{% else %}尚未建立關鍵點{% endif %}</div>
     </main>
     <script>
@@ -131,24 +155,32 @@
             const count = document.getElementById('result-count');
             const empty = document.getElementById('marker-empty');
             const clear = document.getElementById('clear-filter');
+            const loadMore = document.getElementById('load-more');
+            const pageSize = 24;
+            let visibleLimit = pageSize;
             const filterRows = () => {
                 const query = search.value.trim().toLocaleLowerCase();
-                let visible = 0;
+                let matched = 0;
                 rows.forEach((row) => {
                     const statusMatches = !status.value
                         || (status.value === 'ready' ? row.dataset.status === 'ready' : row.dataset.status !== 'ready');
-                    const show = (!query || row.dataset.search.includes(query))
+                    const matches = (!query || row.dataset.search.includes(query))
                         && (!subject.value || row.dataset.subject === subject.value)
                         && statusMatches;
-                    row.hidden = !show;
-                    if (show) visible += 1;
+                    if (matches) matched += 1;
+                    row.hidden = !matches || matched > visibleLimit;
                 });
-                count.textContent = '顯示 ' + visible + ' 個';
-                empty.hidden = visible > 0;
+                const visible = Math.min(matched, visibleLimit);
+                count.textContent = matched > visible
+                    ? '顯示 ' + visible + ' / ' + matched + ' 個'
+                    : '顯示 ' + matched + ' 個';
+                empty.hidden = matched > 0;
                 clear.hidden = !(query || subject.value || status.value);
+                loadMore.hidden = matched <= visibleLimit;
             };
-            [search, subject, status].forEach((control) => control.addEventListener(control === search ? 'input' : 'change', filterRows));
-            clear.addEventListener('click', () => { search.value = ''; subject.value = ''; status.value = ''; filterRows(); search.focus(); });
+            [search, subject, status].forEach((control) => control.addEventListener(control === search ? 'input' : 'change', () => { visibleLimit = pageSize; filterRows(); }));
+            clear.addEventListener('click', () => { search.value = ''; subject.value = ''; status.value = ''; visibleLimit = pageSize; filterRows(); search.focus(); });
+            loadMore.addEventListener('click', () => { visibleLimit += pageSize; filterRows(); });
             document.querySelectorAll('[data-retry-url]').forEach((button) => {
                 button.addEventListener('click', async () => {
                     const row = button.closest('[data-marker-row]');
@@ -165,8 +197,14 @@
                         summary.hidden = false;
                         summary.dataset.mathRendered = 'false';
                         row.dataset.status = 'ready';
-                        row.dataset.search = [data.marker.note, data.marker.summary, row.dataset.subject].join(' ').toLocaleLowerCase();
-                        if (state) state.remove();
+                        row.dataset.search = [row.dataset.search, data.marker.note, data.marker.summary].join(' ').toLocaleLowerCase();
+                        if (state) {
+                            const readyDot = document.createElement('span');
+                            readyDot.className = 'ready-dot';
+                            readyDot.title = '摘要已整理';
+                            readyDot.setAttribute('aria-label', '摘要已整理');
+                            state.replaceWith(readyDot);
+                        }
                         button.closest('.summary-actions').remove();
                         window.renderStudyMath(summary);
                         filterRows();
@@ -177,6 +215,7 @@
                     }
                 });
             });
+            filterRows();
             window.renderStudyMath();
         })();
     </script>
