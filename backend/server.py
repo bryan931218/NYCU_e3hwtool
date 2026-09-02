@@ -14,6 +14,7 @@ from e3_tracker.shared.study_calendar_runtime import install_study_calendar_runt
 from e3_tracker.shared.study_note_upload_runtime import install_study_note_upload_runtime
 from e3_tracker.shared.study_recall_favorites_runtime import install_study_recall_favorites_runtime
 from e3_tracker.shared.study_recall_library_runtime import install_study_recall_library_runtime
+from e3_tracker.shared.study_rest_day_toggle_runtime import install_rest_day_toggle
 from e3_tracker.shared.storage import PersistentStorage
 
 
@@ -24,6 +25,7 @@ install_study_calendar_runtime(web)
 install_study_note_upload_runtime(web)
 install_study_recall_library_runtime(web)
 install_study_recall_favorites_runtime(web)
+install_rest_day_toggle(web)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
