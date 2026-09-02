@@ -960,7 +960,7 @@
         <header class="study-nav" aria-label="學習中心導覽">
             <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
             <nav class="nav-links">
-                <a href="{{ url_for('public_study_progress') }}">公開頁面</a><a class="active" href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">筆記彙整</a><a href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
+                <a href="{{ url_for('public_study_progress') }}">公開頁面</a><a class="active" href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">筆記彙整</a><a href="{{ url_for('admin_study_plan') }}">影片紀錄</a><a href="{{ url_for('admin_study_plan_markers') }}">關鍵點總覽</a>
                 <span class="admin">{{ admin_user.username }}・管理員</span>
             </nav>
         </header>

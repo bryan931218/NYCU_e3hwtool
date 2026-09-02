@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>關鍵點總覽 | E3</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
+    <style>
+        :root { --ink:#102a43; --muted:#62778d; --line:#d9e4ef; --blue:#1769d2; --blue-soft:#eef6ff; --teal:#087f75; --teal-soft:#e9f8f4; --paper:#fff; --surface:#f5f8fb; --warning:#9a5c00; --warning-soft:#fff7e8; }
+        * { box-sizing:border-box; }
+        html { background:var(--surface); }
+        body { margin:0; min-width:320px; color:var(--ink); background:var(--surface); font-family:Inter,"Noto Sans TC","Microsoft JhengHei",sans-serif; letter-spacing:0; }
+        a { color:inherit; text-decoration:none; }
+        button,input,select { font:inherit; letter-spacing:0; }
+        .study-nav { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 32px; background:rgba(255,255,255,.97); border-bottom:1px solid var(--line); }
+        .brand { display:flex; align-items:center; gap:10px; font-size:14px; font-weight:900; white-space:nowrap; }
+        .mark { width:30px; height:30px; display:grid; place-items:center; color:#fff; background:var(--blue); border-radius:5px; }
+        .nav-links { display:flex; align-items:center; justify-content:flex-end; gap:3px; flex-wrap:wrap; }
+        .nav-links a { padding:8px 10px; color:var(--muted); border-bottom:2px solid transparent; font-size:13px; font-weight:800; }
+        .nav-links a:hover,.nav-links a.active { color:var(--blue); border-bottom-color:var(--blue); }
+        .admin { margin-left:7px; padding:6px 9px; color:var(--teal); background:var(--teal-soft); border:1px solid #bfe4df; border-radius:4px; font-size:12px; font-weight:800; }
+        .content { width:min(1180px,100%); margin:0 auto; padding:36px 28px 56px; }
+        .page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:20px; }
+        .eyebrow { margin:0 0 6px; color:var(--teal); font-size:11px; font-weight:900; }
+        h1 { margin:0; font-size:30px; line-height:1.2; }
+        .total { flex:0 0 auto; color:var(--muted); font-size:13px; font-weight:800; }
+        .total strong { color:var(--ink); font-size:22px; }
+        .toolbar { position:sticky; top:0; z-index:5; display:grid; grid-template-columns:minmax(240px,1fr) minmax(150px,220px) minmax(140px,190px); gap:10px; padding:14px; background:rgba(255,255,255,.96); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(39,68,97,.06); backdrop-filter:blur(10px); }
+        .toolbar input,.toolbar select { width:100%; min-width:0; height:42px; padding:0 12px; color:var(--ink); background:#fff; border:1px solid #c8d6e5; border-radius:6px; outline:0; }
+        .toolbar input:focus,.toolbar select:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(23,105,210,.12); }
+        .result-line { display:flex; align-items:center; justify-content:space-between; min-height:42px; padding:10px 2px 4px; color:var(--muted); font-size:12px; font-weight:750; }
+        .clear-filter { border:0; padding:5px 0; color:var(--blue); background:transparent; cursor:pointer; font-weight:850; }
+        .marker-list { background:var(--paper); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+        .marker-row { display:grid; grid-template-columns:210px minmax(0,1fr) auto; gap:22px; align-items:start; padding:20px; border-bottom:1px solid var(--line); }
+        .marker-row:last-child { border-bottom:0; }
+        .marker-row[hidden] { display:none; }
+        .marker-meta { min-width:0; }
+        .subject { display:inline-flex; padding:4px 7px; color:var(--teal); background:var(--teal-soft); border-radius:4px; font-size:11px; font-weight:900; }
+        .video-label { display:block; margin-top:9px; color:var(--ink); font-size:12px; font-weight:850; }
+        .video-title { display:-webkit-box; margin-top:4px; overflow:hidden; color:var(--muted); font-size:11px; line-height:1.5; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow-wrap:anywhere; }
+        .marker-main { min-width:0; }
+        .marker-title-line { display:flex; align-items:flex-start; gap:9px; }
+        .marker-name { min-width:0; margin:0; font-size:16px; line-height:1.45; overflow-wrap:anywhere; }
+        .summary-state { flex:0 0 auto; margin-top:2px; padding:3px 6px; color:var(--warning); background:var(--warning-soft); border-radius:4px; font-size:10px; font-weight:850; }
+        .marker-summary { margin-top:8px; color:#516a82; font-size:13px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
+        .summary-actions { display:flex; align-items:center; gap:8px; margin-top:9px; }
+        .retry { padding:6px 9px; color:var(--blue); background:var(--blue-soft); border:1px solid #c4d9f3; border-radius:5px; cursor:pointer; font-size:11px; font-weight:850; }
+        .retry:disabled { cursor:wait; opacity:.65; }
+        .open-marker { align-self:center; display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; color:#fff; background:var(--blue); border:1px solid var(--blue); border-radius:6px; font-size:11px; font-weight:900; white-space:nowrap; }
+        .open-marker:hover { background:#0d58b5; }
+        .empty { padding:70px 20px; color:var(--muted); background:#fff; border:1px solid var(--line); border-radius:8px; text-align:center; font-size:13px; }
+        [data-math-content] { min-width:0; max-width:100%; }
+        [data-math-content] > .katex { display:inline-block; max-width:100%; overflow-x:auto; overflow-y:hidden; vertical-align:middle; }
+        [data-math-content] .katex-display { width:100%; max-width:100%; margin:.65em 0; padding:2px 0 5px; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
+        [data-math-content] .katex-display > .katex { display:table; width:max-content; min-width:max-content; max-width:none; margin:0; overflow:visible; text-align:left; }
+        @media(max-width:900px) { .study-nav { padding:12px 18px; align-items:flex-start; flex-direction:column; }.nav-links { justify-content:flex-start; }.marker-row { grid-template-columns:160px minmax(0,1fr); }.open-marker { grid-column:2; justify-self:start; } }
+        @media(max-width:620px) { .study-nav { gap:8px; padding:12px 16px; }.nav-links { gap:0; }.nav-links a { padding:7px 8px; }.admin { display:none; }.content { padding:24px 14px 42px; }.page-head { align-items:flex-start; }.toolbar { position:static; grid-template-columns:1fr; }.marker-row { grid-template-columns:1fr; gap:12px; padding:16px 14px; }.open-marker { grid-column:1; width:100%; }.video-title { -webkit-line-clamp:1; } }
+    </style>
+</head>
+<body>
+    <header class="study-nav" aria-label="學習中心導覽">
+        <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
+        <nav class="nav-links">
+            <a href="{{ url_for('public_study_progress') }}">公開頁面</a>
+            <a href="{{ url_for('admin_study_home') }}">學習首頁</a>
+            <a href="{{ url_for('admin_study_recall') }}">筆記彙整</a>
+            <a href="{{ url_for('admin_study_plan') }}">影片紀錄</a>
+            <a class="active" href="{{ url_for('admin_study_plan_markers') }}">關鍵點總覽</a>
+            <span class="admin">{{ admin_user.username }}・管理員</span>
+        </nav>
+    </header>
+    <main class="content">
+        <header class="page-head">
+            <div><p class="eyebrow">VIDEO MARKERS</p><h1>關鍵點總覽</h1></div>
+            <div class="total"><strong>{{ markers|length }}</strong> 個關鍵點</div>
+        </header>
+        <section class="toolbar" aria-label="篩選關鍵點">
+            <input id="marker-search" type="search" placeholder="搜尋關鍵點、摘要或影片" autocomplete="off">
+            <select id="marker-subject" aria-label="篩選科目"><option value="">全部科目</option>{% for subject in subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}</select>
+            <select id="marker-status" aria-label="篩選摘要狀態"><option value="">全部摘要</option><option value="ready">已整理</option><option value="pending">待整理</option></select>
+        </section>
+        <div class="result-line"><span id="result-count">顯示 {{ markers|length }} 個</span><button class="clear-filter" id="clear-filter" type="button" hidden>清除篩選</button></div>
+        <section class="marker-list" id="marker-list" aria-live="polite">
+            {% for marker in markers %}
+            <article class="marker-row" data-marker-row data-subject="{{ marker.subject }}" data-status="{{ marker.summary_status or 'failed' }}" data-search="{{ (marker.note ~ ' ' ~ marker.summary ~ ' ' ~ marker.subject ~ ' ' ~ marker.video_title)|lower }}">
+                <div class="marker-meta">
+                    <span class="subject">{{ marker.subject }}</span>
+                    <span class="video-label">第 {{ '%03d'|format(marker.sequence) }} 支・{{ marker.time_label }}</span>
+                    <span class="video-title">{{ marker.video_title }}</span>
+                </div>
+                <div class="marker-main">
+                    <div class="marker-title-line"><h2 class="marker-name">{{ marker.note or '關鍵片段' }}</h2>{% if marker.summary_status != 'ready' %}<span class="summary-state" data-summary-state>{% if marker.summary_status == 'processing' %}整理中{% elif marker.summary_status == 'needs_name' %}待命名{% elif marker.summary_status == 'unavailable' %}未啟用{% else %}待整理{% endif %}</span>{% endif %}</div>
+                    <div class="marker-summary" data-marker-summary data-math-content{% if not marker.summary %} hidden{% endif %}>{{ marker.summary }}</div>
+                    {% if marker.summary_status not in ['ready', 'processing', 'needs_name', 'unavailable'] and marker.note and marker.note != '關鍵片段' and openai_ready %}<div class="summary-actions"><button class="retry" type="button" data-retry-url="{{ url_for('admin_study_plan_video_marker_summary', marker_id=marker.id) }}">重試摘要</button></div>{% endif %}
+                </div>
+                <a class="open-marker" href="{{ url_for('admin_study_plan', subject=marker.subject, video_id=marker.video_id, marker_id=marker.id) }}#youtube-player-section">前往片段</a>
+            </article>
+            {% endfor %}
+        </section>
+        <div class="empty" id="marker-empty"{% if markers %} hidden{% endif %}>{% if markers %}沒有符合的關鍵點{% else %}尚未建立關鍵點{% endif %}</div>
+    </main>
+    <script>
+        window.renderStudyMath = (root = document) => {
+            if (!window.renderMathInElement) return;
+            const elements = [
+                ...(root.matches?.('[data-math-content]') ? [root] : []),
+                ...root.querySelectorAll('[data-math-content]'),
+            ];
+            elements.forEach((element) => {
+                if (element.hidden || element.dataset.mathRendered === 'true') return;
+                window.renderMathInElement(element, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '$', right: '$', display: false },
+                        { left: '\\[', right: '\\]', display: true },
+                        { left: '\\(', right: '\\)', display: false },
+                    ],
+                    throwOnError: false,
+                    strict: 'ignore',
+                });
+                element.dataset.mathRendered = 'true';
+            });
+        };
+        (() => {
+            const search = document.getElementById('marker-search');
+            const subject = document.getElementById('marker-subject');
+            const status = document.getElementById('marker-status');
+            const rows = [...document.querySelectorAll('[data-marker-row]')];
+            const count = document.getElementById('result-count');
+            const empty = document.getElementById('marker-empty');
+            const clear = document.getElementById('clear-filter');
+            const filterRows = () => {
+                const query = search.value.trim().toLocaleLowerCase();
+                let visible = 0;
+                rows.forEach((row) => {
+                    const statusMatches = !status.value
+                        || (status.value === 'ready' ? row.dataset.status === 'ready' : row.dataset.status !== 'ready');
+                    const show = (!query || row.dataset.search.includes(query))
+                        && (!subject.value || row.dataset.subject === subject.value)
+                        && statusMatches;
+                    row.hidden = !show;
+                    if (show) visible += 1;
+                });
+                count.textContent = '顯示 ' + visible + ' 個';
+                empty.hidden = visible > 0;
+                clear.hidden = !(query || subject.value || status.value);
+            };
+            [search, subject, status].forEach((control) => control.addEventListener(control === search ? 'input' : 'change', filterRows));
+            clear.addEventListener('click', () => { search.value = ''; subject.value = ''; status.value = ''; filterRows(); search.focus(); });
+            document.querySelectorAll('[data-retry-url]').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    const row = button.closest('[data-marker-row]');
+                    const summary = row.querySelector('[data-marker-summary]');
+                    const state = row.querySelector('[data-summary-state]');
+                    button.disabled = true;
+                    button.textContent = '整理中';
+                    if (state) state.textContent = '整理中';
+                    try {
+                        const response = await fetch(button.dataset.retryUrl, { method:'POST' });
+                        const data = await response.json();
+                        if (!response.ok || !data.marker || data.marker.summary_status !== 'ready') throw new Error(data.error || 'failed');
+                        summary.textContent = data.marker.summary;
+                        summary.hidden = false;
+                        summary.dataset.mathRendered = 'false';
+                        row.dataset.status = 'ready';
+                        row.dataset.search = [data.marker.note, data.marker.summary, row.dataset.subject].join(' ').toLocaleLowerCase();
+                        if (state) state.remove();
+                        button.closest('.summary-actions').remove();
+                        window.renderStudyMath(summary);
+                        filterRows();
+                    } catch (error) {
+                        button.disabled = false;
+                        button.textContent = '再試一次';
+                        if (state) state.textContent = '待整理';
+                    }
+                });
+            });
+            window.renderStudyMath();
+        })();
+    </script>
+</body>
+</html>

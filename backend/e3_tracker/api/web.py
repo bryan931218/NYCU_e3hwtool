@@ -130,6 +130,8 @@ ADMIN_FEEDBACK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_feedback.html"
 ADMIN_FEEDBACK_TEMPLATE = ADMIN_FEEDBACK_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_PLAN_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_plan.html"
 STUDY_PLAN_TEMPLATE = STUDY_PLAN_TEMPLATE_PATH.read_text(encoding="utf-8")
+STUDY_MARKERS_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_markers.html"
+STUDY_MARKERS_TEMPLATE = STUDY_MARKERS_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_SETTINGS_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_settings.html"
 STUDY_SETTINGS_TEMPLATE = STUDY_SETTINGS_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_HOME_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "admin_study_home.html"
@@ -162,6 +164,7 @@ HOME_TEMPLATE = _attach_global_study_assistant(HOME_TEMPLATE)
 FEEDBACK_TEMPLATE = _attach_global_study_assistant(FEEDBACK_TEMPLATE)
 ADMIN_FEEDBACK_TEMPLATE = _attach_global_study_assistant(ADMIN_FEEDBACK_TEMPLATE)
 STUDY_PLAN_TEMPLATE = _attach_global_study_assistant(STUDY_PLAN_TEMPLATE)
+STUDY_MARKERS_TEMPLATE = _attach_global_study_assistant(STUDY_MARKERS_TEMPLATE)
 STUDY_SETTINGS_TEMPLATE = _attach_global_study_assistant(STUDY_SETTINGS_TEMPLATE)
 STUDY_HOME_TEMPLATE = _attach_global_study_assistant(STUDY_HOME_TEMPLATE)
 PUBLIC_STUDY_TEMPLATE = _attach_global_study_assistant(PUBLIC_STUDY_TEMPLATE)
@@ -17984,6 +17987,45 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         flash(message, "success")
         return redirect(url_for("admin_study_settings"))
 
+    def _study_plan_marker_library(
+        videos: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        marker_videos = videos or storage.list_study_plan_videos_with_records()
+        video_lookup = {int(video["id"]): video for video in marker_videos}
+        marker_library = []
+        for marker in storage.list_study_plan_video_markers():
+            marker_video = video_lookup.get(int(marker.get("video_id") or 0))
+            if not marker_video:
+                continue
+            marker_seconds = max(0.0, float(marker.get("playback_seconds") or 0))
+            marker_minutes, marker_remainder = divmod(int(round(marker_seconds)), 60)
+            marker_library.append(
+                {
+                    **marker,
+                    "subject": str(marker_video.get("subject") or ""),
+                    "sequence": int(marker_video.get("sequence") or 0),
+                    "video_title": str(marker_video.get("title") or ""),
+                    "time_label": f"{marker_minutes}:{marker_remainder:02d}",
+                }
+            )
+        marker_library.sort(
+            key=lambda item: (str(item.get("updated_at") or ""), int(item.get("id") or 0)),
+            reverse=True,
+        )
+        return marker_library
+
+    @app.get("/admin/study-plan/markers")
+    @admin_required
+    def admin_study_plan_markers():
+        marker_library = _study_plan_marker_library()
+        return render_template_string(
+            STUDY_MARKERS_TEMPLATE,
+            admin_user=current_user(),
+            markers=marker_library,
+            subjects=STUDY_PLAN_SUBJECTS,
+            openai_ready=bool(openai_api_key),
+        )
+
     @app.route("/admin/study-plan", methods=["GET", "POST"])
     @admin_required
     def admin_study_plan():
@@ -18083,41 +18125,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         selected_video_id = int((selected_video or {}).get("id") or 0)
         visible_video_ids = [int(video["id"]) for video in visible_videos]
         video_markers = storage.list_study_plan_video_markers(video_ids=visible_video_ids)
-        all_video_markers = storage.list_study_plan_video_markers()
-        video_lookup = {int(video["id"]): video for video in videos}
-        marker_library = []
-        for marker in all_video_markers:
-            marker_video = video_lookup.get(int(marker.get("video_id") or 0))
-            if not marker_video:
-                continue
-            marker_seconds = max(0.0, float(marker.get("playback_seconds") or 0))
-            marker_minutes, marker_remainder = divmod(int(round(marker_seconds)), 60)
-            marker_library.append(
-                {
-                    **marker,
-                    "subject": str(marker_video.get("subject") or ""),
-                    "sequence": int(marker_video.get("sequence") or 0),
-                    "video_title": str(marker_video.get("title") or ""),
-                    "time_label": f"{marker_minutes}:{marker_remainder:02d}",
-                }
-            )
-        marker_library.sort(
-            key=lambda item: (str(item.get("updated_at") or ""), int(item.get("id") or 0)),
-            reverse=True,
-        )
         try:
             requested_marker_id = int(request.args.get("marker_id") or 0)
         except (TypeError, ValueError):
             requested_marker_id = 0
-        requested_marker = next(
-            (
-                marker
-                for marker in all_video_markers
-                if int(marker.get("id") or 0) == requested_marker_id
-                and int(marker.get("video_id") or 0) == selected_video_id
-            ),
-            None,
+        requested_marker = (
+            storage.get_study_plan_video_marker(requested_marker_id)
+            if requested_marker_id > 0
+            else None
         )
+        if requested_marker and int(requested_marker.get("video_id") or 0) != selected_video_id:
+            requested_marker = None
         replan_settings = storage.get_study_plan_replan_settings()
         replan_preview = _study_plan_replan_preview(replan_settings)
         next_week_start = _study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)
@@ -18145,7 +18163,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             plan_end=effective_plan_end,
             recall_widget=_build_recall_widget_context(),
             video_markers=video_markers,
-            marker_library=marker_library,
             requested_marker=requested_marker,
             replan_settings=replan_settings,
             replan_preview=replan_preview,

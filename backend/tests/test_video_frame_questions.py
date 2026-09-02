@@ -245,16 +245,18 @@ class VideoFrameQuestionTests(unittest.TestCase):
         page = self.client.get(
             f"/admin/study-plan?subject={self.video['subject']}&video_id={self.video['id']}"
         ).get_data(as_text=True)
-        self.assertIn('id="marker-library-data"', page)
-        self.assertIn("前往片段", page)
-        library_match = re.search(
-            r'<script type="application/json" id="marker-library-data">(.*?)</script>',
-            page,
-            re.DOTALL,
+        self.assertNotIn('id="marker-library-data"', page)
+        self.assertIn("/admin/study-plan/markers", page)
+
+        marker_page = self.client.get("/admin/study-plan/markers").get_data(as_text=True)
+        self.assertIn("關鍵點總覽", marker_page)
+        self.assertIn("SVD 的幾何意義", marker_page)
+        self.assertIn("A=U", marker_page)
+        self.assertIn("前往片段", marker_page)
+        self.assertIn(
+            f"video_id={self.video['id']}&amp;marker_id={marker_id}",
+            marker_page,
         )
-        self.assertIsNotNone(library_match)
-        library = json.loads(library_match.group(1))
-        self.assertTrue(any(item["note"] == "SVD 的幾何意義" for item in library))
 
     def test_marker_name_is_saved_when_summary_generation_fails(self):
         marker_response = self.client.post(
