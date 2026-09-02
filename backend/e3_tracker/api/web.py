@@ -16878,9 +16878,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             after = action.get("after_state") if isinstance(action.get("after_state"), dict) else {}
             # New actions already contain the calendar mutation. A legacy action
             # contains the moved study-time session directly at the top level.
-            if isinstance(after.get("activity"), dict) or not isinstance(after.get("target_session"), dict):
+            if isinstance(after.get("activity"), dict):
                 continue
             payload = action.get("action_payload") if isinstance(action.get("action_payload"), dict) else {}
+            app.logger.info(
+                "Checking legacy calendar move %s (after keys: %s)",
+                str(action.get("action_id") or ""),
+                ",".join(sorted(str(key) for key in after)),
+            )
             try:
                 moved_seconds = float(payload.get("target_seconds") or 0)
                 sequence = int(payload.get("video_sequence") or 0)
