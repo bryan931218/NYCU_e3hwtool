@@ -468,6 +468,93 @@ class DeploymentSafeStorage(PersistentStorage):
                 },
             )
 
+    def _repair_confirmed_discrete_14_calendar_move(self) -> None:
+        """Finish the confirmed 23-minute Sep 1 -> Sep 2 calendar correction."""
+        repair_key = "confirmed-discrete-14-calendar-move-2026-09-01-to-02"
+        source_day = "2026-09-01"
+        target_day = "2026-09-02"
+        moved_seconds = 23 * 60
+        with self._lock, self._engine.connect() as conn:
+            if conn.execute(
+                text("SELECT repair_key FROM e3_data_repairs WHERE repair_key = :repair_key"),
+                {"repair_key": repair_key},
+            ).first():
+                return
+            video = conn.execute(
+                text(
+                    "SELECT id FROM study_plan_videos "
+                    "WHERE subject = :subject AND sequence = :sequence"
+                ),
+                {"subject": "離散數學", "sequence": 14},
+            ).mappings().first()
+        if not video:
+            return
+
+        video_id = int(video["id"])
+        source_seconds = sum(
+            max(0.0, float(item.get("delta_seconds") or 0))
+            for item in self.list_study_plan_activity_events(day=source_day)
+            if int(item.get("video_id") or 0) == video_id
+        )
+        target_seconds = sum(
+            max(0.0, float(item.get("delta_seconds") or 0))
+            for item in self.list_study_plan_activity_events(day=target_day)
+            if int(item.get("video_id") or 0) == video_id
+        )
+        # This exact ten-minute target is the production state the user showed.
+        # If anything has changed since then, fail closed instead of guessing.
+        if source_seconds + 0.5 < moved_seconds or abs(target_seconds - 10 * 60) > 0.5:
+            return
+        result = self.move_study_plan_activity_between_days(
+            video_id=video_id,
+            source_day=source_day,
+            target_day=target_day,
+            seconds=moved_seconds,
+            expected_source_seconds=source_seconds,
+            expected_target_seconds=target_seconds,
+        )
+        if not result or result.get("stale"):
+            return
+
+        verified_source = sum(
+            max(0.0, float(item.get("delta_seconds") or 0))
+            for item in self.list_study_plan_activity_events(day=source_day)
+            if int(item.get("video_id") or 0) == video_id
+        )
+        verified_target = sum(
+            max(0.0, float(item.get("delta_seconds") or 0))
+            for item in self.list_study_plan_activity_events(day=target_day)
+            if int(item.get("video_id") or 0) == video_id
+        )
+        if (
+            abs(verified_source - (source_seconds - moved_seconds)) > 0.5
+            or abs(verified_target - (target_seconds + moved_seconds)) > 0.5
+        ):
+            self.undo_move_study_plan_activity_between_days(
+                original_rows=list(result.get("original_rows") or []),
+                generated_ids=list(result.get("generated_ids") or []),
+            )
+            return
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                    "VALUES (:repair_key, :details, :applied_at)"
+                ),
+                {
+                    "repair_key": repair_key,
+                    "details": json.dumps({
+                        "video_id": video_id,
+                        "source_day": source_day,
+                        "target_day": target_day,
+                        "moved_seconds": moved_seconds,
+                        "source_seconds": verified_source,
+                        "target_seconds": verified_target,
+                    }, ensure_ascii=False),
+                    "applied_at": datetime.utcnow().isoformat(),
+                },
+            )
+
     def _repair_discrete_video_11_progress_offset(self) -> None:
         repair_key = "discrete-video-11-progress-offset-2026-08-27"
         repair_day = "2026-08-26"
@@ -920,6 +1007,7 @@ class DeploymentSafeStorage(PersistentStorage):
 
         super().sync_study_plan_videos(merged)
         self._repair_discrete_video_11_12_history()
+        self._repair_confirmed_discrete_14_calendar_move()
         self._restore_discrete_video_11_fresh_progress()
 
 

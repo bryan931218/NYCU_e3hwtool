@@ -165,6 +165,56 @@ class DeploymentPersistenceTests(unittest.TestCase):
             )
             storage._engine.dispose()
 
+    def test_confirmed_discrete_14_calendar_move_is_applied_once_and_verified(self):
+        inventory = [{
+            "subject": "離散數學",
+            "sequence": 14,
+            "title": "離散數學第 14 支",
+            "duration_seconds": 20000,
+        }]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "confirmed-move.sqlite3"))
+            storage.sync_study_plan_videos(inventory)
+            video_id = int(storage.list_study_plan_videos_with_records()[0]["id"])
+            with storage._lock, storage._engine.begin() as conn:
+                conn.execute(text(
+                    "INSERT INTO study_plan_activity_events "
+                    "(day, video_id, previous_watched_seconds, watched_seconds, delta_seconds, updated_at) "
+                    "VALUES ('2026-09-01', :video_id, 0, 11520, 11520, '2026-09-01T12:00:00')"
+                ), {"video_id": video_id})
+                conn.execute(text(
+                    "INSERT INTO study_plan_activity_events "
+                    "(day, video_id, previous_watched_seconds, watched_seconds, delta_seconds, updated_at) "
+                    "VALUES ('2026-09-02', :video_id, 11520, 12120, 600, '2026-09-02T12:00:00')"
+                ), {"video_id": video_id})
+
+            storage.sync_study_plan_videos(inventory)
+            source = next(
+                item for item in storage.list_study_plan_activity_events(day="2026-09-01")
+                if item["video_id"] == video_id
+            )
+            target = next(
+                item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                if item["video_id"] == video_id
+            )
+            self.assertEqual(source["delta_seconds"], 169 * 60)
+            self.assertEqual(target["delta_seconds"], 33 * 60)
+
+            # A later startup must leave the verified result unchanged.
+            storage.sync_study_plan_videos(inventory)
+            target_again = next(
+                item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                if item["video_id"] == video_id
+            )
+            self.assertEqual(target_again["delta_seconds"], 33 * 60)
+            with storage._lock, storage._engine.connect() as conn:
+                repair_count = conn.execute(text(
+                    "SELECT COUNT(*) FROM e3_data_repairs "
+                    "WHERE repair_key = 'confirmed-discrete-14-calendar-move-2026-09-01-to-02'"
+                )).scalar_one()
+            self.assertEqual(repair_count, 1)
+            storage._engine.dispose()
+
     def test_discrete_video_history_repair_restores_fresh_video_11_progress(self):
         inventory = [
             {
