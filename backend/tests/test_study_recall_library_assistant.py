@@ -668,6 +668,70 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             finally:
                 storage._engine.dispose()
 
+    def test_natural_rebalance_request_builds_exact_confirmable_plan_without_ai_guessing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                before_videos = storage.list_study_plan_videos_with_records()
+                remaining_seconds = sum(
+                    max(0.0, float(item["duration_seconds"]) - float(item["watched_seconds"]))
+                    for item in before_videos
+                )
+                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={
+                            "question": "請幫我重排計畫時數，讓我在原訂時間內完成，並把落後時數平均分攤進去",
+                            "page_context": {"path": "/admin/study-plan", "title": "備考中心"},
+                        },
+                    )
+
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(payload["ok"])
+                self.assertIn("原截止日", payload["answer"])
+                self.assertEqual(payload["proposal"]["title"], "平均分攤剩餘讀書計畫")
+                self.assertIsNone(storage.get_study_plan_replan_settings())
+                openai_post.assert_not_called()
+
+                applied = client.post(payload["proposal"]["apply_url"])
+                settings = storage.get_study_plan_replan_settings()
+                self.assertEqual(applied.status_code, 200)
+                self.assertEqual(settings["end_date"], "2026-12-03")
+                self.assertEqual(settings["weekday_minutes"], settings["weekend_minutes"])
+                self.assertAlmostEqual(sum(settings["subject_targets"].values()), remaining_seconds, places=3)
+                self.assertEqual(client.post(applied.get_json()["undo"]["url"]).status_code, 200)
+                self.assertIsNone(storage.get_study_plan_replan_settings())
+            finally:
+                storage._engine.dispose()
+
+    def test_global_assistant_is_mounted_on_authenticated_pages(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                for path in (
+                    "/",
+                    "/admin/study-home",
+                    "/admin/study-plan",
+                    "/admin/study-settings",
+                    "/admin/study-recall/quick-review",
+                    "/study-progress",
+                    "/feedback",
+                ):
+                    response = client.get(path)
+                    self.assertEqual(response.status_code, 200, path)
+                    html = response.get_data(as_text=True)
+                    self.assertIn("data-e3-global-ai", html, path)
+                    self.assertIn("/admin/study-recall/assistant/ask", html, path)
+            finally:
+                storage._engine.dispose()
+
     def test_card_assistant_uses_requested_answer_detail(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.build_app(temp_dir)

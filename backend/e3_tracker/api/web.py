@@ -140,6 +140,30 @@ STUDY_RECALL_QUICK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "study_recall_quick.h
 STUDY_RECALL_QUICK_TEMPLATE = STUDY_RECALL_QUICK_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_UPLOAD_TRACKER_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "_study_upload_tracker.html"
 STUDY_UPLOAD_TRACKER_TEMPLATE = STUDY_UPLOAD_TRACKER_TEMPLATE_PATH.read_text(encoding="utf-8")
+GLOBAL_STUDY_ASSISTANT_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "_global_study_assistant.html"
+GLOBAL_STUDY_ASSISTANT_TEMPLATE = GLOBAL_STUDY_ASSISTANT_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+
+def _attach_global_study_assistant(template: str) -> str:
+    """Mount the authenticated assistant without duplicating page-specific markup."""
+    if "data-e3-global-ai" in template or "</body>" not in template:
+        return template
+    return template.replace("</body>", f"{GLOBAL_STUDY_ASSISTANT_TEMPLATE}\n</body>", 1)
+
+
+# The note library already owns the richer card-aware version of this assistant.
+# Every other page an administrator can visit gets the shared, conversation-aware shell.
+WEB_TEMPLATE = _attach_global_study_assistant(WEB_TEMPLATE)
+TRAFFIC_TEMPLATE = _attach_global_study_assistant(TRAFFIC_TEMPLATE)
+ANNOUNCEMENTS_TEMPLATE = _attach_global_study_assistant(ANNOUNCEMENTS_TEMPLATE)
+HOME_TEMPLATE = _attach_global_study_assistant(HOME_TEMPLATE)
+FEEDBACK_TEMPLATE = _attach_global_study_assistant(FEEDBACK_TEMPLATE)
+ADMIN_FEEDBACK_TEMPLATE = _attach_global_study_assistant(ADMIN_FEEDBACK_TEMPLATE)
+STUDY_PLAN_TEMPLATE = _attach_global_study_assistant(STUDY_PLAN_TEMPLATE)
+STUDY_SETTINGS_TEMPLATE = _attach_global_study_assistant(STUDY_SETTINGS_TEMPLATE)
+STUDY_HOME_TEMPLATE = _attach_global_study_assistant(STUDY_HOME_TEMPLATE)
+PUBLIC_STUDY_TEMPLATE = _attach_global_study_assistant(PUBLIC_STUDY_TEMPLATE)
+STUDY_RECALL_QUICK_TEMPLATE = _attach_global_study_assistant(STUDY_RECALL_QUICK_TEMPLATE)
 
 STUDY_PLAN_BLOCKS = (
     {"subject": "線性代數", "weeks": 4, "total_minutes": 4107.8, "lesson_targets": (11, 22, 32, 42)},
@@ -15492,7 +15516,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "請輸入想詢問的內容。"}, 400
         if len(question) > 800:
             return {"ok": False, "error": "問題請控制在 800 字以內。"}, 400
-
         response_style = str(payload.get("response_style") or "concise").strip().lower()
         if response_style not in {"concise", "detailed"}:
             response_style = "concise"
@@ -15715,6 +15738,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "set_video_progress": "影片進度",
             "set_study_time_session": "學習時間紀錄",
             "update_study_plan": "讀書計畫",
+            "rebalance_study_plan": "重新平均安排讀書計畫",
             "recent_study_sessions": "最近學習紀錄",
             "video_sequence": "影片序號",
             "target_minutes": "分鐘數",
@@ -15729,6 +15753,181 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             answer = re.sub(re.escape(internal_name), display_name, answer, flags=re.IGNORECASE)
         return _normalize_study_math_markup(answer)
 
+    def _study_assistant_plan_metrics(
+        videos: List[Dict[str, Any]],
+        current_settings: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        today = _study_plan_business_date()
+        totals: Dict[str, Dict[str, float]] = {}
+        for subject in STUDY_PLAN_SUBJECTS:
+            subject_videos = [item for item in videos if str(item.get("subject") or "") == subject]
+            total = sum(_study_plan_nonnegative_number(item.get("duration_seconds")) for item in subject_videos)
+            watched = sum(
+                min(
+                    _study_plan_nonnegative_number(item.get("watched_seconds")),
+                    _study_plan_nonnegative_number(item.get("duration_seconds")),
+                )
+                for item in subject_videos
+            )
+            totals[subject] = {
+                "total_seconds": total,
+                "watched_seconds": watched,
+                "remaining_seconds": max(0.0, total - watched),
+                "completed_videos": float(sum(
+                    1 for item in subject_videos
+                    if _study_plan_video_is_complete(item.get("duration_seconds"), item.get("watched_seconds"))
+                )),
+                "video_count": float(len(subject_videos)),
+            }
+
+        replan_start: Optional[date] = None
+        if current_settings:
+            try:
+                replan_start = datetime.strptime(str(current_settings.get("start_date") or ""), "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                replan_start = None
+        active_replan = bool(replan_start and today >= replan_start)
+        expected = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
+        for week in _study_plan_schedule_definitions(videos, current_settings):
+            for day_item in week.get("daily_targets") or []:
+                scheduled_date = day_item.get("date")
+                if (
+                    scheduled_date
+                    and scheduled_date <= today
+                    and not (active_replan and replan_start and scheduled_date < replan_start)
+                ):
+                    for subject, seconds in dict(day_item.get("allocations") or {}).items():
+                        if subject in expected:
+                            expected[subject] += _study_plan_nonnegative_number(seconds)
+        if active_replan:
+            for subject, seconds in dict((current_settings or {}).get("baseline_by_subject") or {}).items():
+                if subject in expected:
+                    expected[subject] += _study_plan_nonnegative_number(seconds)
+        backlog_by_subject = {
+            subject: max(0.0, expected.get(subject, 0.0) - totals[subject]["watched_seconds"])
+            for subject in STUDY_PLAN_SUBJECTS
+        }
+        return {
+            "today": today.isoformat(),
+            "subjects": {
+                subject: {
+                    "total_hours": round(values["total_seconds"] / 3600, 2),
+                    "watched_hours": round(values["watched_seconds"] / 3600, 2),
+                    "remaining_hours": round(values["remaining_seconds"] / 3600, 2),
+                    "scheduled_by_today_hours": round(expected[subject] / 3600, 2),
+                    "behind_hours": round(backlog_by_subject[subject] / 3600, 2),
+                    "completed_videos": int(values["completed_videos"]),
+                    "video_count": int(values["video_count"]),
+                }
+                for subject, values in totals.items()
+            },
+            "remaining_hours": round(sum(item["remaining_seconds"] for item in totals.values()) / 3600, 2),
+            "behind_hours": round(sum(backlog_by_subject.values()) / 3600, 2),
+        }
+
+    def _study_assistant_data_context(
+        *,
+        username: str,
+        videos: List[Dict[str, Any]],
+        current_settings: Optional[Dict[str, Any]],
+        page_context: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Expose bounded, user-owned learning data instead of raw database access."""
+        today = _study_plan_business_date()
+        recent_start = today - timedelta(days=29)
+        recent_sessions: List[Dict[str, Any]] = []
+        for offset in range(14):
+            day = (today - timedelta(days=offset)).isoformat()
+            for item in storage.list_study_time_sessions(day=day, limit=100):
+                recent_sessions.append({
+                    "record": str(item.get("session_id") or ""),
+                    "date": day,
+                    "type": str(item.get("kind") or ""),
+                    "subject": str(item.get("subject") or ""),
+                    "video": int(item.get("sequence") or 0),
+                    "label": str(item.get("label") or "")[:90],
+                    "minutes": round(float(item.get("elapsed_seconds") or 0) / 60, 2),
+                })
+        note_rows = storage.list_study_recall_sessions(limit=60)
+        note_library = []
+        for item in note_rows:
+            concepts = []
+            for concept in (item.get("key_concepts") or [])[:10]:
+                if not isinstance(concept, dict):
+                    continue
+                concepts.append({
+                    "term": str(concept.get("concept") or concept.get("topic") or "")[:100],
+                    "summary": str(concept.get("core_summary") or concept.get("explanation") or "")[:260],
+                })
+            note_library.append({
+                "id": int(item.get("id") or 0),
+                "date": str(item.get("study_date") or ""),
+                "subject": str(item.get("subject") or ""),
+                "title": str(item.get("title") or "")[:120],
+                "summary": str(item.get("summary") or "")[:300],
+                "concepts": concepts,
+                "next_review": item.get("next_review_at"),
+            })
+        due_cards = storage.list_due_study_recall_cards(today=today.isoformat(), limit=18)
+        review_schedule = storage.list_study_recall_schedule(start_date=today.isoformat(), days=14)
+        cache = storage.load_user_cache(username) or {}
+        assignments = []
+        for item in ((cache.get("result") or {}).get("all_assignments") or [])[:80]:
+            assignments.append({
+                "course": str(item.get("course_title") or "")[:100],
+                "title": str(item.get("title") or "")[:140],
+                "due_at": item.get("due_at"),
+                "overdue": bool(item.get("overdue")),
+                "completed": bool(item.get("completed")),
+                "status": str(item.get("raw_status_text") or "")[:100],
+            })
+        glossary = {}
+        for subject in STUDY_PLAN_SUBJECTS:
+            entry = storage.get_study_recall_glossary(subject)
+            if entry and entry.get("status") == "ready":
+                glossary[subject] = [
+                    {
+                        "term": str(term.get("term") or "")[:80],
+                        "definition": str(term.get("definition") or "")[:220],
+                    }
+                    for term in (entry.get("terms") or [])[:60]
+                    if isinstance(term, dict)
+                ]
+        compact_videos = [{
+            "subject": str(video.get("subject") or ""),
+            "sequence": int(video.get("sequence") or 0),
+            "title": str(video.get("title") or "")[:90],
+            "duration_minutes": round(float(video.get("duration_seconds") or 0) / 60, 2),
+            "watched_minutes": round(float(video.get("watched_seconds") or 0) / 60, 2),
+            "complete": _study_plan_video_is_complete(video.get("duration_seconds"), video.get("watched_seconds")),
+        } for video in videos]
+        return {
+            "today": today.isoformat(),
+            "current_page": page_context,
+            "plan_progress": _study_assistant_plan_metrics(videos, current_settings),
+            "study_plan": ({
+                "start_date": current_settings.get("start_date"),
+                "end_date": current_settings.get("end_date"),
+                "weekday_hours": round(float(current_settings.get("weekday_minutes") or 0) / 60, 2),
+                "weekend_hours": round(float(current_settings.get("weekend_minutes") or 0) / 60, 2),
+            } if current_settings else {
+                "start_date": STUDY_PLAN_START,
+                "end_date": STUDY_PLAN_END,
+                "weekday_hours": round(STUDY_PLAN_DAILY_VIDEO_SECONDS / 3600, 2),
+                "weekend_hours": round(STUDY_PLAN_DAILY_VIDEO_SECONDS / 3600, 2),
+            }),
+            "videos": compact_videos,
+            "recent_study_records": recent_sessions,
+            "study_time_last_30_days": storage.list_study_time_daily_totals(
+                start_day=recent_start.isoformat(), end_day=today.isoformat()
+            ),
+            "note_library": note_library,
+            "due_review_cards": due_cards,
+            "review_load_next_14_days": review_schedule,
+            "course_assignments": assignments,
+            "subject_glossary": glossary,
+        }
+
     def _build_study_assistant_proposal(
         *,
         username: str,
@@ -15741,6 +15940,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         action_type = str(raw_action.get("type") or "none").strip()
         if action_type == "none":
             return None
+        stored_action_type = action_type
         action_id = secrets.token_urlsafe(24)[:48]
         reason = " ".join(str(raw_action.get("reason") or "").split()).strip()[:240]
         action_payload: Dict[str, Any]
@@ -15814,14 +16014,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "before": _study_assistant_time_label(item.get("elapsed_seconds")),
                 "after": _study_assistant_time_label(target_seconds),
             }]
-        elif action_type == "update_study_plan":
+        elif action_type in {"update_study_plan", "rebalance_study_plan"}:
+            is_rebalance = action_type == "rebalance_study_plan"
             start_default = (
                 str(current_settings.get("start_date"))
                 if current_settings
                 else (_study_plan_week_start(_study_plan_business_date()) + timedelta(days=7)).isoformat()
             )
             end_default = str((current_settings or {}).get("end_date") or STUDY_PLAN_END)
-            start_value = str(raw_action.get("start_date") or "").strip() or start_default
+            start_value = (
+                _study_plan_business_date().isoformat()
+                if is_rebalance
+                else (str(raw_action.get("start_date") or "").strip() or start_default)
+            )
             end_value = str(raw_action.get("end_date") or "").strip() or end_default
             try:
                 start_day = datetime.strptime(start_value, "%Y-%m-%d").date()
@@ -15835,13 +16040,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             weekday_hours = weekday_hours or current_weekday
             weekend_hours = weekend_hours or current_weekend
             if (
-                end_day < start_day + timedelta(days=6)
+                end_day < start_day + (timedelta(0) if is_rebalance else timedelta(days=6))
                 or end_day > start_day + timedelta(days=366)
                 or not (0.25 <= weekday_hours <= 12)
                 or not (0.25 <= weekend_hours <= 12)
             ):
                 return None
-            if current_settings:
+            if current_settings and not is_rebalance:
                 baseline_by_subject = dict(current_settings.get("baseline_by_subject") or {})
                 subject_targets = dict(current_settings.get("subject_targets") or {})
             else:
@@ -15859,6 +16064,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         subject_targets[subject] = remaining
             if not subject_targets:
                 return None
+            if is_rebalance:
+                remaining_days = (end_day - start_day).days + 1
+                required_daily_hours = sum(subject_targets.values()) / max(1, remaining_days) / 3600
+                # Equal weights make the scheduler distribute the exact remaining load evenly;
+                # the load ratio handles values outside the visual 15 min–12 h preference range.
+                equal_weight_hours = min(12.0, max(0.25, required_daily_hours))
+                weekday_hours = equal_weight_hours
+                weekend_hours = equal_weight_hours
             before_state = {
                 "exists": bool(current_settings),
                 "settings": dict(current_settings or {}),
@@ -15871,8 +16084,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "baseline_by_subject": baseline_by_subject,
                 "subject_targets": subject_targets,
             }
-            title = "調整讀書計畫"
-            summary = reason or "更新計畫日期與每日影片時數"
+            stored_action_type = "update_study_plan"
+            title = "平均分攤剩餘讀書計畫" if is_rebalance else "調整讀書計畫"
+            summary = (
+                f"保留 {end_day.isoformat()} 截止日，從今天起平均安排剩餘 {_study_assistant_time_label(sum(subject_targets.values()))}"
+                if is_rebalance
+                else (reason or "更新計畫日期與每日影片時數")
+            )
             changes = []
             old_start = str((current_settings or {}).get("start_date") or start_default)
             old_end = str((current_settings or {}).get("end_date") or end_default)
@@ -15884,6 +16102,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             ):
                 if before != after:
                     changes.append({"label": label, "before": before, "after": after})
+            if is_rebalance:
+                metrics = _study_assistant_plan_metrics(videos, current_settings)
+                changes = [
+                    {"label": "原截止日", "before": old_end, "after": end_day.isoformat() + "（保留）"},
+                    {
+                        "label": "目前落後",
+                        "before": f"{float(metrics.get('behind_hours') or 0):.1f} 小時",
+                        "after": f"分攤至 {(end_day - start_day).days + 1} 天",
+                    },
+                    {
+                        "label": "剩餘影片",
+                        "before": f"{float(metrics.get('remaining_hours') or 0):.1f} 小時",
+                        "after": f"平均每日約 {required_daily_hours:.2f} 小時",
+                    },
+                ]
             if not changes:
                 return None
         else:
@@ -15892,7 +16125,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         stored = storage.create_study_assistant_action(
             action_id=action_id,
             username=username,
-            action_type=action_type,
+            action_type=stored_action_type,
             action_payload=action_payload,
             before_state=before_state,
             summary=summary,
@@ -15919,6 +16152,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "請輸入想詢問的內容。"}, 400
         if len(question) > 800:
             return {"ok": False, "error": "問題請控制在 800 字以內。"}, 400
+        raw_page_context = payload.get("page_context")
+        page_context = {
+            "path": str((raw_page_context or {}).get("path") or request.referrer or "")[:240],
+            "title": str((raw_page_context or {}).get("title") or "")[:120],
+        } if isinstance(raw_page_context, dict) else {"path": "", "title": ""}
 
         response_style = str(payload.get("response_style") or "concise").strip().lower()
         if response_style not in {"concise", "detailed"}:
@@ -15953,17 +16191,31 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         intent_text = question
         if short_confirmation and previous_user_messages:
             intent_text = f"{previous_user_messages[-1]} {question}"
-        data_nouns = ("影片", "進度", "觀看", "學習時間", "讀書時間", "時數", "分鐘", "小時", "計畫", "資料庫", "紀錄")
-        mutation_verbs = ("修正", "更正", "修改", "調整", "改成", "設成", "更新", "刪除", "重設", "對調")
-        personal_markers = ("我的", "我今天", "我昨天", "網站", "目前", "現在", "資料庫")
-        read_markers = ("查", "多少", "完成率", "看到哪", "目前進度", "現在進度", "進度")
+        data_nouns = (
+            "影片", "進度", "觀看", "學習", "讀書", "時數", "分鐘", "小時", "計畫", "資料庫", "紀錄",
+            "筆記", "重點卡", "複習", "考題", "作業", "截止", "課程", "月曆", "行程", "今日任務",
+            *STUDY_PLAN_SUBJECTS,
+        )
+        mutation_verbs = (
+            "修正", "更正", "修改", "調整", "改成", "設成", "更新", "刪除", "重設", "對調",
+            "重排", "重新安排", "平攤", "分攤", "整理", "規劃", "安排", "延後", "提前",
+        )
+        personal_markers = (
+            "我的", "我今天", "我昨天", "幫我", "替我", "網站", "目前", "現在", "資料庫", "當前",
+        )
+        read_markers = (
+            "查", "多少", "完成率", "看到哪", "目前進度", "現在進度", "進度", "落後", "待補",
+            "有哪些", "哪一個", "什麼時候", "分析", "比較", "建議",
+        )
         has_data_noun = any(term in intent_text for term in data_nouns)
         has_mutation_intent = any(term in intent_text for term in mutation_verbs)
-        data_request = has_data_noun and (
-            has_mutation_intent
-            or any(term in intent_text for term in personal_markers)
-            or any(term in intent_text for term in read_markers)
-        )
+        data_request = (
+            has_data_noun and (
+                has_mutation_intent
+                or any(term in intent_text for term in personal_markers)
+                or any(term in intent_text for term in read_markers)
+            )
+        ) or any(term in intent_text for term in personal_markers)
         if not data_request:
             prompt = (
                 "你是可靠、直接且善於教學的繁體中文 AI 助手。這是一般問答模式，沒有指定筆記或重點卡；"
@@ -16010,6 +16262,40 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
         business_today = _study_plan_business_date()
         videos = storage.list_study_plan_videos_with_records()
+        replan_settings = storage.get_study_plan_replan_settings()
+        explicit_rebalance_request = bool(
+            "計畫" in intent_text
+            and any(term in intent_text for term in ("重排", "重新安排", "平攤", "分攤", "排回"))
+            and any(term in intent_text for term in ("請", "幫我", "替我", "我要", "調整", "重排"))
+        )
+        if explicit_rebalance_request:
+            proposal = _build_study_assistant_proposal(
+                username=str((current_user() or {}).get("username") or ""),
+                raw_action={
+                    "type": "rebalance_study_plan",
+                    "end_date": str((replan_settings or {}).get("end_date") or STUDY_PLAN_END),
+                    "weekday_hours": 0,
+                    "weekend_hours": 0,
+                    "reason": "將目前未完成與落後的影片量平均分攤至原截止日前",
+                },
+                videos=videos,
+                current_settings=replan_settings,
+            )
+            if proposal:
+                record_ui_event(
+                    "study_recall_general_question",
+                    meta={"data_mode": True, "proposed_action": "rebalance_study_plan", "deterministic": True},
+                )
+                return {
+                    "ok": True,
+                    "answer": "我已依照目前實際進度重新計算，保留原截止日，並把所有未完成影片與落後量平均分攤到剩餘日期。以下是套用前的完整預覽。",
+                    "proposal": proposal,
+                }
+            return {
+                "ok": True,
+                "answer": "目前沒有尚未完成的影片可重新分配，或原截止日已經早於今天。",
+                "proposal": None,
+            }
         requested_subject = _study_assistant_subject_from_text(intent_text)
         subject_progress_request = bool(
             requested_subject
@@ -16043,53 +16329,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "proposal": None,
             }
 
-        compact_videos = [
-            {
-                "subject": str(video.get("subject") or ""),
-                "sequence": int(video.get("sequence") or 0),
-                "title": str(video.get("title") or "")[:80],
-                "duration_minutes": round(float(video.get("duration_seconds") or 0) / 60, 2),
-                "current_position_minutes": round(float(video.get("watched_seconds") or 0) / 60, 2),
-            }
-            for video in videos
-        ]
-        recent_sessions: List[Dict[str, Any]] = []
-        for offset in range(14):
-            day = (business_today - timedelta(days=offset)).isoformat()
-            for item in storage.list_study_time_sessions(day=day, limit=100):
-                recent_sessions.append(
-                    {
-                        "session_id": str(item.get("session_id") or ""),
-                        "day": day,
-                        "kind": str(item.get("kind") or ""),
-                        "subject": str(item.get("subject") or ""),
-                        "video_sequence": int(item.get("sequence") or 0),
-                        "label": str(item.get("label") or "")[:90],
-                        "minutes": round(float(item.get("elapsed_seconds") or 0) / 60, 2),
-                    }
-                )
-        replan_settings = storage.get_study_plan_replan_settings()
-        data_context = {
-            "today": business_today.isoformat(),
-            "subjects": list(STUDY_PLAN_SUBJECTS),
-            "videos": compact_videos,
-            "recent_study_sessions": recent_sessions,
-            "study_plan": (
-                {
-                    "start_date": replan_settings.get("start_date"),
-                    "end_date": replan_settings.get("end_date"),
-                    "weekday_hours": round(float(replan_settings.get("weekday_minutes") or 0) / 60, 2),
-                    "weekend_hours": round(float(replan_settings.get("weekend_minutes") or 0) / 60, 2),
-                }
-                if replan_settings
-                else None
-            ),
-        }
+        data_context = _study_assistant_data_context(
+            username=str((current_user() or {}).get("username") or ""),
+            videos=videos,
+            current_settings=replan_settings,
+            page_context=page_context,
+        )
         prompt = (
             "你是可靠、直接且善於教學的繁體中文 AI 助手，也能協助管理這個學習網站的資料。"
             "這是一般問答模式，沒有指定筆記或重點卡。"
             "請依可靠知識回答使用者的實際問題，不要假裝看過使用者的筆記，也不要自行捏造來源。"
-            "網站目前可用資料就是你已獲授權讀取的真實資料，不得聲稱無法存取、要求使用者再次授權或要求貼上資料。"
+            "網站目前可用資料是伺服器從使用者自己的資料庫即時整理出的真實資料，涵蓋計畫與落後量、"
+            "所有影片進度、近 30 天學習時間、近 14 天可修正紀錄、筆記庫與概念、複習負荷、作業及專有名詞。"
+            "你要自行交叉比對需要的部分，不得聲稱無法存取、要求使用者再次授權或要求貼上已存在的資料。"
             "唯讀查詢要直接回答，不得要求確認。修改資訊不足時，只能用一句自然中文追問一個必要問題，"
             "不得列出選單、操作格式或必要欄位清單。能從對話與資料判斷時就直接判斷。"
             "資料查詢與修改回答最多三個短句，不重述使用者整段問題。"
@@ -16102,6 +16354,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "1. set_video_progress：修正某科目某支影片的最後觀看位置。subject、video_sequence、target_minutes 必須明確。\n"
             "2. set_study_time_session：修正最近 14 天內某筆實際學習時間。session_id、target_minutes 必須明確。\n"
             "3. update_study_plan：調整計畫起日、迄日、平日或假日每日影片時數；未變更欄位使用空字串或 0。\n"
+            "4. rebalance_study_plan：保留原截止日，依目前真實觀看進度把所有剩餘影片與落後量從今天起平均分攤；"
+            "使用者要求重排、追回落後或平均分攤時優先使用，不必追問他已經提供過的時數。\n"
             "只有使用者明確要求修改，而且資料能唯一對應時，action.type 才能不是 none。"
             "如果使用者只是在詢問、診斷、比較、描述錯誤，或對象／數值不明確，action.type 必須是 none，"
             "並在 answer 中說明還需要哪個資訊。answer 不得說已完成、已修正或已套用，只能說準備修改或請確認。\n\n"
@@ -16125,7 +16379,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["none", "set_video_progress", "set_study_time_session", "update_study_plan"],
+                            "enum": [
+                                "none", "set_video_progress", "set_study_time_session",
+                                "update_study_plan", "rebalance_study_plan",
+                            ],
                         },
                         "subject": {"type": "string"},
                         "video_sequence": {"type": "integer", "minimum": 0},
@@ -16172,6 +16429,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "set_video_progress": "請告訴我要修改的科目、影片序號，以及正確的觀看分鐘數。",
                 "set_study_time_session": "請告訴我哪一天、哪一筆學習紀錄，以及正確的分鐘數。",
                 "update_study_plan": "請告訴我要調整的日期或每日可讀時數。",
+                "rebalance_study_plan": "目前沒有可安全重新安排的未完成影片，或原截止日已經早於今天。",
             }.get(proposed_type, "這筆資料目前無法安全修改，請再說明要改哪一筆與正確數值。")
         elif proposal:
             answer = "已整理好變更，確認後就會套用。"

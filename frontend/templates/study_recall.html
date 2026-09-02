@@ -2312,10 +2312,10 @@
             const storageKey = 'e3-study-ai-conversations-v2';
             const suggestionSets = {
                 general: [
-                    ['修正進度', '請幫我修正某支影片的最後觀看位置：'],
-                    ['修正時數', '請幫我檢查並修正這筆實際學習時間：'],
-                    ['調整計畫', '請幫我調整讀書計畫的日期或每日影片時數：'],
-                    ['一般問答', '請幫我分析這個問題：'],
+                    ['智慧重排', '請幫我重排計畫時數，保留原截止日，並把目前落後時數平均分攤進去。'],
+                    ['今天讀什麼', '依照我的計畫、進度和待複習內容，幫我整理今天最重要的安排。'],
+                    ['找出落後', '分析我各科目前落後的時數，告訴我最需要先補哪一科。'],
+                    ['筆記複習', '根據我的筆記庫和複習排程，幫我挑出今天最值得快速複習的觀念。'],
                 ],
                 card: [
                     ['白話解釋', '請用更白話的方式解釋這張重點卡。'],
@@ -2758,6 +2758,10 @@
                             question,
                             history: priorHistory,
                             response_style: conversation.style,
+                            page_context: {
+                                path: window.location.pathname,
+                                title: document.querySelector('h1')?.textContent?.trim() || document.title,
+                            },
                         }),
                         signal: conversation.controller.signal,
                     });
