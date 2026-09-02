@@ -849,6 +849,19 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     item for item in storage.list_study_plan_videos_with_records()
                     if item["subject"] == "離散數學" and item["sequence"] == 14
                 )
+                initial_watched = float(video.get("watched_seconds") or 0)
+                with patch.object(storage, "_now_iso", return_value="2026-09-01T12:00:00"):
+                    first_progress = storage.update_study_plan_video_progress(
+                        video_id=video["id"],
+                        watched_seconds=initial_watched + 30 * 60,
+                        expected_version=int(video.get("progress_version") or 0),
+                    )
+                with patch.object(storage, "_now_iso", return_value="2026-09-02T12:00:00"):
+                    storage.update_study_plan_video_progress(
+                        video_id=video["id"],
+                        watched_seconds=initial_watched + 40 * 60,
+                        expected_version=int(first_progress.get("progress_version") or 0),
+                    )
                 with patch.object(storage, "_now_iso", return_value="2026-09-01T12:00:00"):
                     storage.record_study_time_session(
                         session_key="discrete-14-yesterday",
@@ -887,6 +900,16 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 today_rows = storage.list_study_time_sessions(day="2026-09-02", limit=100)
                 moved = next(item for item in today_rows if item["subject"] == "離散數學" and item["sequence"] == 14)
                 self.assertEqual(moved["elapsed_seconds"], 23 * 60)
+                source_activity = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-01")
+                    if item["video_id"] == video["id"]
+                )
+                target_activity = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                    if item["video_id"] == video["id"]
+                )
+                self.assertEqual(source_activity["delta_seconds"], 7 * 60)
+                self.assertEqual(target_activity["delta_seconds"], 33 * 60)
 
                 undone = client.post(applied_payload["undo"]["url"])
                 self.assertEqual(undone.status_code, 200)
@@ -895,6 +918,139 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     item["subject"] == "離散數學" and item["sequence"] == 14
                     for item in storage.list_study_time_sessions(day="2026-09-02", limit=100)
                 ))
+                restored_source = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-01")
+                    if item["video_id"] == video["id"]
+                )
+                restored_target = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                    if item["video_id"] == video["id"]
+                )
+                self.assertEqual(restored_source["delta_seconds"], 30 * 60)
+                self.assertEqual(restored_target["delta_seconds"], 10 * 60)
+            finally:
+                storage._engine.dispose()
+
+    def test_legacy_confirmed_time_move_repairs_calendar_and_rendered_home(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學" and item["sequence"] == 14
+                )
+                initial_watched = float(video.get("watched_seconds") or 0)
+                with patch.object(storage, "_now_iso", return_value="2026-09-01T12:00:00"):
+                    first_progress = storage.update_study_plan_video_progress(
+                        video_id=video["id"],
+                        watched_seconds=initial_watched + 30 * 60,
+                        expected_version=int(video.get("progress_version") or 0),
+                    )
+                    storage.record_study_time_session(
+                        session_key="legacy-discrete-14-source",
+                        kind="video",
+                        elapsed_seconds=30 * 60,
+                        video_id=video["id"],
+                    )
+                with patch.object(storage, "_now_iso", return_value="2026-09-02T12:00:00"):
+                    storage.update_study_plan_video_progress(
+                        video_id=video["id"],
+                        watched_seconds=initial_watched + 40 * 60,
+                        expected_version=int(first_progress.get("progress_version") or 0),
+                    )
+
+                source_before = dict(storage.get_study_time_session("legacy-discrete-14-source") or {})
+                old_payload = {
+                    "moves": [{
+                        "session_id": "legacy-discrete-14-source",
+                        "seconds": 23 * 60,
+                        "expected_updated_at": source_before["updated_at"],
+                    }],
+                    "source_day": "2026-09-01",
+                    "target_day": "2026-09-02",
+                    "target_session_id": "legacy-assistant-target",
+                    "target_seconds": 23 * 60,
+                    "subject": "離散數學",
+                    "video_sequence": 14,
+                }
+                storage.create_study_assistant_action(
+                    action_id="legacy-calendar-move",
+                    username="test-admin",
+                    action_type="move_study_time_between_days",
+                    action_payload=old_payload,
+                    before_state={
+                        "source_sessions": [source_before],
+                        "source_day": "2026-09-01",
+                        "target_day": "2026-09-02",
+                    },
+                    summary="舊版已確認的跨日移轉",
+                )
+                old_after = storage.move_study_time_between_days(
+                    moves=old_payload["moves"],
+                    source_day="2026-09-01",
+                    target_day="2026-09-02",
+                    target_session_key="legacy-assistant-target",
+                )
+                self.assertTrue(storage.transition_study_assistant_action(
+                    "legacy-calendar-move",
+                    username="test-admin",
+                    expected_status="pending",
+                    next_status="applied",
+                    after_state=old_after,
+                ))
+
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 3)):
+                    page = client.get("/admin/study-home")
+                self.assertEqual(page.status_code, 200)
+
+                source_activity = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-01")
+                    if item["video_id"] == video["id"]
+                )
+                target_activity = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                    if item["video_id"] == video["id"]
+                )
+                self.assertEqual(source_activity["delta_seconds"], 7 * 60)
+                self.assertEqual(target_activity["delta_seconds"], 33 * 60)
+
+                match = re.search(
+                    r'<script type="application/json" data-calendar-data>(.*?)</script>',
+                    page.get_data(as_text=True),
+                    re.DOTALL,
+                )
+                self.assertIsNotNone(match)
+                calendar = json.loads(match.group(1))
+                rendered_day = next(item for item in calendar["days"] if item["date"] == "2026-09-02")
+                rendered_video = next(
+                    item for item in rendered_day["activities"]
+                    if item["subject"] == "離散數學" and item["sequence"] == 14
+                )
+                self.assertEqual(rendered_video["seconds"], 33 * 60)
+
+                repaired_action = storage.get_study_assistant_action(
+                    "legacy-calendar-move", username="test-admin"
+                )
+                self.assertTrue(repaired_action["after_state"]["legacy_repaired"])
+                self.assertIn("activity", repaired_action["after_state"])
+
+                undone = client.post(
+                    "/admin/study-recall/assistant/actions/legacy-calendar-move/undo"
+                )
+                self.assertEqual(undone.status_code, 200)
+                restored_source = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-01")
+                    if item["video_id"] == video["id"]
+                )
+                restored_target = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                    if item["video_id"] == video["id"]
+                )
+                self.assertEqual(restored_source["delta_seconds"], 30 * 60)
+                self.assertEqual(restored_target["delta_seconds"], 10 * 60)
             finally:
                 storage._engine.dispose()
 

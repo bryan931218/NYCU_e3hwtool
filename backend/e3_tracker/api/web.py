@@ -13381,6 +13381,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @admin_required
     def admin_study_home():
         user = current_user()
+        if user:
+            _repair_legacy_study_assistant_time_moves(str(user.get("username") or ""))
         home_context = _load_study_progress_context()
         return render_template_string(
             STUDY_HOME_TEMPLATE,
@@ -16266,6 +16268,25 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 or abs((today - target_day).days) > 14
             ):
                 return None
+            video = next((
+                item for item in videos
+                if str(item.get("subject") or "") == subject
+                and int(item.get("sequence") or 0) == sequence
+            ), None)
+            if not video:
+                return None
+            source_activity_seconds = sum(
+                max(0.0, float(item.get("delta_seconds") or 0))
+                for item in storage.list_study_plan_activity_events(day=source_day.isoformat())
+                if int(item.get("video_id") or 0) == int(video.get("id") or 0)
+            )
+            target_activity_seconds = sum(
+                max(0.0, float(item.get("delta_seconds") or 0))
+                for item in storage.list_study_plan_activity_events(day=target_day.isoformat())
+                if int(item.get("video_id") or 0) == int(video.get("id") or 0)
+            )
+            if source_activity_seconds + 0.5 < target_seconds:
+                return None
             candidates = [
                 item for item in storage.list_study_time_sessions(day=source_day.isoformat(), limit=100)
                 if str(item.get("subject") or "") == subject
@@ -16286,7 +16307,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if remaining <= 0.05:
                     break
             if remaining > 0.05:
-                return None
+                selected = []
             before_state = {
                 "source_sessions": [
                     dict(storage.get_study_time_session(item["session_id"]) or {})
@@ -16294,6 +16315,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 ],
                 "source_day": source_day.isoformat(),
                 "target_day": target_day.isoformat(),
+                "source_activity_seconds": source_activity_seconds,
+                "target_activity_seconds": target_activity_seconds,
             }
             action_payload = {
                 "moves": selected,
@@ -16303,6 +16326,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "target_seconds": target_seconds,
                 "subject": subject,
                 "video_sequence": sequence,
+                "video_id": int(video.get("id") or 0),
+                "expected_source_activity_seconds": source_activity_seconds,
+                "expected_target_activity_seconds": target_activity_seconds,
             }
             title = f"移轉 {subject}影片 {sequence} 學習時間"
             summary = f"將 {_study_assistant_time_label(target_seconds)}從 {source_day.isoformat()} 改記到 {target_day.isoformat()}"
@@ -16443,6 +16469,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     def admin_study_recall_ask_general():
         if not openai_api_key:
             return {"ok": False, "error": "AI 問答尚未啟用，請先設定 OPENAI_API_KEY。"}, 503
+        user = current_user() or {}
+        _repair_legacy_study_assistant_time_moves(str(user.get("username") or ""))
         payload = request.get_json(silent=True) or {}
         question = " ".join(str(payload.get("question") or "").split()).strip()
         if not question:
@@ -16821,6 +16849,114 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             next_status=restored,
         )
 
+    def _study_assistant_activity_seconds(*, video_id: int, day: str) -> float:
+        return sum(
+            max(0.0, float(item.get("delta_seconds") or 0))
+            for item in storage.list_study_plan_activity_events(day=day)
+            if int(item.get("video_id") or 0) == int(video_id or 0)
+        )
+
+    def _repair_legacy_study_assistant_time_moves(username: str) -> None:
+        """Finish confirmed time moves created before calendar activity was included.
+
+        The original confirmation already authorised these exact dates, video and
+        seconds. Recovery is compare-and-swap guarded and only runs while the
+        calendar's source value still matches the uncorrected state.
+        """
+        normalized_user = str(username or "").strip()
+        if not normalized_user:
+            return
+        actions = storage.list_study_assistant_actions(
+            username=normalized_user,
+            action_type="move_study_time_between_days",
+            status="applied",
+            limit=20,
+        )
+        videos = storage.list_study_plan_videos_with_records()
+        repaired_any = False
+        for action in actions:
+            after = action.get("after_state") if isinstance(action.get("after_state"), dict) else {}
+            # New actions already contain the calendar mutation. A legacy action
+            # contains the moved study-time session directly at the top level.
+            if isinstance(after.get("activity"), dict) or not isinstance(after.get("target_session"), dict):
+                continue
+            payload = action.get("action_payload") if isinstance(action.get("action_payload"), dict) else {}
+            try:
+                moved_seconds = float(payload.get("target_seconds") or 0)
+                sequence = int(payload.get("video_sequence") or 0)
+            except (TypeError, ValueError):
+                continue
+            source_day = str(payload.get("source_day") or "")
+            target_day = str(payload.get("target_day") or "")
+            subject = str(payload.get("subject") or "")
+            video = next((
+                item for item in videos
+                if str(item.get("subject") or "") == subject
+                and int(item.get("sequence") or 0) == sequence
+            ), None)
+            if not video or moved_seconds <= 0 or not source_day or not target_day:
+                continue
+            video_id = int(video.get("id") or 0)
+            source_seconds = _study_assistant_activity_seconds(video_id=video_id, day=source_day)
+            target_seconds = _study_assistant_activity_seconds(video_id=video_id, day=target_day)
+            if source_seconds + 0.5 < moved_seconds:
+                continue
+            action_id = str(action.get("action_id") or "")
+            if not storage.transition_study_assistant_action(
+                action_id,
+                username=normalized_user,
+                expected_status="applied",
+                next_status="repairing",
+            ):
+                continue
+            activity_result: Optional[Dict[str, Any]] = None
+            try:
+                activity_result = storage.move_study_plan_activity_between_days(
+                    video_id=video_id,
+                    source_day=source_day,
+                    target_day=target_day,
+                    seconds=moved_seconds,
+                    expected_source_seconds=source_seconds,
+                    expected_target_seconds=target_seconds,
+                )
+                if not activity_result or activity_result.get("stale"):
+                    raise ValueError("legacy calendar activity changed before repair")
+                repaired_after = {
+                    "activity": dict(activity_result),
+                    "study_time": dict(after),
+                    "legacy_repaired": True,
+                }
+                if not storage.transition_study_assistant_action(
+                    action_id,
+                    username=normalized_user,
+                    expected_status="repairing",
+                    next_status="applied",
+                    after_state=repaired_after,
+                ):
+                    raise RuntimeError("legacy action audit transition failed")
+                repaired_any = True
+                app.logger.info(
+                    "Repaired legacy calendar move %s for %s video %s",
+                    action_id,
+                    subject,
+                    sequence,
+                )
+            except Exception:
+                if activity_result and not activity_result.get("stale"):
+                    storage.undo_move_study_plan_activity_between_days(
+                        original_rows=list(activity_result.get("original_rows") or []),
+                        generated_ids=list(activity_result.get("generated_ids") or []),
+                    )
+                _study_assistant_restore_action_status(
+                    action_id,
+                    normalized_user,
+                    current="repairing",
+                    restored="applied",
+                )
+                app.logger.exception("Failed to repair legacy calendar move %s", action_id)
+        if repaired_any:
+            _invalidate_study_progress_context()
+
     def _study_assistant_numbers_match(left: Any, right: Any, tolerance: float = 0.05) -> bool:
         try:
             left_number = float(left)
@@ -16889,37 +17025,58 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 and str(current.get("updated_at") or "") == str(after.get("updated_at") or "")
             )
         elif action_type == "move_study_time_between_days":
-            target = storage.get_study_time_session(str(payload.get("target_session_id") or ""))
-            source_checks = []
-            for source in after.get("source_sessions") or []:
-                current_source = storage.get_study_time_session(str(source.get("session_id") or ""))
-                source_checks.append(bool(
-                    current_source
-                    and _study_assistant_numbers_match(
-                        current_source.get("elapsed_seconds"), source.get("elapsed_seconds"), tolerance=0.5
-                    )
-                    and str(current_source.get("updated_at") or "") == str(source.get("updated_at") or "")
-                ))
-            if target:
-                verified_state = {
-                    "source_sessions": list(after.get("source_sessions") or []),
-                    "target_session": dict(target),
-                }
-                details.append({
-                    "label": "日期歸屬",
-                    "value": f"{target.get('day')} · {_study_assistant_time_label(target.get('elapsed_seconds'))}",
-                })
-            matches = bool(
-                target
-                and str(target.get("day") or "") == str(payload.get("target_day") or "")
-                and _study_assistant_numbers_match(
-                    target.get("elapsed_seconds"), payload.get("target_seconds"), tolerance=0.5
-                )
-                and str(target.get("updated_at") or "")
-                == str((after.get("target_session") or {}).get("updated_at") or "")
-                and source_checks
-                and all(source_checks)
+            video_id = int(payload.get("video_id") or 0)
+            source_seconds = sum(
+                max(0.0, float(item.get("delta_seconds") or 0))
+                for item in storage.list_study_plan_activity_events(day=str(payload.get("source_day") or ""))
+                if int(item.get("video_id") or 0) == video_id
             )
+            target_seconds = sum(
+                max(0.0, float(item.get("delta_seconds") or 0))
+                for item in storage.list_study_plan_activity_events(day=str(payload.get("target_day") or ""))
+                if int(item.get("video_id") or 0) == video_id
+            )
+            activity_after = after.get("activity") if isinstance(after.get("activity"), dict) else {}
+            activity_matches = bool(
+                _study_assistant_numbers_match(source_seconds, activity_after.get("source_seconds"), tolerance=0.5)
+                and _study_assistant_numbers_match(target_seconds, activity_after.get("target_seconds"), tolerance=0.5)
+            )
+            study_time_after = after.get("study_time") if isinstance(after.get("study_time"), dict) else {}
+            study_time_matches = True
+            observed_study_time: Dict[str, Any] = {}
+            if payload.get("moves"):
+                target = storage.get_study_time_session(str(payload.get("target_session_id") or ""))
+                source_checks = []
+                for source in study_time_after.get("source_sessions") or []:
+                    current_source = storage.get_study_time_session(str(source.get("session_id") or ""))
+                    source_checks.append(bool(
+                        current_source
+                        and _study_assistant_numbers_match(
+                            current_source.get("elapsed_seconds"), source.get("elapsed_seconds"), tolerance=0.5
+                        )
+                        and str(current_source.get("updated_at") or "") == str(source.get("updated_at") or "")
+                    ))
+                study_time_matches = bool(
+                    target
+                    and str(target.get("day") or "") == str(payload.get("target_day") or "")
+                    and _study_assistant_numbers_match(
+                        target.get("elapsed_seconds"), payload.get("target_seconds"), tolerance=0.5
+                    )
+                    and str(target.get("updated_at") or "")
+                    == str((study_time_after.get("target_session") or {}).get("updated_at") or "")
+                    and source_checks
+                    and all(source_checks)
+                )
+                observed_study_time = {
+                    "source_sessions": list(study_time_after.get("source_sessions") or []),
+                    "target_session": dict(target or {}),
+                }
+            verified_state = {"activity": activity_after, "study_time": observed_study_time}
+            details.append({
+                "label": "月曆影片時間",
+                "value": f"{payload.get('target_day')} · {_study_assistant_time_label(target_seconds)}",
+            })
+            matches = activity_matches and study_time_matches
         elif action_type == "update_study_plan":
             current = storage.get_study_plan_replan_settings()
             if current:
@@ -16981,22 +17138,31 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 )
                 return bool(result and not result.get("stale"))
             if action_type == "move_study_time_between_days":
-                target = observed.get("target_session") if isinstance(observed.get("target_session"), dict) else {}
+                activity = observed.get("activity") if isinstance(observed.get("activity"), dict) else {}
+                study_time = observed.get("study_time") if isinstance(observed.get("study_time"), dict) else {}
+                target = study_time.get("target_session") if isinstance(study_time.get("target_session"), dict) else {}
                 before_sources = before.get("source_sessions") if isinstance(before.get("source_sessions"), list) else []
                 observed_sources = {
                     str(item.get("session_id") or ""): item
-                    for item in (observed.get("source_sessions") or [])
+                    for item in (study_time.get("source_sessions") or [])
                     if isinstance(item, dict)
                 }
-                return storage.undo_move_study_time_between_days(
-                    source_sessions=[{
-                        "session_id": str(item.get("session_id") or ""),
-                        "restore_seconds": float(item.get("elapsed_seconds") or 0),
-                        "expected_updated_at": str(observed_sources.get(str(item.get("session_id") or ""), {}).get("updated_at") or ""),
-                    } for item in before_sources],
-                    target_session_key=str(target.get("session_id") or ""),
-                    expected_target_updated_at=str(target.get("updated_at") or ""),
+                study_time_restored = True
+                if before_sources:
+                    study_time_restored = storage.undo_move_study_time_between_days(
+                        source_sessions=[{
+                            "session_id": str(item.get("session_id") or ""),
+                            "restore_seconds": float(item.get("elapsed_seconds") or 0),
+                            "expected_updated_at": str(observed_sources.get(str(item.get("session_id") or ""), {}).get("updated_at") or ""),
+                        } for item in before_sources],
+                        target_session_key=str(target.get("session_id") or ""),
+                        expected_target_updated_at=str(target.get("updated_at") or ""),
+                    )
+                activity_restored = storage.undo_move_study_plan_activity_between_days(
+                    original_rows=list(activity.get("original_rows") or []),
+                    generated_ids=list(activity.get("generated_ids") or []),
                 )
+                return bool(study_time_restored and activity_restored)
             if action_type == "update_study_plan":
                 observed_settings = observed.get("settings") if isinstance(observed.get("settings"), dict) else {}
                 current = storage.get_study_plan_replan_settings()
@@ -17039,6 +17205,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 current.get("elapsed_seconds"), before.get("elapsed_seconds"), tolerance=0.5
             ))
         elif action_type == "move_study_time_between_days":
+            activity = after.get("activity") if isinstance(after.get("activity"), dict) else {}
+            study_time = after.get("study_time") if isinstance(after.get("study_time"), dict) else after
             sources = before.get("source_sessions") if isinstance(before.get("source_sessions"), list) else []
             source_matches = []
             for source in sources:
@@ -17046,9 +17214,39 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 source_matches.append(bool(current and _study_assistant_numbers_match(
                     current.get("elapsed_seconds"), source.get("elapsed_seconds"), tolerance=0.5
                 )))
-            target = after.get("target_session") if isinstance(after.get("target_session"), dict) else {}
-            target_absent = not storage.get_study_time_session(str(target.get("session_id") or ""))
-            verified = bool(source_matches and all(source_matches) and target_absent)
+            target = study_time.get("target_session") if isinstance(study_time.get("target_session"), dict) else {}
+            study_time_verified = True
+            if sources:
+                study_time_verified = bool(
+                    source_matches
+                    and all(source_matches)
+                    and target
+                    and not storage.get_study_time_session(str(target.get("session_id") or ""))
+                )
+            activity_verified = True
+            if activity:
+                video_id = int(activity.get("video_id") or 0)
+                source_seconds = _study_assistant_activity_seconds(
+                    video_id=video_id,
+                    day=str(before.get("source_day") or ""),
+                )
+                target_seconds = _study_assistant_activity_seconds(
+                    video_id=video_id,
+                    day=str(before.get("target_day") or ""),
+                )
+                activity_verified = bool(
+                    _study_assistant_numbers_match(
+                        source_seconds,
+                        before.get("source_activity_seconds", activity.get("before_source_seconds")),
+                        tolerance=0.5,
+                    )
+                    and _study_assistant_numbers_match(
+                        target_seconds,
+                        before.get("target_activity_seconds", activity.get("before_target_seconds")),
+                        tolerance=0.5,
+                    )
+                )
+            verified = bool(study_time_verified and activity_verified and (sources or activity))
         elif action_type == "update_study_plan":
             current = storage.get_study_plan_replan_settings()
             old = before.get("settings") if isinstance(before.get("settings"), dict) else {}
@@ -17126,20 +17324,40 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     return {"ok": False, "error": conflict_message}, 409
                 after = dict(result)
             elif action_type == "move_study_time_between_days":
-                result = storage.move_study_time_between_days(
-                    moves=list(payload.get("moves") or []),
+                activity_result = storage.move_study_plan_activity_between_days(
+                    video_id=int(payload.get("video_id") or 0),
                     source_day=str(payload.get("source_day") or ""),
                     target_day=str(payload.get("target_day") or ""),
-                    target_session_key=str(payload.get("target_session_id") or ""),
+                    seconds=float(payload.get("target_seconds") or 0),
+                    expected_source_seconds=float(payload.get("expected_source_activity_seconds") or 0),
+                    expected_target_seconds=float(payload.get("expected_target_activity_seconds") or 0),
                 )
-                if not result:
-                    raise LookupError("找不到可移轉的學習紀錄。")
-                if result.get("stale"):
+                if not activity_result:
+                    raise LookupError("找不到可移轉的影片觀看活動。")
+                if activity_result.get("stale"):
                     _study_assistant_restore_action_status(
                         action_id, username, current="applying", restored="failed"
                     )
                     return {"ok": False, "error": conflict_message}, 409
-                after = dict(result)
+                after = {"activity": dict(activity_result)}
+                moves = list(payload.get("moves") or [])
+                if moves:
+                    result = storage.move_study_time_between_days(
+                        moves=moves,
+                        source_day=str(payload.get("source_day") or ""),
+                        target_day=str(payload.get("target_day") or ""),
+                        target_session_key=str(payload.get("target_session_id") or ""),
+                    )
+                    if not result or result.get("stale"):
+                        storage.undo_move_study_plan_activity_between_days(
+                            original_rows=list(activity_result.get("original_rows") or []),
+                            generated_ids=list(activity_result.get("generated_ids") or []),
+                        )
+                        _study_assistant_restore_action_status(
+                            action_id, username, current="applying", restored="failed"
+                        )
+                        return {"ok": False, "error": conflict_message}, 409
+                    after["study_time"] = dict(result)
             elif action_type == "update_study_plan":
                 current = storage.get_study_plan_replan_settings()
                 expected_exists = bool(before.get("exists"))
@@ -17284,23 +17502,33 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     )
                     return {"ok": False, "error": conflict_message}, 409
             elif action_type == "move_study_time_between_days":
-                target = after.get("target_session") if isinstance(after.get("target_session"), dict) else {}
+                activity = after.get("activity") if isinstance(after.get("activity"), dict) else {}
+                study_time = after.get("study_time") if isinstance(after.get("study_time"), dict) else after
+                target = study_time.get("target_session") if isinstance(study_time.get("target_session"), dict) else {}
                 source_after = {
                     str(item.get("session_id") or ""): item
-                    for item in (after.get("source_sessions") or [])
+                    for item in (study_time.get("source_sessions") or [])
                     if isinstance(item, dict)
                 }
                 source_before = before.get("source_sessions") if isinstance(before.get("source_sessions"), list) else []
-                restored = storage.undo_move_study_time_between_days(
-                    source_sessions=[{
-                        "session_id": str(item.get("session_id") or ""),
-                        "restore_seconds": float(item.get("elapsed_seconds") or 0),
-                        "expected_updated_at": str(source_after.get(str(item.get("session_id") or ""), {}).get("updated_at") or ""),
-                    } for item in source_before],
-                    target_session_key=str(target.get("session_id") or ""),
-                    expected_target_updated_at=str(target.get("updated_at") or ""),
-                )
-                if not restored:
+                study_time_restored = True
+                if source_before:
+                    study_time_restored = storage.undo_move_study_time_between_days(
+                        source_sessions=[{
+                            "session_id": str(item.get("session_id") or ""),
+                            "restore_seconds": float(item.get("elapsed_seconds") or 0),
+                            "expected_updated_at": str(source_after.get(str(item.get("session_id") or ""), {}).get("updated_at") or ""),
+                        } for item in source_before],
+                        target_session_key=str(target.get("session_id") or ""),
+                        expected_target_updated_at=str(target.get("updated_at") or ""),
+                    )
+                activity_restored = True
+                if activity:
+                    activity_restored = storage.undo_move_study_plan_activity_between_days(
+                        original_rows=list(activity.get("original_rows") or []),
+                        generated_ids=list(activity.get("generated_ids") or []),
+                    )
+                if not study_time_restored or not activity_restored or not (source_before or activity):
                     _study_assistant_restore_action_status(
                         action_id, username, current="reverting", restored="applied"
                     )
@@ -18157,6 +18385,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     @admin_required
     def admin_study_plan():
         user = current_user()
+        if user:
+            _repair_legacy_study_assistant_time_moves(str(user.get("username") or ""))
         if request.method == "POST":
             action = (request.form.get("action") or "save_video").strip()
             selected_subject = (request.form.get("subject") or "").strip()

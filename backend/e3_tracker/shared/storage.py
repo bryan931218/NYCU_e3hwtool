@@ -1616,6 +1616,162 @@ class PersistentStorage:
             key=lambda item: (str(item["day"]), str(item["updated_at"]), int(item["sequence"])),
         )
 
+    def move_study_plan_activity_between_days(
+        self,
+        *,
+        video_id: int,
+        source_day: str,
+        target_day: str,
+        seconds: float,
+        expected_source_seconds: float,
+        expected_target_seconds: float,
+    ) -> Optional[Dict[str, Any]]:
+        """Reattribute new-progress activity without changing the video's final position."""
+        try:
+            normalized_video_id = int(video_id)
+            moved_seconds = float(seconds)
+        except (TypeError, ValueError):
+            return None
+        if normalized_video_id <= 0 or moved_seconds <= 0 or target_day <= source_day:
+            return None
+
+        def grouped_credit(rows: List[Any]) -> Dict[str, Dict[str, Any]]:
+            grouped: Dict[str, Dict[str, Any]] = {}
+            for row in rows:
+                day_value = self._study_plan_business_day_from_timestamp(str(row.updated_at or ""))
+                entry = grouped.get(day_value)
+                if entry is None:
+                    grouped[day_value] = {
+                        "previous": max(0.0, float(row.previous_watched_seconds or 0)),
+                        "watched": max(0.0, float(row.watched_seconds or 0)),
+                        "row_ids": [int(row.id)],
+                    }
+                else:
+                    entry["watched"] = max(0.0, float(row.watched_seconds or 0))
+                    entry["row_ids"].append(int(row.id))
+            high_water = 0.0
+            for day_value in sorted(grouped):
+                entry = grouped[day_value]
+                baseline = max(high_water, float(entry["previous"]))
+                entry["credited"] = max(0.0, float(entry["watched"]) - baseline)
+                entry["baseline"] = baseline
+                high_water = max(high_water, float(entry["previous"]), float(entry["watched"]))
+            return grouped
+
+        with self._lock, self._engine.begin() as conn:
+            rows = conn.execute(
+                select(study_plan_activity_events_table)
+                .where(study_plan_activity_events_table.c.video_id == normalized_video_id)
+                .order_by(
+                    study_plan_activity_events_table.c.day,
+                    study_plan_activity_events_table.c.updated_at,
+                    study_plan_activity_events_table.c.id,
+                )
+            ).fetchall()
+            grouped = grouped_credit(list(rows))
+            source = grouped.get(str(source_day or ""))
+            target = grouped.get(str(target_day or ""), {"credited": 0.0})
+            source_credited = float((source or {}).get("credited") or 0)
+            target_credited = float(target.get("credited") or 0)
+            if (
+                not source
+                or abs(source_credited - float(expected_source_seconds or 0)) > 0.5
+                or abs(target_credited - float(expected_target_seconds or 0)) > 0.5
+                or source_credited + 0.5 < moved_seconds
+            ):
+                return {"stale": True}
+
+            source_ids = set(int(value) for value in source.get("row_ids") or [])
+            original_rows = [{
+                "id": int(row.id),
+                "day": str(row.day or ""),
+                "video_id": int(row.video_id),
+                "previous_watched_seconds": float(row.previous_watched_seconds or 0),
+                "watched_seconds": float(row.watched_seconds or 0),
+                "delta_seconds": float(row.delta_seconds or 0),
+                "updated_at": str(row.updated_at or ""),
+            } for row in rows if int(row.id) in source_ids]
+            conn.execute(
+                delete(study_plan_activity_events_table).where(
+                    study_plan_activity_events_table.c.id.in_(source_ids)
+                )
+            )
+
+            generated_ids = []
+            baseline = float(source.get("baseline") or 0)
+            final_watched = float(source.get("watched") or 0)
+            source_final = max(baseline, final_watched - moved_seconds)
+            source_timestamp = min(
+                (str(item.get("updated_at") or "") for item in original_rows),
+                default=f"{source_day}T12:00:00.000000",
+            )
+            if source_final > baseline + 0.01:
+                inserted = conn.execute(insert(study_plan_activity_events_table).values(
+                    day=source_day,
+                    video_id=normalized_video_id,
+                    previous_watched_seconds=baseline,
+                    watched_seconds=source_final,
+                    delta_seconds=source_final - baseline,
+                    updated_at=source_timestamp,
+                ))
+                generated_ids.append(int(inserted.inserted_primary_key[0]))
+            inserted = conn.execute(insert(study_plan_activity_events_table).values(
+                day=target_day,
+                video_id=normalized_video_id,
+                previous_watched_seconds=source_final,
+                watched_seconds=final_watched,
+                delta_seconds=final_watched - source_final,
+                updated_at=f"{target_day}T00:00:00.000001",
+            ))
+            generated_ids.append(int(inserted.inserted_primary_key[0]))
+        return {
+            "stale": False,
+            "video_id": normalized_video_id,
+            "original_rows": original_rows,
+            "generated_ids": generated_ids,
+            "before_source_seconds": source_credited,
+            "before_target_seconds": target_credited,
+            "source_seconds": source_credited - moved_seconds,
+            "target_seconds": target_credited + moved_seconds,
+        }
+
+    def undo_move_study_plan_activity_between_days(
+        self,
+        *,
+        original_rows: List[Dict[str, Any]],
+        generated_ids: List[int],
+    ) -> bool:
+        try:
+            normalized_ids = [int(value) for value in generated_ids]
+        except (TypeError, ValueError):
+            return False
+        if not original_rows or not normalized_ids:
+            return False
+        with self._lock, self._engine.begin() as conn:
+            existing = conn.execute(
+                select(study_plan_activity_events_table.c.id).where(
+                    study_plan_activity_events_table.c.id.in_(normalized_ids)
+                )
+            ).fetchall()
+            if {int(row.id) for row in existing} != set(normalized_ids):
+                return False
+            conn.execute(
+                delete(study_plan_activity_events_table).where(
+                    study_plan_activity_events_table.c.id.in_(normalized_ids)
+                )
+            )
+            for row in original_rows:
+                conn.execute(insert(study_plan_activity_events_table).values(
+                    id=int(row.get("id") or 0),
+                    day=str(row.get("day") or ""),
+                    video_id=int(row.get("video_id") or 0),
+                    previous_watched_seconds=float(row.get("previous_watched_seconds") or 0),
+                    watched_seconds=float(row.get("watched_seconds") or 0),
+                    delta_seconds=float(row.get("delta_seconds") or 0),
+                    updated_at=str(row.get("updated_at") or ""),
+                ))
+        return True
+
     def record_study_time_session(
         self,
         *,
@@ -3849,6 +4005,59 @@ class PersistentStorage:
         if not result.rowcount:
             return None
         return self.get_study_plan_video_marker(marker_id)
+    def list_study_assistant_actions(
+        self,
+        *,
+        username: str,
+        action_type: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 25,
+    ) -> List[Dict[str, Any]]:
+        """Return recent audited actions for one user.
+
+        This is intentionally scoped by username so recovery code can never
+        inspect or repair another user's confirmed changes.
+        """
+        normalized_user = str(username or "").strip()[:191]
+        if not normalized_user:
+            return []
+        stmt = select(study_assistant_actions_table).where(
+            study_assistant_actions_table.c.username == normalized_user
+        )
+        if action_type:
+            stmt = stmt.where(
+                study_assistant_actions_table.c.action_type == str(action_type or "")[:48]
+            )
+        if status:
+            stmt = stmt.where(
+                study_assistant_actions_table.c.status == str(status or "")[:16]
+            )
+        stmt = stmt.order_by(
+            study_assistant_actions_table.c.updated_at.desc(),
+            study_assistant_actions_table.c.created_at.desc(),
+        ).limit(max(1, min(int(limit or 25), 100)))
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+
+        def decode(value: Any) -> Dict[str, Any]:
+            try:
+                parsed = json.loads(str(value or "{}"))
+            except (TypeError, ValueError):
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+
+        return [{
+            "action_id": str(row.action_id),
+            "username": str(row.username),
+            "status": str(row.status),
+            "action_type": str(row.action_type),
+            "action_payload": decode(row.action_payload),
+            "before_state": decode(row.before_state),
+            "after_state": decode(row.after_state),
+            "summary": str(row.summary or ""),
+            "created_at": str(row.created_at or ""),
+            "updated_at": str(row.updated_at or ""),
+        } for row in rows]
 
     def get_study_plan_replan_settings(self) -> Optional[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
