@@ -3332,7 +3332,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "subject_progress": daily_subject_progress,
                         "has_target": has_target,
                         "is_rest_day": is_rest_day,
-                        "can_be_rest_day": bool(daily_target.get("can_be_rest_day")),
+                        "can_be_rest_day": bool(
+                            daily_target.get("can_be_rest_day")
+                            and has_target
+                            and not is_rest_day
+                            and not _study_plan_total_is_complete(target_seconds, credited_seconds)
+                        ),
                         "redistributed_seconds": float(daily_target.get("redistributed_seconds") or 0),
                         "redistributed_day_count": int(daily_target.get("redistributed_day_count") or 0),
                         "target_seconds": target_seconds,
@@ -18331,28 +18336,31 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return redirect(return_url)
 
         existing_rest_days = storage.list_study_plan_rest_days()
-        if selected_day < today:
-            flash("過去日期已有實際進度紀錄，不能再改設為休息日。", "error")
-            return redirect(return_url)
         if selected_day_iso in existing_rest_days:
             flash(f"{selected_day_iso} 已經是休息日。", "info")
             return redirect(return_url)
 
         videos = storage.list_study_plan_videos_with_records()
         settings = storage.get_study_plan_replan_settings()
-        before_weeks = _study_plan_schedule_definitions(videos, settings, existing_rest_days)
+        before_weeks, _, _ = _study_plan_week_rows(videos)
         before_day = next(
             (
                 day
                 for week in before_weeks
-                for day in week.get("daily_targets", [])
-                if day["date"] == selected_day
+                for day in week.get("daily_recommendations", [])
+                if day["date"] == selected_day_iso
             ),
             None,
         )
-        original_seconds = sum((before_day or {}).get("allocations", {}).values())
+        original_seconds = float((before_day or {}).get("target_seconds") or 0)
         if original_seconds <= 0.001:
             flash("該日沒有可移動的計畫時數。", "info")
+            return redirect(return_url)
+        if _study_plan_total_is_complete(
+            original_seconds,
+            float((before_day or {}).get("credited_seconds") or 0),
+        ):
+            flash("該日進度已完成，不需要改設為休息日。", "info")
             return redirect(return_url)
         if not before_day or not before_day.get("can_be_rest_day"):
             flash("該日之後沒有同一排程區段可承接進度，無法設為休息日。", "error")

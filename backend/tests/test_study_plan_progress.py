@@ -784,7 +784,7 @@ class StudyPlanProgressTests(unittest.TestCase):
                 browser_session["session_token"] = token
                 browser_session["is_admin"] = True
 
-            with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)):
+            with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 4)):
                 response = client.post(
                     "/admin/study-plan/rest-day",
                     data={"subject": "離散數學", "study_date": "2026-09-03"},
@@ -812,12 +812,22 @@ class StudyPlanProgressTests(unittest.TestCase):
                 self.assertIn("已恢復 2026-09-03 的原定進度", restored.get_data(as_text=True))
                 self.assertEqual(storage.list_study_plan_rest_days(), [])
 
-                rejected = client.post(
+                older_incomplete = client.post(
                     "/admin/study-plan/rest-day",
                     data={"subject": "離散數學", "study_date": "2026-09-01"},
                     follow_redirects=True,
                 )
-                self.assertIn("不能再改設為休息日", rejected.get_data(as_text=True))
+                self.assertIn("2026-09-01 已設為休息日", older_incomplete.get_data(as_text=True))
+                self.assertEqual(storage.list_study_plan_rest_days(), ["2026-09-01"])
+
+                client.post(
+                    "/admin/study-plan/rest-day",
+                    data={
+                        "action": "restore",
+                        "subject": "離散數學",
+                        "study_date": "2026-09-01",
+                    },
+                )
                 self.assertEqual(storage.list_study_plan_rest_days(), [])
 
                 malformed = client.post(
@@ -827,6 +837,78 @@ class StudyPlanProgressTests(unittest.TestCase):
                 )
                 self.assertIn("休息日日期格式不正確", malformed.get_data(as_text=True))
                 self.assertEqual(storage.list_study_plan_rest_days(), [])
+            storage._engine.dispose()
+
+    def test_admin_allows_partial_past_day_but_rejects_completed_day(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "E3_CACHE_DIR": temp_dir,
+                    "E3_DATABASE_URL": "",
+                    "E3_SESSION_COOKIE_SECURE": "0",
+                },
+            ):
+                app = create_app()
+
+            storage = app.extensions["e3_storage"]
+            storage.save_study_plan_replan_settings(
+                start_date="2026-09-07",
+                end_date="2026-09-13",
+                weekday_minutes=60,
+                weekend_minutes=60,
+                baseline_by_subject={"離散數學": 0},
+                subject_targets={"離散數學": 7 * 3600},
+            )
+            remaining_seconds = 5400.0
+            for video in sorted(
+                (
+                    video
+                    for video in storage.list_study_plan_videos_with_records()
+                    if video["subject"] == "離散數學"
+                ),
+                key=lambda video: int(video["sequence"]),
+            ):
+                watched_seconds = min(float(video["duration_seconds"]), remaining_seconds)
+                storage.update_study_plan_video_progress(
+                    video_id=int(video["id"]),
+                    watched_seconds=watched_seconds,
+                    expected_version=int(video["progress_version"]),
+                )
+                remaining_seconds -= watched_seconds
+                if remaining_seconds <= 0.001:
+                    break
+            self.assertLessEqual(remaining_seconds, 0.001)
+
+            token = "completed-rest-day-test-session"
+            storage.save_web_session(token, "test-admin")
+            client = app.test_client()
+            with client.session_transaction() as browser_session:
+                browser_session["username"] = "test-admin"
+                browser_session["session_token"] = token
+                browser_session["is_admin"] = True
+
+            with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 10)):
+                page = client.get("/admin/study-plan")
+                html = page.get_data(as_text=True)
+                self.assertNotIn("將 2026-09-07 設為休息日", html)
+                self.assertIn("將 2026-09-08 設為休息日", html)
+
+                rejected = client.post(
+                    "/admin/study-plan/rest-day",
+                    data={"subject": "離散數學", "study_date": "2026-09-07"},
+                    follow_redirects=True,
+                )
+                self.assertIn("該日進度已完成", rejected.get_data(as_text=True))
+                self.assertEqual(storage.list_study_plan_rest_days(), [])
+
+                partial = client.post(
+                    "/admin/study-plan/rest-day",
+                    data={"subject": "離散數學", "study_date": "2026-09-08"},
+                    follow_redirects=True,
+                )
+                self.assertIn("2026-09-08 已設為休息日", partial.get_data(as_text=True))
+                self.assertEqual(storage.list_study_plan_rest_days(), ["2026-09-08"])
             storage._engine.dispose()
 
     def test_progress_race_compares_watched_time_with_target_time(self):
