@@ -931,6 +931,114 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             finally:
                 storage._engine.dispose()
 
+    def test_move_all_video_activity_backwards_uses_exact_stored_seconds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學" and item["sequence"] == 14
+                )
+                initial_watched = float(video.get("watched_seconds") or 0)
+                with patch.object(storage, "_now_iso", return_value="2026-09-01T12:00:00"):
+                    first_progress = storage.update_study_plan_video_progress(
+                        video_id=video["id"],
+                        watched_seconds=initial_watched + 10 * 60,
+                        expected_version=int(video.get("progress_version") or 0),
+                    )
+                with patch.object(storage, "_now_iso", return_value="2026-09-02T12:00:00"):
+                    storage.update_study_plan_video_progress(
+                        video_id=video["id"],
+                        watched_seconds=initial_watched + 10 * 60 + 1952,
+                        expected_version=int(first_progress.get("progress_version") or 0),
+                    )
+
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post, patch(
+                    "e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)
+                ):
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "請幫我把離散數學第14部的33分鐘全部移到昨天"},
+                    )
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNotNone(payload["proposal"])
+                self.assertIn("2026-09-02", payload["proposal"]["changes"][0]["before"])
+                self.assertIn("2026-09-01", payload["proposal"]["changes"][0]["after"])
+                openai_post.assert_not_called()
+
+                # A preview must not mutate the database.
+                source_before = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                    if item["video_id"] == video["id"]
+                )
+                self.assertEqual(source_before["delta_seconds"], 1952)
+
+                applied = client.post(payload["proposal"]["apply_url"])
+                applied_payload = applied.get_json()
+                self.assertEqual(applied.status_code, 200)
+                self.assertTrue(applied_payload["verification"]["verified"])
+                self.assertFalse(any(
+                    item["video_id"] == video["id"]
+                    for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                ))
+                target_after = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-01")
+                    if item["video_id"] == video["id"]
+                )
+                self.assertEqual(target_after["delta_seconds"], 10 * 60 + 1952)
+
+                undone = client.post(applied_payload["undo"]["url"])
+                self.assertEqual(undone.status_code, 200)
+                restored_source = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-02")
+                    if item["video_id"] == video["id"]
+                )
+                restored_target = next(
+                    item for item in storage.list_study_plan_activity_events(day="2026-09-01")
+                    if item["video_id"] == video["id"]
+                )
+                self.assertEqual(restored_source["delta_seconds"], 1952)
+                self.assertEqual(restored_target["delta_seconds"], 10 * 60)
+            finally:
+                storage._engine.dispose()
+
+    def test_move_all_with_explicit_short_dates_creates_preview(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學" and item["sequence"] == 14
+                )
+                with patch.object(storage, "_now_iso", return_value="2026-09-02T12:00:00"):
+                    storage.update_study_plan_video_progress(
+                        video_id=video["id"],
+                        watched_seconds=float(video.get("watched_seconds") or 0) + 1952,
+                        expected_version=int(video.get("progress_version") or 0),
+                    )
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post, patch(
+                    "e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)
+                ):
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "請幫我把9/2離散數學第14部的33分鐘全部移到9/1"},
+                    )
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNotNone(payload["proposal"])
+                self.assertIn("2026-09-02", payload["proposal"]["changes"][0]["before"])
+                self.assertIn("2026-09-01", payload["proposal"]["changes"][0]["after"])
+                openai_post.assert_not_called()
+            finally:
+                storage._engine.dispose()
+
     def test_legacy_confirmed_time_move_repairs_calendar_and_rendered_home(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.build_app(temp_dir)

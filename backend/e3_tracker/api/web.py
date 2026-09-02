@@ -15940,27 +15940,61 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if subject_position >= 0:
                 sequence_match = re.search(r"(?:第\s*)?(\d+)\s*(?:部|支|集|堂|影片)?", normalized[subject_position + len(subject):])
         minutes_match = re.search(r"(\d+(?:\.\d+)?)\s*分鐘", normalized)
-        if not sequence_match or not minutes_match:
+        move_all = any(term in normalized for term in ("全部", "整筆", "所有", "整段"))
+        if not sequence_match or (not minutes_match and not move_all):
             return None
         today = _study_plan_business_date()
-        source_day = (today - timedelta(days=1)).isoformat() if "昨天" in normalized else ""
-        target_day = today.isoformat() if "今天" in normalized else ""
+
+        def resolve_date_token(token: str) -> str:
+            value = str(token or "").strip()
+            relative_days = {"今天": 0, "昨天": -1, "前天": -2, "明天": 1}
+            if value in relative_days:
+                return (today + timedelta(days=relative_days[value])).isoformat()
+            try:
+                if re.fullmatch(r"20\d{2}-\d{1,2}-\d{1,2}", value):
+                    return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+                match = re.fullmatch(r"(\d{1,2})\s*[/月-]\s*(\d{1,2})(?:\s*日)?", value)
+                if match:
+                    return date(today.year, int(match.group(1)), int(match.group(2))).isoformat()
+            except ValueError:
+                return ""
+            return ""
+
+        date_token_pattern = r"(?:20\d{2}-\d{1,2}-\d{1,2}|\d{1,2}\s*[/月-]\s*\d{1,2}(?:\s*日)?|今天|昨天|前天|明天)"
+        move_match = re.search(r"(?:算在|移到|挪到|記到|歸到|改到)\s*(" + date_token_pattern + r")", normalized)
+        target_day = resolve_date_token(move_match.group(1)) if move_match else ""
+        before_move = normalized[:move_match.start()] if move_match else normalized
+        source_matches = re.findall(date_token_pattern, before_move)
+        source_day = resolve_date_token(source_matches[-1]) if source_matches else ""
         explicit_dates = re.findall(r"20\d{2}-\d{2}-\d{2}", normalized)
         if len(explicit_dates) >= 2:
             source_day, target_day = explicit_dates[0], explicit_dates[1]
+        if not source_day and target_day:
+            # In natural requests such as「把這筆移到昨天」the source is the
+            # current study day. Moving something to today implies yesterday.
+            source_day = (
+                (today - timedelta(days=1)).isoformat()
+                if target_day == today.isoformat()
+                else today.isoformat()
+            )
         if not source_day or not target_day or source_day == target_day:
             return None
-        minutes = float(minutes_match.group(1))
-        if not math.isfinite(minutes) or minutes <= 0 or minutes > 24 * 60:
+        minutes = float(minutes_match.group(1)) if minutes_match else 0.0
+        if not math.isfinite(minutes) or minutes < 0 or minutes > 24 * 60 or (minutes <= 0 and not move_all):
             return None
         return {
             "type": "move_study_time_between_days",
             "subject": subject,
             "video_sequence": int(sequence_match.group(1)),
             "target_minutes": minutes,
+            "move_all": move_all,
             "source_date": source_day,
             "target_date": target_day,
-            "reason": f"將 {minutes:g} 分鐘的學習時間改記到 {target_day}",
+            "reason": (
+                f"將來源日的全部觀看時間改記到 {target_day}"
+                if move_all
+                else f"將 {minutes:g} 分鐘的學習時間改記到 {target_day}"
+            ),
         }
 
     def _study_assistant_plan_metrics(
@@ -16062,6 +16096,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "label": str(item.get("label") or "")[:90],
                     "minutes": round(float(item.get("elapsed_seconds") or 0) / 60, 2),
                 })
+        recent_video_activity = [
+            {
+                "date": str(item.get("day") or ""),
+                "subject": str(item.get("subject") or ""),
+                "video": int(item.get("sequence") or 0),
+                "title": str(item.get("title") or "")[:90],
+                "minutes": round(max(0.0, float(item.get("delta_seconds") or 0)) / 60, 2),
+            }
+            for item in storage.list_study_plan_activity_events(
+                start_day=(today - timedelta(days=13)).isoformat(),
+                end_day=today.isoformat(),
+            )
+            if float(item.get("delta_seconds") or 0) > 0
+        ]
         note_rows = storage.list_study_recall_sessions(limit=60)
         note_library = []
         for item in note_rows:
@@ -16131,6 +16179,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "weekend_hours": round(STUDY_PLAN_DAILY_VIDEO_SECONDS / 3600, 2),
             }),
             "videos": compact_videos,
+            "recent_video_activity": recent_video_activity,
             "recent_study_records": recent_sessions,
             "study_time_last_30_days": storage.list_study_time_daily_totals(
                 start_day=recent_start.isoformat(), end_day=today.isoformat()
@@ -16252,7 +16301,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             subject = str(raw_action.get("subject") or "").strip()
             try:
                 sequence = int(raw_action.get("video_sequence") or 0)
-                target_seconds = float(raw_action.get("target_minutes") or 0) * 60
+                requested_seconds = float(raw_action.get("target_minutes") or 0) * 60
+                move_all = bool(raw_action.get("move_all"))
                 source_day = datetime.strptime(str(raw_action.get("source_date") or ""), "%Y-%m-%d").date()
                 target_day = datetime.strptime(str(raw_action.get("target_date") or ""), "%Y-%m-%d").date()
             except (TypeError, ValueError):
@@ -16260,9 +16310,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             today = _study_plan_business_date()
             if (
                 not subject
-                or not math.isfinite(target_seconds)
-                or target_seconds <= 0
-                or target_seconds > 24 * 60 * 60
+                or not math.isfinite(requested_seconds)
+                or requested_seconds < 0
+                or requested_seconds > 24 * 60 * 60
                 or source_day == target_day
                 or abs((today - source_day).days) > 14
                 or abs((today - target_day).days) > 14
@@ -16285,6 +16335,16 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 for item in storage.list_study_plan_activity_events(day=target_day.isoformat())
                 if int(item.get("video_id") or 0) == int(video.get("id") or 0)
             )
+            target_seconds = source_activity_seconds if move_all else requested_seconds
+            # Spoken/displayed minutes are rounded. For an "all" request, move the
+            # exact stored seconds so no invisible remainder is left behind.
+            if move_all and requested_seconds > 0:
+                displayed_minutes = round(source_activity_seconds / 60)
+                requested_minutes = round(requested_seconds / 60)
+                if abs(displayed_minutes - requested_minutes) > 1:
+                    return None
+            if target_seconds <= 0 or target_seconds > 24 * 60 * 60:
+                return None
             if source_activity_seconds + 0.5 < target_seconds:
                 return None
             candidates = [
@@ -16324,6 +16384,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "target_day": target_day.isoformat(),
                 "target_session_id": f"assistant-move-{action_id}"[:80],
                 "target_seconds": target_seconds,
+                "move_all": move_all,
                 "subject": subject,
                 "video_sequence": sequence,
                 "video_id": int(video.get("id") or 0),
@@ -16725,15 +16786,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "對使用者只能使用自然名稱。絕對不可顯示英文動作名稱、資料欄位、session id、JSON、資料表或 SQL；"
             "不可提到 set_video_progress、set_study_time_session、update_study_plan、session_id、subject、"
             "video_sequence、target_minutes、start_date、end_date、weekday_hours、weekend_hours。\n\n"
-            "你是規劃者，不是資料庫執行者。先依需求選擇下列安全工具；所有寫入只能提出一個待確認動作，"
+            "你是能自行完成任務的學習 Agent。先查網站目前可用資料、消除可由資料解決的歧義，再規劃安全動作；"
+            "所有寫入只能提出一個待確認動作，由伺服器在使用者確認後執行並回讀驗證，"
             "不能聲稱已經修改，也不能要求或產生 SQL。若目前工具無法安全完成要求，action.type 必須為 none，"
             "並誠實說明這次沒有改動資料：\n"
             "1. set_video_progress：修正某科目某支影片的最後觀看位置或完成百分比。"
             "subject、video_sequence 必須明確；使用者說百分比或看完時填 target_percent，說分鐘時填 target_minutes。"
             "影片總長已存在網站資料中，不得要求使用者提供。\n"
             "2. set_study_time_session：修正最近 14 天內某筆實際學習時間。session_id、target_minutes 必須明確。\n"
-            "3. move_study_time_between_days：把某科目某支影片的部分學習分鐘從一個日期改記到另一日期；"
-            "subject、video_sequence、target_minutes、source_date、target_date 必須明確，日期格式為 YYYY-MM-DD。\n"
+            "3. move_study_time_between_days：把某科目某支影片的學習分鐘從一個日期改記到另一日期，可向前或向後移；"
+            "subject、video_sequence、source_date、target_date 必須明確，日期格式為 YYYY-MM-DD。"
+            "指定分鐘時填 target_minutes 且 move_all=false；說全部、整筆或所有時填 move_all=true，"
+            "target_minutes 可填使用者說的約數或 0，實際執行會以來源日資料庫的精確秒數為準。\n"
             "4. update_study_plan：調整計畫起日、迄日、平日或假日每日影片時數；未變更欄位使用空字串或 0。\n"
             "5. rebalance_study_plan：保留原截止日，依目前真實觀看進度把所有剩餘影片與落後量從今天起平均分攤；"
             "使用者要求重排、追回落後或平均分攤時優先使用，不必追問他已經提供過的時數。\n"
@@ -16755,7 +16819,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "additionalProperties": False,
                     "required": [
                         "type", "subject", "video_sequence", "session_id", "target_minutes",
-                        "target_percent", "source_date", "target_date", "start_date", "end_date", "weekday_hours", "weekend_hours", "reason",
+                        "target_percent", "move_all", "source_date", "target_date", "start_date", "end_date", "weekday_hours", "weekend_hours", "reason",
                     ],
                     "properties": {
                         "type": {
@@ -16770,6 +16834,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "session_id": {"type": "string"},
                         "target_minutes": {"type": "number", "minimum": 0},
                         "target_percent": {"type": "number", "minimum": 0, "maximum": 100},
+                        "move_all": {"type": "boolean"},
                         "source_date": {"type": "string"},
                         "target_date": {"type": "string"},
                         "start_date": {"type": "string"},

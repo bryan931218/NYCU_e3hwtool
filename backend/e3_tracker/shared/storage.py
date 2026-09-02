@@ -1632,7 +1632,7 @@ class PersistentStorage:
             moved_seconds = float(seconds)
         except (TypeError, ValueError):
             return None
-        if normalized_video_id <= 0 or moved_seconds <= 0 or target_day <= source_day:
+        if normalized_video_id <= 0 or moved_seconds <= 0 or target_day == source_day:
             return None
 
         def grouped_credit(rows: List[Any]) -> Dict[str, Dict[str, Any]]:
@@ -1681,7 +1681,20 @@ class PersistentStorage:
             ):
                 return {"stale": True}
 
-            source_ids = set(int(value) for value in source.get("row_ids") or [])
+            range_start = min(str(source_day), str(target_day))
+            range_end = max(str(source_day), str(target_day))
+            affected_days = sorted({
+                str(day_value)
+                for day_value in grouped
+                if range_start <= str(day_value) <= range_end
+            } | {str(source_day), str(target_day)})
+            affected_ids = {
+                int(row.id)
+                for row in rows
+                if range_start <= self._study_plan_business_day_from_timestamp(
+                    str(row.updated_at or "")
+                ) <= range_end
+            }
             original_rows = [{
                 "id": int(row.id),
                 "day": str(row.day or ""),
@@ -1690,40 +1703,72 @@ class PersistentStorage:
                 "watched_seconds": float(row.watched_seconds or 0),
                 "delta_seconds": float(row.delta_seconds or 0),
                 "updated_at": str(row.updated_at or ""),
-            } for row in rows if int(row.id) in source_ids]
+            } for row in rows if int(row.id) in affected_ids]
             conn.execute(
                 delete(study_plan_activity_events_table).where(
-                    study_plan_activity_events_table.c.id.in_(source_ids)
+                    study_plan_activity_events_table.c.id.in_(affected_ids)
                 )
             )
 
             generated_ids = []
-            baseline = float(source.get("baseline") or 0)
-            final_watched = float(source.get("watched") or 0)
-            source_final = max(baseline, final_watched - moved_seconds)
-            source_timestamp = min(
-                (str(item.get("updated_at") or "") for item in original_rows),
-                default=f"{source_day}T12:00:00.000000",
+            credited_by_day = {
+                day_value: float((grouped.get(day_value) or {}).get("credited") or 0)
+                for day_value in affected_days
+            }
+            credited_by_day[str(source_day)] = max(
+                0.0, credited_by_day.get(str(source_day), 0.0) - moved_seconds
             )
-            if source_final > baseline + 0.01:
+            credited_by_day[str(target_day)] = (
+                credited_by_day.get(str(target_day), 0.0) + moved_seconds
+            )
+
+            running_position = 0.0
+            for day_value in sorted(grouped):
+                if day_value >= range_start:
+                    break
+                entry = grouped[day_value]
+                running_position = max(
+                    running_position,
+                    float(entry.get("previous") or 0),
+                    float(entry.get("watched") or 0),
+                )
+            first_existing_day = next(
+                (day_value for day_value in affected_days if day_value in grouped),
+                None,
+            )
+            if first_existing_day:
+                running_position = max(
+                    running_position,
+                    float(grouped[first_existing_day].get("baseline") or 0),
+                )
+
+            timestamps_by_day: Dict[str, str] = {}
+            for row in rows:
+                row_day = self._study_plan_business_day_from_timestamp(str(row.updated_at or ""))
+                if row_day not in affected_days:
+                    continue
+                timestamp = str(row.updated_at or "")
+                if timestamp and (
+                    row_day not in timestamps_by_day or timestamp < timestamps_by_day[row_day]
+                ):
+                    timestamps_by_day[row_day] = timestamp
+            for day_value in affected_days:
+                day_credit = max(0.0, float(credited_by_day.get(day_value) or 0))
+                if day_credit <= 0.01:
+                    continue
+                next_position = running_position + day_credit
                 inserted = conn.execute(insert(study_plan_activity_events_table).values(
-                    day=source_day,
+                    day=day_value,
                     video_id=normalized_video_id,
-                    previous_watched_seconds=baseline,
-                    watched_seconds=source_final,
-                    delta_seconds=source_final - baseline,
-                    updated_at=source_timestamp,
+                    previous_watched_seconds=running_position,
+                    watched_seconds=next_position,
+                    delta_seconds=day_credit,
+                    updated_at=timestamps_by_day.get(
+                        day_value, f"{day_value}T12:00:00.000000"
+                    ),
                 ))
                 generated_ids.append(int(inserted.inserted_primary_key[0]))
-            inserted = conn.execute(insert(study_plan_activity_events_table).values(
-                day=target_day,
-                video_id=normalized_video_id,
-                previous_watched_seconds=source_final,
-                watched_seconds=final_watched,
-                delta_seconds=final_watched - source_final,
-                updated_at=f"{target_day}T00:00:00.000001",
-            ))
-            generated_ids.append(int(inserted.inserted_primary_key[0]))
+                running_position = next_position
         return {
             "stale": False,
             "video_id": normalized_video_id,
