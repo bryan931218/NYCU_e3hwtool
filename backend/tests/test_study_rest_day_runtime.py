@@ -112,8 +112,14 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
 
         self.assertEqual(days[0]["allocations"], {})
         self.assertEqual(days[0]["redistributed_day_count"], 6)
-        for day in days[1:]:
-            self.assertAlmostEqual(day["allocations"].get("資料結構", 0), 600)
+        for index, day in enumerate(days[1:], start=1):
+            # The first receiver already had one hour of 資料結構; the
+            # redistributed ten minutes must be added, not replace it.
+            expected_subject_seconds = 4200 if index == 1 else 600
+            self.assertAlmostEqual(
+                day["allocations"].get("資料結構", 0),
+                expected_subject_seconds,
+            )
             self.assertAlmostEqual(sum(day["allocations"].values()), 4200)
 
     def test_other_rest_days_and_unplanned_days_are_not_receivers(self):
