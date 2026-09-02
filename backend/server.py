@@ -16,6 +16,7 @@ from e3_tracker.shared.study_recall_favorites_runtime import install_study_recal
 from e3_tracker.shared.study_recall_library_runtime import install_study_recall_library_runtime
 from e3_tracker.shared.study_rest_day_toggle_runtime import install_rest_day_toggle
 from e3_tracker.shared.study_rest_day_runtime import install_study_rest_day_runtime
+from e3_tracker.shared.study_timeline_rest_cancel_runtime import install_timeline_rest_cancel
 from e3_tracker.shared.storage import PersistentStorage
 
 
@@ -28,6 +29,7 @@ install_study_recall_library_runtime(web)
 install_study_recall_favorites_runtime(web)
 install_rest_day_toggle(web)
 install_study_rest_day_runtime(web)
+install_timeline_rest_cancel(web)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
