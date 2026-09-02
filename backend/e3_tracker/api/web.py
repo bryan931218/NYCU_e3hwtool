@@ -15742,6 +15742,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "recent_study_sessions": "最近學習紀錄",
             "video_sequence": "影片序號",
             "target_minutes": "分鐘數",
+            "target_percent": "完成百分比",
             "weekday_hours": "平日每日時數",
             "weekend_hours": "假日每日時數",
             "start_date": "計畫起日",
@@ -15752,6 +15753,40 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         for internal_name, display_name in replacements.items():
             answer = re.sub(re.escape(internal_name), display_name, answer, flags=re.IGNORECASE)
         return _normalize_study_math_markup(answer)
+
+    def _study_assistant_explicit_video_progress_action(text: str) -> Optional[Dict[str, Any]]:
+        """Resolve natural percentage commands without asking for data already in storage."""
+        normalized = " ".join(str(text or "").split()).strip()
+        subject = _study_assistant_subject_from_text(normalized)
+        if not subject or not any(
+            term in normalized
+            for term in ("調成", "改成", "設成", "調整為", "更新為", "設為", "標成", "標記為", "看完", "完成")
+        ):
+            return None
+        sequence_match = re.search(r"第\s*(\d+)\s*(?:部|支|集|堂|影片)", normalized)
+        if not sequence_match:
+            sequence_match = re.search(r"影片\s*(?:第\s*)?(\d+)", normalized)
+        if not sequence_match:
+            return None
+        percent_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:%|％)", normalized)
+        if not percent_match:
+            percent_match = re.search(r"百分之\s*(\d+(?:\.\d+)?)", normalized)
+        if percent_match:
+            target_percent = float(percent_match.group(1))
+        elif any(term in normalized for term in ("看完", "完成", "全看完", "全部看完")):
+            target_percent = 100.0
+        else:
+            return None
+        if not math.isfinite(target_percent) or not 0 <= target_percent <= 100:
+            return None
+        return {
+            "type": "set_video_progress",
+            "subject": subject,
+            "video_sequence": int(sequence_match.group(1)),
+            "target_minutes": 0,
+            "target_percent": target_percent,
+            "reason": f"將影片觀看進度調整為 {target_percent:g}%",
+        }
 
     def _study_assistant_plan_metrics(
         videos: List[Dict[str, Any]],
@@ -15953,7 +15988,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             subject = str(raw_action.get("subject") or "").strip()
             try:
                 sequence = int(raw_action.get("video_sequence") or 0)
-                target_seconds = float(raw_action.get("target_minutes") or 0) * 60
             except (TypeError, ValueError):
                 return None
             candidates = [
@@ -15962,10 +15996,24 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 if str(video.get("subject") or "") == subject
                 and int(video.get("sequence") or 0) == sequence
             ]
-            if len(candidates) != 1 or not math.isfinite(target_seconds):
+            if len(candidates) != 1:
                 return None
             video = candidates[0]
             duration_seconds = max(0.0, float(video.get("duration_seconds") or 0))
+            try:
+                raw_target_percent = raw_action.get("target_percent")
+                if raw_target_percent not in (None, ""):
+                    target_percent = float(raw_target_percent)
+                    if not math.isfinite(target_percent) or not 0 <= target_percent <= 100:
+                        return None
+                    target_seconds = duration_seconds * target_percent / 100
+                else:
+                    target_seconds = float(raw_action.get("target_minutes") or 0) * 60
+                    target_percent = (target_seconds / duration_seconds * 100) if duration_seconds > 0 else 0.0
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(target_seconds):
+                return None
             if target_seconds < 0 or target_seconds > duration_seconds + 1:
                 return None
             target_seconds = min(target_seconds, duration_seconds)
@@ -15980,11 +16028,18 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "expected_version": before_state["progress_version"],
             }
             title = f"修正 {subject}影片 {sequence} 進度"
-            summary = f"將最後觀看位置改為 {_study_assistant_time_label(target_seconds)}"
+            summary = (
+                f"將觀看進度調整為 {target_percent:g}%"
+                f"（{_study_assistant_time_label(target_seconds)} / {_study_assistant_time_label(duration_seconds)}）"
+            )
+            before_percent = (
+                min(100.0, before_state["watched_seconds"] / duration_seconds * 100)
+                if duration_seconds > 0 else 0.0
+            )
             changes = [{
-                "label": "觀看位置",
-                "before": _study_assistant_time_label(before_state["watched_seconds"]),
-                "after": _study_assistant_time_label(target_seconds),
+                "label": "影片進度",
+                "before": f"{before_percent:.1f}% · {_study_assistant_time_label(before_state['watched_seconds'])}",
+                "after": f"{target_percent:g}% · {_study_assistant_time_label(target_seconds)}",
             }]
         elif action_type == "set_study_time_session":
             session_id = str(raw_action.get("session_id") or "").strip()
@@ -16186,7 +16241,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             entry["content"] for entry in history if entry.get("role") == "user"
         ]
         short_confirmation = question.casefold() in {
-            "確認", "確定", "好", "可以", "是", "對", "沒錯", "就這個", "照這個"
+            "確認", "確定", "好", "可以", "是", "對", "沒錯", "就這個", "照這個",
+            "a", "選a", "選項a", "a選項",
         }
         intent_text = question
         if short_confirmation and previous_user_messages:
@@ -16197,7 +16253,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             *STUDY_PLAN_SUBJECTS,
         )
         mutation_verbs = (
-            "修正", "更正", "修改", "調整", "改成", "設成", "更新", "刪除", "重設", "對調",
+            "修正", "更正", "修改", "調整", "調成", "改成", "設成", "更新", "刪除", "重設", "對調",
             "重排", "重新安排", "平攤", "分攤", "整理", "規劃", "安排", "延後", "提前",
         )
         personal_markers = (
@@ -16220,6 +16276,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             prompt = (
                 "你是可靠、直接且善於教學的繁體中文 AI 助手。這是一般問答模式，沒有指定筆記或重點卡；"
                 "請依可靠知識回答使用者的實際問題，不要假裝看過使用者的筆記，也不要自行捏造來源。"
+                "一般問答模式不能修改網站資料，也絕對不能聲稱已更新、已執行或已套用任何網站變更。"
                 "若資訊不足或問題有多種合理解讀，先說明必要假設；若內容可能過時，清楚提醒需要查證。"
                 f"回答要完整收尾並避免冗長。{style_instruction}數學表達式使用 LaTeX：行內公式用 \\( ... \\)，"
                 "獨立公式用 \\[ ... \\]。除非使用者需要，否則不要加入多餘標題或結尾邀請。\n\n"
@@ -16263,6 +16320,29 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         business_today = _study_plan_business_date()
         videos = storage.list_study_plan_videos_with_records()
         replan_settings = storage.get_study_plan_replan_settings()
+        explicit_video_action = _study_assistant_explicit_video_progress_action(intent_text)
+        if explicit_video_action:
+            proposal = _build_study_assistant_proposal(
+                username=str((current_user() or {}).get("username") or ""),
+                raw_action=explicit_video_action,
+                videos=videos,
+                current_settings=replan_settings,
+            )
+            if proposal:
+                record_ui_event(
+                    "study_recall_general_question",
+                    meta={"data_mode": True, "proposed_action": "set_video_progress", "deterministic": True},
+                )
+                return {
+                    "ok": True,
+                    "answer": "我已讀取這部影片的真實總長與目前進度。請先確認下方變更，按下套用後才會實際更新。",
+                    "proposal": proposal,
+                }
+            return {
+                "ok": True,
+                "answer": "找不到唯一對應的科目與影片編號，因此沒有修改任何資料。請檢查科目名稱與影片編號。",
+                "proposal": None,
+            }
         explicit_rebalance_request = bool(
             "計畫" in intent_text
             and any(term in intent_text for term in ("重排", "重新安排", "平攤", "分攤", "排回"))
@@ -16351,7 +16431,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "不可提到 set_video_progress、set_study_time_session、update_study_plan、session_id、subject、"
             "video_sequence、target_minutes、start_date、end_date、weekday_hours、weekend_hours。\n\n"
             "你只能提出以下一個待確認動作，不能聲稱已經修改，也不能要求或產生 SQL：\n"
-            "1. set_video_progress：修正某科目某支影片的最後觀看位置。subject、video_sequence、target_minutes 必須明確。\n"
+            "1. set_video_progress：修正某科目某支影片的最後觀看位置或完成百分比。"
+            "subject、video_sequence 必須明確；使用者說百分比或看完時填 target_percent，說分鐘時填 target_minutes。"
+            "影片總長已存在網站資料中，不得要求使用者提供。\n"
             "2. set_study_time_session：修正最近 14 天內某筆實際學習時間。session_id、target_minutes 必須明確。\n"
             "3. update_study_plan：調整計畫起日、迄日、平日或假日每日影片時數；未變更欄位使用空字串或 0。\n"
             "4. rebalance_study_plan：保留原截止日，依目前真實觀看進度把所有剩餘影片與落後量從今天起平均分攤；"
@@ -16374,7 +16456,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "additionalProperties": False,
                     "required": [
                         "type", "subject", "video_sequence", "session_id", "target_minutes",
-                        "start_date", "end_date", "weekday_hours", "weekend_hours", "reason",
+                        "target_percent", "start_date", "end_date", "weekday_hours", "weekend_hours", "reason",
                     ],
                     "properties": {
                         "type": {
@@ -16388,6 +16470,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "video_sequence": {"type": "integer", "minimum": 0},
                         "session_id": {"type": "string"},
                         "target_minutes": {"type": "number", "minimum": 0},
+                        "target_percent": {"type": "number", "minimum": 0, "maximum": 100},
                         "start_date": {"type": "string"},
                         "end_date": {"type": "string"},
                         "weekday_hours": {"type": "number", "minimum": 0},

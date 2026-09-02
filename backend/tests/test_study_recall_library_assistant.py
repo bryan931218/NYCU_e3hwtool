@@ -668,6 +668,84 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             finally:
                 storage._engine.dispose()
 
+    def test_percentage_video_command_builds_preview_and_only_updates_after_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學" and item["sequence"] == 13
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "離散數學的第13部調成100%"},
+                    )
+
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(payload["ok"])
+                self.assertIn("按下套用後才會實際更新", payload["answer"])
+                self.assertEqual(payload["proposal"]["title"], "修正 離散數學影片 13 進度")
+                self.assertIn("100%", payload["proposal"]["summary"])
+                self.assertIn("100%", payload["proposal"]["changes"][0]["after"])
+                unchanged = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertEqual(unchanged["watched_seconds"], video["watched_seconds"])
+                openai_post.assert_not_called()
+
+                applied = client.post(payload["proposal"]["apply_url"])
+                changed = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertEqual(applied.status_code, 200)
+                self.assertAlmostEqual(changed["watched_seconds"], video["duration_seconds"], places=3)
+                self.assertEqual(client.post(applied.get_json()["undo"]["url"]).status_code, 200)
+            finally:
+                storage._engine.dispose()
+
+    def test_option_a_followup_rebuilds_confirmation_instead_of_claiming_execution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學" and item["sequence"] == 13
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={
+                            "question": "A",
+                            "history": [
+                                {"role": "user", "content": "離散數學的第13部調成100%"},
+                                {"role": "assistant", "content": "請選 A 或 B。"},
+                            ],
+                        },
+                    )
+
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNotNone(payload["proposal"])
+                self.assertNotIn("已執行", payload["answer"])
+                unchanged = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertEqual(unchanged["watched_seconds"], video["watched_seconds"])
+                openai_post.assert_not_called()
+            finally:
+                storage._engine.dispose()
+
     def test_natural_rebalance_request_builds_exact_confirmable_plan_without_ai_guessing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.build_app(temp_dir)
