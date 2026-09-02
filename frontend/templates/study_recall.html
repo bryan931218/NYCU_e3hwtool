@@ -2573,7 +2573,7 @@
                 const badge = document.createElement('span');
                 badge.className = 'ai-action-badge';
                 badge.textContent = {
-                    pending: '待確認', applying: '套用中', applied: '已套用', undoing: '復原中', reverted: '已復原', error: '未完成',
+                    pending: '待確認', applying: '套用中', applied: '已驗證', undoing: '復原中', reverted: '已復原', error: '未完成',
                 }[statusValue];
                 head.append(title, badge);
                 card.append(head);
@@ -2873,8 +2873,11 @@
                         });
                         const result = await response.json().catch(() => ({}));
                         if (!response.ok || !result.ok) throw new Error(result.error || '資料變更失敗。');
+                        if (result.verification?.verified !== true) {
+                            throw new Error(isUndo ? '資料庫尚未完成復原驗證。' : '資料庫尚未完成驗證，這次變更不會標示為完成。');
+                        }
                         proposal.status = isUndo ? 'reverted' : 'applied';
-                        proposal.resultMessage = result.message || (isUndo ? '已復原這次變更。' : '資料已更新。');
+                        proposal.resultMessage = result.message || (isUndo ? '已復原這次變更。' : '已套用並回讀資料庫確認。');
                         if (!isUndo && result.undo) proposal.undo = result.undo;
                     } catch (error) {
                         proposal.status = 'error';

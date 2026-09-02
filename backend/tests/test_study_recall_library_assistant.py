@@ -3,6 +3,7 @@ import json
 import re
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -786,6 +787,150 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             finally:
                 storage._engine.dispose()
 
+    def test_mutation_claim_without_a_valid_action_is_never_reported_as_completed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                ai_payload = {
+                    "answer": "已依你選擇的方式處理：昨天所有學習紀錄已刪除。",
+                    "action": {
+                        "type": "none", "subject": "", "video_sequence": 0,
+                        "session_id": "", "target_minutes": 0, "target_percent": 0,
+                        "source_date": "", "target_date": "", "start_date": "", "end_date": "",
+                        "weekday_hours": 0, "weekend_hours": 0, "reason": "",
+                    },
+                }
+                with patch(
+                    "e3_tracker.api.web.requests.post",
+                    return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
+                ):
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={"question": "幫我刪除昨天所有學習紀錄"},
+                    )
+
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNone(payload["proposal"])
+                self.assertIn("沒有修改任何資料", payload["answer"])
+                self.assertNotIn("已刪除", payload["answer"])
+            finally:
+                storage._engine.dispose()
+
+    def test_apply_returns_database_readback_verification(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                client = app.test_client()
+                self.login_admin(app, client)
+                proposal = client.post(
+                    "/admin/study-recall/assistant/ask",
+                    json={"question": "離散數學的第13部調成100%"},
+                ).get_json()["proposal"]
+                applied = client.post(proposal["apply_url"])
+                payload = applied.get_json()
+                self.assertEqual(applied.status_code, 200)
+                self.assertTrue(payload["verification"]["verified"])
+                self.assertEqual(payload["verification"]["label"], "已回讀資料庫確認")
+                self.assertIn("已套用並回讀確認", payload["message"])
+            finally:
+                storage._engine.dispose()
+
+    def test_cross_day_video_time_move_requires_preview_applies_and_undoes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學" and item["sequence"] == 14
+                )
+                with patch.object(storage, "_now_iso", return_value="2026-09-01T12:00:00"):
+                    storage.record_study_time_session(
+                        session_key="discrete-14-yesterday",
+                        kind="video",
+                        elapsed_seconds=30 * 60,
+                        video_id=video["id"],
+                    )
+                client = app.test_client()
+                self.login_admin(app, client)
+                with patch("e3_tracker.api.web.requests.post") as openai_post, patch(
+                    "e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)
+                ):
+                    response = client.post(
+                        "/admin/study-recall/assistant/ask",
+                        json={
+                            "question": "2",
+                            "history": [
+                                {"role": "user", "content": "昨天看的離散數學14應該有23分鐘算在今天"},
+                                {"role": "assistant", "content": "請選 1 或 2。"},
+                            ],
+                        },
+                    )
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNotNone(payload["proposal"])
+                self.assertIn("2026-09-01", payload["proposal"]["changes"][0]["before"])
+                self.assertIn("2026-09-02", payload["proposal"]["changes"][0]["after"])
+                self.assertEqual(storage.get_study_time_session("discrete-14-yesterday")["elapsed_seconds"], 1800)
+                openai_post.assert_not_called()
+
+                applied = client.post(payload["proposal"]["apply_url"])
+                applied_payload = applied.get_json()
+                self.assertEqual(applied.status_code, 200)
+                self.assertTrue(applied_payload["verification"]["verified"])
+                self.assertEqual(storage.get_study_time_session("discrete-14-yesterday")["elapsed_seconds"], 7 * 60)
+                today_rows = storage.list_study_time_sessions(day="2026-09-02", limit=100)
+                moved = next(item for item in today_rows if item["subject"] == "離散數學" and item["sequence"] == 14)
+                self.assertEqual(moved["elapsed_seconds"], 23 * 60)
+
+                undone = client.post(applied_payload["undo"]["url"])
+                self.assertEqual(undone.status_code, 200)
+                self.assertEqual(storage.get_study_time_session("discrete-14-yesterday")["elapsed_seconds"], 30 * 60)
+                self.assertFalse(any(
+                    item["subject"] == "離散數學" and item["sequence"] == 14
+                    for item in storage.list_study_time_sessions(day="2026-09-02", limit=100)
+                ))
+            finally:
+                storage._engine.dispose()
+
+    def test_failed_post_write_verification_rolls_back_and_never_reports_success(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.build_app(temp_dir)
+            storage = app.extensions["e3_storage"]
+            try:
+                video = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["subject"] == "離散數學" and item["sequence"] == 13
+                )
+                client = app.test_client()
+                self.login_admin(app, client)
+                proposal = client.post(
+                    "/admin/study-recall/assistant/ask",
+                    json={"question": "離散數學的第13部調成100%"},
+                ).get_json()["proposal"]
+                fake_rows = [dict(item) for item in storage.list_study_plan_videos_with_records()]
+                fake = next(item for item in fake_rows if item["id"] == video["id"])
+                fake["watched_seconds"] = max(0, float(video["duration_seconds"]) - 60)
+                fake["progress_version"] = int(video.get("progress_version") or 0) + 1
+                with patch.object(storage, "list_study_plan_videos_with_records", return_value=fake_rows):
+                    response = client.post(proposal["apply_url"])
+
+                self.assertEqual(response.status_code, 500)
+                self.assertFalse(response.get_json()["ok"])
+                self.assertNotIn("已套用", response.get_json().get("error", ""))
+                current = next(
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if item["id"] == video["id"]
+                )
+                self.assertAlmostEqual(current["watched_seconds"], video["watched_seconds"], places=3)
+            finally:
+                storage._engine.dispose()
+
     def test_global_assistant_is_mounted_on_authenticated_pages(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.build_app(temp_dir)
@@ -807,6 +952,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     html = response.get_data(as_text=True)
                     self.assertIn("data-e3-global-ai", html, path)
                     self.assertIn("/admin/study-recall/assistant/ask", html, path)
+                    self.assertIn("result.verification?.verified", html, path)
             finally:
                 storage._engine.dispose()
 

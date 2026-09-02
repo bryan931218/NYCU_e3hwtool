@@ -15743,6 +15743,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "video_sequence": "影片序號",
             "target_minutes": "分鐘數",
             "target_percent": "完成百分比",
+            "move_study_time_between_days": "跨日期移轉學習時間",
+            "source_date": "來源日期",
+            "target_date": "目標日期",
             "weekday_hours": "平日每日時數",
             "weekend_hours": "假日每日時數",
             "start_date": "計畫起日",
@@ -15753,6 +15756,22 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         for internal_name, display_name in replacements.items():
             answer = re.sub(re.escape(internal_name), display_name, answer, flags=re.IGNORECASE)
         return _normalize_study_math_markup(answer)
+
+    def _study_assistant_claims_execution(value: Any) -> bool:
+        """Reject model prose that could be mistaken for a completed site mutation."""
+        answer = " ".join(str(value or "").split())
+        if not answer:
+            return False
+        answer = re.sub(
+            r"(?:尚未|沒有|並未|尚無法|無法|不能|不會).{0,10}(?:處理|執行|修改|更新|套用|刪除|重排|調整|完成)",
+            "",
+            answer,
+        )
+        return bool(re.search(
+            r"(?:已|成功|完成).{0,12}(?:處理|執行|修改|更新|套用|刪除|重排|調整|寫入|儲存|完成)|"
+            r"(?:處理|執行|修改|更新|套用|刪除|重排|調整|寫入|儲存)(?:成功|完成)",
+            answer,
+        ))
 
     def _study_assistant_explicit_video_progress_action(text: str) -> Optional[Dict[str, Any]]:
         """Resolve natural percentage commands without asking for data already in storage."""
@@ -15786,6 +15805,43 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "target_minutes": 0,
             "target_percent": target_percent,
             "reason": f"將影片觀看進度調整為 {target_percent:g}%",
+        }
+
+    def _study_assistant_explicit_time_move_action(text: str) -> Optional[Dict[str, Any]]:
+        """Resolve common cross-day attribution requests from natural Chinese."""
+        normalized = " ".join(str(text or "").split()).strip()
+        subject = _study_assistant_subject_from_text(normalized)
+        if not subject or not any(term in normalized for term in ("算在", "移到", "挪到", "記到", "歸到", "改到")):
+            return None
+        sequence_match = re.search(r"第\s*(\d+)\s*(?:部|支|集|堂|影片)", normalized)
+        if not sequence_match:
+            sequence_match = re.search(r"影片\s*(?:第\s*)?(\d+)", normalized)
+        if not sequence_match:
+            subject_position = normalized.find(subject)
+            if subject_position >= 0:
+                sequence_match = re.search(r"(?:第\s*)?(\d+)\s*(?:部|支|集|堂|影片)?", normalized[subject_position + len(subject):])
+        minutes_match = re.search(r"(\d+(?:\.\d+)?)\s*分鐘", normalized)
+        if not sequence_match or not minutes_match:
+            return None
+        today = _study_plan_business_date()
+        source_day = (today - timedelta(days=1)).isoformat() if "昨天" in normalized else ""
+        target_day = today.isoformat() if "今天" in normalized else ""
+        explicit_dates = re.findall(r"20\d{2}-\d{2}-\d{2}", normalized)
+        if len(explicit_dates) >= 2:
+            source_day, target_day = explicit_dates[0], explicit_dates[1]
+        if not source_day or not target_day or source_day == target_day:
+            return None
+        minutes = float(minutes_match.group(1))
+        if not math.isfinite(minutes) or minutes <= 0 or minutes > 24 * 60:
+            return None
+        return {
+            "type": "move_study_time_between_days",
+            "subject": subject,
+            "video_sequence": int(sequence_match.group(1)),
+            "target_minutes": minutes,
+            "source_date": source_day,
+            "target_date": target_day,
+            "reason": f"將 {minutes:g} 分鐘的學習時間改記到 {target_day}",
         }
 
     def _study_assistant_plan_metrics(
@@ -16069,6 +16125,71 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                 "before": _study_assistant_time_label(item.get("elapsed_seconds")),
                 "after": _study_assistant_time_label(target_seconds),
             }]
+        elif action_type == "move_study_time_between_days":
+            subject = str(raw_action.get("subject") or "").strip()
+            try:
+                sequence = int(raw_action.get("video_sequence") or 0)
+                target_seconds = float(raw_action.get("target_minutes") or 0) * 60
+                source_day = datetime.strptime(str(raw_action.get("source_date") or ""), "%Y-%m-%d").date()
+                target_day = datetime.strptime(str(raw_action.get("target_date") or ""), "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                return None
+            today = _study_plan_business_date()
+            if (
+                not subject
+                or not math.isfinite(target_seconds)
+                or target_seconds <= 0
+                or target_seconds > 24 * 60 * 60
+                or source_day == target_day
+                or abs((today - source_day).days) > 14
+                or abs((today - target_day).days) > 14
+            ):
+                return None
+            candidates = [
+                item for item in storage.list_study_time_sessions(day=source_day.isoformat(), limit=100)
+                if str(item.get("subject") or "") == subject
+                and int(item.get("sequence") or 0) == sequence
+                and float(item.get("elapsed_seconds") or 0) > 0
+            ]
+            remaining = target_seconds
+            selected = []
+            for item in candidates:
+                amount = min(remaining, float(item.get("elapsed_seconds") or 0))
+                if amount > 0:
+                    selected.append({
+                        "session_id": str(item.get("session_id") or ""),
+                        "seconds": amount,
+                        "expected_updated_at": str(item.get("updated_at") or ""),
+                    })
+                    remaining -= amount
+                if remaining <= 0.05:
+                    break
+            if remaining > 0.05:
+                return None
+            before_state = {
+                "source_sessions": [
+                    dict(storage.get_study_time_session(item["session_id"]) or {})
+                    for item in selected
+                ],
+                "source_day": source_day.isoformat(),
+                "target_day": target_day.isoformat(),
+            }
+            action_payload = {
+                "moves": selected,
+                "source_day": source_day.isoformat(),
+                "target_day": target_day.isoformat(),
+                "target_session_id": f"assistant-move-{action_id}"[:80],
+                "target_seconds": target_seconds,
+                "subject": subject,
+                "video_sequence": sequence,
+            }
+            title = f"移轉 {subject}影片 {sequence} 學習時間"
+            summary = f"將 {_study_assistant_time_label(target_seconds)}從 {source_day.isoformat()} 改記到 {target_day.isoformat()}"
+            changes = [{
+                "label": "日期歸屬",
+                "before": f"{source_day.isoformat()} · {_study_assistant_time_label(target_seconds)}",
+                "after": f"{target_day.isoformat()} · {_study_assistant_time_label(target_seconds)}",
+            }]
         elif action_type in {"update_study_plan", "rebalance_study_plan"}:
             is_rebalance = action_type == "rebalance_study_plan"
             start_default = (
@@ -16244,8 +16365,9 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "確認", "確定", "好", "可以", "是", "對", "沒錯", "就這個", "照這個",
             "a", "選a", "選項a", "a選項",
         }
+        numbered_followup = question.casefold() in {"1", "2", "選1", "選2", "選項1", "選項2"}
         intent_text = question
-        if short_confirmation and previous_user_messages:
+        if (short_confirmation or numbered_followup) and previous_user_messages:
             intent_text = f"{previous_user_messages[-1]} {question}"
         data_nouns = (
             "影片", "進度", "觀看", "學習", "讀書", "時數", "分鐘", "小時", "計畫", "資料庫", "紀錄",
@@ -16255,6 +16377,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         mutation_verbs = (
             "修正", "更正", "修改", "調整", "調成", "改成", "設成", "更新", "刪除", "重設", "對調",
             "重排", "重新安排", "平攤", "分攤", "整理", "規劃", "安排", "延後", "提前",
+            "算在", "移到", "挪到", "記到", "歸到", "改到", "新增", "建立", "加入", "移除",
         )
         personal_markers = (
             "我的", "我今天", "我昨天", "幫我", "替我", "網站", "目前", "現在", "資料庫", "當前",
@@ -16341,6 +16464,29 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {
                 "ok": True,
                 "answer": "找不到唯一對應的科目與影片編號，因此沒有修改任何資料。請檢查科目名稱與影片編號。",
+                "proposal": None,
+            }
+        explicit_time_move_action = _study_assistant_explicit_time_move_action(intent_text)
+        if explicit_time_move_action:
+            proposal = _build_study_assistant_proposal(
+                username=str((current_user() or {}).get("username") or ""),
+                raw_action=explicit_time_move_action,
+                videos=videos,
+                current_settings=replan_settings,
+            )
+            if proposal:
+                record_ui_event(
+                    "study_recall_general_question",
+                    meta={"data_mode": True, "proposed_action": "move_study_time_between_days", "deterministic": True},
+                )
+                return {
+                    "ok": True,
+                    "answer": "我已核對來源日期的實際觀看紀錄。請確認下方日期與分鐘數；按下套用前不會修改資料。",
+                    "proposal": proposal,
+                }
+            return {
+                "ok": True,
+                "answer": "來源日期找不到足夠且唯一對應的觀看紀錄，因此沒有修改任何資料。",
                 "proposal": None,
             }
         explicit_rebalance_request = bool(
@@ -16430,13 +16576,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "對使用者只能使用自然名稱。絕對不可顯示英文動作名稱、資料欄位、session id、JSON、資料表或 SQL；"
             "不可提到 set_video_progress、set_study_time_session、update_study_plan、session_id、subject、"
             "video_sequence、target_minutes、start_date、end_date、weekday_hours、weekend_hours。\n\n"
-            "你只能提出以下一個待確認動作，不能聲稱已經修改，也不能要求或產生 SQL：\n"
+            "你是規劃者，不是資料庫執行者。先依需求選擇下列安全工具；所有寫入只能提出一個待確認動作，"
+            "不能聲稱已經修改，也不能要求或產生 SQL。若目前工具無法安全完成要求，action.type 必須為 none，"
+            "並誠實說明這次沒有改動資料：\n"
             "1. set_video_progress：修正某科目某支影片的最後觀看位置或完成百分比。"
             "subject、video_sequence 必須明確；使用者說百分比或看完時填 target_percent，說分鐘時填 target_minutes。"
             "影片總長已存在網站資料中，不得要求使用者提供。\n"
             "2. set_study_time_session：修正最近 14 天內某筆實際學習時間。session_id、target_minutes 必須明確。\n"
-            "3. update_study_plan：調整計畫起日、迄日、平日或假日每日影片時數；未變更欄位使用空字串或 0。\n"
-            "4. rebalance_study_plan：保留原截止日，依目前真實觀看進度把所有剩餘影片與落後量從今天起平均分攤；"
+            "3. move_study_time_between_days：把某科目某支影片的部分學習分鐘從一個日期改記到另一日期；"
+            "subject、video_sequence、target_minutes、source_date、target_date 必須明確，日期格式為 YYYY-MM-DD。\n"
+            "4. update_study_plan：調整計畫起日、迄日、平日或假日每日影片時數；未變更欄位使用空字串或 0。\n"
+            "5. rebalance_study_plan：保留原截止日，依目前真實觀看進度把所有剩餘影片與落後量從今天起平均分攤；"
             "使用者要求重排、追回落後或平均分攤時優先使用，不必追問他已經提供過的時數。\n"
             "只有使用者明確要求修改，而且資料能唯一對應時，action.type 才能不是 none。"
             "如果使用者只是在詢問、診斷、比較、描述錯誤，或對象／數值不明確，action.type 必須是 none，"
@@ -16456,14 +16606,14 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "additionalProperties": False,
                     "required": [
                         "type", "subject", "video_sequence", "session_id", "target_minutes",
-                        "target_percent", "start_date", "end_date", "weekday_hours", "weekend_hours", "reason",
+                        "target_percent", "source_date", "target_date", "start_date", "end_date", "weekday_hours", "weekend_hours", "reason",
                     ],
                     "properties": {
                         "type": {
                             "type": "string",
                             "enum": [
                                 "none", "set_video_progress", "set_study_time_session",
-                                "update_study_plan", "rebalance_study_plan",
+                                "move_study_time_between_days", "update_study_plan", "rebalance_study_plan",
                             ],
                         },
                         "subject": {"type": "string"},
@@ -16471,6 +16621,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         "session_id": {"type": "string"},
                         "target_minutes": {"type": "number", "minimum": 0},
                         "target_percent": {"type": "number", "minimum": 0, "maximum": 100},
+                        "source_date": {"type": "string"},
+                        "target_date": {"type": "string"},
                         "start_date": {"type": "string"},
                         "end_date": {"type": "string"},
                         "weekday_hours": {"type": "number", "minimum": 0},
@@ -16511,11 +16663,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             answer = {
                 "set_video_progress": "請告訴我要修改的科目、影片序號，以及正確的觀看分鐘數。",
                 "set_study_time_session": "請告訴我哪一天、哪一筆學習紀錄，以及正確的分鐘數。",
+                "move_study_time_between_days": "來源日期找不到足夠且唯一對應的觀看紀錄，因此沒有修改任何資料。",
                 "update_study_plan": "請告訴我要調整的日期或每日可讀時數。",
                 "rebalance_study_plan": "目前沒有可安全重新安排的未完成影片，或原截止日已經早於今天。",
             }.get(proposed_type, "這筆資料目前無法安全修改，請再說明要改哪一筆與正確數值。")
         elif proposal:
             answer = "已整理好變更，確認後就會套用。"
+        elif has_mutation_intent:
+            if _study_assistant_claims_execution(answer):
+                answer = "這次沒有修改任何資料；目前無法把要求安全轉成可驗證的變更。"
+            elif "沒有修改" not in answer and "尚未修改" not in answer:
+                answer = f"尚未修改任何資料。{answer}"
+        elif _study_assistant_claims_execution(answer):
+            answer = "這次沒有修改任何資料。"
         record_ui_event(
             "study_recall_general_question",
             meta={
@@ -16539,6 +16699,255 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             expected_status=current,
             next_status=restored,
         )
+
+    def _study_assistant_numbers_match(left: Any, right: Any, tolerance: float = 0.05) -> bool:
+        try:
+            left_number = float(left)
+            right_number = float(right)
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(left_number) and math.isfinite(right_number) and abs(left_number - right_number) <= tolerance
+
+    def _study_assistant_mappings_match(left: Any, right: Any) -> bool:
+        left_values = left if isinstance(left, dict) else {}
+        right_values = right if isinstance(right, dict) else {}
+        keys = set(left_values) | set(right_values)
+        return all(
+            _study_assistant_numbers_match(left_values.get(key, 0), right_values.get(key, 0))
+            for key in keys
+        )
+
+    def _study_assistant_verify_applied_action(
+        action_type: str,
+        payload: Dict[str, Any],
+        after: Dict[str, Any],
+    ) -> Tuple[bool, Dict[str, Any], Dict[str, Any]]:
+        """Read storage again; returned data, not the model or write response, is authoritative."""
+        verified_state: Dict[str, Any] = {}
+        details: List[Dict[str, str]] = []
+        if action_type == "set_video_progress":
+            video_id = int(payload.get("video_id") or 0)
+            current = next(
+                (
+                    item for item in storage.list_study_plan_videos_with_records()
+                    if int(item.get("id") or 0) == video_id
+                ),
+                None,
+            )
+            if current:
+                verified_state = {
+                    "video_id": video_id,
+                    "watched_seconds": float(current.get("watched_seconds") or 0),
+                    "progress_version": int(current.get("progress_version") or 0),
+                }
+                details.append({
+                    "label": "影片進度",
+                    "value": _study_assistant_time_label(verified_state["watched_seconds"]),
+                })
+            matches = bool(
+                current
+                and _study_assistant_numbers_match(
+                    current.get("watched_seconds"), payload.get("target_seconds"), tolerance=0.5
+                )
+                and int(current.get("progress_version") or 0)
+                == int(after.get("progress_version") or -1)
+            )
+        elif action_type == "set_study_time_session":
+            current = storage.get_study_time_session(str(payload.get("session_id") or ""))
+            if current:
+                verified_state = dict(current)
+                details.append({
+                    "label": "學習時間",
+                    "value": _study_assistant_time_label(current.get("elapsed_seconds")),
+                })
+            matches = bool(
+                current
+                and _study_assistant_numbers_match(
+                    current.get("elapsed_seconds"), payload.get("target_seconds"), tolerance=0.5
+                )
+                and str(current.get("updated_at") or "") == str(after.get("updated_at") or "")
+            )
+        elif action_type == "move_study_time_between_days":
+            target = storage.get_study_time_session(str(payload.get("target_session_id") or ""))
+            source_checks = []
+            for source in after.get("source_sessions") or []:
+                current_source = storage.get_study_time_session(str(source.get("session_id") or ""))
+                source_checks.append(bool(
+                    current_source
+                    and _study_assistant_numbers_match(
+                        current_source.get("elapsed_seconds"), source.get("elapsed_seconds"), tolerance=0.5
+                    )
+                    and str(current_source.get("updated_at") or "") == str(source.get("updated_at") or "")
+                ))
+            if target:
+                verified_state = {
+                    "source_sessions": list(after.get("source_sessions") or []),
+                    "target_session": dict(target),
+                }
+                details.append({
+                    "label": "日期歸屬",
+                    "value": f"{target.get('day')} · {_study_assistant_time_label(target.get('elapsed_seconds'))}",
+                })
+            matches = bool(
+                target
+                and str(target.get("day") or "") == str(payload.get("target_day") or "")
+                and _study_assistant_numbers_match(
+                    target.get("elapsed_seconds"), payload.get("target_seconds"), tolerance=0.5
+                )
+                and str(target.get("updated_at") or "")
+                == str((after.get("target_session") or {}).get("updated_at") or "")
+                and source_checks
+                and all(source_checks)
+            )
+        elif action_type == "update_study_plan":
+            current = storage.get_study_plan_replan_settings()
+            if current:
+                verified_state = {"settings": dict(current)}
+                details.extend([
+                    {"label": "計畫日期", "value": f"{current.get('start_date')} 至 {current.get('end_date')}"},
+                    {
+                        "label": "每日時數",
+                        "value": (
+                            f"平日 {float(current.get('weekday_minutes') or 0) / 60:g} 小時 · "
+                            f"假日 {float(current.get('weekend_minutes') or 0) / 60:g} 小時"
+                        ),
+                    },
+                ])
+            matches = bool(
+                current
+                and str(current.get("start_date") or "") == str(payload.get("start_date") or "")
+                and str(current.get("end_date") or "") == str(payload.get("end_date") or "")
+                and _study_assistant_numbers_match(
+                    current.get("weekday_minutes"), payload.get("weekday_minutes")
+                )
+                and _study_assistant_numbers_match(
+                    current.get("weekend_minutes"), payload.get("weekend_minutes")
+                )
+                and _study_assistant_mappings_match(
+                    current.get("baseline_by_subject"), payload.get("baseline_by_subject")
+                )
+                and _study_assistant_mappings_match(
+                    current.get("subject_targets"), payload.get("subject_targets")
+                )
+            )
+        else:
+            matches = False
+        return matches, verified_state, {
+            "verified": matches,
+            "label": "已回讀資料庫確認" if matches else "資料庫驗證未通過",
+            "details": details,
+        }
+
+    def _study_assistant_rollback_unverified_action(
+        action_type: str,
+        before: Dict[str, Any],
+        observed: Dict[str, Any],
+    ) -> bool:
+        """Best-effort compensation; never overwrite data changed after our own write."""
+        try:
+            if action_type == "set_video_progress":
+                result = storage.update_study_plan_video_progress(
+                    video_id=int(before.get("video_id") or 0),
+                    watched_seconds=float(before.get("watched_seconds") or 0),
+                    expected_version=int(observed.get("progress_version") or -1),
+                )
+                return bool(result and not result.get("stale"))
+            if action_type == "set_study_time_session":
+                result = storage.update_study_time_session_elapsed(
+                    session_key=str(before.get("session_id") or ""),
+                    elapsed_seconds=float(before.get("elapsed_seconds") or 0),
+                    expected_updated_at=str(observed.get("updated_at") or ""),
+                )
+                return bool(result and not result.get("stale"))
+            if action_type == "move_study_time_between_days":
+                target = observed.get("target_session") if isinstance(observed.get("target_session"), dict) else {}
+                before_sources = before.get("source_sessions") if isinstance(before.get("source_sessions"), list) else []
+                observed_sources = {
+                    str(item.get("session_id") or ""): item
+                    for item in (observed.get("source_sessions") or [])
+                    if isinstance(item, dict)
+                }
+                return storage.undo_move_study_time_between_days(
+                    source_sessions=[{
+                        "session_id": str(item.get("session_id") or ""),
+                        "restore_seconds": float(item.get("elapsed_seconds") or 0),
+                        "expected_updated_at": str(observed_sources.get(str(item.get("session_id") or ""), {}).get("updated_at") or ""),
+                    } for item in before_sources],
+                    target_session_key=str(target.get("session_id") or ""),
+                    expected_target_updated_at=str(target.get("updated_at") or ""),
+                )
+            if action_type == "update_study_plan":
+                observed_settings = observed.get("settings") if isinstance(observed.get("settings"), dict) else {}
+                current = storage.get_study_plan_replan_settings()
+                if not current or str(current.get("updated_at") or "") != str(observed_settings.get("updated_at") or ""):
+                    return False
+                old_settings = before.get("settings") if isinstance(before.get("settings"), dict) else {}
+                if before.get("exists"):
+                    storage.save_study_plan_replan_settings(
+                        start_date=str(old_settings.get("start_date") or ""),
+                        end_date=str(old_settings.get("end_date") or ""),
+                        weekday_minutes=float(old_settings.get("weekday_minutes") or 0),
+                        weekend_minutes=float(old_settings.get("weekend_minutes") or 0),
+                        baseline_by_subject=dict(old_settings.get("baseline_by_subject") or {}),
+                        subject_targets=dict(old_settings.get("subject_targets") or {}),
+                    )
+                else:
+                    storage.delete_study_plan_replan_settings()
+                return True
+        except Exception:
+            app.logger.exception("Failed to roll back unverified study assistant action")
+        return False
+
+    def _study_assistant_verify_reverted_action(
+        action_type: str,
+        before: Dict[str, Any],
+        after: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        verified = False
+        if action_type == "set_video_progress":
+            current = next((
+                item for item in storage.list_study_plan_videos_with_records()
+                if int(item.get("id") or 0) == int(before.get("video_id") or 0)
+            ), None)
+            verified = bool(current and _study_assistant_numbers_match(
+                current.get("watched_seconds"), before.get("watched_seconds"), tolerance=0.5
+            ))
+        elif action_type == "set_study_time_session":
+            current = storage.get_study_time_session(str(before.get("session_id") or ""))
+            verified = bool(current and _study_assistant_numbers_match(
+                current.get("elapsed_seconds"), before.get("elapsed_seconds"), tolerance=0.5
+            ))
+        elif action_type == "move_study_time_between_days":
+            sources = before.get("source_sessions") if isinstance(before.get("source_sessions"), list) else []
+            source_matches = []
+            for source in sources:
+                current = storage.get_study_time_session(str(source.get("session_id") or ""))
+                source_matches.append(bool(current and _study_assistant_numbers_match(
+                    current.get("elapsed_seconds"), source.get("elapsed_seconds"), tolerance=0.5
+                )))
+            target = after.get("target_session") if isinstance(after.get("target_session"), dict) else {}
+            target_absent = not storage.get_study_time_session(str(target.get("session_id") or ""))
+            verified = bool(source_matches and all(source_matches) and target_absent)
+        elif action_type == "update_study_plan":
+            current = storage.get_study_plan_replan_settings()
+            old = before.get("settings") if isinstance(before.get("settings"), dict) else {}
+            if not before.get("exists"):
+                verified = current is None
+            else:
+                verified = bool(
+                    current
+                    and str(current.get("start_date") or "") == str(old.get("start_date") or "")
+                    and str(current.get("end_date") or "") == str(old.get("end_date") or "")
+                    and _study_assistant_numbers_match(current.get("weekday_minutes"), old.get("weekday_minutes"))
+                    and _study_assistant_numbers_match(current.get("weekend_minutes"), old.get("weekend_minutes"))
+                    and _study_assistant_mappings_match(current.get("baseline_by_subject"), old.get("baseline_by_subject"))
+                    and _study_assistant_mappings_match(current.get("subject_targets"), old.get("subject_targets"))
+                )
+        return {
+            "verified": verified,
+            "label": "已回讀資料庫確認復原" if verified else "復原後驗證未通過",
+            "details": [],
+        }
 
     @app.post("/admin/study-recall/assistant/actions/<action_id>/apply")
     @admin_required
@@ -16595,6 +17004,21 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     )
                     return {"ok": False, "error": conflict_message}, 409
                 after = dict(result)
+            elif action_type == "move_study_time_between_days":
+                result = storage.move_study_time_between_days(
+                    moves=list(payload.get("moves") or []),
+                    source_day=str(payload.get("source_day") or ""),
+                    target_day=str(payload.get("target_day") or ""),
+                    target_session_key=str(payload.get("target_session_id") or ""),
+                )
+                if not result:
+                    raise LookupError("找不到可移轉的學習紀錄。")
+                if result.get("stale"):
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="applying", restored="failed"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
+                after = dict(result)
             elif action_type == "update_study_plan":
                 current = storage.get_study_plan_replan_settings()
                 expected_exists = bool(before.get("exists"))
@@ -16631,6 +17055,28 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
             return {"ok": False, "error": "資料修改失敗，原資料未被標記為完成。"}, 500
 
+        verified, verified_state, verification = _study_assistant_verify_applied_action(
+            action_type, payload, after
+        )
+        if not verified:
+            rolled_back = _study_assistant_rollback_unverified_action(
+                action_type, before, verified_state or after
+            )
+            _study_assistant_restore_action_status(
+                action_id, username, current="applying", restored="failed"
+            )
+            _invalidate_study_progress_context()
+            record_ui_event(
+                "study_assistant_action_verification_failed",
+                meta={"action_id": action_id, "action_type": action_type, "rolled_back": rolled_back},
+            )
+            error = (
+                "寫入後的資料庫驗證未通過，系統已自動恢復原資料；這次變更沒有完成。"
+                if rolled_back
+                else "寫入後的資料庫驗證未通過，且無法安全覆蓋後續變更；請重新整理並檢查資料。"
+            )
+            return {"ok": False, "error": error, "verification": verification}, 500
+
         if not storage.transition_study_assistant_action(
             action_id,
             username=username,
@@ -16639,7 +17085,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             after_state=after,
         ):
             app.logger.error("Study assistant action applied but audit transition failed: %s", action_id)
-            return {"ok": False, "error": "資料已修改，但稽核狀態更新失敗；請勿重複操作。"}, 500
+            rolled_back = _study_assistant_rollback_unverified_action(
+                action_type, before, verified_state
+            )
+            _study_assistant_restore_action_status(
+                action_id, username, current="applying", restored="failed"
+            )
+            return {
+                "ok": False,
+                "error": (
+                    "稽核紀錄建立失敗，系統已自動恢復原資料；這次變更沒有完成。"
+                    if rolled_back
+                    else "稽核紀錄建立失敗，請重新整理並檢查目前資料。"
+                ),
+            }, 500
         _invalidate_study_progress_context()
         record_ui_event(
             "study_assistant_action_applied",
@@ -16647,7 +17106,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         )
         return {
             "ok": True,
-            "message": f"已套用：{action.get('summary')}",
+            "message": f"已套用並回讀確認：{action.get('summary')}",
+            "verification": verification,
             "undo": {
                 "label": "復原這次變更",
                 "url": url_for("admin_study_assistant_action_undo", action_id=action_id),
@@ -16702,6 +17162,28 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                         action_id, username, current="reverting", restored="applied"
                     )
                     return {"ok": False, "error": conflict_message}, 409
+            elif action_type == "move_study_time_between_days":
+                target = after.get("target_session") if isinstance(after.get("target_session"), dict) else {}
+                source_after = {
+                    str(item.get("session_id") or ""): item
+                    for item in (after.get("source_sessions") or [])
+                    if isinstance(item, dict)
+                }
+                source_before = before.get("source_sessions") if isinstance(before.get("source_sessions"), list) else []
+                restored = storage.undo_move_study_time_between_days(
+                    source_sessions=[{
+                        "session_id": str(item.get("session_id") or ""),
+                        "restore_seconds": float(item.get("elapsed_seconds") or 0),
+                        "expected_updated_at": str(source_after.get(str(item.get("session_id") or ""), {}).get("updated_at") or ""),
+                    } for item in source_before],
+                    target_session_key=str(target.get("session_id") or ""),
+                    expected_target_updated_at=str(target.get("updated_at") or ""),
+                )
+                if not restored:
+                    _study_assistant_restore_action_status(
+                        action_id, username, current="reverting", restored="applied"
+                    )
+                    return {"ok": False, "error": conflict_message}, 409
             elif action_type == "update_study_plan":
                 current = storage.get_study_plan_replan_settings()
                 after_settings = after.get("settings") if isinstance(after.get("settings"), dict) else {}
@@ -16739,6 +17221,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             )
             return {"ok": False, "error": "復原失敗，請重新檢查目前資料。"}, 500
 
+        verification = _study_assistant_verify_reverted_action(action_type, before, after)
+        if not verification["verified"]:
+            _study_assistant_restore_action_status(
+                action_id, username, current="reverting", restored="applied"
+            )
+            return {
+                "ok": False,
+                "error": "復原後的資料庫驗證未通過，請重新整理並檢查目前資料。",
+                "verification": verification,
+            }, 500
+
         if not storage.transition_study_assistant_action(
             action_id,
             username=username,
@@ -16751,7 +17244,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "study_assistant_action_reverted",
             meta={"action_id": action_id, "action_type": action_type},
         )
-        return {"ok": True, "message": "已復原這次變更。"}
+        return {"ok": True, "message": "已復原並回讀資料庫確認。", "verification": verification}
 
     @app.post("/admin/study-recall/<int:session_id>/delete")
     @admin_required

@@ -1825,6 +1825,140 @@ class PersistentStorage:
             "updated_at": now,
         }
 
+    def move_study_time_between_days(
+        self,
+        *,
+        moves: List[Dict[str, Any]],
+        source_day: str,
+        target_day: str,
+        target_session_key: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Atomically move selected session seconds to another business day."""
+        key = str(target_session_key or "").strip()[:80]
+        try:
+            normalized_moves = [
+                {
+                    "session_id": str(item.get("session_id") or "").strip()[:80],
+                    "seconds": float(item.get("seconds") or 0),
+                    "expected_updated_at": str(item.get("expected_updated_at") or ""),
+                }
+                for item in moves
+            ]
+        except (TypeError, ValueError):
+            return None
+        if (
+            not key
+            or not normalized_moves
+            or source_day == target_day
+            or not all(item["session_id"] and math.isfinite(item["seconds"]) and item["seconds"] > 0 for item in normalized_moves)
+        ):
+            return None
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            if conn.execute(
+                select(study_time_sessions_table.c.session_key).where(
+                    study_time_sessions_table.c.session_key == key
+                )
+            ).fetchone():
+                return {"stale": True}
+            source_rows = []
+            for move in normalized_moves:
+                row = conn.execute(
+                    select(study_time_sessions_table).where(
+                        study_time_sessions_table.c.session_key == move["session_id"]
+                    )
+                ).fetchone()
+                if (
+                    not row
+                    or str(row.day or "") != str(source_day or "")
+                    or str(row.updated_at or "") != move["expected_updated_at"]
+                    or float(row.elapsed_seconds or 0) + 0.05 < move["seconds"]
+                ):
+                    return {"stale": True}
+                source_rows.append((row, move))
+            video_ids = {int(row.video_id) if row.video_id is not None else None for row, _ in source_rows}
+            kinds = {str(row.kind or "") for row, _ in source_rows}
+            if len(video_ids) != 1 or len(kinds) != 1:
+                return None
+            updated_sources = []
+            for row, move in source_rows:
+                remaining = max(0.0, float(row.elapsed_seconds or 0) - move["seconds"])
+                conn.execute(
+                    update(study_time_sessions_table)
+                    .where(study_time_sessions_table.c.session_key == move["session_id"])
+                    .values(elapsed_seconds=remaining, updated_at=now)
+                )
+                updated_sources.append({
+                    "session_id": move["session_id"],
+                    "elapsed_seconds": remaining,
+                    "updated_at": now,
+                })
+            first = source_rows[0][0]
+            moved_seconds = sum(move["seconds"] for _, move in source_rows)
+            conn.execute(insert(study_time_sessions_table).values(
+                session_key=key,
+                day=str(target_day or ""),
+                kind=str(first.kind or ""),
+                video_id=int(first.video_id) if first.video_id is not None else None,
+                label=str(first.label or "")[:191],
+                elapsed_seconds=moved_seconds,
+                completed=0,
+                started_at=now,
+                updated_at=now,
+            ))
+        return {
+            "stale": False,
+            "source_sessions": updated_sources,
+            "target_session": {
+                "session_id": key,
+                "day": str(target_day or ""),
+                "elapsed_seconds": moved_seconds,
+                "updated_at": now,
+            },
+        }
+
+    def undo_move_study_time_between_days(
+        self,
+        *,
+        source_sessions: List[Dict[str, Any]],
+        target_session_key: str,
+        expected_target_updated_at: str,
+    ) -> bool:
+        """Atomically undo a prior move when none of its rows has changed since."""
+        key = str(target_session_key or "").strip()[:80]
+        now = self._now_iso()
+        with self._lock, self._engine.begin() as conn:
+            target = conn.execute(
+                select(study_time_sessions_table).where(
+                    study_time_sessions_table.c.session_key == key
+                )
+            ).fetchone()
+            if not target or str(target.updated_at or "") != str(expected_target_updated_at or ""):
+                return False
+            current_sources = []
+            for source in source_sessions:
+                session_id = str(source.get("session_id") or "").strip()[:80]
+                row = conn.execute(
+                    select(study_time_sessions_table).where(
+                        study_time_sessions_table.c.session_key == session_id
+                    )
+                ).fetchone()
+                if not row or str(row.updated_at or "") != str(source.get("expected_updated_at") or ""):
+                    return False
+                current_sources.append((row, source))
+            for row, source in current_sources:
+                conn.execute(
+                    update(study_time_sessions_table)
+                    .where(study_time_sessions_table.c.session_key == str(source.get("session_id") or ""))
+                    .values(elapsed_seconds=float(source.get("restore_seconds") or 0), updated_at=now)
+                )
+            conn.execute(
+                delete(study_time_sessions_table).where(
+                    study_time_sessions_table.c.session_key == key
+                )
+            )
+        return True
+
     def create_study_assistant_action(
         self,
         *,
