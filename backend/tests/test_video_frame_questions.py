@@ -10,7 +10,7 @@ import requests
 from PIL import Image
 
 from e3_tracker.api.web import create_app
-from e3_tracker.services.youtube_frames import YoutubeAudioError
+from e3_tracker.services.youtube_frames import YoutubeAudioError, YoutubeFrameError
 
 
 class VideoFrameQuestionTests(unittest.TestCase):
@@ -60,18 +60,40 @@ class VideoFrameQuestionTests(unittest.TestCase):
             "height": 360,
         }
 
-    def test_sends_current_frame_and_question_to_responses_api(self):
-        openai_response = Mock()
-        openai_response.raise_for_status.return_value = None
-        openai_response.json.return_value = {
+    def test_sends_twenty_second_audio_and_frames_with_question(self):
+        transcription_response = Mock()
+        transcription_response.raise_for_status.return_value = None
+        transcription_response.json.return_value = {
+            "text": "老師先定義生成樹，接著解釋為什麼這條邊不能加入。"
+        }
+        answer_response = Mock()
+        answer_response.raise_for_status.return_value = None
+        answer_response.json.return_value = {
             "status": "completed",
             "output": [
                 {"type": "message", "content": [{"type": "output_text", "text": "因為這一步使用了反證法。"}]}
             ],
         }
         with patch(
-            "e3_tracker.api.web.fetch_youtube_cached_frame", return_value=self._frame()
-        ) as fetch_frame, patch("e3_tracker.api.web.requests.post", return_value=openai_response) as post:
+            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            return_value={
+                "bytes": b"RIFF" + b"\x00" * 2048,
+                "mime_type": "audio/wav",
+                "filename": "question.wav",
+                "start_seconds": 113.4,
+                "end_seconds": 133.4,
+                "duration_seconds": 20.0,
+            },
+        ) as fetch_audio, patch(
+            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            side_effect=lambda _video_id, seconds, **_kwargs: {
+                **self._frame(),
+                "frame_seconds": seconds,
+            },
+        ) as fetch_frame, patch(
+            "e3_tracker.api.web.requests.post",
+            side_effect=[transcription_response, answer_response],
+        ) as post:
             response = self.client.post(
                 "/admin/study-plan/video-question",
                 json={
@@ -86,17 +108,68 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["answer"], "因為這一步使用了反證法。")
         self.assertTrue(result["frame_image"].startswith("data:image/jpeg;base64,"))
-        fetch_frame.assert_called_once_with(
+        self.assertEqual(result["context_start_seconds"], 113.4)
+        self.assertEqual(result["context_end_seconds"], 133.4)
+        self.assertEqual(result["context_frame_count"], 5)
+        self.assertTrue(result["context_audio"])
+        fetch_audio.assert_called_once_with(
             self.video["youtube_video_id"],
             123.4,
-            storyboard_metadata=None,
+            radius_seconds=10.0,
         )
-        request_json = post.call_args.kwargs["json"]
+        self.assertEqual(fetch_frame.call_count, 5)
+        request_json = post.call_args_list[1].kwargs["json"]
         content = request_json["input"][0]["content"]
         self.assertEqual(content[0]["type"], "input_text")
-        self.assertEqual(content[1]["type"], "input_image")
-        self.assertTrue(content[1]["image_url"].startswith("data:image/jpeg;base64,"))
+        self.assertEqual(len([item for item in content if item["type"] == "input_image"]), 5)
         self.assertIn("這一步為什麼成立", content[0]["text"])
+        self.assertIn("113.4 至 133.4 秒", content[0]["text"])
+        self.assertIn("先定義生成樹", content[0]["text"])
+
+    def test_question_still_answers_from_audio_when_all_frames_fail(self):
+        transcription_response = Mock()
+        transcription_response.raise_for_status.return_value = None
+        transcription_response.json.return_value = {"text": "老師說這一步套用鴿籠原理。"}
+        answer_response = Mock()
+        answer_response.raise_for_status.return_value = None
+        answer_response.json.return_value = {
+            "status": "completed",
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "這裡使用鴿籠原理。"}]}
+            ],
+        }
+        with patch(
+            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            return_value={
+                "bytes": b"RIFF" + b"\x00" * 2048,
+                "mime_type": "audio/wav",
+                "filename": "question.wav",
+                "start_seconds": 40.0,
+                "end_seconds": 60.0,
+                "duration_seconds": 20.0,
+            },
+        ), patch(
+            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            side_effect=YoutubeFrameError("frame unavailable"),
+        ), patch(
+            "e3_tracker.api.web.requests.post",
+            side_effect=[transcription_response, answer_response],
+        ):
+            response = self.client.post(
+                "/admin/study-plan/video-question",
+                json={
+                    "video_id": self.video["id"],
+                    "playback_seconds": 50,
+                    "question": "這裡用了什麼原理？",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()
+        self.assertEqual(result["answer"], "這裡使用鴿籠原理。")
+        self.assertEqual(result["context_frame_count"], 0)
+        self.assertTrue(result["context_audio"])
+        self.assertEqual(result["frame_image"], "")
 
     def test_prefetches_frame_without_calling_openai(self):
         frame = self._frame()

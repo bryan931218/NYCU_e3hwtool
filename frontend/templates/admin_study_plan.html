@@ -1570,7 +1570,7 @@
                     if (requestId !== frameQuestionRequestId) return;
                 }
                 if (frameQuestionStatus) {
-                    frameQuestionStatus.textContent = '正在讀取這一幕並分析…';
+                    frameQuestionStatus.textContent = '正在讀取前後 10 秒並分析…';
                     frameQuestionStatus.classList.remove('is-error');
                 }
                 if (frameQuestionAnswer) frameQuestionAnswer.hidden = true;
@@ -1593,7 +1593,7 @@
                     if (frameQuestionSampleTime) {
                         const label = result.frame_source === 'exact' ? '精準影格' : '預覽影格';
                         frameQuestionSampleTime.textContent = label + '・按下 ' + formatClock(result.requested_seconds)
-                            + '・取樣 ' + formatClock(result.frame_seconds);
+                            + '・取樣 ' + formatClock(result.frame_seconds) + '・前後 10 秒';
                     }
                     if (frameQuestionAnswer) {
                         frameQuestionAnswer.textContent = result.answer || '';
@@ -1601,9 +1601,15 @@
                         frameQuestionAnswer.removeAttribute('data-math-rendered');
                         if (window.renderStudyMath) window.renderStudyMath(frameQuestionAnswer);
                     }
-                    if (frameQuestionStatus) frameQuestionStatus.textContent = result.frame_source === 'exact'
-                        ? '已根據指定秒數的精準影格回答。'
-                        : '已根據最接近指定秒數的預覽影格回答。';
+                    if (frameQuestionStatus) {
+                        const evidence = [];
+                        if (result.context_audio) evidence.push('語音');
+                        if (Number(result.context_frame_count || 0) > 0) {
+                            evidence.push(Number(result.context_frame_count) + ' 張畫面');
+                        }
+                        frameQuestionStatus.textContent = '已根據前後 10 秒的'
+                            + (evidence.length ? evidence.join('與') : '影音前後文') + '回答。';
+                    }
                 } catch (error) {
                     if (requestId !== frameQuestionRequestId) return;
                     if (frameQuestionStatus) {

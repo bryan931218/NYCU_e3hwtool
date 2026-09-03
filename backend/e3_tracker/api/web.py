@@ -18814,6 +18814,90 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             raise ValueError("invalid transcription response")
         return " ".join(str(payload.get("text") or "").split()).strip()[:6000]
 
+    def _collect_study_plan_video_context(
+        video: Dict[str, Any],
+        playback_seconds: float,
+        *,
+        radius_seconds: float,
+        context_name: str,
+    ) -> Dict[str, Any]:
+        """Collect the same audio-and-frame context for markers and questions."""
+        youtube_video_id = str(video.get("youtube_video_id") or "").strip()
+        duration_seconds = max(0.0, float(video.get("duration_seconds") or 0))
+        radius_seconds = max(1.0, min(30.0, float(radius_seconds)))
+        window_start = max(0.0, playback_seconds - radius_seconds)
+        window_end = playback_seconds + radius_seconds
+        if duration_seconds > 0:
+            window_end = min(duration_seconds, window_end)
+
+        audio_transcript = ""
+        audio_error = ""
+        audio_clip: Optional[Dict[str, Any]] = None
+        try:
+            audio_clip = fetch_youtube_audio_clip(
+                youtube_video_id,
+                playback_seconds,
+                radius_seconds=radius_seconds,
+            )
+            audio_transcript = _transcribe_study_plan_marker_audio(
+                audio_clip,
+                subject=str(video.get("subject") or ""),
+                video_title=str(video.get("title") or ""),
+                marker_name=context_name,
+            )
+            window_start = float(audio_clip.get("start_seconds") or window_start)
+            window_end = float(audio_clip.get("end_seconds") or window_end)
+        except (YoutubeAudioError, requests.RequestException, ValueError, TypeError) as exc:
+            audio_error = str(exc)
+            app.logger.warning(
+                "Video audio context unavailable for %s: %s",
+                youtube_video_id,
+                type(exc).__name__,
+            )
+
+        sample_points: List[float] = []
+        for offset in (
+            -radius_seconds,
+            -radius_seconds / 2,
+            0.0,
+            radius_seconds / 2,
+            radius_seconds,
+        ):
+            point = max(0.0, playback_seconds + offset)
+            if duration_seconds > 0:
+                point = min(point, max(0.0, duration_seconds - 0.05))
+            if not any(abs(existing - point) < 0.5 for existing in sample_points):
+                sample_points.append(point)
+
+        storyboard_metadata = storage.get_youtube_storyboard_metadata(youtube_video_id)
+        sampled_frames: List[Dict[str, Any]] = []
+        frame_errors: List[str] = []
+        for sample_seconds in sample_points:
+            try:
+                frame = fetch_youtube_cached_frame(
+                    youtube_video_id,
+                    sample_seconds,
+                    storyboard_metadata=storyboard_metadata,
+                )
+            except YoutubeFrameError as exc:
+                frame_errors.append(str(exc))
+                continue
+            refreshed_metadata = frame.get("storyboard_metadata")
+            _persist_youtube_storyboard_metadata(storage, refreshed_metadata, app.logger)
+            if isinstance(refreshed_metadata, dict):
+                storyboard_metadata = refreshed_metadata
+            sampled_frames.append(frame)
+
+        return {
+            "window_start": window_start,
+            "window_end": window_end,
+            "audio_transcript": audio_transcript,
+            "audio_error": audio_error,
+            "audio_clip": audio_clip,
+            "frames": sampled_frames,
+            "frame_errors": frame_errors,
+        }
+
     def _generate_study_plan_marker_summary(
         marker: Dict[str, Any],
     ) -> Tuple[Dict[str, Any], Optional[str]]:
@@ -18860,62 +18944,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         playback_seconds = max(0.0, float(marker.get("playback_seconds") or 0))
         if duration_seconds > 0:
             playback_seconds = min(playback_seconds, duration_seconds)
-        window_start = max(0.0, playback_seconds - 15.0)
-        window_end = playback_seconds + 15.0
-        if duration_seconds > 0:
-            window_end = min(duration_seconds, window_end)
-
-        audio_transcript = ""
-        audio_error = ""
-        audio_clip: Optional[Dict[str, Any]] = None
-        try:
-            audio_clip = fetch_youtube_audio_clip(
-                youtube_video_id,
-                playback_seconds,
-                radius_seconds=15.0,
-            )
-            audio_transcript = _transcribe_study_plan_marker_audio(
-                audio_clip,
-                subject=str(video.get("subject") or ""),
-                video_title=str(video.get("title") or ""),
-                marker_name=note,
-            )
-            window_start = float(audio_clip.get("start_seconds") or window_start)
-            window_end = float(audio_clip.get("end_seconds") or window_end)
-        except (YoutubeAudioError, requests.RequestException, ValueError, TypeError) as exc:
-            audio_error = str(exc)
-            app.logger.warning(
-                "Video marker audio context unavailable for %s: %s",
-                youtube_video_id,
-                type(exc).__name__,
-            )
-
-        sample_points: List[float] = []
-        for offset in (-15.0, -7.5, 0.0, 7.5, 15.0):
-            point = max(0.0, playback_seconds + offset)
-            if duration_seconds > 0:
-                point = min(point, max(0.0, duration_seconds - 0.05))
-            if not any(abs(existing - point) < 0.5 for existing in sample_points):
-                sample_points.append(point)
-
-        storyboard_metadata = storage.get_youtube_storyboard_metadata(youtube_video_id)
-        sampled_frames: List[Dict[str, Any]] = []
-        frame_errors: List[str] = []
-        for sample_seconds in sample_points:
-            try:
-                frame = fetch_youtube_cached_frame(
-                    youtube_video_id,
-                    sample_seconds,
-                    storyboard_metadata=storyboard_metadata,
-                )
-            except YoutubeFrameError as exc:
-                frame_errors.append(str(exc))
-                continue
-            refreshed_metadata = frame.get("storyboard_metadata")
-            _persist_youtube_storyboard_metadata(storage, refreshed_metadata, app.logger)
-            if isinstance(refreshed_metadata, dict):
-                storyboard_metadata = refreshed_metadata
-            sampled_frames.append(frame)
+        context = _collect_study_plan_video_context(
+            video,
+            playback_seconds,
+            radius_seconds=15.0,
+            context_name=note,
+        )
+        window_start = float(context["window_start"])
+        window_end = float(context["window_end"])
+        audio_transcript = str(context["audio_transcript"] or "")
+        audio_error = str(context["audio_error"] or "")
+        audio_clip = context.get("audio_clip")
+        sampled_frames = list(context["frames"] or [])
+        frame_errors = list(context["frame_errors"] or [])
 
         if not sampled_frames and not audio_transcript:
             failed = storage.update_study_plan_video_marker_summary(
@@ -19096,14 +19137,19 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         if duration_seconds > 0:
             playback_seconds = min(playback_seconds, duration_seconds)
 
-        storyboard_metadata = storage.get_youtube_storyboard_metadata(youtube_video_id)
-        try:
-            frame = fetch_youtube_cached_frame(
-                youtube_video_id,
-                playback_seconds,
-                storyboard_metadata=storyboard_metadata,
-            )
-        except YoutubeFrameError as exc:
+        context = _collect_study_plan_video_context(
+            video,
+            playback_seconds,
+            radius_seconds=10.0,
+            context_name=question,
+        )
+        sampled_frames = list(context.get("frames") or [])
+        audio_transcript = str(context.get("audio_transcript") or "")
+        if not sampled_frames and not audio_transcript:
+            context_error = str(context.get("audio_error") or "")
+            frame_errors = list(context.get("frame_errors") or [])
+            if not context_error and frame_errors:
+                context_error = str(frame_errors[0])
             record_ui_event(
                 "study_plan_video_frame_capture",
                 "error",
@@ -19112,54 +19158,64 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     "video_id": video_id,
                     "youtube_video_id": youtube_video_id,
                     "playback_seconds": round(playback_seconds, 1),
-                    "reason": str(exc)[:160],
+                    "reason": context_error[:160],
                 },
             )
-            return {"ok": False, "error": str(exc)}, 502
-        _persist_youtube_storyboard_metadata(
-            storage,
-            frame.get("storyboard_metadata"),
-            app.logger,
-        )
+            return {
+                "ok": False,
+                "error": context_error or "無法取得這一幕前後 10 秒的影音內容。",
+            }, 502
+
+        primary_frame = min(
+            sampled_frames,
+            key=lambda item: abs(float(item.get("frame_seconds") or 0) - playback_seconds),
+        ) if sampled_frames else None
         image_data_url = (
-            f"data:{frame['mime_type']};base64,"
-            + base64.b64encode(frame["bytes"]).decode("ascii")
+            f"data:{primary_frame['mime_type']};base64,"
+            + base64.b64encode(primary_frame["bytes"]).decode("ascii")
+            if primary_frame else ""
         )
-        frame_source = str(frame.get("source") or "storyboard")
-        if frame_source == "exact":
-            frame_context = "附圖是伺服器在指定時間解碼的影片影格，時間可能有極小誤差。"
-        else:
-            frame_context = (
-                "附圖是 YouTube 在指定時間附近提供的預覽取樣影格，可能與學生按下提問的時刻相差數秒。"
-            )
+        frame_source = str((primary_frame or {}).get("source") or "storyboard")
+        window_start = float(context.get("window_start") or max(0.0, playback_seconds - 10.0))
+        window_end = float(context.get("window_end") or playback_seconds + 10.0)
         prompt = (
-            "你是研究所考試課程的即時視覺助教。請直接回答學生針對目前影片畫面的問題。"
-            f"{frame_context}"
-            "影片標題與科目只能當背景，畫面中實際可辨識的文字、圖表與公式才是主要依據。"
-            "若影格模糊、關鍵內容被切掉、題目條件不足，或無法單靠這張圖可靠判定，必須明確說明缺少什麼，"
-            "並請學生補充，不可自行猜測畫面內容或答案。回答使用精簡、好理解的繁體中文，控制在 2 至 8 個短段落。"
+            "你是研究所考試課程的即時影音助教。請根據學生按下提問前後各 10 秒的語音逐字稿、"
+            "依時間排列的多張畫面，以及學生的問題直接作答。先理解老師在這 20 秒中的完整論述，"
+            "再用畫面校正逐字稿裡的同音字、符號、公式與程式術語；學生提問是回答重點，"
+            "不要只是摘要片段。科目與影片標題只能作背景，影音中能確認的內容才是主要依據。"
+            "若部分畫面或聲音取得失敗，仍須善用成功取得的前後文回答；只有現有影音確實不足以判斷時，"
+            "才精確指出缺少的條件，不可猜測。回答使用精簡、好理解的繁體中文，控制在 2 至 8 個短段落。"
             "數學表達式一律使用 LaTeX：行內公式用 \\( ... \\)，獨立公式用 \\[ ... \\]。"
             "不要輸出 Markdown 標題、粗體標記或程式碼區塊。\n\n"
             f"科目：{str(video.get('subject') or '')[:48]}\n"
             f"影片：第 {int(video.get('sequence') or 0):03d} 支・{str(video.get('title') or '')[:180]}\n"
             f"學生按下提問時間：{playback_seconds:.1f} 秒\n"
-            f"實際取樣影格時間：約 {float(frame['frame_seconds']):.1f} 秒\n"
-            f"學生的問題：{question}"
+            f"分析範圍：{window_start:.1f} 至 {window_end:.1f} 秒\n"
+            f"學生的問題：{question}\n"
+            "語音逐字稿（可能含辨識錯字，需以畫面與上下文校正）：\n"
+            f"{audio_transcript or '音訊取得失敗，本次依前後畫面回答。'}"
         )
+        content: List[Dict[str, Any]] = [{"type": "input_text", "text": prompt}]
+        for index, frame in enumerate(sampled_frames, start=1):
+            content.append({
+                "type": "input_text",
+                "text": f"畫面 {index}，影片時間約 {float(frame.get('frame_seconds') or 0):.1f} 秒：",
+            })
+            content.append({
+                "type": "input_image",
+                "image_url": (
+                    f"data:{frame['mime_type']};base64,"
+                    + base64.b64encode(frame["bytes"]).decode("ascii")
+                ),
+                "detail": "high",
+            })
         request_body = {
             "model": openai_model,
             "store": False,
             "input": [
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": prompt},
-                        {
-                            "type": "input_image",
-                            "image_url": image_data_url,
-                            "detail": "high",
-                        },
-                    ],
+                    "content": content,
                 }
             ],
             "reasoning": {
@@ -19188,8 +19244,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             meta={
                 "video_id": video_id,
                 "requested_seconds": round(playback_seconds, 1),
-                "frame_seconds": round(float(frame["frame_seconds"]), 1),
+                "frame_seconds": round(float((primary_frame or {}).get("frame_seconds") or playback_seconds), 1),
                 "frame_source": frame_source,
+                "frame_count": len(sampled_frames),
+                "audio_transcribed": bool(audio_transcript),
+                "window_start": round(window_start, 1),
+                "window_end": round(window_end, 1),
             },
         )
         return {
@@ -19197,8 +19257,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "answer": answer,
             "frame_image": image_data_url,
             "requested_seconds": round(playback_seconds, 2),
-            "frame_seconds": round(float(frame["frame_seconds"]), 2),
+            "frame_seconds": round(float((primary_frame or {}).get("frame_seconds") or playback_seconds), 2),
             "frame_source": frame_source,
+            "context_start_seconds": round(window_start, 2),
+            "context_end_seconds": round(window_end, 2),
+            "context_frame_count": len(sampled_frames),
+            "context_audio": bool(audio_transcript),
         }
 
     @app.post("/admin/study-plan/video-frame")
