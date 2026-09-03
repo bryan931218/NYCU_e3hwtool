@@ -112,8 +112,32 @@ class VisualNoteHelperTests(unittest.TestCase):
         self.assertIsNotNone(svg)
         self.assertIn("Binary tree &lt;root&gt;", svg)
         self.assertNotIn("<root>", svg)
+        self.assertIn('viewBox="0 0 1200 720"', svg)
+        self.assertIn("url(#nodeFill)", svg)
+        self.assertIn('<path d="M', svg)
+        self.assertIn(" C", svg)
+        self.assertIn('marker-end="url(#arrow)"', svg)
+        self.assertIn("樹狀結構", svg)
         self.assertEqual(svg, render_visual_region_svg(_tree_region()))
         self.assertIsNone(render_visual_region_svg({**_tree_region(), "render_mode": "crop"}))
+
+    def test_svg_wraps_long_nodes_and_renders_graph_edges_without_arrows(self):
+        region = {
+            **_tree_region(),
+            "region_type": "graph",
+            "nodes": [
+                {"id": "a", "label": "這是一段需要自動換行的很長節點名稱", "x": 500, "y": 500},
+                {"id": "b", "label": "第二個節點", "x": 500, "y": 500},
+            ],
+            "edges": [{"from": "a", "to": "b", "label": "相關"}],
+        }
+
+        svg = render_visual_region_svg(region)
+
+        self.assertIsNotNone(svg)
+        self.assertGreaterEqual(svg.count("<tspan"), 3)
+        self.assertIn("關係圖", svg)
+        self.assertNotIn('marker-end="url(#arrow)"', svg)
 
 
 class VisualNoteComposerTests(unittest.TestCase):
