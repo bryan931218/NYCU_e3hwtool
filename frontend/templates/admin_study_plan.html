@@ -806,7 +806,7 @@
                                             <div class="frame-question-answer" id="frame-question-answer" data-math-content hidden></div>
                                         </div>
                                         <footer class="frame-question-foot">
-                                            <button class="frame-question-cancel" id="frame-question-cancel" type="button">取消</button>
+                                            <button class="frame-question-cancel" id="frame-question-cancel" type="button">關閉</button>
                                             <button class="frame-question-submit" id="frame-question-submit" type="submit">送出問題</button>
                                         </footer>
                                     </form>
@@ -1071,6 +1071,7 @@
             let frameQuestionSubmitting = false;
             let frameQuestionRequestId = 0;
             let frameQuestionContext = null;
+            let frameQuestionHasResult = false;
             let frameQuestionTrigger = null;
             let frameQuestionPrefetch = null;
             let markerSavedTimer = null;
@@ -1440,6 +1441,7 @@
                 }) || null;
             };
             const resetFrameQuestionResult = function () {
+                frameQuestionHasResult = false;
                 if (frameQuestionPreview) frameQuestionPreview.hidden = true;
                 if (frameQuestionImage) frameQuestionImage.removeAttribute('src');
                 if (frameQuestionAnswer) {
@@ -1517,31 +1519,34 @@
                 }
             };
             const openFrameQuestion = function (trigger) {
-                const option = selectedOption();
-                if (!option || !option.dataset.youtubeVideoId) {
-                    if (markerStatus) markerStatus.textContent = '請先選擇可播放的影片。';
-                    showFocusToast('請先選擇可播放的影片', true);
-                    return;
-                }
                 if (!frameQuestionDialog || !frameQuestionInput) return;
                 if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
-                const currentSeconds = player && typeof player.getCurrentTime === 'function'
-                    ? Math.max(0, Number(player.getCurrentTime() || 0))
-                    : Math.max(0, Number(option.dataset.playbackSeconds || 0));
-                resetFrameQuestionResult();
-                frameQuestionContext = {
-                    videoId: Number(option.value),
-                    playbackSeconds: currentSeconds,
-                    title: option.dataset.title || '目前影片',
-                    frameReady: false
-                };
-                const context = frameQuestionContext;
                 frameQuestionTrigger = trigger || frameQuestionOpen || focusFrameQuestion;
                 hideVideoEndScreen(false);
-                setFrameQuestionBusy(false);
-                frameQuestionInput.value = '';
-                if (frameQuestionMeta) {
-                    frameQuestionMeta.textContent = frameQuestionContext.title + '・' + formatClock(currentSeconds);
+                if (!frameQuestionHasResult && !frameQuestionSubmitting) {
+                    const option = selectedOption();
+                    if (!option || !option.dataset.youtubeVideoId) {
+                        if (markerStatus) markerStatus.textContent = '請先選擇可播放的影片。';
+                        showFocusToast('請先選擇可播放的影片', true);
+                        return;
+                    }
+                    const currentSeconds = player && typeof player.getCurrentTime === 'function'
+                        ? Math.max(0, Number(player.getCurrentTime() || 0))
+                        : Math.max(0, Number(option.dataset.playbackSeconds || 0));
+                    resetFrameQuestionResult();
+                    frameQuestionContext = {
+                        videoId: Number(option.value),
+                        playbackSeconds: currentSeconds,
+                        title: option.dataset.title || '目前影片',
+                        frameReady: false
+                    };
+                    const context = frameQuestionContext;
+                    setFrameQuestionBusy(false);
+                    frameQuestionInput.value = '';
+                    if (frameQuestionMeta) {
+                        frameQuestionMeta.textContent = context.title + '・' + formatClock(currentSeconds);
+                    }
+                    frameQuestionPrefetch = prefetchFrameQuestionImage(context);
                 }
                 if (typeof frameQuestionDialog.showModal === 'function') {
                     if (!frameQuestionDialog.open) frameQuestionDialog.showModal();
@@ -1549,7 +1554,6 @@
                     frameQuestionDialog.setAttribute('open', '');
                 }
                 window.setTimeout(function () { frameQuestionInput.focus({ preventScroll: true }); }, 30);
-                frameQuestionPrefetch = prefetchFrameQuestionImage(context);
             };
             const submitFrameQuestion = async function () {
                 if (frameQuestionSubmitting || !frameQuestionContext || !frameQuestionInput) return;
@@ -1561,6 +1565,30 @@
                     }
                     frameQuestionInput.focus();
                     return;
+                }
+                if (frameQuestionHasResult) {
+                    const option = selectedOption();
+                    if (!option || !option.dataset.youtubeVideoId) {
+                        if (frameQuestionStatus) {
+                            frameQuestionStatus.textContent = '請先選擇可播放的影片。';
+                            frameQuestionStatus.classList.add('is-error');
+                        }
+                        return;
+                    }
+                    const currentSeconds = player && typeof player.getCurrentTime === 'function'
+                        ? Math.max(0, Number(player.getCurrentTime() || 0))
+                        : Math.max(0, Number(option.dataset.playbackSeconds || 0));
+                    resetFrameQuestionResult();
+                    frameQuestionContext = {
+                        videoId: Number(option.value),
+                        playbackSeconds: currentSeconds,
+                        title: option.dataset.title || '目前影片',
+                        frameReady: false
+                    };
+                    if (frameQuestionMeta) {
+                        frameQuestionMeta.textContent = frameQuestionContext.title + '・' + formatClock(currentSeconds);
+                    }
+                    frameQuestionPrefetch = prefetchFrameQuestionImage(frameQuestionContext);
                 }
                 setFrameQuestionBusy(true);
                 const requestId = ++frameQuestionRequestId;
@@ -1601,6 +1629,7 @@
                         frameQuestionAnswer.removeAttribute('data-math-rendered');
                         if (window.renderStudyMath) window.renderStudyMath(frameQuestionAnswer);
                     }
+                    frameQuestionHasResult = true;
                     if (frameQuestionStatus) {
                         const evidence = [];
                         if (result.context_audio) evidence.push('語音');
@@ -2387,9 +2416,6 @@
             if (frameQuestionClose) frameQuestionClose.addEventListener('click', closeFrameQuestion);
             if (frameQuestionCancel) frameQuestionCancel.addEventListener('click', closeFrameQuestion);
             if (frameQuestionDialog) frameQuestionDialog.addEventListener('close', function () {
-                frameQuestionRequestId += 1;
-                setFrameQuestionBusy(false);
-                frameQuestionContext = null;
                 if (frameQuestionTrigger && typeof frameQuestionTrigger.focus === 'function') {
                     frameQuestionTrigger.focus({ preventScroll: true });
                 }
