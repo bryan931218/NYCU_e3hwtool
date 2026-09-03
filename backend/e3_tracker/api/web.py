@@ -3244,17 +3244,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             for subject, target_seconds in subject_targets.items():
                 if subject in credit_baselines:
                     prior_seconds = credit_baselines.get(subject, 0.0) + replanned_before.get(subject, 0.0)
-                    credited_seconds = min(
-                        max(watched_by_subject.get(subject, 0.0) - prior_seconds, 0.0),
-                        target_seconds,
-                    )
                 else:
                     prior_seconds = planned_before.get(subject, 0.0)
-                    credited_seconds = _study_plan_range_credited_seconds(
-                        video_ranges.get(subject, []),
-                        prior_seconds,
-                        prior_seconds + target_seconds,
-                    )
+                # A subject's study time is cumulative.  Progress made on a later
+                # video must first satisfy the oldest unfinished target for that
+                # same subject instead of being pinned to the video's original
+                # schedule range.  Rest days have no allocation, so they are
+                # deliberately skipped while the credit flows forward.
+                credited_seconds = min(
+                    max(watched_by_subject.get(subject, 0.0) - prior_seconds, 0.0),
+                    target_seconds,
+                )
                 subject_credits[subject] = credited_seconds
                 range_end = prior_seconds + target_seconds
                 for video_start, video_end, video in video_ranges.get(subject, []):

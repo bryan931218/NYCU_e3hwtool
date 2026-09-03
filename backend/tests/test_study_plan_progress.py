@@ -80,7 +80,7 @@ class StudyPlanProgressTests(unittest.TestCase):
 
         self.assertEqual(_study_plan_progress_week(week_rows)["number"], 1)
 
-    def test_plan_page_keeps_earliest_focus_but_shows_later_week_progress(self):
+    def test_plan_page_applies_same_subject_progress_to_earliest_week_first(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(
                 os.environ,
@@ -136,22 +136,22 @@ class StudyPlanProgressTests(unittest.TestCase):
             response = client.get("/admin/study-plan")
 
             self.assertEqual(response.status_code, 200)
-            self.assertIn(
-                f"第 {phase_week['number']} 週・{phase_week['start'].isoformat()}",
-                response.get_data(as_text=True),
-            )
             html = response.get_data(as_text=True)
             phase_fragment = html.split(
                 f'data-timeline-week-start="{phase_week["start"].isoformat()}"',
                 1,
             )[1]
+            phase_completion = float(
+                re.search(r"data-week-completion>([\d.]+)%", phase_fragment).group(1)
+            )
             later_fragment = phase_fragment.split('data-timeline-week-start="', 1)[1]
             later_completions = [
                 float(value)
                 for value in re.findall(r"data-week-completion>([\d.]+)%", later_fragment)
             ]
             self.assertNotIn("等待前段", later_fragment)
-            self.assertTrue(any(value > 0 for value in later_completions))
+            self.assertEqual(phase_completion, 100.0)
+            self.assertTrue(any(value < 100 for value in later_completions))
             storage._engine.dispose()
 
     def test_plan_page_defaults_to_last_watched_subject_and_an_unfinished_video(self):
