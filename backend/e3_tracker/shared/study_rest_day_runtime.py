@@ -65,24 +65,14 @@ def redistribute_rest_day_allocations(
     already contained that subject. In an interleaved plan this could concentrate
     several hours into just one or two days even when many planned days remained.
 
-    This version treats the day as one pool.  To make the focused week's target
-    honestly reflect taking a day off, work moves to planned dates in following
-    weeks whenever any exist.  Only the final schedule week falls back to later
-    dates in that same week, so subject totals are still preserved exactly.
+    This version treats the day as one pool: every later date that already has a
+    study target, is in the same schedule segment, and is not itself a rest day
+    receives an equal share. Subject totals are still preserved exactly.
     """
 
     result = copy.deepcopy(list(weeks))
     entries = _entries(result)
     by_key = {key: (day, segment) for key, day, segment in entries}
-    week_end_by_day: Dict[str, str] = {}
-    for week in result:
-        week_days = list(week.get("daily_targets") or [])
-        week_end = _day_key(week.get("end")) or max(
-            (_day_key(day.get("date")) for day in week_days),
-            default="",
-        )
-        for day in week_days:
-            week_end_by_day[_day_key(day.get("date"))] = week_end
     originally_planned = {
         key
         for key, day, _segment in entries
@@ -95,7 +85,7 @@ def redistribute_rest_day_allocations(
     }
 
     def receivers(rest_key: str, segment: bool, blocked: set[str]) -> List[Dict[str, Any]]:
-        candidates = [
+        return [
             day
             for key, day, candidate_segment in entries
             if key > rest_key
@@ -103,13 +93,6 @@ def redistribute_rest_day_allocations(
             and key not in blocked
             and candidate_segment == segment
         ]
-        rest_week_end = week_end_by_day.get(rest_key, "")
-        following_week = [
-            day
-            for day in candidates
-            if _day_key(day.get("date")) > rest_week_end
-        ]
-        return following_week or candidates
 
     # Resolve from the end. A requested rest day is effective only if at least
     # one later planned date can receive its work. Invalid late requests remain
@@ -173,7 +156,7 @@ def _patch_rest_day_toggle_template(template: str) -> str:
     )
     patched = patched.replace(
         "並把原定 {{ day.hours }} 小時平均分攤到後續日期？",
-        "並把原定 {{ day.hours }} 小時平均分攤到下一週起的剩餘計畫日？",
+        "並把原定 {{ day.hours }} 小時平均分攤到所有剩餘計畫日？",
     )
     return patched
 

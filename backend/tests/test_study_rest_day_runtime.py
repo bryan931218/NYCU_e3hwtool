@@ -122,33 +122,6 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
             )
             self.assertAlmostEqual(sum(day["allocations"].values()), 4200)
 
-    def test_rest_day_reduces_focused_week_and_moves_work_to_following_week(self):
-        first_week = self._week(
-            1,
-            date(2026, 9, 1),
-            [{"資料結構": 3600}] * 7,
-        )
-        second_week = self._week(
-            2,
-            date(2026, 9, 8),
-            [{"資料結構": 3600}] * 7,
-        )
-
-        result = redistribute_rest_day_allocations(
-            [first_week, second_week],
-            ["2026-09-03"],
-        )
-
-        first_days = result[0]["daily_targets"]
-        second_days = result[1]["daily_targets"]
-        self.assertTrue(first_days[2]["is_rest_day"])
-        self.assertEqual(first_days[2]["allocations"], {})
-        self.assertEqual(sum(result[0]["subject_targets"].values()), 6 * 3600)
-        self.assertEqual(first_days[3]["allocations"], {"資料結構": 3600})
-        self.assertAlmostEqual(sum(result[1]["subject_targets"].values()), 8 * 3600)
-        for day in second_days:
-            self.assertAlmostEqual(day["allocations"]["資料結構"], 3600 + 3600 / 7)
-
     def test_other_rest_days_and_unplanned_days_are_not_receivers(self):
         week = self._week(
             1,
@@ -211,7 +184,7 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
         install_study_rest_day_runtime(web)
 
         self.assertIn('title="取消休息日" aria-pressed="true">休</button>', web.STUDY_PLAN_TEMPLATE)
-        self.assertIn("平均分攤到下一週起的剩餘計畫日", web.STUDY_PLAN_TEMPLATE)
+        self.assertIn("平均分攤到所有剩餘計畫日", web.STUDY_PLAN_TEMPLATE)
         self.assertNotIn(">復</button>", web.STUDY_PLAN_TEMPLATE)
 
 
