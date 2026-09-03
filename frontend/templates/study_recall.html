@@ -53,9 +53,9 @@
         .visual-evidence-item { min-width:0; margin:0; padding:10px; border:1px solid #d9e6ef; border-radius:12px; background:linear-gradient(145deg,#fbfdff,#f5faf9); box-shadow:0 8px 24px rgba(34,67,98,.07); }
         .visual-evidence-media { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
         .visual-evidence-media.has-redraw { grid-template-columns:minmax(0,1fr) 132px; align-items:stretch; }
-        .visual-evidence-media a { position:relative; min-width:0; height:230px; display:grid; place-items:center; overflow:hidden; border:1px solid #d4e2ec; border-radius:10px; background:#fff; }
-        .visual-evidence-media .visual-redraw { height:230px; background:#f6fbfc; box-shadow:inset 0 0 0 1px rgba(255,255,255,.65); }
-        .visual-evidence-media .visual-source { height:230px; background:#f4f6f8; }
+        .visual-evidence-media a { position:relative; min-width:0; height:clamp(280px,38vw,390px); display:grid; place-items:center; overflow:hidden; border:1px solid #d4e2ec; border-radius:10px; background:#fff; }
+        .visual-evidence-media .visual-redraw { height:clamp(280px,38vw,390px); background:#f6fbfc; box-shadow:inset 0 0 0 1px rgba(255,255,255,.65); }
+        .visual-evidence-media .visual-source { height:138px; align-self:start; background:#f4f6f8; }
         .visual-evidence-media .visual-source::after { content:"原稿"; position:absolute; right:7px; bottom:7px; z-index:2; padding:3px 7px; color:#fff; border-radius:999px; background:rgba(23,50,75,.72); font-size:9px; font-weight:900; letter-spacing:.05em; }
         .visual-evidence-media img { position:absolute; inset:0; display:block; width:100%; height:100%; max-width:none; max-height:none; object-fit:contain; }
         .visual-evidence-item figcaption { padding:10px 2px 1px; }
