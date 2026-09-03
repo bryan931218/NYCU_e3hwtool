@@ -18612,7 +18612,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     def admin_study_plan_rest_day():
         today = _study_plan_business_date()
         today_iso = today.isoformat()
-        requested_date = str(request.form.get("study_date") or today_iso).strip()
+        requested_date = str(
+            request.args.get("study_date")
+            or request.form.get("study_date")
+            or today_iso
+        ).strip()
         try:
             selected_day = datetime.strptime(requested_date, "%Y-%m-%d").date()
         except ValueError:
@@ -18620,7 +18624,11 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return redirect(url_for("admin_study_plan") + "#current-focus")
         selected_day_iso = selected_day.isoformat()
         action = str(request.form.get("action") or "skip").strip()
-        selected_subject = str(request.form.get("subject") or "").strip()
+        selected_subject = str(
+            request.args.get("subject")
+            or request.form.get("subject")
+            or ""
+        ).strip()
         if selected_subject not in STUDY_PLAN_SUBJECTS:
             selected_subject = STUDY_PLAN_SUBJECTS[0]
         return_url = (

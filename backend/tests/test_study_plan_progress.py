@@ -787,7 +787,8 @@ class StudyPlanProgressTests(unittest.TestCase):
             with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 4)):
                 response = client.post(
                     "/admin/study-plan/rest-day",
-                    data={"subject": "離散數學", "study_date": "2026-09-03"},
+                    query_string={"subject": "離散數學", "study_date": "2026-09-03"},
+                    data={"subject": "", "study_date": ""},
                     follow_redirects=True,
                 )
                 self.assertEqual(response.status_code, 200)
