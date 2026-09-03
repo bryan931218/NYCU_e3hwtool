@@ -40,7 +40,7 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
             "is_replanned": replanned,
         }
 
-    def test_three_rest_days_spread_evenly_across_all_seven_remaining_days(self):
+    def test_three_rest_days_spread_only_to_matching_subject_days(self):
         rest_hours = 3.44
         receiver_hours = 3.63
         rest_seconds = rest_hours * 3600
@@ -77,22 +77,35 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
             ["2026-08-28", "2026-08-29", "2026-08-30"],
         )
 
-        moved_total = rest_seconds * 3
-        expected_addition = moved_total / 7
         receiver_days = result[1]["daily_targets"]
-        for day in receiver_days:
+        for index in (0, 3, 6):
             self.assertAlmostEqual(
-                sum(day["allocations"].values()),
-                receiver_seconds + expected_addition,
+                receiver_days[index]["allocations"]["線性代數"],
+                receiver_seconds,
                 places=5,
             )
+            self.assertEqual(set(receiver_days[index]["allocations"]), {"線性代數"})
+        for index in (1, 4):
+            self.assertAlmostEqual(
+                receiver_days[index]["allocations"]["離散數學"],
+                receiver_seconds + rest_seconds,
+                places=5,
+            )
+            self.assertEqual(set(receiver_days[index]["allocations"]), {"離散數學"})
+        for index in (2, 5):
+            self.assertAlmostEqual(
+                receiver_days[index]["allocations"]["資料結構"],
+                receiver_seconds + rest_seconds / 2,
+                places=5,
+            )
+            self.assertEqual(set(receiver_days[index]["allocations"]), {"資料結構"})
 
         for day in result[0]["daily_targets"][4:]:
             self.assertTrue(day["is_rest_day"])
             self.assertEqual(day["allocations"], {})
-            self.assertEqual(day["redistributed_day_count"], 7)
+            self.assertEqual(day["redistributed_day_count"], 2)
 
-    def test_subject_does_not_limit_receiver_days(self):
+    def test_subject_limits_receiver_days(self):
         week = self._week(
             1,
             date(2026, 9, 1),
@@ -111,16 +124,11 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
         days = result[0]["daily_targets"]
 
         self.assertEqual(days[0]["allocations"], {})
-        self.assertEqual(days[0]["redistributed_day_count"], 6)
-        for index, day in enumerate(days[1:], start=1):
-            # The first receiver already had one hour of 資料結構; the
-            # redistributed ten minutes must be added, not replace it.
-            expected_subject_seconds = 4200 if index == 1 else 600
-            self.assertAlmostEqual(
-                day["allocations"].get("資料結構", 0),
-                expected_subject_seconds,
-            )
-            self.assertAlmostEqual(sum(day["allocations"].values()), 4200)
+        self.assertEqual(days[0]["redistributed_day_count"], 1)
+        self.assertEqual(days[1]["allocations"], {"資料結構": 7200})
+        for day in days[2:]:
+            self.assertNotIn("資料結構", day["allocations"])
+            self.assertAlmostEqual(sum(day["allocations"].values()), 3600)
 
     def test_other_rest_days_and_unplanned_days_are_not_receivers(self):
         week = self._week(
@@ -130,8 +138,8 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
                 {"資料結構": 3600},
                 {"離散數學": 3600},
                 {},
-                {"線性代數": 3600},
-                {"演算法": 3600},
+                {"資料結構": 3600},
+                {"離散數學": 3600},
                 {},
                 {"作業系統": 3600},
             ],
@@ -147,8 +155,35 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
         self.assertTrue(days[1]["is_rest_day"])
         self.assertEqual(days[2]["allocations"], {})
         self.assertEqual(days[5]["allocations"], {})
-        self.assertEqual(days[0]["redistributed_day_count"], 3)
-        self.assertEqual(days[1]["redistributed_day_count"], 3)
+        self.assertEqual(days[0]["redistributed_day_count"], 1)
+        self.assertEqual(days[1]["redistributed_day_count"], 1)
+        self.assertEqual(days[3]["allocations"], {"資料結構": 7200})
+        self.assertEqual(days[4]["allocations"], {"離散數學": 7200})
+
+    def test_rest_day_is_rejected_when_a_subject_has_no_matching_future_day(self):
+        week = self._week(
+            1,
+            date(2026, 9, 1),
+            [
+                {"資料結構": 3600, "離散數學": 3600},
+                {"資料結構": 3600},
+                {"線性代數": 3600},
+                {},
+                {},
+                {},
+                {},
+            ],
+        )
+
+        result = redistribute_rest_day_allocations([week], ["2026-09-01"])
+        days = result[0]["daily_targets"]
+
+        self.assertFalse(days[0]["is_rest_day"])
+        self.assertFalse(days[0]["can_be_rest_day"])
+        self.assertEqual(
+            days[0]["allocations"],
+            {"資料結構": 3600, "離散數學": 3600},
+        )
 
     def test_cancelling_rest_day_restores_original_plan(self):
         week = self._week(
@@ -184,7 +219,7 @@ class StudyRestDayRuntimeTests(unittest.TestCase):
         install_study_rest_day_runtime(web)
 
         self.assertIn('title="取消休息日" aria-pressed="true">休</button>', web.STUDY_PLAN_TEMPLATE)
-        self.assertIn("平均分攤到所有剩餘計畫日", web.STUDY_PLAN_TEMPLATE)
+        self.assertIn("分攤到後續相同科目的計畫日", web.STUDY_PLAN_TEMPLATE)
         self.assertNotIn(">復</button>", web.STUDY_PLAN_TEMPLATE)
 
 

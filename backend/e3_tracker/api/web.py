@@ -1130,21 +1130,48 @@ def _study_plan_schedule_definitions(
         for value in (rest_days or [])
         if str(value) in days and first_day <= days[str(value)]["date"] <= last_scheduled_day
     }
+    original_subjects_by_day = {
+        key: {
+            str(subject)
+            for subject, seconds in dict(row.get("allocations") or {}).items()
+            if _study_plan_nonnegative_number(seconds) > 0.001
+        }
+        for key, row in days.items()
+    }
+
+    def matching_future_rows(
+        rest_day_key: str,
+        rest_row: Dict[str, Any],
+        blocked_days: set[str],
+        subject: str,
+    ) -> List[Dict[str, Any]]:
+        return [
+            row
+            for key, row in sorted(days.items())
+            if key > rest_day_key
+            and key not in blocked_days
+            and row["date"] <= last_scheduled_day
+            and bool(row.get("replanned")) == bool(rest_row.get("replanned"))
+            and subject in original_subjects_by_day.get(key, set())
+        ]
+
+    def can_redistribute_day(
+        rest_day_key: str,
+        rest_row: Dict[str, Any],
+        blocked_days: set[str],
+    ) -> bool:
+        subjects = original_subjects_by_day.get(rest_day_key, set())
+        return bool(subjects) and all(
+            matching_future_rows(rest_day_key, rest_row, blocked_days, subject)
+            for subject in subjects
+        )
 
     # A rest day may only hand work to a later day in the same schedule segment.
     # Resolve from the end so consecutive requests keep the final usable day active.
     effective_rest_day_keys = set()
     for rest_day_key in sorted(requested_rest_day_keys, reverse=True):
         rest_row = days[rest_day_key]
-        schedule_segment = bool(rest_row.get("replanned"))
-        has_receiver = any(
-            key > rest_day_key
-            and key not in effective_rest_day_keys
-            and row["date"] <= last_scheduled_day
-            and bool(row.get("replanned")) == schedule_segment
-            for key, row in days.items()
-        )
-        if has_receiver:
+        if can_redistribute_day(rest_day_key, rest_row, effective_rest_day_keys):
             effective_rest_day_keys.add(rest_day_key)
 
     for rest_day_key in sorted(effective_rest_day_keys):
@@ -1156,19 +1183,14 @@ def _study_plan_schedule_definitions(
             rest_row["redistributed_seconds"] = 0.0
             rest_row["redistributed_day_count"] = 0
             continue
-        future_rows = [
-            row
-            for key, row in sorted(days.items())
-            if key > rest_day_key
-            and key not in effective_rest_day_keys
-            and row["date"] <= last_scheduled_day
-            and bool(row.get("replanned")) == bool(rest_row.get("replanned"))
-        ]
-        if not future_rows:
-            continue
         touched_dates = set()
         for subject, seconds in moved_allocations.items():
-            candidates = [row for row in future_rows if subject in row["allocations"]] or future_rows
+            candidates = matching_future_rows(
+                rest_day_key,
+                rest_row,
+                effective_rest_day_keys,
+                str(subject),
+            )
             addition = seconds / len(candidates)
             for candidate in candidates:
                 candidate["allocations"][subject] = candidate["allocations"].get(subject, 0.0) + addition
@@ -1180,18 +1202,11 @@ def _study_plan_schedule_definitions(
         rest_row["redistributed_day_count"] = len(touched_dates)
 
     for day_key, day_row in days.items():
-        schedule_segment = bool(day_row.get("replanned"))
         day_row["rest_day_requested"] = day_key in requested_rest_day_keys
         day_row["can_be_rest_day"] = bool(
             day_row["allocations"]
             and day_key not in effective_rest_day_keys
-            and any(
-                future_key > day_key
-                and future_key not in effective_rest_day_keys
-                and future_row["date"] <= last_scheduled_day
-                and bool(future_row.get("replanned")) == schedule_segment
-                for future_key, future_row in days.items()
-            )
+            and can_redistribute_day(day_key, day_row, effective_rest_day_keys)
         )
 
     last_week_end = _study_plan_week_start(last_scheduled_day) + timedelta(days=6)

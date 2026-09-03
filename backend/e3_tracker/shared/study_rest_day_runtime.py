@@ -59,16 +59,7 @@ def redistribute_rest_day_allocations(
     weeks: Iterable[Dict[str, Any]],
     rest_days: Iterable[str] | None,
 ) -> List[Dict[str, Any]]:
-    """Move each rest day's load across every later planned day in its schedule segment.
-
-    The original implementation redistributed each subject only to later dates that
-    already contained that subject. In an interleaved plan this could concentrate
-    several hours into just one or two days even when many planned days remained.
-
-    This version treats the day as one pool: every later date that already has a
-    study target, is in the same schedule segment, and is not itself a rest day
-    receives an equal share. Subject totals are still preserved exactly.
-    """
+    """Move a rest day's subjects only to later days already planning those subjects."""
 
     result = copy.deepcopy(list(weeks))
     entries = _entries(result)
@@ -78,21 +69,42 @@ def redistribute_rest_day_allocations(
         for key, day, _segment in entries
         if sum(_positive_number(value) for value in dict(day.get("allocations") or {}).values()) > 0.001
     }
+    originally_planned_subjects = {
+        key: {
+            str(subject)
+            for subject, value in dict(day.get("allocations") or {}).items()
+            if _positive_number(value) > 0.001
+        }
+        for key, day, _segment in entries
+    }
     requested = {
         str(value)
         for value in (rest_days or [])
         if str(value) in by_key and str(value) in originally_planned
     }
 
-    def receivers(rest_key: str, segment: bool, blocked: set[str]) -> List[Dict[str, Any]]:
+    def receivers(
+        rest_key: str,
+        segment: bool,
+        blocked: set[str],
+        subject: str,
+    ) -> List[Tuple[str, Dict[str, Any]]]:
         return [
-            day
+            (key, day)
             for key, day, candidate_segment in entries
             if key > rest_key
             and key in originally_planned
             and key not in blocked
             and candidate_segment == segment
+            and subject in originally_planned_subjects.get(key, set())
         ]
+
+    def can_redistribute(rest_key: str, segment: bool, blocked: set[str]) -> bool:
+        subjects = originally_planned_subjects.get(rest_key, set())
+        return bool(subjects) and all(
+            receivers(rest_key, segment, blocked, subject)
+            for subject in subjects
+        )
 
     # Resolve from the end. A requested rest day is effective only if at least
     # one later planned date can receive its work. Invalid late requests remain
@@ -100,7 +112,7 @@ def redistribute_rest_day_allocations(
     effective: set[str] = set()
     for rest_key in sorted(requested, reverse=True):
         _day, segment = by_key[rest_key]
-        if receivers(rest_key, segment, effective):
+        if can_redistribute(rest_key, segment, effective):
             effective.add(rest_key)
 
     # All effective rest days are excluded as receivers from the start so one
@@ -112,21 +124,22 @@ def redistribute_rest_day_allocations(
             for subject, seconds in dict(rest_row.get("allocations") or {}).items()
             if _positive_number(seconds) > 0.001
         }
-        candidates = receivers(rest_key, segment, effective)
-        if not candidates:
-            continue
-
+        receiver_keys: set[str] = set()
         for subject, seconds in moved_allocations.items():
-            addition = seconds / len(candidates)
-            for candidate in candidates:
+            subject_receivers = receivers(rest_key, segment, effective, subject)
+            if not subject_receivers:
+                continue
+            addition = seconds / len(subject_receivers)
+            for receiver_key, candidate in subject_receivers:
                 allocations = candidate.setdefault("allocations", {})
                 allocations[subject] = _positive_number(allocations.get(subject)) + addition
+                receiver_keys.add(receiver_key)
 
         rest_row["allocations"] = {}
         rest_row["focus"] = "休息日"
         rest_row["is_rest_day"] = True
         rest_row["redistributed_seconds"] = sum(moved_allocations.values())
-        rest_row["redistributed_day_count"] = len(candidates)
+        rest_row["redistributed_day_count"] = len(receiver_keys)
 
     for key, day, segment in entries:
         day.setdefault("is_rest_day", False)
@@ -141,7 +154,7 @@ def redistribute_rest_day_allocations(
             for value in dict(day.get("allocations") or {}).values()
         ) > 0.001
         day["can_be_rest_day"] = bool(
-            has_target and receivers(key, segment, effective)
+            has_target and can_redistribute(key, segment, effective)
         )
 
     _rebuild_week_totals(result)
@@ -156,7 +169,11 @@ def _patch_rest_day_toggle_template(template: str) -> str:
     )
     patched = patched.replace(
         "並把原定 {{ day.hours }} 小時平均分攤到後續日期？",
+        "並把原定 {{ day.hours }} 小時分攤到後續相同科目的計畫日？",
+    )
+    patched = patched.replace(
         "並把原定 {{ day.hours }} 小時平均分攤到所有剩餘計畫日？",
+        "並把原定 {{ day.hours }} 小時分攤到後續相同科目的計畫日？",
     )
     return patched
 
