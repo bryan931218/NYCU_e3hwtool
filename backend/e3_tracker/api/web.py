@@ -17,7 +17,7 @@ from difflib import SequenceMatcher
 from functools import wraps
 from pathlib import Path
 from statistics import median
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 import requests
@@ -28,7 +28,13 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.http import http_date
 from werkzeug.utils import secure_filename
 
-from ..services.collector import CollectOptions, collect_assignments
+from ..services.collector import (
+    CollectOptions,
+    annotate_result_semesters,
+    collect_assignments,
+    current_semester_key,
+    normalize_semester_keys,
+)
 from ..services.google_calendar import (
     GOOGLE_CALENDAR_SCOPE,
     GoogleUnauthorizedError,
@@ -155,19 +161,12 @@ def _attach_global_study_assistant(template: str) -> str:
     return template.replace("</body>", f"{GLOBAL_STUDY_ASSISTANT_TEMPLATE}\n</body>", 1)
 
 
-# The note library already owns the richer card-aware version of this assistant.
-# Every other page an administrator can visit gets the shared, conversation-aware shell.
-WEB_TEMPLATE = _attach_global_study_assistant(WEB_TEMPLATE)
-TRAFFIC_TEMPLATE = _attach_global_study_assistant(TRAFFIC_TEMPLATE)
-ANNOUNCEMENTS_TEMPLATE = _attach_global_study_assistant(ANNOUNCEMENTS_TEMPLATE)
-HOME_TEMPLATE = _attach_global_study_assistant(HOME_TEMPLATE)
-FEEDBACK_TEMPLATE = _attach_global_study_assistant(FEEDBACK_TEMPLATE)
-ADMIN_FEEDBACK_TEMPLATE = _attach_global_study_assistant(ADMIN_FEEDBACK_TEMPLATE)
+# Keep the assistant inside the study center. The assignment tracker and public pages
+# stay focused on their own workflows.
 STUDY_PLAN_TEMPLATE = _attach_global_study_assistant(STUDY_PLAN_TEMPLATE)
 STUDY_MARKERS_TEMPLATE = _attach_global_study_assistant(STUDY_MARKERS_TEMPLATE)
 STUDY_SETTINGS_TEMPLATE = _attach_global_study_assistant(STUDY_SETTINGS_TEMPLATE)
 STUDY_HOME_TEMPLATE = _attach_global_study_assistant(STUDY_HOME_TEMPLATE)
-PUBLIC_STUDY_TEMPLATE = _attach_global_study_assistant(PUBLIC_STUDY_TEMPLATE)
 STUDY_RECALL_QUICK_TEMPLATE = _attach_global_study_assistant(STUDY_RECALL_QUICK_TEMPLATE)
 
 STUDY_PLAN_BLOCKS = (
@@ -2291,6 +2290,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     DEFAULT_PREFERENCES = {
         "view_mode": "due",
         "status_filter": ["pending"],
+        "semester_filter": [],
         "include_ignored_overdue": False,
         "show_overdue": False,
         "show_completed": False,
@@ -2649,6 +2649,20 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         normalized_status_filters = _normalize_status_filters(status_filter)
         if status_filter_provided:
             clean["status_filter"] = normalized_status_filters
+        semester_filter_provided = False
+        semester_filter = raw.get("semester_filter")
+        if "semester_filter" in raw:
+            semester_filter_provided = True
+        if semester_filter is None:
+            semester_filter = raw.get("semesterFilter")
+            if "semesterFilter" in raw:
+                semester_filter_provided = True
+        if semester_filter is None:
+            semester_filter = raw.get("semesterFilters")
+            if "semesterFilters" in raw:
+                semester_filter_provided = True
+        if semester_filter_provided:
+            clean["semester_filter"] = normalize_semester_keys(semester_filter)
         include_ignored_overdue = raw.get("include_ignored_overdue")
         if include_ignored_overdue is None:
             include_ignored_overdue = raw.get("includeIgnoredOverdue")
@@ -3159,6 +3173,12 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         cache = get_assign_cache(viewed_username)
         result = cache.get("result") if cache else None
         excel_data = cache.get("excel_data") if cache else None
+        preferences = get_user_preferences(viewed_username)
+        if result:
+            preferred_semesters = None
+            if not result.get("selected_semesters"):
+                preferred_semesters = preferences.get("semester_filter") or None
+            annotate_result_semesters(result, selected_keys=preferred_semesters)
         guest_mode = bool(user.get("is_guest"))
         if result and not excel_data:
             excel_data = _generate_excel_data(result.get("all_assignments"))
@@ -3194,7 +3214,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             "stats": stats,
             "stats_version": stats_version_value,
             "now_ts": now_ts,
-            "preferences": get_user_preferences(viewed_username),
+            "preferences": preferences,
             "cache_ts": cache_ts_val,
             "last_updated_ts": cache_ts_val,
             "last_updated_label": last_updated_label,
@@ -12779,14 +12799,25 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         storage.replace_study_recall_concepts_bulk(concepts_by_session)
         return None
 
-    def fetch_assignments_for(user: Dict[str, str]) -> Tuple[Dict[str, Any], Optional[str]]:
+    def fetch_assignments_for(
+        user: Dict[str, str],
+        *,
+        semester_keys: Optional[Sequence[str]] = None,
+    ) -> Tuple[Dict[str, Any], Optional[str]]:
+        selected_semesters = normalize_semester_keys(semester_keys)
+        if semester_keys is None:
+            stored = _sanitize_preferences(storage.load_user_preferences(str(user.get("username") or "")))
+            selected_semesters = normalize_semester_keys(stored.get("semester_filter"))
+        if not selected_semesters:
+            selected_semesters = [current_semester_key()]
         opts = CollectOptions(
             base_url=base_url,
             scope=default_scope,
             course_id=None,
             include_completed=True,
             all_courses=False,
-            all_courses_all_terms=False,
+            all_courses_all_terms=True,
+            semester_keys=selected_semesters,
             username=None,
             password=None,
             moodle_session=user.get("moodle_session"),
@@ -13323,6 +13354,15 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             return {"ok": False, "error": "訪客模式不支援自動更新"}, 400
         username = user["username"]
         moodle_session_val = session.get("moodle_session")
+        payload = request.get_json(silent=True) or {}
+        requested_semesters: Optional[List[str]] = None
+        if "semesterFilters" in payload or "semester_filter" in payload:
+            requested_semesters = normalize_semester_keys(
+                payload.get("semesterFilters", payload.get("semester_filter"))
+            )
+            if not requested_semesters:
+                return {"ok": False, "error": "請至少選擇一個學期"}, 400
+            update_user_preferences({"semester_filter": requested_semesters})
         prev_cache = get_assign_cache() or {}
         prev_ts = prev_cache.get("ts") or 0
         if not _mark_refresh_job_started(username):
@@ -13337,7 +13377,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         def _run_background():
             with app.app_context():
                 try:
-                    result, excel_data = fetch_assignments_for({"username": username, "moodle_session": moodle_session_val})
+                    result, excel_data = fetch_assignments_for(
+                        {"username": username, "moodle_session": moodle_session_val},
+                        semester_keys=requested_semesters,
+                    )
                     set_assign_cache_for_user(username, result, excel_data)
                     record_ui_event(
                         "refresh_assignments",

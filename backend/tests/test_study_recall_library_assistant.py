@@ -1195,7 +1195,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             finally:
                 storage._engine.dispose()
 
-    def test_global_assistant_is_mounted_on_authenticated_pages(self):
+    def test_global_assistant_is_limited_to_internal_study_pages(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
@@ -1203,13 +1203,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 client = app.test_client()
                 self.login_admin(app, client)
                 for path in (
-                    "/",
                     "/admin/study-home",
                     "/admin/study-plan",
                     "/admin/study-settings",
                     "/admin/study-recall/quick-review",
-                    "/study-progress",
-                    "/feedback",
                 ):
                     response = client.get(path)
                     self.assertEqual(response.status_code, 200, path)
@@ -1217,6 +1214,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     self.assertIn("data-e3-global-ai", html, path)
                     self.assertIn("/admin/study-recall/assistant/ask", html, path)
                     self.assertIn("result.verification?.verified", html, path)
+                for path in ("/", "/study-progress", "/feedback"):
+                    response = client.get(path)
+                    self.assertEqual(response.status_code, 200, path)
+                    self.assertNotIn("data-e3-global-ai", response.get_data(as_text=True), path)
             finally:
                 storage._engine.dispose()
 

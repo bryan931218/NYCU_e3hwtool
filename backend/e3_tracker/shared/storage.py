@@ -226,6 +226,7 @@ user_preferences_table = Table(
     Column("user_id", Integer, primary_key=True),
     Column("view_mode", String(32)),
     Column("status_filter", String(32)),
+    Column("semester_filter", Text),
     Column("include_ignored_overdue", Integer, nullable=False, default=0),
     Column("show_overdue", Integer, nullable=False, default=0),
     Column("show_completed", Integer, nullable=False, default=0),
@@ -293,6 +294,8 @@ user_fetch_state_table = Table(
     Column("fetched_ts", Integer),
     Column("excel_data", Text),
     Column("error_count", Integer, nullable=False, default=0),
+    Column("semester_catalog", Text),
+    Column("selected_semesters", Text),
 )
 
 fetch_errors_table = Table(
@@ -654,6 +657,20 @@ class PersistentStorage:
             if "ignored_overdue_uids" not in pref_columns:
                 with self._lock, self._engine.begin() as conn:
                     conn.execute(text("ALTER TABLE user_preferences ADD COLUMN ignored_overdue_uids TEXT"))
+            if "semester_filter" not in pref_columns:
+                with self._lock, self._engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN semester_filter TEXT"))
+        if inspector.has_table("user_fetch_state"):
+            fetch_state_columns = {col["name"] for col in inspector.get_columns("user_fetch_state")}
+            missing_fetch_state_columns = []
+            if "semester_catalog" not in fetch_state_columns:
+                missing_fetch_state_columns.append(("semester_catalog", "TEXT"))
+            if "selected_semesters" not in fetch_state_columns:
+                missing_fetch_state_columns.append(("selected_semesters", "TEXT"))
+            if missing_fetch_state_columns:
+                with self._lock, self._engine.begin() as conn:
+                    for column_name, column_type in missing_fetch_state_columns:
+                        conn.execute(text(f"ALTER TABLE user_fetch_state ADD COLUMN {column_name} {column_type}"))
         if not inspector.has_table("web_sessions"):
             metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
         if not inspector.has_table("assignment_views"):
@@ -935,6 +952,7 @@ class PersistentStorage:
                 select(
                     user_preferences_table.c.view_mode,
                     user_preferences_table.c.status_filter,
+                    user_preferences_table.c.semester_filter,
                     user_preferences_table.c.include_ignored_overdue,
                     user_preferences_table.c.show_overdue,
                     user_preferences_table.c.show_completed,
@@ -954,9 +972,18 @@ class PersistentStorage:
                     ignored_overdue_uids = [str(item).strip() for item in parsed if str(item).strip()]
             except Exception:
                 ignored_overdue_uids = []
+        semester_filter: List[str] = []
+        if row.semester_filter:
+            try:
+                parsed = json.loads(row.semester_filter)
+                if isinstance(parsed, list):
+                    semester_filter = [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                semester_filter = []
         return {
             "view_mode": row.view_mode,
             "status_filter": row.status_filter,
+            "semester_filter": semester_filter,
             "include_ignored_overdue": bool(row.include_ignored_overdue),
             "show_overdue": bool(row.show_overdue),
             "show_completed": bool(row.show_completed),
@@ -976,6 +1003,10 @@ class PersistentStorage:
                 [str(item).strip() for item in status_filter if str(item).strip()],
                 ensure_ascii=False,
             )
+        semester_filter = prefs.get("semester_filter")
+        if not isinstance(semester_filter, list):
+            semester_filter = []
+        semester_filter = [str(item).strip() for item in semester_filter if str(item).strip()]
         include_ignored_overdue = self._coerce_bool_int(prefs.get("include_ignored_overdue"))
         show_overdue = self._coerce_bool_int(prefs.get("show_overdue"))
         show_completed = self._coerce_bool_int(prefs.get("show_completed"))
@@ -993,6 +1024,7 @@ class PersistentStorage:
                     user_id=user_id,
                     view_mode=view_mode,
                     status_filter=status_filter,
+                    semester_filter=json.dumps(semester_filter, ensure_ascii=False),
                     include_ignored_overdue=include_ignored_overdue,
                     show_overdue=show_overdue,
                     show_completed=show_completed,
@@ -3508,6 +3540,8 @@ class PersistentStorage:
             return
         courses = result.get("courses") or []
         errors = result.get("errors") or []
+        semester_catalog = result.get("available_semesters") or []
+        selected_semesters = result.get("selected_semesters") or []
         excel_data = payload.get("excel_data")
         ts_raw = payload.get("ts")
         try:
@@ -3525,6 +3559,8 @@ class PersistentStorage:
                     fetched_ts=fetched_ts,
                     excel_data=excel_data,
                     error_count=len(errors),
+                    semester_catalog=json.dumps(semester_catalog, ensure_ascii=False),
+                    selected_semesters=json.dumps(selected_semesters, ensure_ascii=False),
                 )
             )
             conn.execute(delete(fetch_errors_table).where(fetch_errors_table.c.user_id == user_id))
@@ -3705,6 +3741,8 @@ class PersistentStorage:
                 select(
                     user_fetch_state_table.c.fetched_ts,
                     user_fetch_state_table.c.excel_data,
+                    user_fetch_state_table.c.semester_catalog,
+                    user_fetch_state_table.c.selected_semesters,
                 )
                 .where(user_fetch_state_table.c.user_id == user_row.id)
                 .limit(1)
@@ -3805,11 +3843,28 @@ class PersistentStorage:
                 for row in error_rows
             ]
 
+            available_semesters: List[Dict[str, Any]] = []
+            selected_semesters: List[str] = []
+            try:
+                parsed_catalog = json.loads(state_row.semester_catalog or "[]")
+                if isinstance(parsed_catalog, list):
+                    available_semesters = [item for item in parsed_catalog if isinstance(item, dict)]
+            except Exception:
+                available_semesters = []
+            try:
+                parsed_selected = json.loads(state_row.selected_semesters or "[]")
+                if isinstance(parsed_selected, list):
+                    selected_semesters = [str(item).strip() for item in parsed_selected if str(item).strip()]
+            except Exception:
+                selected_semesters = []
+
         cache: Dict[str, Any] = {
             "result": {
                 "courses": courses,
                 "all_assignments": all_assignments,
                 "errors": errors,
+                "available_semesters": available_semesters,
+                "selected_semesters": selected_semesters,
             },
             "excel_data": state_row.excel_data,
             "ts": state_row.fetched_ts,

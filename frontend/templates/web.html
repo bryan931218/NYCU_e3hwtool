@@ -344,6 +344,22 @@ html[data-theme="dark"]{
     background:color-mix(in srgb, var(--primary) 14%, var(--card));border-color:color-mix(in srgb, var(--primary) 34%, var(--border));
     color:var(--primary);transform:translateY(-1px);
     }
+    .semester-selector{display:flex;align-items:center;gap:14px;padding:12px 16px;margin-bottom:12px}
+    .semester-selector-label{font-size:13px;font-weight:800;color:var(--muted);white-space:nowrap}
+    .semester-filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+    .semester-filter-option{
+    position:relative;display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:8px 12px;
+    border:1px solid var(--border);border-radius:10px;background:var(--card-2);cursor:pointer;
+    color:var(--muted);font-size:13px;font-weight:750;transition:background .16s ease,border-color .16s ease,color .16s ease;
+    }
+    .semester-filter-option:hover{border-color:color-mix(in srgb,var(--primary) 38%,var(--border));color:var(--fg)}
+    .semester-filter-option:has(input:checked){
+    border-color:color-mix(in srgb,var(--primary) 45%,var(--border));
+    background:color-mix(in srgb,var(--primary) 10%,var(--card));color:var(--primary);
+    }
+    .semester-filter-option input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
+    .semester-filter-option small{font-size:11px;color:var(--muted);font-weight:700}
+    .semester-current{font-size:10px;padding:2px 5px;border-radius:5px;background:var(--primary);color:#fff;font-weight:800}
     .filter-subsection{margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb, var(--border) 82%, transparent)}
     .ignored-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
     .ignored-chip{
@@ -420,6 +436,8 @@ html[data-theme="dark"]{
     html[data-theme="dark"] .ignored-chip{background:#202a49;border-color:#3d4872}
     html[data-theme="dark"] .status-filter-btn{background:#202a49;border-color:#3d4872;color:#dfe4ff}
     html[data-theme="dark"] .status-filter-btn.active{background:#244168;border-color:#4e79b8;color:#f3f7ff}
+    html[data-theme="dark"] .semester-filter-option{background:#202a49;border-color:#3d4872;color:#c6cff8}
+    html[data-theme="dark"] .semester-filter-option:has(input:checked){background:#244168;border-color:#4e79b8;color:#f3f7ff}
     html[data-theme="dark"] .seg{border-color:#3a466f;background:#1e294b}
     html[data-theme="dark"] .seg-btn{color:#c6cff8}
     html[data-theme="dark"] .seg-btn.active{background:#5f67f0;color:#fff}
@@ -645,6 +663,10 @@ html[data-theme="dark"]{
     }
 
     @media (max-width: 780px){
+    .semester-selector{align-items:flex-start;flex-direction:column;gap:9px;padding:12px}
+    .semester-filter-group{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+    .semester-filter-option{justify-content:flex-start;min-width:0}
+    .semester-filter-option span:not(.semester-current){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .toolbar-compact{ 
         grid-template-columns: 1fr; 
         row-gap: 10px;
@@ -731,6 +753,7 @@ html[data-theme="dark"]{
     }
     
     @media (max-width: 480px) {
+    .semester-filter-group{grid-template-columns:1fr}
     h1 {
         font-size: 22px;
     }
@@ -819,6 +842,14 @@ html[data-theme="dark"]{
     {% set selected_status_filters = preferences.status_filter %}
 {% else %}
     {% set selected_status_filters = ['pending'] %}
+{% endif %}
+{% set available_semesters = result.available_semesters if result and result.available_semesters is defined else [] %}
+{% if preferences.semester_filter is defined and preferences.semester_filter %}
+    {% set selected_semesters = preferences.semester_filter %}
+{% elif result and result.selected_semesters is defined %}
+    {% set selected_semesters = result.selected_semesters %}
+{% else %}
+    {% set selected_semesters = [] %}
 {% endif %}
 {% macro format_time_diff(seconds) -%}
     {% if seconds is none %}
@@ -1055,6 +1086,22 @@ html[data-theme="dark"]{
     </section>
     {% endif %}
 
+    {% if result and available_semesters %}
+    <section class="card semester-selector" id="semesterSelector" aria-label="顯示學期">
+        <span class="semester-selector-label">顯示學期</span>
+        <div class="semester-filter-group" id="semesterFilterGroup">
+            {% for semester in available_semesters %}
+            <label class="semester-filter-option">
+                <input type="checkbox" value="{{ semester.key }}" data-semester-filter{% if semester.key in selected_semesters %} checked{% endif %}{% if is_admin_view %} disabled{% endif %}>
+                <span>{{ semester.label }}</span>
+                <small>{{ semester.course_count }} 門</small>
+                {% if semester.is_current %}<span class="semester-current">本學期</span>{% endif %}
+            </label>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
     <section class="card panel toolbar-compact">
         <div class="tc-left">
         <div class="toolbar-stack">
@@ -1211,6 +1258,7 @@ html[data-theme="dark"]{
                 data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
                 data-original-due="{{ item.due_at or '' }}"
                 data-course="{{ item.course_title }}"
+                data-semester="{{ item.semester_key or 'other' }}"
                 data-title="{{ item.title }}"
                 data-due="{{ item.due_at or '無截止' }}"
                 data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
@@ -1267,7 +1315,7 @@ html[data-theme="dark"]{
 
         <section id="viewCourse">
         {% for course in result.courses %}
-            <section class="card course-card">
+            <section class="card course-card" data-semester="{{ course.semester_key or 'other' }}">
             <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
                 <h2>{{ course.title }} <span style="color:var(--muted);font-size:14px">#{{ course.id }}</span></h2>
@@ -1305,6 +1353,7 @@ html[data-theme="dark"]{
                     data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
                     data-original-due="{{ item.due_at or '' }}"
                     data-course="{{ course.title }}"
+                    data-semester="{{ item.semester_key or course.semester_key or 'other' }}"
                     data-title="{{ item.title }}"
                     data-due="{{ item.due_at or '無截止' }}"
                     data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
@@ -1710,6 +1759,22 @@ async function fetchAndSwapContent() {
         viewCourse.innerHTML = newViewCourse.innerHTML;
     }
 
+    const currentSemesterSelector = document.getElementById('semesterSelector');
+    const newSemesterSelector = doc.getElementById('semesterSelector');
+    if (currentSemesterSelector && newSemesterSelector) {
+        currentSemesterSelector.replaceWith(newSemesterSelector.cloneNode(true));
+    } else if (!currentSemesterSelector && newSemesterSelector) {
+        const toolbar = document.querySelector('.toolbar-compact');
+        if (toolbar) toolbar.before(newSemesterSelector.cloneNode(true));
+    } else if (currentSemesterSelector && !newSemesterSelector) {
+        currentSemesterSelector.remove();
+    }
+    const refreshedSemesterFilters = readCheckedSemesterFilters();
+    if (refreshedSemesterFilters.length) {
+        currentSemesterFilters = refreshedSemesterFilters;
+        USER_PREFERENCES.semester_filter = refreshedSemesterFilters.slice();
+    }
+
     const newTotalCount = doc.getElementById('totalCount');
     const newIgnoredCount = doc.getElementById('ignoredCount');
 
@@ -1757,6 +1822,9 @@ async function waitForCacheUpdate(prevTs, timeoutMs = 300000, intervalMs = 2500)
             if (!Number.isNaN(ts) && ts > prevTs) {
                 return { ts, pending: false };
             }
+            if (status.refresh_status === 'success' && !status.refresh_in_progress && !Number.isNaN(ts) && ts >= prevTs) {
+                return { ts, pending: false };
+            }
         } catch (err) {
             if (lastStatus && lastStatus.refresh_status === 'error') {
                 throw err;
@@ -1771,11 +1839,13 @@ async function waitForCacheUpdate(prevTs, timeoutMs = 300000, intervalMs = 2500)
     throw new Error("等待更新逾時");
 }
 
-async function refreshAssignments(background = true){
+async function refreshAssignments(background = true, semesterFilters = currentSemesterFilters){
     if (refreshInFlight) {
         return;
     }
     refreshInFlight = true;
+    let retryAfterCurrentRefresh = false;
+    const normalizedSemesters = normalizeSemesterFilters(semesterFilters);
     document.querySelectorAll('#manualRefreshBtn').forEach((button) => {
         button.disabled = true;
     });
@@ -1788,13 +1858,16 @@ async function refreshAssignments(background = true){
     
     const r = await fetch("{{ url_for('api_assignments') }}", {
         method:"POST",
-        credentials:"same-origin"
+        credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(normalizedSemesters.length ? {semesterFilters: normalizedSemesters} : {})
     });
     
     if(!r.ok){ throw new Error("HTTP " + r.status); }
     
     const response = await r.json();
     if (response.ok) {
+        retryAfterCurrentRefresh = !!response.in_progress && normalizedSemesters.length > 0;
         const prevTs = Number(currentCacheTs || 0);
         if (response.background) {
             const updateResult = await waitForCacheUpdate(prevTs);
@@ -1805,7 +1878,7 @@ async function refreshAssignments(background = true){
             currentCacheTs = updateResult.ts;
         }
         await fetchAndSwapContent();
-        showToast("資料已成功更新", "success");
+        if (!retryAfterCurrentRefresh) showToast("資料已成功更新", "success");
     } else {
         throw new Error("更新失敗");
     }
@@ -1827,6 +1900,9 @@ async function refreshAssignments(background = true){
         bgRefreshIndicator && bgRefreshIndicator.classList.remove('active');
     } else {
         hideLoader();
+    }
+    if (retryAfterCurrentRefresh) {
+        setTimeout(() => refreshAssignments(background, normalizedSemesters), 100);
     }
     }
 }
@@ -1877,6 +1953,21 @@ const STATUS_FILTER_LABELS = {
 };
 const STATUS_FILTER_KEYS = ['pending', 'completed', 'graded', 'overdue'];
 const DEFAULT_STATUS_FILTERS = ['pending'];
+
+function normalizeSemesterFilters(value) {
+    if (!Array.isArray(value)) return [];
+    const next = [];
+    value.forEach((item) => {
+        const key = String(item || '').trim().toLowerCase();
+        if (!/^\d{2,3}-(?:1|2|summer)$/.test(key) && key !== 'other') return;
+        if (!next.includes(key)) next.push(key);
+    });
+    return next;
+}
+
+function readCheckedSemesterFilters() {
+    return normalizeSemesterFilters(Array.from(document.querySelectorAll('[data-semester-filter]:checked')).map((input) => input.value));
+}
 
 let currentViewMode = (USER_PREFERENCES && USER_PREFERENCES.view_mode === 'course') ? 'course' : 'due';
 function normalizeStatusFilters(value) {
@@ -1933,6 +2024,9 @@ function syncStatusFilterButtons() {
 
 let currentStatusFilters = normalizeStatusFilters(USER_PREFERENCES && USER_PREFERENCES.status_filter);
 USER_PREFERENCES.status_filter = currentStatusFilters.slice();
+let currentSemesterFilters = normalizeSemesterFilters(USER_PREFERENCES && USER_PREFERENCES.semester_filter);
+if (!currentSemesterFilters.length) currentSemesterFilters = readCheckedSemesterFilters();
+USER_PREFERENCES.semester_filter = currentSemesterFilters.slice();
 USER_PREFERENCES.include_ignored_overdue = !!USER_PREFERENCES.include_ignored_overdue;
 if (!Array.isArray(USER_PREFERENCES.ignored_overdue_uids)) {
     USER_PREFERENCES.ignored_overdue_uids = [];
@@ -2202,6 +2296,7 @@ function customAssignmentRowHtml(item, flat = false) {
         data-ignored="0"
         data-uid="${escapeHtml(item.uid)}"
         data-course="${escapeHtml(item.course)}"
+        data-semester="custom"
         data-title="${escapeHtml(item.title)}"
         data-due="${escapeHtml(dueText)}"
         data-has-due="1"
@@ -2252,6 +2347,7 @@ function ensureCustomCourseSection(courseName) {
     if (existing) return existing.querySelector('tbody');
     const section = document.createElement('section');
     section.className = 'card course-card';
+    section.dataset.semester = 'custom';
     section.innerHTML = `
         <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
             <div><h2>${escapeHtml(courseName)} <span style="color:var(--muted);font-size:14px">#自訂</span></h2></div>
@@ -2365,7 +2461,7 @@ function renderIgnoredOverdueList() {
 
 function updateFilterSummary() {
     if (!filterActiveCount) return;
-    filterActiveCount.textContent = String(currentStatusFilters.length);
+    filterActiveCount.textContent = String(currentStatusFilters.length + currentSemesterFilters.length);
 }
 
 function updateCounts() {
@@ -2385,12 +2481,14 @@ function updateCounts() {
 function applyFilters(){
 const ignoredSet = getIgnoredOverdueUidSet();
 const selectedStatuses = new Set(currentStatusFilters);
+const selectedSemesters = new Set(currentSemesterFilters);
 
     document.querySelectorAll('#flatTable tbody tr').forEach(tr=>{
     const primaryStatus = tr.dataset.primaryStatus || 'pending';
     const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
     tr.dataset.ignored = ignored ? '1' : '0';
-    let visible = selectedStatuses.has(primaryStatus);
+    const semesterVisible = tr.dataset.semester === 'custom' || selectedSemesters.has(tr.dataset.semester || 'other');
+    let visible = semesterVisible && selectedStatuses.has(primaryStatus);
     if (primaryStatus === 'overdue' && ignored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
@@ -2399,13 +2497,17 @@ const selectedStatuses = new Set(currentStatusFilters);
     const primaryStatus = tr.dataset.primaryStatus || 'pending';
     const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
     tr.dataset.ignored = ignored ? '1' : '0';
-    let visible = selectedStatuses.has(primaryStatus);
+    const semesterVisible = tr.dataset.semester === 'custom' || selectedSemesters.has(tr.dataset.semester || 'other');
+    let visible = semesterVisible && selectedStatuses.has(primaryStatus);
     if (primaryStatus === 'overdue' && ignored) visible = false;
     tr.classList.toggle('hidden', !visible);
     });
 
     sortAssignmentTable(document.querySelector('#flatTable tbody'));
     document.querySelectorAll('.courseTable tbody').forEach((tbody) => sortAssignmentTable(tbody));
+    document.querySelectorAll('#viewCourse .course-card').forEach((card) => {
+        card.classList.toggle('hidden', !card.querySelector('tbody tr:not(.hidden)'));
+    });
     
     updateCounts();
     renderIgnoredOverdueList();
@@ -2428,6 +2530,16 @@ function persistPreferences(partial = {}){
         currentStatusFilters = nextFilters.slice();
         payload.statusFilters = nextFilters.slice();
     }
+    if (Object.prototype.hasOwnProperty.call(partial, 'semesterFilters') || Object.prototype.hasOwnProperty.call(partial, 'semesterFilter')) {
+        const nextSemesters = normalizeSemesterFilters(
+            Object.prototype.hasOwnProperty.call(partial, 'semesterFilters') ? partial.semesterFilters : partial.semesterFilter
+        );
+        if (nextSemesters.length) {
+            USER_PREFERENCES.semester_filter = nextSemesters.slice();
+            currentSemesterFilters = nextSemesters.slice();
+            payload.semesterFilters = nextSemesters.slice();
+        }
+    }
     if (Object.prototype.hasOwnProperty.call(partial, 'ignoredOverdueUids')) {
         setIgnoredOverdueUids(partial.ignoredOverdueUids);
         payload.ignoredOverdueUids = USER_PREFERENCES.ignored_overdue_uids.slice();
@@ -2445,6 +2557,7 @@ function applyServerPreferenceState(nextPrefs){
     const incoming = {
         view_mode: nextPrefs.view_mode === 'due' ? 'due' : 'course',
         status_filter: normalizeStatusFilters(nextPrefs.status_filter ?? nextPrefs.statusFilters),
+        semester_filter: normalizeSemesterFilters(nextPrefs.semester_filter ?? nextPrefs.semesterFilters),
         include_ignored_overdue: !!nextPrefs.include_ignored_overdue,
         ignored_overdue_uids: Array.isArray(nextPrefs.ignored_overdue_uids) ? nextPrefs.ignored_overdue_uids : [],
     };
@@ -2456,6 +2569,13 @@ function applyServerPreferenceState(nextPrefs){
     USER_PREFERENCES.view_mode = incoming.view_mode;
     USER_PREFERENCES.status_filter = incoming.status_filter.slice();
     currentStatusFilters = incoming.status_filter.slice();
+    if (incoming.semester_filter.length) {
+        USER_PREFERENCES.semester_filter = incoming.semester_filter.slice();
+        currentSemesterFilters = incoming.semester_filter.slice();
+        document.querySelectorAll('[data-semester-filter]').forEach((input) => {
+            input.checked = currentSemesterFilters.includes(input.value);
+        });
+    }
     setIgnoredOverdueUids(incoming.ignored_overdue_uids);
     syncStatusFilterButtons();
     updateFilterSummary();
@@ -2597,6 +2717,26 @@ if (statusFilterGroup) {
         });
     });
 }
+
+let semesterRefreshTimer = null;
+document.addEventListener('change', (evt) => {
+    const checkbox = evt.target.closest('[data-semester-filter]');
+    if (!checkbox || IS_READONLY_VIEW) return;
+    const nextSemesters = readCheckedSemesterFilters();
+    if (!nextSemesters.length) {
+        checkbox.checked = true;
+        showToast('請至少保留一個學期。', 'warning');
+        return;
+    }
+    currentSemesterFilters = nextSemesters;
+    USER_PREFERENCES.semester_filter = nextSemesters.slice();
+    applyFilters();
+    updateFilterSummary();
+    persistPreferences({ semesterFilters: nextSemesters });
+    if (IS_GUEST) return;
+    if (semesterRefreshTimer) clearTimeout(semesterRefreshTimer);
+    semesterRefreshTimer = setTimeout(() => refreshAssignments(true, nextSemesters), 350);
+});
 
 if (viewCourseBtn) {
     viewCourseBtn.addEventListener('click', ()=>setView('course'));

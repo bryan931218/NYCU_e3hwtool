@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+import re
 from typing import Any, Dict, List, Optional, Sequence, Set
 
 import requests
@@ -30,6 +31,7 @@ class CollectOptions:
     include_completed: bool = False
     all_courses: bool = False
     all_courses_all_terms: bool = False
+    semester_keys: Optional[Sequence[str]] = None
     username: Optional[str] = None
     password: Optional[str] = None
     moodle_session: Optional[str] = None
@@ -60,6 +62,130 @@ def _current_term_labels(now: Optional[datetime] = None) -> Sequence[str]:
         tags.append(f"【{roc}{s}】")
         tags.append(f"【{roc} {s}】")
     return tags
+
+
+def current_semester_key(now: Optional[datetime] = None) -> str:
+    now = now or datetime.now(TAIPEI_TZ)
+    if now.month >= 8:
+        return f"{now.year - 1911}-1"
+    if now.month == 1:
+        return f"{now.year - 1912}-1"
+    return f"{now.year - 1912}-2"
+
+
+def parse_course_semester(title: Any, now: Optional[datetime] = None) -> Dict[str, Any]:
+    text = str(title or "").strip()
+    current_key = current_semester_key(now)
+    year: Optional[int] = None
+    term: Optional[str] = None
+
+    roc_match = re.search(r"(?:[\[【(（]\s*)?(\d{2,3})\s*(上|下|暑)(?:學期)?\s*(?:[\]】)）])?", text, re.IGNORECASE)
+    if roc_match:
+        year = int(roc_match.group(1))
+        term = {"上": "1", "下": "2", "暑": "summer"}.get(roc_match.group(2))
+    if year is None:
+        numeric_match = re.search(r"(?<!\d)(\d{2,3})\s*[-/]\s*([12])(?!\d)", text)
+        if numeric_match:
+            year = int(numeric_match.group(1))
+            term = numeric_match.group(2)
+    if year is None:
+        western_match = re.search(r"(?<!\d)(20\d{2})\s*[-/]?\s*(Fall|Autumn|Spring|Summer)\b", text, re.IGNORECASE)
+        if western_match:
+            calendar_year = int(western_match.group(1))
+            season = western_match.group(2).lower()
+            year = calendar_year - 1911 if season in {"fall", "autumn"} else calendar_year - 1912
+            term = "1" if season in {"fall", "autumn"} else ("2" if season == "spring" else "summer")
+
+    if year is None or term is None:
+        return {
+            "key": "other",
+            "label": "其他課程",
+            "sort_key": (-1, -1),
+            "is_current": False,
+        }
+
+    term_label = {"1": "上學期", "2": "下學期", "summer": "暑期"}[term]
+    key = f"{year}-{term}"
+    term_order = {"1": 1, "2": 2, "summer": 3}[term]
+    return {
+        "key": key,
+        "label": f"{year} {term_label}",
+        "sort_key": (year, term_order),
+        "is_current": key == current_key,
+    }
+
+
+def normalize_semester_keys(value: Any) -> List[str]:
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    normalized: List[str] = []
+    for item in value:
+        key = str(item or "").strip().lower()
+        if key != "other" and not re.fullmatch(r"\d{2,3}-(?:1|2|summer)", key):
+            continue
+        if key not in normalized:
+            normalized.append(key)
+    return normalized[:12]
+
+
+def _semester_catalog(courses: Sequence[Dict[str, Any]], now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for course in courses:
+        semester = parse_course_semester(course.get("title"), now)
+        course.update(semester_key=semester["key"], semester_label=semester["label"])
+        entry = grouped.setdefault(
+            semester["key"],
+            {
+                "key": semester["key"],
+                "label": semester["label"],
+                "course_count": 0,
+                "is_current": semester["is_current"],
+                "sort_key": semester["sort_key"],
+            },
+        )
+        entry["course_count"] += 1
+    ordered = sorted(grouped.values(), key=lambda item: item["sort_key"], reverse=True)
+    for item in ordered:
+        item.pop("sort_key", None)
+    return ordered
+
+
+def annotate_result_semesters(
+    result: Optional[Dict[str, Any]],
+    *,
+    selected_keys: Optional[Sequence[str]] = None,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(result, dict):
+        return result
+    courses = result.get("courses")
+    if not isinstance(courses, list):
+        courses = []
+    catalog = _semester_catalog([course for course in courses if isinstance(course, dict)])
+    course_semesters = {
+        str(course.get("id")): (course.get("semester_key"), course.get("semester_label"))
+        for course in courses
+        if isinstance(course, dict)
+    }
+    for item in result.get("all_assignments") or []:
+        if not isinstance(item, dict):
+            continue
+        key, label = course_semesters.get(str(item.get("course_id")), (None, None))
+        if not key:
+            semester = parse_course_semester(item.get("course_title"))
+            key, label = semester["key"], semester["label"]
+        item["semester_key"] = key
+        item["semester_label"] = label
+    if not isinstance(result.get("available_semesters"), list) or (not result.get("available_semesters") and catalog):
+        result["available_semesters"] = catalog
+    selected = normalize_semester_keys(selected_keys)
+    if not selected:
+        selected = normalize_semester_keys(result.get("selected_semesters"))
+    if not selected:
+        selected = [item["key"] for item in catalog]
+    result["selected_semesters"] = selected
+    return result
 
 
 def gather_my_courses(
@@ -161,6 +287,21 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
             }
         ]
 
+    available_semesters = _semester_catalog(courses)
+    requested_semesters = normalize_semester_keys(options.semester_keys)
+    if options.semester_keys is not None:
+        selected_set = set(requested_semesters)
+        selected_courses = [course for course in courses if course.get("semester_key") in selected_set]
+        if not selected_courses and requested_semesters == [current_semester_key()]:
+            fallback = next((item["key"] for item in available_semesters if item["key"] != "other"), None)
+            if fallback:
+                requested_semesters = [fallback]
+                selected_set = {fallback}
+                selected_courses = [course for course in courses if course.get("semester_key") in selected_set]
+        courses = selected_courses
+    else:
+        requested_semesters = [item["key"] for item in available_semesters]
+
     per_course = []
     all_results: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
@@ -249,6 +390,8 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                     item = {
                         "course_id": cid,
                         "course_title": ctitle,
+                        "semester_key": course.get("semester_key", "other"),
+                        "semester_label": course.get("semester_label", "其他課程"),
                         "title": title,
                         "url": url,
                         "due_at": due_str,
@@ -272,6 +415,8 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                     {
                         "course_id": cid,
                         "course_title": ctitle,
+                        "semester_key": course.get("semester_key", "other"),
+                        "semester_label": course.get("semester_label", "其他課程"),
                         "title": title,
                         "url": url,
                         "due_at": "",
@@ -302,6 +447,8 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                 "id": cid,
                 "title": ctitle,
                 "url": course.get("url"),
+                "semester_key": course.get("semester_key", "other"),
+                "semester_label": course.get("semester_label", "其他課程"),
                 "assignments": course_results,
                 "detected_assign_links": len(assign_links),
             }
@@ -315,4 +462,6 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
         "debug_files": created_debug,
         "errors": errors,
         "login_method": login_method,
+        "available_semesters": available_semesters,
+        "selected_semesters": requested_semesters,
     }
