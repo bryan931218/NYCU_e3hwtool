@@ -18,8 +18,9 @@ body.study-center-page {
     overflow-x: hidden;
     color: var(--study-ink);
     background:
-        linear-gradient(120deg, rgba(220, 239, 255, .78) 0, rgba(239, 247, 255, .34) 38%, rgba(238, 233, 255, .48) 100%) 0 0 / 100% 310px no-repeat,
-        linear-gradient(180deg, #f8fbff 0, var(--study-canvas) 500px) !important;
+        linear-gradient(180deg, transparent 36%, var(--study-canvas) 100%) 0 0 / 100% 520px no-repeat,
+        linear-gradient(120deg, rgba(220, 239, 255, .78) 0, rgba(239, 247, 255, .34) 38%, rgba(238, 233, 255, .48) 100%) 0 0 / 100% 520px no-repeat,
+        var(--study-canvas) !important;
     font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
     letter-spacing: 0;
 }
@@ -242,7 +243,46 @@ body.study-center-page {
     backdrop-filter: blur(16px) saturate(1.1);
 }
 
-.study-recall-page.workspace-ready .page-head { min-height: 72px !important; }
+.study-recall-page .workspace-ready .page-head { min-height: 72px !important; }
+
+/* The recall workspace owns its internal hierarchy; avoid turning every nested
+   work surface into another card. */
+.study-recall-page .workspace-ready .workspace-pane > .panel,
+.study-recall-page .workspace-ready .library-panel {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.study-recall-page .workspace-ready .side-stack {
+    padding: 15px !important;
+    border: 1px solid var(--study-line) !important;
+    border-radius: 12px !important;
+    background: var(--study-paper) !important;
+    box-shadow: var(--study-shadow) !important;
+}
+
+.study-recall-page .workspace-ready #note-library-search {
+    padding: 14px !important;
+    border: 1px solid var(--study-line) !important;
+    border-radius: 12px !important;
+    background: var(--study-paper) !important;
+    box-shadow: var(--study-shadow) !important;
+}
+
+.study-recall-page .workspace-ready #note-library-search .panel-static-content {
+    padding: 0 !important;
+}
+
+.study-recall-page .workspace-ready #selected-note-panel {
+    position: relative;
+    padding: 24px !important;
+    border: 1px solid var(--study-line) !important;
+    border-radius: 12px !important;
+    background: #fff !important;
+    box-shadow: var(--study-shadow) !important;
+}
 
 @media (max-width: 960px) {
     .study-center-page .study-nav {
@@ -307,6 +347,12 @@ body.study-center-page {
     .study-center-page .library-stats,
     .study-center-page .toolbar,
     .study-center-page .marker-row { border-radius: 10px !important; }
+    .study-recall-page .workspace-ready .side-stack,
+    .study-recall-page .workspace-ready #note-library-search,
+    .study-recall-page .workspace-ready #selected-note-panel { border-radius: 10px !important; }
+    .study-recall-page .workspace-ready .side-stack,
+    .study-recall-page .workspace-ready #note-library-search { padding: 12px !important; }
+    .study-recall-page .workspace-ready #selected-note-panel { padding: 16px !important; }
     .study-markers-page .toolbar { top: 0 !important; }
 }
 
