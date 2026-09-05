@@ -526,8 +526,8 @@
     </style>
     <style>
         /* Task views share existing controls so switching never resets a form. */
-        body { background:#f5f7fa; }
-        .shell { width:min(1520px,100%); padding:24px 28px 48px; }
+        body { background:#f3f6fa; }
+        .shell { width:min(1520px,100%); padding:20px 28px 48px; }
         .page-head { min-height:0; padding:0 0 20px; margin:0; border:0; border-radius:0; background:none; box-shadow:none; }
         .page-head::after { display:none; }
         .page-head h1 { font-size:28px; letter-spacing:0; padding-left:14px; border-left:4px solid var(--teal); line-height:1.2; }
@@ -663,6 +663,55 @@
         .workspace-ready .favorite-zone .panel-head { padding:0 0 16px; }
         .workspace-ready .favorite-body { padding:16px 0; }
         .workspace-ready * { letter-spacing:0; }
+        .workspace-ready .page-head { display:flex; flex-wrap:wrap; align-items:center; gap:16px 32px; padding:0 0 16px; margin-bottom:22px; border-bottom:1px solid var(--line); }
+        .workspace-ready .page-head h1 { font-size:23px; padding:0; border:0; white-space:nowrap; }
+        .workspace-ready .page-head .today { display:none; }
+        .workspace-ready .page-head .recall-shortcuts { flex:1; margin:0; border:0; justify-content:flex-end; }
+        .workspace-ready .page-head .recall-shortcuts a { min-height:40px; font-size:13px; }
+        .workspace-ready .side-stack { border:0; padding-right:6px; }
+        .workspace-ready .library-panel > details > summary { padding-bottom:14px; }
+        .workspace-ready .library-panel h2 { font-size:15px; }
+        .workspace-ready .side-stack .history { max-height:none; overflow:visible; }
+        .workspace-ready .subject-library-groups { max-height:calc(100dvh - 340px); overflow-y:auto; padding-right:8px; scrollbar-width:thin; }
+        .workspace-ready .subject-library-select { width:100%; height:36px; padding:0 10px; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:6px; font-size:12px; }
+        .workspace-ready .subject-library-subject small { display:none; }
+        .workspace-ready .subject-library-list .history-note { padding:0; margin:3px 0; }
+        .workspace-ready .subject-library-list .queue-item { padding:12px; }
+        .workspace-ready .subject-library-list .queue-meta { font-size:11px; }
+        .workspace-ready .subject-library-list .history-note form { display:none; }
+        .workspace-ready .subject-library-group > summary { padding:12px 4px; }
+        .workspace-ready .subject-library-group[open] > summary { border:0; }
+        .workspace-ready .subject-library-meta { font-size:10px; }
+        .workspace-ready .workspace-pane[data-pane="library"] { gap:20px; }
+        .workspace-ready #note-library-search { background:transparent; }
+        .workspace-ready #note-library-search .panel-static-head { display:none; }
+        .workspace-ready #note-library-search .panel-static-content { background:none; padding:0; }
+        .workspace-ready #note-library-search .note-search-primary input { min-height:44px; font-size:14px; }
+        .workspace-ready #note-library-search .note-search-primary .submit { min-height:44px; box-shadow:none; }
+        .workspace-ready .note-search-form { gap:8px; }
+        .workspace-ready .note-search-filters { display:flex; flex-wrap:wrap; gap:4px 12px; }
+        .workspace-ready .note-search-filters select { flex:0 1 auto; width:auto; max-width:220px; min-height:30px; border:0; border-radius:0; padding:4px 24px 4px 0; background-color:transparent; }
+        .workspace-ready .note-search-support { margin:0; min-height:0; }
+        .workspace-ready .note-search-support:has(.note-search-status:empty):has(.note-search-history[hidden]) { display:none; }
+        .workspace-ready #selected-note-panel { padding:24px; background:#fff; border:0; border-top:3px solid #138b8d; }
+        .workspace-ready .session-head { position:relative; padding:0 120px 18px 0; min-height:0; }
+        .workspace-ready .session-head > .eyebrow { display:none; }
+        .workspace-ready .session-title-row h2 { font-size:23px; }
+        .workspace-ready .session-meta { gap:12px; margin-top:8px; }
+        .workspace-ready .session-meta .chip { padding:0; border:0; background:none; font-size:12px; font-weight:500; }
+        .workspace-ready .note-tools { position:absolute; right:0; top:0; z-index:5; }
+        .workspace-ready .note-tools > summary { color:var(--muted); padding:7px 10px; border:1px solid var(--line); border-radius:5px; cursor:pointer; font-size:12px; }
+        .workspace-ready .note-tools[open] { width:300px; max-width:100%; padding:12px; border:1px solid var(--line); background:#fff; box-shadow:0 8px 24px #17203315; border-radius:6px; }
+        .workspace-ready .note-tools[open] > summary { margin-bottom:12px; }
+        .workspace-ready .note-tools .session-actions { margin:0 0 12px; }
+        .workspace-ready .note-tools .rename-note-panel { padding:8px 0; }
+        .workspace-ready .note-tools .rename-note-form { display:flex; flex-wrap:wrap; }
+        .workspace-ready .note-tools .rename-note-form input { min-width:0; flex:1 1 140px; }
+        .workspace-ready .topic-index { margin:0 0 6px; padding:0 0 14px; }
+        .workspace-ready .topic-index a { min-height:28px; background:#eef6f7; border:0; color:#07777b; }
+        .workspace-ready .topic-section-head { min-height:48px; padding:12px 0; }
+        .workspace-ready .concept-fold { border-color:#dee7ef; }
+        .workspace-ready .concept-fold-head { background:#f7f9fc; border-radius:7px 7px 0 0; margin-bottom:12px; }
         @media (max-width:1050px) {
             .workspace-ready .layout { grid-template-columns:220px minmax(0,1fr); gap:18px; }
             .workspace-ready .topic-section .concepts { grid-template-columns:minmax(0,1fr); }
@@ -693,6 +742,14 @@
             .workspace-ready .library-ai-scope { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .workspace-ready .schedule-panel .queue { grid-template-columns:repeat(4,minmax(0,1fr)); }
             .workspace-ready .favorite-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .workspace-ready .page-head { display:block; margin-bottom:16px; padding-bottom:0; }
+            .workspace-ready .page-head .recall-shortcuts { justify-content:flex-start; margin-top:12px; }
+            .workspace-ready .subject-library-groups { max-height:300px; }
+            .workspace-ready #selected-note-panel { padding:16px; }
+            .workspace-ready .session-head { padding-right:0; padding-top:40px; }
+            .workspace-ready .session-title-row h2 { font-size:20px; }
+            .workspace-ready .note-search-filters { display:grid; grid-template-columns:1fr 1fr; }
+            .workspace-ready .note-search-filters select { width:100%; max-width:none; }
         }
     </style>
 </head>
@@ -830,7 +887,7 @@
                     {% if review_cards|length > 4 %}</details>{% endif %}
                 </article>
                 {% if selected_session %}
-                <article id="selected-note-panel" class="panel">
+                <article id="selected-note-panel" class="panel" data-session-id="{{ selected_session.id }}">
                     <div id="note-review" class="session-head"><p class="eyebrow">NOTE {{ selected_session.study_date }}</p><div class="session-title-row"><h2>{{ selected_session.title }}</h2><form method="post" action="{{ url_for('admin_study_recall_delete', session_id=selected_session.id) }}" onsubmit="return window.confirm('確定刪除這份筆記及所有重點卡、複習紀錄與原始圖片？');"><button class="delete-note" type="submit">刪除筆記</button></form></div><div class="session-meta"><span class="chip">{{ selected_session.subject }}</span><span class="chip">{{ selected_session.image_filenames|length }} 張照片</span><span class="chip">複習 {{ selected_session.review_count }} 次</span>{% if selected_session.next_review_at %}<span class="chip">下次 {{ selected_session.next_review_at }}</span>{% endif %}</div><div class="session-actions"><button class="fold-command" type="button" data-fold-action="open" data-fold-scope="#selected-note-panel">展開重點</button><button class="fold-command" type="button" data-fold-action="close" data-fold-scope="#selected-note-panel">收合重點</button>{% if selected_session.source_location_total %}<button class="source-localize-button" type="button" data-source-localize-url="{{ url_for('admin_study_recall_localize_sources', session_id=selected_session.id) }}?force=1" {% if not openai_ready %}disabled title="AI 來源定位尚未啟用"{% endif %}>{% if selected_session.source_location_refined_count < selected_session.source_location_total %}改善定位 {{ selected_session.source_location_count }}/{{ selected_session.source_location_total }}{% else %}重新定位{% endif %}</button><span class="source-localize-status" data-source-localize-status aria-live="polite"></span>{% endif %}</div></div>
                     <details class="note-settings"><summary>重新命名筆記</summary><div class="rename-note-panel"><form class="rename-note-form" method="post" action="{{ url_for('admin_study_recall_rename', session_id=selected_session.id) }}"><input name="title" type="text" value="{{ selected_session.title }}" maxlength="120" aria-label="筆記名稱" required><button class="rename-note-save" type="submit">儲存名稱</button></form></div></details>
                     <nav class="topic-index" aria-label="目前筆記的觀念主題">{% for group in selected_session.concept_groups %}<a href="#concept-{{ group.concepts[0].display_index }}">{{ group.topic }} <span>{{ group.concepts|length }} 張</span></a>{% endfor %}</nav>
@@ -3140,7 +3197,7 @@
                 panes.set(name, pane);
                 return pane;
             };
-            shell.insertBefore(nav, layout);
+            document.querySelector('.page-head').appendChild(nav);
             nav.setAttribute('role', 'tablist');
             makePane('library', ['#note-library-search', '#selected-note-panel', '.main-stack > .empty']);
             makePane('review', ['#review-zone', '.quick-review-launch', '.schedule-panel', '.rhythm-panel']);
@@ -3160,6 +3217,19 @@
             const review = document.getElementById('review-zone');
             review.querySelector('details.review-zone-fold')?.setAttribute('open', '');
             document.querySelector('#new-note > details')?.setAttribute('open', '');
+            const noteHead = document.querySelector('#selected-note-panel .session-head');
+            if (noteHead) {
+                const tools = document.createElement('details');
+                tools.className = 'note-tools';
+                const summary = document.createElement('summary');
+                summary.textContent = '筆記管理';
+                tools.appendChild(summary);
+                const actions = noteHead.querySelector('.session-actions');
+                const rename = document.querySelector('#selected-note-panel > .note-settings');
+                const deletion = noteHead.querySelector('.session-title-row > form');
+                [actions, rename, deletion].forEach(node => { if (node) tools.appendChild(node); });
+                noteHead.appendChild(tools);
+            }
             const libraryFold = document.querySelector('[data-recall-fold="library"]');
             const mobileLayout = window.matchMedia('(max-width:760px)');
             const syncLibraryLayout = () => { if (libraryFold) libraryFold.open = !mobileLayout.matches; };

@@ -56,7 +56,7 @@
     if (!notes.length) return;
 
     const preferredOrder = ['線性代數', '離散數學', '資料結構', '作業系統', '計算機組織', '演算法'];
-    const currentSessionId = new URL(window.location.href).searchParams.get('session_id') || '';
+    const currentSessionId = new URL(window.location.href).searchParams.get('session_id') || document.querySelector('#selected-note-panel')?.dataset.sessionId || '';
     const entries = notes.map((note) => {
         const link = note.querySelector('a.queue-item');
         const titleNode = note.querySelector('.queue-title');
@@ -104,7 +104,7 @@
         '    <input type="search" data-subject-library-search placeholder="搜尋筆記名稱、科目或日期…" aria-label="搜尋筆記">',
         '    <button class="subject-library-search-clear" type="button" data-subject-library-clear aria-label="清除搜尋">×</button>',
         '  </div>',
-        '  <div class="subject-library-tabs" data-subject-library-tabs></div>',
+        '  <select class="subject-library-select" aria-label="筆記目錄科目" data-subject-library-tabs></select>',
         '  <div class="subject-library-meta">',
         '    <span data-subject-library-result></span>',
         '    <span class="subject-library-actions">',
@@ -125,12 +125,11 @@
     const groupNodes = new Map();
 
     const createTab = (subject, count, active = false) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `subject-library-tab${active ? ' is-active' : ''}`;
-        button.dataset.subject = subject;
-        button.innerHTML = `<span>${subject}</span><span class="subject-library-tab-count">${count}</span>`;
-        tabsNode.appendChild(button);
+        const option = document.createElement('option');
+        option.value = subject;
+        option.selected = active;
+        option.textContent = `${subject} (${count})`;
+        tabsNode.appendChild(option);
     };
     createTab('全部', entries.length, true);
     subjects.forEach((subject) => createTab(subject, grouped.get(subject).length));
@@ -186,11 +185,8 @@
         emptyNode.hidden = visibleNotes !== 0;
     };
 
-    tabsNode.addEventListener('click', (event) => {
-        const button = event.target.closest('.subject-library-tab');
-        if (!button) return;
-        selectedSubject = button.dataset.subject || '全部';
-        tabsNode.querySelectorAll('.subject-library-tab').forEach((tab) => tab.classList.toggle('is-active', tab === button));
+    tabsNode.addEventListener('change', () => {
+        selectedSubject = tabsNode.value || '全部';
         if (selectedSubject !== '全部') groupNodes.get(selectedSubject)?.setAttribute('open', '');
         applyFilter();
     });
