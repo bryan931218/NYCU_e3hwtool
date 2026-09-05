@@ -1,6 +1,8 @@
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from html import unescape
+import json
 import re
 from typing import Any, Dict, List, Optional, Sequence, Set
 
@@ -42,29 +44,6 @@ class CollectOptions:
     debug: bool = False
 
 
-def _current_term_labels(now: Optional[datetime] = None) -> Sequence[str]:
-    now = now or datetime.now(TAIPEI_TZ)
-    y = now.year
-    m = now.month
-    if m >= 8:
-        roc = y - 1911
-        sem = "上"
-        seasons = ["上", "Fall", "Autumn"]
-    elif m == 1:
-        roc = (y - 1) - 1911
-        sem = "上"
-        seasons = ["上", "Fall", "Autumn"]
-    else:
-        roc = (y - 1) - 1911
-        sem = "下"
-        seasons = ["下", "Spring"]
-    tags = []
-    for s in seasons:
-        tags.append(f"【{roc}{s}】")
-        tags.append(f"【{roc} {s}】")
-    return tags
-
-
 def current_semester_key(now: Optional[datetime] = None) -> str:
     now = now or datetime.now(TAIPEI_TZ)
     if now.month >= 8:
@@ -80,10 +59,33 @@ def parse_course_semester(title: Any, now: Optional[datetime] = None) -> Dict[st
     year: Optional[int] = None
     term: Optional[str] = None
 
-    roc_match = re.search(r"(?:[\[【(（]\s*)?(\d{2,3})\s*(上|下|暑)(?:學期)?\s*(?:[\]】)）])?", text, re.IGNORECASE)
+    roc_match = re.search(
+        r"(?<!\d)(?:[\[【(（]\s*)?(\d{2,3})(?!\d)\s*(上|下|暑)(?:學期)?\s*(?:[\]】)）])?",
+        text,
+        re.IGNORECASE,
+    )
     if roc_match:
         year = int(roc_match.group(1))
         term = {"上": "1", "下": "2", "暑": "summer"}.get(roc_match.group(2))
+    if year is None:
+        academic_match = re.search(
+            r"(?<!\d)(\d{2,3})\s*學年度\s*(?:第\s*)?([12])\s*學期",
+            text,
+            re.IGNORECASE,
+        )
+        if academic_match:
+            year = int(academic_match.group(1))
+            term = academic_match.group(2)
+    if year is None:
+        roc_season_match = re.search(
+            r"(?<!\d)(?:[\[【(（]\s*)?(\d{2,3})(?!\d)\s*(Fall|Autumn|Spring|Summer)\b",
+            text,
+            re.IGNORECASE,
+        )
+        if roc_season_match:
+            year = int(roc_season_match.group(1))
+            season = roc_season_match.group(2).lower()
+            term = "1" if season in {"fall", "autumn"} else ("2" if season == "spring" else "summer")
     if year is None:
         numeric_match = re.search(r"(?<!\d)(\d{2,3})\s*[-/]\s*([12])(?!\d)", text)
         if numeric_match:
@@ -192,16 +194,18 @@ def annotate_result_semesters(
 def _extract_moodle_sesskey(html_text: str) -> Optional[str]:
     if not html_text:
         return None
+    decoded_html = unescape(html_text)
     patterns = (
         r'"sesskey"\s*:\s*"([^"\\]+)"',
         r"'sesskey'\s*:\s*'([^'\\]+)'",
+        r"data-sesskey\s*=\s*[\"']([^\"']+)[\"']",
         r"[?&]sesskey=([A-Za-z0-9_-]+)",
     )
     for pattern in patterns:
-        match = re.search(pattern, html_text)
+        match = re.search(pattern, decoded_html, re.IGNORECASE)
         if match:
             return unescape(match.group(1)).strip()
-    soup = BeautifulSoup(html_text, "html.parser")
+    soup = BeautifulSoup(decoded_html, "html.parser")
     sesskey_input = soup.find("input", attrs={"name": "sesskey"})
     if sesskey_input and sesskey_input.get("value"):
         return str(sesskey_input["value"]).strip()
@@ -243,56 +247,117 @@ def _gather_timeline_courses(
     *,
     timeout: int,
 ) -> List[Dict[str, Any]]:
-    classifications = ("all", "past", "inprogress", "future", "hidden")
-    commands = [
-        {
-            "index": index,
-            "methodname": "core_course_get_enrolled_courses_by_timeline_classification",
-            "args": {
-                "offset": 0,
-                "limit": 0,
-                "classification": classification,
-                "sort": "fullname ASC",
-            },
-        }
-        for index, classification in enumerate(classifications)
-    ]
-    endpoint = (
-        f"{base_url.rstrip('/')}/lib/ajax/service.php"
-        f"?sesskey={sesskey}&info=core_course_get_enrolled_courses_by_timeline_classification"
-    )
-    response = safe_request(
-        sess,
-        "POST",
-        endpoint,
-        headers={**HEADERS, "Content-Type": "application/json"},
-        json=commands,
-        timeout=timeout,
-    )
-    payload = response.json()
-    if not isinstance(payload, list):
+    found: Dict[int, Dict[str, Any]] = {}
+
+    def collect_payload(payload: Any) -> None:
+        if not isinstance(payload, list):
+            return
+        for result in payload:
+            if not isinstance(result, dict) or result.get("error"):
+                continue
+            data = result.get("data")
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except (TypeError, ValueError):
+                    continue
+            if isinstance(data, dict):
+                courses = data.get("courses") or []
+            elif isinstance(data, list):
+                courses = data
+            else:
+                courses = []
+            for course in courses:
+                if not isinstance(course, dict):
+                    continue
+                _merge_course(
+                    found,
+                    course_id=course.get("id") or course.get("courseid"),
+                    title=(
+                        course.get("fullname")
+                        or course.get("displayname")
+                        or course.get("fullnamedisplay")
+                        or course.get("shortname")
+                    ),
+                    url=course.get("viewurl") or course.get("url"),
+                    base_url=base_url,
+                )
+
+    def call_ajax(method_name: str, args: Dict[str, Any]) -> None:
+        endpoint = f"{base_url.rstrip('/')}/lib/ajax/service.php?sesskey={sesskey}"
+        response = safe_request(
+            sess,
+            "POST",
+            endpoint,
+            headers={**HEADERS, "Accept": "application/json", "Content-Type": "application/json"},
+            json=[{"index": 0, "methodname": method_name, "args": args}],
+            timeout=timeout,
+        )
+        collect_payload(response.json())
+
+    timeline_method = "core_course_get_enrolled_courses_by_timeline_classification"
+    common_args = {"offset": 0, "limit": 0, "sort": "fullname"}
+    try:
+        call_ajax(timeline_method, {**common_args, "classification": "allincludinghidden"})
+    except Exception:
+        pass
+    if found:
+        return list(found.values())
+
+    for classification in ("all", "past", "inprogress", "future", "hidden"):
+        try:
+            call_ajax(timeline_method, {**common_args, "classification": classification})
+        except Exception:
+            continue
+
+    try:
+        call_ajax(
+            "core_course_get_recent_courses",
+            {"userid": 0, "limit": 0, "offset": 0, "sort": "fullname"},
+        )
+    except Exception:
+        pass
+    return list(found.values())
+
+
+def _gather_embedded_courses(html_text: str, base_url: str) -> List[Dict[str, Any]]:
+    if not html_text:
         return []
     found: Dict[int, Dict[str, Any]] = {}
-    for result in payload:
-        if not isinstance(result, dict) or result.get("error"):
-            continue
-        data = result.get("data")
-        if isinstance(data, dict):
-            courses = data.get("courses") or []
-        elif isinstance(data, list):
-            courses = data
-        else:
-            courses = []
-        for course in courses:
-            if not isinstance(course, dict):
-                continue
+    soup = BeautifulSoup(html_text, "html.parser")
+    for attr_name in ("data-course-id", "data-courseid"):
+        for element in soup.find_all(attrs={attr_name: True}):
+            title = (
+                element.get("data-course-name")
+                or element.get("data-fullname")
+                or element.get("aria-label")
+                or extract_text(element)
+            )
             _merge_course(
                 found,
-                course_id=course.get("id"),
-                title=course.get("fullname") or course.get("displayname") or course.get("shortname"),
-                url=course.get("viewurl"),
+                course_id=element.get(attr_name),
+                title=title,
+                url=None,
                 base_url=base_url,
             )
+
+    decoded_html = unescape(html_text)
+    json_course_pattern = re.compile(
+        r'["\'](?:id|courseid)["\']\s*:\s*["\']?(\d+)["\']?'
+        r'.{0,600}?["\'](?:fullname|displayname|shortname)["\']\s*:\s*["\']([^"\']+)',
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in json_course_pattern.finditer(decoded_html):
+        title = match.group(2).replace(r"\/", "/")
+        if parse_course_semester(title)["key"] == "other":
+            continue
+        _merge_course(
+            found,
+            course_id=match.group(1),
+            title=title,
+            url=None,
+            base_url=base_url,
+        )
     return list(found.values())
 
 
@@ -314,16 +379,30 @@ def gather_my_courses(
                 f"{base_url}/my/courses.php?classification=all",
                 f"{base_url}/my/courses.php?classification=past",
                 f"{base_url}/my/courses.php?classification=hidden",
+                f"{base_url}/grade/report/overview/index.php",
+                f"{base_url}/calendar/view.php?view=month",
+                f"{base_url}/calendar/export.php",
             ]
         )
     found: Dict[int, Dict[str, Any]] = {}
-    current_tags = _current_term_labels()
+    current_key = current_semester_key()
     sesskey: Optional[str] = None
     for url in pages:
         try:
             resp = safe_request(sess, "GET", url, headers=HEADERS, timeout=timeout)
             if not sesskey:
                 sesskey = _extract_moodle_sesskey(resp.text)
+            for course in _gather_embedded_courses(resp.text, base_url):
+                course_title = str(course.get("title") or "")
+                if only_current_term and parse_course_semester(course_title)["key"] != current_key:
+                    continue
+                _merge_course(
+                    found,
+                    course_id=course.get("id"),
+                    title=course_title,
+                    url=course.get("url"),
+                    base_url=base_url,
+                )
             soup = BeautifulSoup(resp.text, "html.parser")
             for a_tag in soup.find_all("a", href=True):
                 match = COURSE_LINK_RE.search(a_tag["href"])
@@ -331,7 +410,7 @@ def gather_my_courses(
                     continue
                 cid = int(match.group(1))
                 title = extract_text(a_tag)
-                if only_current_term and not any(tag.lower() in title.lower() for tag in current_tags):
+                if only_current_term and parse_course_semester(title)["key"] != current_key:
                     continue
                 _merge_course(
                     found,
@@ -600,3 +679,78 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
         "available_semesters": available_semesters,
         "selected_semesters": requested_semesters,
     }
+
+
+def merge_current_semester_cache(
+    previous_result: Optional[Dict[str, Any]],
+    refreshed_result: Optional[Dict[str, Any]],
+    *,
+    selected_keys: Optional[Sequence[str]] = None,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    previous = deepcopy(previous_result) if isinstance(previous_result, dict) else {}
+    refreshed = deepcopy(refreshed_result) if isinstance(refreshed_result, dict) else {}
+    annotate_result_semesters(previous)
+    annotate_result_semesters(refreshed)
+    current_key = current_semester_key(now)
+
+    merged_by_id: Dict[int, Dict[str, Any]] = {}
+    for course in previous.get("courses") or []:
+        if not isinstance(course, dict) or course.get("semester_key") == current_key:
+            continue
+        try:
+            course_id = int(course.get("id"))
+        except (TypeError, ValueError):
+            continue
+        merged_by_id[course_id] = course
+
+    for course in refreshed.get("courses") or []:
+        if not isinstance(course, dict):
+            continue
+        try:
+            course_id = int(course.get("id"))
+        except (TypeError, ValueError):
+            continue
+        semester = parse_course_semester(course.get("title"), now)
+        course["semester_key"] = semester["key"]
+        course["semester_label"] = semester["label"]
+        merged_by_id[course_id] = course
+
+    def course_order(course: Dict[str, Any]) -> Any:
+        semester = parse_course_semester(course.get("title"), now)
+        year, term = semester["sort_key"]
+        return (-year, -term, str(course.get("title") or ""))
+
+    courses = sorted(merged_by_id.values(), key=course_order)
+    all_assignments: List[Dict[str, Any]] = []
+    for course in courses:
+        semester_key = str(course.get("semester_key") or "other")
+        semester_label = str(course.get("semester_label") or "其他課程")
+        course_id = course.get("id")
+        course_title = str(course.get("title") or f"Course {course_id}")
+        assignments = [item for item in (course.get("assignments") or []) if isinstance(item, dict)]
+        for item in assignments:
+            item["course_id"] = course_id
+            item["course_title"] = course_title
+            item["semester_key"] = semester_key
+            item["semester_label"] = semester_label
+        assignments.sort(key=_course_sort_key)
+        course["assignments"] = assignments
+        all_assignments.extend(assignments)
+    all_assignments.sort(key=_global_sort_key)
+
+    catalog = _semester_catalog(courses, now)
+    available_keys = {item["key"] for item in catalog}
+    selected = normalize_semester_keys(selected_keys)
+    if not selected:
+        selected = normalize_semester_keys(previous.get("selected_semesters"))
+    selected = [key for key in selected if key in available_keys]
+    if not selected:
+        selected = [current_key] if current_key in available_keys else [item["key"] for item in catalog[:1]]
+
+    result = dict(refreshed)
+    result["courses"] = courses
+    result["all_assignments"] = all_assignments
+    result["available_semesters"] = catalog
+    result["selected_semesters"] = selected
+    return result

@@ -11,3 +11,4 @@ __pycache__/
 *.pyc
 .playwright-cli/
 output/
+.codex-build/

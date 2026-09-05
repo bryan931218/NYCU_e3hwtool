@@ -12,6 +12,7 @@ from e3_tracker.services.collector import (
     collect_assignments,
     current_semester_key,
     gather_my_courses,
+    merge_current_semester_cache,
     normalize_semester_keys,
     parse_course_semester,
 )
@@ -35,6 +36,9 @@ class AssignmentSemesterTests(unittest.TestCase):
             "113-1 作業系統": "113-1",
             "2025 Fall Algorithms": "114-1",
             "2026 Spring OS": "114-2",
+            "【115 Autumn】515515作業系統概論": "115-1",
+            "【114 Spring】515521機器學習概論": "114-2",
+            "114學年度第2學期 離散數學": "114-2",
             "沒有學期標記": "other",
         }
         for title, expected in cases.items():
@@ -98,6 +102,115 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertEqual(result["selected_semesters"], ["114-2"])
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
 
+    def test_current_refresh_replaces_current_courses_and_keeps_archived_semesters(self):
+        previous = {
+            "courses": [
+                {
+                    "id": 101,
+                    "title": "【115 Autumn】資料結構（舊快取）",
+                    "assignments": [{"title": "本學期舊作業", "due_ts": 10}],
+                },
+                {
+                    "id": 202,
+                    "title": "【114 Spring】離散數學",
+                    "assignments": [{"title": "上學期作業", "due_ts": 20}],
+                },
+                {
+                    "id": 303,
+                    "title": "【114 Autumn】線性代數",
+                    "assignments": [{"title": "上上學期作業", "due_ts": 30}],
+                },
+            ],
+            "all_assignments": [],
+            "selected_semesters": ["115-1", "114-2", "114-1"],
+        }
+        refreshed = {
+            "courses": [
+                {
+                    "id": 101,
+                    "title": "【115 Autumn】資料結構",
+                    "assignments": [{"title": "本學期新作業", "due_ts": 40}],
+                }
+            ],
+            "all_assignments": [],
+            "errors": [],
+        }
+
+        merged = merge_current_semester_cache(
+            previous,
+            refreshed,
+            selected_keys=["115-1", "114-2", "114-1"],
+            now=self.now,
+        )
+
+        self.assertEqual([course["id"] for course in merged["courses"]], [101, 202, 303])
+        self.assertEqual(
+            [item["key"] for item in merged["available_semesters"]],
+            ["115-1", "114-2", "114-1"],
+        )
+        self.assertEqual(
+            {item["title"] for item in merged["all_assignments"]},
+            {"本學期新作業", "上學期作業", "上上學期作業"},
+        )
+        self.assertNotIn("本學期舊作業", {item["title"] for item in merged["all_assignments"]})
+        old_assignment = next(item for item in merged["all_assignments"] if item["title"] == "上學期作業")
+        self.assertEqual(old_assignment["semester_key"], "114-2")
+
+    def test_archived_courses_survive_current_refresh_database_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = PersistentStorage(f"sqlite:///{Path(temp_dir) / 'archive-cache.db'}")
+            try:
+                previous = {
+                    "courses": [
+                        {
+                            "id": 101,
+                            "title": "【115 Autumn】資料結構",
+                            "assignments": [{"title": "本學期舊作業", "due_ts": 10}],
+                        },
+                        {
+                            "id": 202,
+                            "title": "【114 Spring】離散數學",
+                            "assignments": [{"title": "歷史作業", "due_ts": 20}],
+                        },
+                    ],
+                    "all_assignments": [],
+                    "selected_semesters": ["115-1", "114-2"],
+                }
+                storage.save_user_cache("student", {"ts": 1, "result": previous})
+                stored_previous = storage.load_user_cache("student")["result"]
+                refreshed = {
+                    "courses": [
+                        {
+                            "id": 101,
+                            "title": "【115 Autumn】資料結構",
+                            "assignments": [{"title": "本學期新作業", "due_ts": 30}],
+                        }
+                    ],
+                    "all_assignments": [],
+                    "errors": [],
+                }
+                merged = merge_current_semester_cache(
+                    stored_previous,
+                    refreshed,
+                    selected_keys=["115-1", "114-2"],
+                    now=self.now,
+                )
+                storage.save_user_cache("student", {"ts": 2, "result": merged})
+
+                reloaded = storage.load_user_cache("student")["result"]
+                annotate_result_semesters(reloaded)
+                self.assertEqual({course["id"] for course in reloaded["courses"]}, {101, 202})
+                self.assertEqual(
+                    {item["title"] for item in reloaded["all_assignments"]},
+                    {"本學期新作業", "歷史作業"},
+                )
+                self.assertEqual(
+                    [item["key"] for item in reloaded["available_semesters"]],
+                    ["115-1", "114-2"],
+                )
+            finally:
+                storage._engine.dispose()
+
     def test_course_discovery_includes_past_and_hidden_timeline_courses(self):
         def response(text="", payload=None):
             item = Mock()
@@ -106,8 +219,9 @@ class AssignmentSemesterTests(unittest.TestCase):
             return item
 
         dashboard_html = """
-            <script>window.M = {"sesskey":"session-123"};</script>
+            <div data-config="{&quot;sesskey&quot;:&quot;session-123&quot;}"></div>
             <a href="/course/view.php?id=101">【115上】資料結構</a>
+            <div data-course-id="404" data-course-name="【112下】演算法"></div>
         """
         timeline_payload = [
             {
@@ -162,15 +276,56 @@ class AssignmentSemesterTests(unittest.TestCase):
                 only_current_term=False,
             )
 
-        self.assertEqual([course["id"] for course in courses], [101, 202, 303])
+        self.assertEqual([course["id"] for course in courses], [101, 202, 303, 404])
         self.assertEqual(courses[2]["url"], "https://e3.nycu.edu.tw/course/view.php?id=303")
         post_calls = [call for call in request.call_args_list if call.args[1] == "POST"]
         self.assertEqual(len(post_calls), 1)
+        self.assertNotIn("info=", post_calls[0].args[2])
         commands = post_calls[0].kwargs["json"]
-        self.assertEqual(
-            [command["args"]["classification"] for command in commands],
-            ["all", "past", "inprogress", "future", "hidden"],
-        )
+        self.assertEqual(commands[0]["args"]["classification"], "allincludinghidden")
+        self.assertEqual(commands[0]["args"]["sort"], "fullname")
+
+    def test_course_discovery_retries_timeline_categories_when_combined_view_is_unavailable(self):
+        dashboard = Mock()
+        dashboard.text = '<script>window.M = {"sesskey":"session-123"};</script>'
+        empty = Mock()
+        empty.text = "<html></html>"
+        classifications = []
+
+        def fake_request(_session, method, url, **kwargs):
+            if method == "GET":
+                return dashboard if url.endswith("/my/") else empty
+            command = kwargs["json"][0]
+            classification = command["args"].get("classification")
+            classifications.append(classification or command["methodname"])
+            response = Mock()
+            if classification == "allincludinghidden":
+                response.json.return_value = [{"error": True, "exception": {"message": "unsupported"}}]
+            elif classification == "past":
+                response.json.return_value = [
+                    {
+                        "error": False,
+                        "data": {
+                            "courses": [
+                                {
+                                    "id": 202,
+                                    "fullname": "【114下】離散數學",
+                                    "viewurl": "/course/view.php?id=202",
+                                }
+                            ]
+                        },
+                    }
+                ]
+            else:
+                response.json.return_value = [{"error": False, "data": {"courses": []}}]
+            return response
+
+        with patch("e3_tracker.services.collector.safe_request", side_effect=fake_request):
+            courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=False)
+
+        self.assertEqual([course["id"] for course in courses], [202])
+        self.assertIn("allincludinghidden", classifications)
+        self.assertIn("past", classifications)
 
     def test_course_discovery_keeps_html_results_when_timeline_request_fails(self):
         dashboard_html = """
@@ -193,6 +348,18 @@ class AssignmentSemesterTests(unittest.TestCase):
             )
 
         self.assertEqual([course["id"] for course in courses], [202])
+
+    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    def test_current_course_discovery_ignores_archived_embedded_courses(self, _current_key):
+        page = Mock()
+        page.text = """
+            <div data-course-id="101" data-course-name="【115 Autumn】資料結構"></div>
+            <div data-course-id="202" data-course-name="【114 Spring】離散數學"></div>
+        """
+        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+            courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
+
+        self.assertEqual([course["id"] for course in courses], [101])
 
     def test_semester_preferences_and_catalog_survive_database_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -265,6 +432,9 @@ class AssignmentSemesterTests(unittest.TestCase):
                 self.assertIn('id="semesterFilterGroup"', html)
                 self.assertIn('value="115-1" data-semester-filter checked', html)
                 self.assertIn('value="114-2" data-semester-filter', html)
+                self.assertIn('id="archiveRefreshBtn"', html)
+                self.assertIn("requestPayload.includeArchived = true", html)
+                self.assertNotIn("semesterRefreshTimer", html)
                 self.assertNotIn("data-e3-global-ai", html)
 
                 saved = client.post("/preferences", json={"semesterFilters": ["115-1", "114-2"]})

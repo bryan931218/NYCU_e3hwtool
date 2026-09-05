@@ -33,6 +33,7 @@ from ..services.collector import (
     annotate_result_semesters,
     collect_assignments,
     current_semester_key,
+    merge_current_semester_cache,
     normalize_semester_keys,
 )
 from ..services.google_calendar import (
@@ -12803,6 +12804,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         user: Dict[str, str],
         *,
         semester_keys: Optional[Sequence[str]] = None,
+        include_archived: bool = False,
     ) -> Tuple[Dict[str, Any], Optional[str]]:
         selected_semesters = normalize_semester_keys(semester_keys)
         if semester_keys is None:
@@ -12816,8 +12818,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             course_id=None,
             include_completed=True,
             all_courses=False,
-            all_courses_all_terms=True,
-            semester_keys=selected_semesters,
+            all_courses_all_terms=bool(include_archived),
+            semester_keys=None,
             username=None,
             password=None,
             moodle_session=user.get("moodle_session"),
@@ -12825,7 +12827,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             timeout=default_timeout,
             debug=False,
         )
-        result = collect_assignments(opts)
+        refreshed_result = collect_assignments(opts)
+        previous_cache = storage.load_user_cache(str(user.get("username") or "")) or {}
+        result = merge_current_semester_cache(
+            previous_cache.get("result"),
+            refreshed_result,
+            selected_keys=selected_semesters,
+        )
         excel_data = _generate_excel_data(result.get("all_assignments"))
         return result, excel_data
 
@@ -13355,6 +13363,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         username = user["username"]
         moodle_session_val = session.get("moodle_session")
         payload = request.get_json(silent=True) or {}
+        include_archived = bool(payload.get("includeArchived"))
         requested_semesters: Optional[List[str]] = None
         if "semesterFilters" in payload or "semester_filter" in payload:
             requested_semesters = normalize_semester_keys(
@@ -13380,12 +13389,17 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
                     result, excel_data = fetch_assignments_for(
                         {"username": username, "moodle_session": moodle_session_val},
                         semester_keys=requested_semesters,
+                        include_archived=include_archived,
                     )
                     set_assign_cache_for_user(username, result, excel_data)
                     record_ui_event(
                         "refresh_assignments",
                         "success",
-                        {"items": len(result.get("all_assignments", [])), "mode": "background"},
+                        {
+                            "items": len(result.get("all_assignments", [])),
+                            "mode": "background",
+                            "include_archived": include_archived,
+                        },
                     )
                 except Exception as exc:  # pragma: no cover - background logging
                     record_ui_event("refresh_assignments", "error", {"reason": str(exc), "mode": "background"})

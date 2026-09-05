@@ -360,6 +360,7 @@ html[data-theme="dark"]{
     .semester-filter-option input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
     .semester-filter-option small{font-size:11px;color:var(--muted);font-weight:700}
     .semester-current{font-size:10px;padding:2px 5px;border-radius:5px;background:var(--primary);color:#fff;font-weight:800}
+    .semester-archive-refresh{margin-left:auto;white-space:nowrap}
     .filter-subsection{margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb, var(--border) 82%, transparent)}
     .ignored-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
     .ignored-chip{
@@ -667,6 +668,7 @@ html[data-theme="dark"]{
     .semester-filter-group{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
     .semester-filter-option{justify-content:flex-start;min-width:0}
     .semester-filter-option span:not(.semester-current){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .semester-archive-refresh{width:100%;margin-left:0;justify-content:center}
     .toolbar-compact{ 
         grid-template-columns: 1fr; 
         row-gap: 10px;
@@ -1099,6 +1101,11 @@ html[data-theme="dark"]{
             </label>
             {% endfor %}
         </div>
+        {% if not guest_mode and not is_admin_view %}
+        <button class="btn semester-archive-refresh" type="button" id="archiveRefreshBtn" title="重新從 E3 載入舊學期課程">
+            載入舊學期
+        </button>
+        {% endif %}
     </section>
     {% endif %}
 
@@ -1839,14 +1846,14 @@ async function waitForCacheUpdate(prevTs, timeoutMs = 300000, intervalMs = 2500)
     throw new Error("等待更新逾時");
 }
 
-async function refreshAssignments(background = true, semesterFilters = currentSemesterFilters){
+async function refreshAssignments(background = true, semesterFilters = currentSemesterFilters, includeArchived = false){
     if (refreshInFlight) {
         return;
     }
     refreshInFlight = true;
     let retryAfterCurrentRefresh = false;
     const normalizedSemesters = normalizeSemesterFilters(semesterFilters);
-    document.querySelectorAll('#manualRefreshBtn').forEach((button) => {
+    document.querySelectorAll('#manualRefreshBtn, #archiveRefreshBtn').forEach((button) => {
         button.disabled = true;
     });
     try{
@@ -1856,11 +1863,13 @@ async function refreshAssignments(background = true, semesterFilters = currentSe
         showLoader('資料更新中，請稍候...');
     }
     
+    const requestPayload = normalizedSemesters.length ? {semesterFilters: normalizedSemesters} : {};
+    if (includeArchived) requestPayload.includeArchived = true;
     const r = await fetch("{{ url_for('api_assignments') }}", {
         method:"POST",
         credentials:"same-origin",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(normalizedSemesters.length ? {semesterFilters: normalizedSemesters} : {})
+        body:JSON.stringify(requestPayload)
     });
     
     if(!r.ok){ throw new Error("HTTP " + r.status); }
@@ -1878,7 +1887,9 @@ async function refreshAssignments(background = true, semesterFilters = currentSe
             currentCacheTs = updateResult.ts;
         }
         await fetchAndSwapContent();
-        if (!retryAfterCurrentRefresh) showToast("資料已成功更新", "success");
+        if (!retryAfterCurrentRefresh) {
+            showToast(includeArchived ? "舊學期已載入" : "資料已成功更新", "success");
+        }
     } else {
         throw new Error("更新失敗");
     }
@@ -1893,7 +1904,7 @@ async function refreshAssignments(background = true, semesterFilters = currentSe
     }
     } finally {
     refreshInFlight = false;
-    document.querySelectorAll('#manualRefreshBtn').forEach((button) => {
+    document.querySelectorAll('#manualRefreshBtn, #archiveRefreshBtn').forEach((button) => {
         button.disabled = false;
     });
     if (background) {
@@ -1902,7 +1913,7 @@ async function refreshAssignments(background = true, semesterFilters = currentSe
         hideLoader();
     }
     if (retryAfterCurrentRefresh) {
-        setTimeout(() => refreshAssignments(background, normalizedSemesters), 100);
+        setTimeout(() => refreshAssignments(background, normalizedSemesters, includeArchived), 100);
     }
     }
 }
@@ -2718,7 +2729,6 @@ if (statusFilterGroup) {
     });
 }
 
-let semesterRefreshTimer = null;
 document.addEventListener('change', (evt) => {
     const checkbox = evt.target.closest('[data-semester-filter]');
     if (!checkbox || IS_READONLY_VIEW) return;
@@ -2733,9 +2743,6 @@ document.addEventListener('change', (evt) => {
     applyFilters();
     updateFilterSummary();
     persistPreferences({ semesterFilters: nextSemesters });
-    if (IS_GUEST) return;
-    if (semesterRefreshTimer) clearTimeout(semesterRefreshTimer);
-    semesterRefreshTimer = setTimeout(() => refreshAssignments(true, nextSemesters), 350);
 });
 
 if (viewCourseBtn) {
@@ -2891,10 +2898,17 @@ document.querySelectorAll('[data-log-action]').forEach((el) => {
 });
 
 document.addEventListener('click', (evt) => {
-    const refreshBtn = evt.target.closest('#manualRefreshBtn');
-    if (!refreshBtn) return;
-    evt.preventDefault();
-    refreshAssignments(true);
+    const archiveRefreshBtn = evt.target.closest('#archiveRefreshBtn');
+    if (archiveRefreshBtn) {
+        evt.preventDefault();
+        refreshAssignments(true, currentSemesterFilters, true);
+        return;
+    }
+    const manualRefreshBtn = evt.target.closest('#manualRefreshBtn');
+    if (manualRefreshBtn) {
+        evt.preventDefault();
+        refreshAssignments(true);
+    }
 });
 
 (function () {
