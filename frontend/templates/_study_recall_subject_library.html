@@ -81,7 +81,7 @@
         grouped.get(entry.subject).push(entry);
     });
     grouped.forEach((items) => {
-        items.sort((left, right) => String(right.date).localeCompare(String(left.date)) || right.title.localeCompare(left.title));
+        items.sort((left, right) => Number(left.sessionId) - Number(right.sessionId));
     });
 
     const subjects = [...grouped.keys()].sort((left, right) => {
@@ -142,7 +142,7 @@
         details.className = 'subject-library-group';
         details.dataset.subject = subject;
         const hasCurrent = items.some((item) => item.sessionId && item.sessionId === currentSessionId);
-        details.open = hasCurrent || index === 0;
+        details.open = hasCurrent || (!currentSessionId && index === 0);
         const summary = document.createElement('summary');
         summary.innerHTML = [
             '<span class="subject-library-subject">',
