@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from html import unescape
 import re
 from typing import Any, Dict, List, Optional, Sequence, Set
 
@@ -188,6 +189,113 @@ def annotate_result_semesters(
     return result
 
 
+def _extract_moodle_sesskey(html_text: str) -> Optional[str]:
+    if not html_text:
+        return None
+    patterns = (
+        r'"sesskey"\s*:\s*"([^"\\]+)"',
+        r"'sesskey'\s*:\s*'([^'\\]+)'",
+        r"[?&]sesskey=([A-Za-z0-9_-]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, html_text)
+        if match:
+            return unescape(match.group(1)).strip()
+    soup = BeautifulSoup(html_text, "html.parser")
+    sesskey_input = soup.find("input", attrs={"name": "sesskey"})
+    if sesskey_input and sesskey_input.get("value"):
+        return str(sesskey_input["value"]).strip()
+    return None
+
+
+def _merge_course(
+    found: Dict[int, Dict[str, Any]],
+    *,
+    course_id: Any,
+    title: Any,
+    url: Any,
+    base_url: str,
+) -> None:
+    try:
+        cid = int(course_id)
+    except (TypeError, ValueError):
+        return
+    normalized_title = unescape(str(title or "")).strip()
+    normalized_url = str(url or "").strip()
+    if not normalized_url:
+        normalized_url = f"{base_url.rstrip('/')}/course/view.php?id={cid}"
+    elif not normalized_url.startswith("http"):
+        normalized_url = base_url.rstrip("/") + "/" + normalized_url.lstrip("/")
+    existing = found.get(cid)
+    if existing and len(str(existing.get("title") or "")) > len(normalized_title):
+        return
+    found[cid] = {
+        "id": cid,
+        "title": normalized_title or (str(existing.get("title")) if existing else f"Course {cid}"),
+        "url": normalized_url,
+    }
+
+
+def _gather_timeline_courses(
+    sess: requests.Session,
+    base_url: str,
+    sesskey: str,
+    *,
+    timeout: int,
+) -> List[Dict[str, Any]]:
+    classifications = ("all", "past", "inprogress", "future", "hidden")
+    commands = [
+        {
+            "index": index,
+            "methodname": "core_course_get_enrolled_courses_by_timeline_classification",
+            "args": {
+                "offset": 0,
+                "limit": 0,
+                "classification": classification,
+                "sort": "fullname ASC",
+            },
+        }
+        for index, classification in enumerate(classifications)
+    ]
+    endpoint = (
+        f"{base_url.rstrip('/')}/lib/ajax/service.php"
+        f"?sesskey={sesskey}&info=core_course_get_enrolled_courses_by_timeline_classification"
+    )
+    response = safe_request(
+        sess,
+        "POST",
+        endpoint,
+        headers={**HEADERS, "Content-Type": "application/json"},
+        json=commands,
+        timeout=timeout,
+    )
+    payload = response.json()
+    if not isinstance(payload, list):
+        return []
+    found: Dict[int, Dict[str, Any]] = {}
+    for result in payload:
+        if not isinstance(result, dict) or result.get("error"):
+            continue
+        data = result.get("data")
+        if isinstance(data, dict):
+            courses = data.get("courses") or []
+        elif isinstance(data, list):
+            courses = data
+        else:
+            courses = []
+        for course in courses:
+            if not isinstance(course, dict):
+                continue
+            _merge_course(
+                found,
+                course_id=course.get("id"),
+                title=course.get("fullname") or course.get("displayname") or course.get("shortname"),
+                url=course.get("viewurl"),
+                base_url=base_url,
+            )
+    return list(found.values())
+
+
 def gather_my_courses(
     sess: requests.Session,
     base_url: str,
@@ -200,11 +308,22 @@ def gather_my_courses(
         f"{base_url}/my/courses.php",
         f"{base_url}/course/index.php?mycourses=1",
     ]
-    found: Dict[int, Dict[str, str]] = {}
+    if not only_current_term:
+        pages.extend(
+            [
+                f"{base_url}/my/courses.php?classification=all",
+                f"{base_url}/my/courses.php?classification=past",
+                f"{base_url}/my/courses.php?classification=hidden",
+            ]
+        )
+    found: Dict[int, Dict[str, Any]] = {}
     current_tags = _current_term_labels()
+    sesskey: Optional[str] = None
     for url in pages:
         try:
             resp = safe_request(sess, "GET", url, headers=HEADERS, timeout=timeout)
+            if not sesskey:
+                sesskey = _extract_moodle_sesskey(resp.text)
             soup = BeautifulSoup(resp.text, "html.parser")
             for a_tag in soup.find_all("a", href=True):
                 match = COURSE_LINK_RE.search(a_tag["href"])
@@ -214,11 +333,27 @@ def gather_my_courses(
                 title = extract_text(a_tag)
                 if only_current_term and not any(tag.lower() in title.lower() for tag in current_tags):
                     continue
-                if cid not in found or (title and len(title) > len(found[cid]["title"])):
-                    course_url = a_tag["href"] if a_tag["href"].startswith("http") else base_url.rstrip("/") + "/" + a_tag["href"].lstrip("/")
-                    found[cid] = {"id": cid, "title": title, "url": course_url}
+                _merge_course(
+                    found,
+                    course_id=cid,
+                    title=title,
+                    url=a_tag["href"],
+                    base_url=base_url,
+                )
         except Exception:
             continue
+    if not only_current_term and sesskey:
+        try:
+            for course in _gather_timeline_courses(sess, base_url, sesskey, timeout=timeout):
+                _merge_course(
+                    found,
+                    course_id=course.get("id"),
+                    title=course.get("title"),
+                    url=course.get("url"),
+                    base_url=base_url,
+                )
+        except Exception:
+            pass
     return [found[idx] for idx in sorted(found.keys())]
 
 

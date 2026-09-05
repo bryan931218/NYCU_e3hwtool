@@ -11,6 +11,7 @@ from e3_tracker.services.collector import (
     annotate_result_semesters,
     collect_assignments,
     current_semester_key,
+    gather_my_courses,
     normalize_semester_keys,
     parse_course_semester,
 )
@@ -96,6 +97,102 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertTrue(all("101" not in url for url in requested_urls))
         self.assertEqual(result["selected_semesters"], ["114-2"])
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
+
+    def test_course_discovery_includes_past_and_hidden_timeline_courses(self):
+        def response(text="", payload=None):
+            item = Mock()
+            item.text = text
+            item.json.return_value = payload
+            return item
+
+        dashboard_html = """
+            <script>window.M = {"sesskey":"session-123"};</script>
+            <a href="/course/view.php?id=101">【115上】資料結構</a>
+        """
+        timeline_payload = [
+            {
+                "error": False,
+                "data": {
+                    "courses": [
+                        {
+                            "id": 101,
+                            "fullname": "【115上】資料結構",
+                            "viewurl": "https://e3.nycu.edu.tw/course/view.php?id=101",
+                        }
+                    ]
+                },
+            },
+            {
+                "error": False,
+                "data": {
+                    "courses": [
+                        {
+                            "id": 202,
+                            "fullname": "【114下】離散數學",
+                            "viewurl": "https://e3.nycu.edu.tw/course/view.php?id=202",
+                        }
+                    ]
+                },
+            },
+            {"error": False, "data": {"courses": []}},
+            {"error": False, "data": {"courses": []}},
+            {
+                "error": False,
+                "data": {
+                    "courses": [
+                        {
+                            "id": 303,
+                            "fullname": "【113上】線性代數",
+                            "viewurl": "/course/view.php?id=303",
+                        }
+                    ]
+                },
+            },
+        ]
+
+        def fake_request(_session, method, url, **_kwargs):
+            if method == "POST":
+                return response(payload=timeline_payload)
+            return response(text=dashboard_html if url.endswith("/my/") else "<html></html>")
+
+        with patch("e3_tracker.services.collector.safe_request", side_effect=fake_request) as request:
+            courses = gather_my_courses(
+                Mock(),
+                "https://e3.nycu.edu.tw",
+                only_current_term=False,
+            )
+
+        self.assertEqual([course["id"] for course in courses], [101, 202, 303])
+        self.assertEqual(courses[2]["url"], "https://e3.nycu.edu.tw/course/view.php?id=303")
+        post_calls = [call for call in request.call_args_list if call.args[1] == "POST"]
+        self.assertEqual(len(post_calls), 1)
+        commands = post_calls[0].kwargs["json"]
+        self.assertEqual(
+            [command["args"]["classification"] for command in commands],
+            ["all", "past", "inprogress", "future", "hidden"],
+        )
+
+    def test_course_discovery_keeps_html_results_when_timeline_request_fails(self):
+        dashboard_html = """
+            <script>window.M = {"sesskey":"session-123"};</script>
+            <a href="/course/view.php?id=202">【114下】離散數學</a>
+        """
+
+        def fake_request(_session, method, url, **_kwargs):
+            if method == "POST":
+                raise RuntimeError("AJAX service unavailable")
+            item = Mock()
+            item.text = dashboard_html if url.endswith("/my/") else "<html></html>"
+            return item
+
+        with patch("e3_tracker.services.collector.safe_request", side_effect=fake_request):
+            courses = gather_my_courses(
+                Mock(),
+                "https://e3.nycu.edu.tw",
+                only_current_term=False,
+            )
+
+        self.assertEqual([course["id"] for course in courses], [202])
 
     def test_semester_preferences_and_catalog_survive_database_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
