@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>學習首頁｜E3 研究所備考中心</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231463d9'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
@@ -955,8 +955,9 @@
         .quick-recall-home:hover,.quick-recall-home:focus-visible { transform:translateY(-1px); outline:0; }
         @media(max-width:620px){.quick-recall-home{align-items:flex-start;flex-direction:column}.quick-recall-home b{width:100%;text-align:center}}
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='study_center_theme.css') }}">
 </head>
-<body>
+<body class="study-center-page study-home-page">
     <div class="shell">
         <header class="study-nav" aria-label="學習中心導覽">
             <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>

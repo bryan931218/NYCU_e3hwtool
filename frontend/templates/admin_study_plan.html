@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231463d9'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
     <style>
         :root {
             --ink: #102a43;
@@ -630,8 +630,9 @@
             .focus-layer, .focus-launch, .focus-marker, .focus-question, .focus-toast, .video-end-screen, .video-end-card { animation:none; transition:none; }
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='study_center_theme.css') }}">
 </head>
-<body>
+<body class="study-center-page study-plan-page">
     <div class="shell">
         <main class="main">
             <header class="study-nav" aria-label="學習中心導覽">
