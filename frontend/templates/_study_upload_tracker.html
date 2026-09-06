@@ -299,7 +299,7 @@
 
     const row = document.createElement('div');
     row.className = 'e3-video-timer-row';
-    row.innerHTML = '<div class="e3-video-timer-main"><span class="e3-video-timer-dot" aria-hidden="true"></span><span class="e3-video-timer-label">播放影片後自動計時</span><strong class="e3-video-timer-time">0:00</strong></div><div class="e3-video-timer-actions"><button class="e3-video-timer-button" type="button" data-video-timer-pause disabled>暫停</button><button class="e3-video-timer-button end" type="button" data-video-timer-end disabled>結束</button></div>';
+    row.innerHTML = '<div class="e3-video-timer-main"><span class="e3-video-timer-dot" aria-hidden="true"></span><span class="e3-video-timer-label">播放影片後自動計時</span><strong class="e3-video-timer-time">00:00:00</strong></div><div class="e3-video-timer-actions"><button class="e3-video-timer-button" type="button" data-video-timer-pause disabled>暫停</button><button class="e3-video-timer-button end" type="button" data-video-timer-end disabled>結束</button></div>';
     statusCard.appendChild(row);
     const timeNode = row.querySelector('.e3-video-timer-time');
     const labelNode = row.querySelector('.e3-video-timer-label');
@@ -321,7 +321,7 @@
         const hours = Math.floor(value / 3600);
         const minutes = Math.floor((value % 3600) / 60);
         const rest = value % 60;
-        return hours ? `${hours}:${String(minutes).padStart(2,'0')}:${String(rest).padStart(2,'0')}` : `${minutes}:${String(rest).padStart(2,'0')}`;
+        return [hours, minutes, rest].map((part) => String(part).padStart(2, '0')).join(':');
     };
     const currentVideo = () => {
         const option = select.options[select.selectedIndex];
