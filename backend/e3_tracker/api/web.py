@@ -1101,6 +1101,65 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             except Exception:
                 app.logger.exception("Unable to persist study-note upload job %s", job_id)
 
+    def _reconcile_study_upload_job(job: Dict[str, Any]) -> Dict[str, Any]:
+        """Turn a persisted running job without a live worker into an interruption."""
+
+        snapshot = dict(job or {})
+        if str(snapshot.get("status") or "") != "running":
+            return snapshot
+        job_id = str(snapshot.get("job_id") or "")
+        username = str(snapshot.get("username") or "")
+        if not job_id or not username:
+            return snapshot
+
+        with study_upload_jobs_lock:
+            memory_job = study_upload_jobs.get(job_id)
+            if memory_job is not None:
+                if str(memory_job.get("status") or "") != "running":
+                    return dict(memory_job)
+                worker_thread = memory_job.get("worker_thread")
+                if isinstance(worker_thread, threading.Thread) and (
+                    worker_thread.is_alive() or worker_thread.ident is None
+                ):
+                    return dict(memory_job)
+                # A job is briefly registered before its worker is attached.
+                if worker_thread is None and time.time() - float(
+                    memory_job.get("updated_at") or 0
+                ) < 10:
+                    return dict(memory_job)
+
+        can_resume = _study_upload_job_can_resume(job_id, username)
+        interrupted_at = time.time()
+        interrupted_message = (
+            "筆記上傳中斷，已保留原圖與完成進度，可以接續處理。"
+            if can_resume
+            else "筆記上傳中斷，暫存資料不完整，請重新選擇照片上傳。"
+        )
+        snapshot.update(
+            status="interrupted",
+            message=interrupted_message,
+            updated_at=interrupted_at,
+        )
+        with study_upload_jobs_lock:
+            memory_job = study_upload_jobs.get(job_id)
+            if memory_job is not None and str(memory_job.get("status") or "") == "running":
+                memory_job.update(snapshot)
+        storage.save_study_note_upload_job(
+            job_id=job_id,
+            username=username,
+            status="interrupted",
+            progress=int(snapshot.get("progress") or 0),
+            message=interrupted_message,
+            session_id=(
+                int(snapshot["session_id"])
+                if snapshot.get("session_id") is not None
+                else None
+            ),
+            created_at=float(snapshot.get("created_at") or interrupted_at),
+            updated_at=interrupted_at,
+        )
+        return snapshot
+
     def _set_study_source_job(job_id: str, **changes: Any) -> None:
         with study_source_jobs_lock:
             job = study_source_jobs.get(job_id)
@@ -1115,15 +1174,23 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             expired = [job_id for job_id, job in study_upload_jobs.items() if float(job.get("updated_at") or 0) < cutoff]
             for job_id in expired:
                 study_upload_jobs.pop(job_id, None)
-            for job_id, job in study_upload_jobs.items():
-                if job.get("username") == username and job.get("status") == "running":
-                    return job_id
+            candidates = [
+                dict(job)
+                for job in study_upload_jobs.values()
+                if job.get("username") == username and job.get("status") == "running"
+            ]
+        for job in candidates:
+            reconciled = _reconcile_study_upload_job(job)
+            if reconciled.get("status") == "running":
+                return str(reconciled.get("job_id") or "") or None
         persisted_job = storage.get_current_study_note_upload_job(
             username,
             terminal_window_seconds=0,
         )
         if persisted_job and persisted_job.get("status") == "running":
-            return str(persisted_job.get("job_id") or "") or None
+            reconciled = _reconcile_study_upload_job(persisted_job)
+            if reconciled.get("status") == "running":
+                return str(reconciled.get("job_id") or "") or None
         return None
 
     def _refresh_job_state(username: str) -> Optional[Dict[str, Any]]:
@@ -3799,6 +3866,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         _read_study_upload_manifest=_read_study_upload_manifest,
         _rebuild_all_study_recall_relations=_rebuild_all_study_recall_relations,
         _remove_study_upload_staging=_remove_study_upload_staging,
+        _reconcile_study_upload_job=_reconcile_study_upload_job,
         _set_study_upload_job=_set_study_upload_job,
         _study_plan_business_date=lambda *args, **kwargs: _study_plan_business_date(*args, **kwargs),
         _study_upload_error=_study_upload_error,
