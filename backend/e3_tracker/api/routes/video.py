@@ -234,10 +234,10 @@ def register_video_routes(*,
             "但不能凌駕於影音證據；請用畫面校正逐字稿中的同音字、符號與公式，並整合老師口頭講解、"
             "定義、推導步驟、程式流程或解題技巧。只整理這 30 秒內能可靠判斷的內容，"
             "不要補充課程外知識。若影音不足以支持完整結論，直接指出目前能確認的部分。"
-            "回答使用好理解的繁體中文，全文盡量控制在 120 個中文字內，並固定使用容易掃讀的兩行格式："
-            "第一行以『重點｜』開頭，只寫一個與關鍵點名稱直接相關的核心結論；"
-            "第二行僅在必要時以『關鍵｜』開頭，補一個必要條件、步驟或公式，沒有就省略。"
-            "每行都要是完整短句，不要在同一行塞入多個不同觀念。"
+            "回答使用好理解的繁體中文，摘要長度依內容完整性決定，不設字數或行數限制。"
+            "第一段以『重點｜』開頭，先寫與關鍵點名稱直接相關的核心結論；"
+            "之後可依需要以『關鍵｜』開頭，補充必要條件、步驟或公式。"
+            "不同觀念請分行書寫，每行都要是完整句子。"
             "刪除重複解釋、背景鋪陳與『老師提到』『這段影片說明』等轉述語，"
             "除了『重點｜』『關鍵｜』之外，不要輸出其他標題、項目符號或開場白。"
             "公式使用 LaTeX，行內公式用 \\( ... \\)，獨立公式用 \\[ ... \\]。\n\n"
@@ -277,7 +277,6 @@ def register_video_routes(*,
             "reasoning": {
                 "effort": normalize_openai_reasoning_effort(openai_model, "low")
             },
-            "max_output_tokens": 320,
         }
         try:
             response_payload = _request_openai_response(
@@ -287,16 +286,14 @@ def register_video_routes(*,
             )
             summary = _repair_study_decoded_text(
                 _extract_openai_text(response_payload)
-            ).strip()[:600]
+            ).strip()
             if summary:
                 summary = re.sub(r"^\s*重點\s*[：:|｜]\s*", "重點｜", summary)
                 summary = re.sub(r"\s*關鍵\s*[：:|｜]\s*", "\n關鍵｜", summary)
                 lines = [line.strip() for line in summary.splitlines() if line.strip()]
                 if lines and not lines[0].startswith("重點｜"):
                     lines[0] = "重點｜" + lines[0]
-                if len(lines) > 1 and not lines[1].startswith("關鍵｜"):
-                    lines[1] = "關鍵｜" + lines[1]
-                summary = "\n".join(lines[:2])
+                summary = "\n".join(lines)
         except requests.HTTPError as exc:
             error_code, error_type, error_message = _openai_error_details(exc.response)
             if _is_openai_quota_error(error_code, error_type, error_message):
