@@ -19,3 +19,11 @@ output/
 .coverage
 htmlcov/
 *.egg-info/
+
+# Generated guest exports may contain personal course data.
+guest_payload.json
+
+# Local analysis and test caches.
+.coverage.*
+coverage.xml
+.hypothesis/

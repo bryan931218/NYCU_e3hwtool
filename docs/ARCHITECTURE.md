@@ -77,3 +77,7 @@ python -m unittest tests.test_study_plan_progress tests.test_study_upload_progre
 ## Git 維護
 
 只提交程式、部署設定、必要的靜態資源、種子資料與文件。影片目錄 JSON 是部署所需資料，不應當成暫存檔刪除。快取、虛擬環境、測試輸出與 `.env` 由 `.gitignore` 排除。
+
+`guest_payload.json` 是使用者匯出的課程資料，不提交 Git；匯出工具本身仍需保留，網站提供下載。`images/` 是 README 使用的圖片，也不是暫存檔。
+
+清理時可刪除 `__pycache__`、`.pytest_cache` 等可重建快取。`output/` 與 `.codex-build/` 可能含未交付的影片、備審或人工測試資料，應先移到專案外封存，不能直接視為垃圾刪除。`.localdata/`、上傳圖片與資料庫必須保留。
