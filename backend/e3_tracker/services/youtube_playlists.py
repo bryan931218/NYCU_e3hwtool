@@ -5,6 +5,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, Iterable, List, Optional
 
+from .youtube_matching import match_playlist_entries
+
 
 KNOWN_YOUTUBE_PLAYLISTS = (
     {
@@ -74,7 +76,9 @@ def fetch_youtube_playlist(source: Dict[str, str]) -> List[Dict[str, Any]]:
         links.append(
             {
                 "subject": subject,
-                "sequence": sequence,
+                "playlist_position": entry.get("playlist_index") or sequence,
+                "title": str(entry.get("title") or ""),
+                "duration_seconds": entry.get("duration"),
                 "youtube_video_id": video_id,
                 "youtube_playlist_id": playlist_id,
                 "youtube_url": f"https://www.youtube.com/watch?v={video_id}&list={playlist_id}",
@@ -115,6 +119,7 @@ def sync_known_youtube_playlists(
                 if not fetched:
                     empty_subjects.append(subject)
 
+        links, skipped = match_playlist_entries(links, storage.list_study_plan_videos_with_records())
         database_result = storage.sync_study_plan_youtube_links(links) if links else {
             "matched": 0,
             "updated": 0,
@@ -124,6 +129,11 @@ def sync_known_youtube_playlists(
         }
         return {
             **database_result,
+            "needs_review": len(skipped),
+            "skipped_matches": [
+                {key: item.get(key) for key in ("subject", "title", "youtube_url", "reason")}
+                for item in skipped
+            ],
             "playlist_count": len(selected_sources),
             "fetched_subjects": sorted(fetched_subjects),
             "empty_subjects": sorted(empty_subjects),

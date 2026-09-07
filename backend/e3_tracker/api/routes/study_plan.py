@@ -144,6 +144,8 @@ def register_study_plan_routes(*,
             return payload
 
         message = f"YouTube 同步完成：更新 {result['updated']} 支，{result['unchanged']} 支無變更。"
+        if result.get("needs_review"):
+            message += f"{result['needs_review']} 支待確認，未覆蓋原連結。"
         if result["errors"]:
             message += f"另有 {len(result['errors'])} 個播放清單讀取失敗。"
         if result["empty_subjects"]:

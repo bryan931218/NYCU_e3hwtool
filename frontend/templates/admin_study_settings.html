@@ -79,8 +79,24 @@
                         const emptySubjects = result.empty_subjects || [];
                         status.className = 'sync-status success';
                         status.textContent = '同步完成：更新 ' + (result.updated || 0) + ' 支，' + (result.unchanged || 0) + ' 支無變更'
+                            + (result.needs_review ? '；' + result.needs_review + ' 支待確認，未覆蓋原連結' : '')
                             + (emptySubjects.length ? '；目前空白：' + emptySubjects.join('、') : '')
                             + (failed ? '；' + failed + ' 個播放清單讀取失敗。' : '。');
+                        const previous = document.getElementById('youtube-sync-review');
+                        if (previous) previous.remove();
+                        if ((result.skipped_matches || []).length) {
+                            const details = document.createElement('details');
+                            details.id = 'youtube-sync-review';
+                            const summary = document.createElement('summary');
+                            summary.textContent = '查看待確認影片';
+                            details.appendChild(summary);
+                            result.skipped_matches.forEach(function (item) {
+                                const row = document.createElement('p');
+                                row.textContent = item.subject + '・' + (item.title || '無標題') + '：' + item.reason;
+                                details.appendChild(row);
+                            });
+                            status.after(details);
+                        }
                     })
                     .catch(function (error) {
                         status.className = 'sync-status error';

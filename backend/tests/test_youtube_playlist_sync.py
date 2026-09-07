@@ -61,6 +61,9 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
 
     def test_service_fetches_playlists_and_reports_partial_failure(self):
         class FakeStorage:
+            def list_study_plan_videos_with_records(self):
+                return [{"subject": "科目甲", "sequence": 1, "title": "001_01-01_課程講解"}]
+
             def sync_study_plan_youtube_links(self, links):
                 self.links = links
                 return {
@@ -86,6 +89,7 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
                 {
                     "subject": source["subject"],
                     "sequence": 1,
+                    "title": "001 01 01 課程講解",
                     "youtube_video_id": "ABCDEFGHIJK",
                     "youtube_playlist_id": source["playlist_id"],
                     "youtube_url": "https://www.youtube.com/watch?v=ABCDEFGHIJK",

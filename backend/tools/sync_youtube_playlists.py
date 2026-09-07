@@ -81,6 +81,11 @@ def write_inventory(items: Iterable[Dict[str, Any]]) -> None:
 
 
 def sync_inventory(dry_run: bool = False) -> Dict[str, int]:
+    backend_root = str(ROOT / "backend")
+    if backend_root not in sys.path:
+        sys.path.insert(0, backend_root)
+    from e3_tracker.services.youtube_matching import match_playlist_entries
+
     inventory = load_inventory()
     by_key = {
         (str(item.get("subject") or ""), int(item.get("sequence") or 0)): item
@@ -88,26 +93,24 @@ def sync_inventory(dry_run: bool = False) -> Dict[str, int]:
     }
     updated = 0
     added = 0
+    needs_review = 0
     for playlist in PLAYLISTS:
         subject = playlist["subject"]
         playlist_id = playlist["playlist_id"]
-        for index, entry in enumerate(fetch_playlist(playlist["url"]), start=1):
-            video_id = str(entry.get("id") or "").strip()
+        entries = [
+            {"subject": subject, "title": entry.get("title"),
+             "duration_seconds": entry.get("duration"), "youtube_video_id": entry.get("id")}
+            for entry in fetch_playlist(playlist["url"])
+        ]
+        matched, skipped = match_playlist_entries(entries, inventory)
+        needs_review += len(skipped)
+        for entry in matched:
+            video_id = str(entry.get("youtube_video_id") or "").strip()
             if not video_id:
                 continue
             youtube_url = f"https://www.youtube.com/watch?v={video_id}&list={playlist_id}"
-            key = (subject, index)
-            item = by_key.get(key)
-            if item is None:
-                item = {
-                    "subject": subject,
-                    "sequence": index,
-                    "title": str(entry.get("title") or f"YouTube {video_id}").strip(),
-                    "duration_seconds": float(entry.get("duration") or 0),
-                }
-                inventory.append(item)
-                by_key[key] = item
-                added += 1
+            key = (subject, entry['sequence'])
+            item = by_key[key]
             before = (
                 item.get("youtube_video_id"),
                 item.get("youtube_playlist_id"),
@@ -120,7 +123,7 @@ def sync_inventory(dry_run: bool = False) -> Dict[str, int]:
                 updated += 1
     if not dry_run:
         write_inventory(inventory)
-    return {"updated": updated, "added": added, "total": len(inventory)}
+    return {"updated": updated, "added": added, "total": len(inventory), "needs_review": needs_review}
 
 
 def sync_database() -> None:
@@ -149,7 +152,7 @@ def main() -> int:
     if args.sync_db and not args.dry_run:
         sync_database()
     mode = "DRY RUN" if args.dry_run else "UPDATED"
-    print(f"{mode}: updated={result['updated']} added={result['added']} total={result['total']}")
+    print(f"{mode}: updated={result['updated']} added={result['added']} total={result['total']} needs_review={result['needs_review']}")
     return 0
 
 
