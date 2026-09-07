@@ -1,8 +1,12 @@
-# E3 作業追蹤器（Web）
+# E3 作業追蹤器與研究所備考中心
 
 👉 https://e3hwtool.space
 
 幫助 NYCU 學生統整 E3 平台上的所有作業。只要登入自己的E3帳號，系統就會列出所有課程作業、狀態、截止日期，還能導出 Excel 或同步到 Google 日曆。
+
+研究所備考中心另提供讀書計畫、影片進度與關鍵點、筆記辨識與搜尋、間隔複習及 AI 問答。
+
+開發者請先閱讀 [程式架構與修改指南](docs/ARCHITECTURE.md)。
 
 ---
 
@@ -58,11 +62,12 @@
    - `start_servers.py` 會自動切成本機設定，不需要推到 GitHub 才能看畫面。
    - 本機模式會自動關閉 `Secure` cookie、停用 canonical host redirect，並使用專案內的 `.localdata/e3_tracker.sqlite3` 當測試資料庫，避免碰到正式環境資料。
 
-3. 跑本機 smoke test  
+3. 執行自動測試（專案根目錄）
    ```bash
-   python -m unittest discover -s tests -v
+   python -m unittest discover -s backend/tests -t backend
    ```
-   - 這會實際拉起前後端，檢查 `healthz`、首頁，以及 localhost 下的訪客登入流程。
+   - 涵蓋作業學期、進度計算、筆記流程、播放器及資料儲存；AI 與影音服務主要使用模擬回應。
+   - GitHub 的 Backend validation 會在推送 `main` 或提交 PR 時執行相同測試。
 
 ---
 

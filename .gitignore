@@ -12,3 +12,10 @@ __pycache__/
 .playwright-cli/
 output/
 .codex-build/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
