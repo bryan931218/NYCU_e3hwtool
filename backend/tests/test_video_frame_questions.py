@@ -75,7 +75,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
             ],
         }
         with patch(
-            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
             return_value={
                 "bytes": b"RIFF" + b"\x00" * 2048,
                 "mime_type": "audio/wav",
@@ -85,7 +85,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
                 "duration_seconds": 20.0,
             },
         ) as fetch_audio, patch(
-            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
             side_effect=lambda _video_id, seconds, **_kwargs: {
                 **self._frame(),
                 "frame_seconds": seconds,
@@ -139,7 +139,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
             ],
         }
         with patch(
-            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
             return_value={
                 "bytes": b"RIFF" + b"\x00" * 2048,
                 "mime_type": "audio/wav",
@@ -149,7 +149,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
                 "duration_seconds": 20.0,
             },
         ), patch(
-            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
             side_effect=YoutubeFrameError("frame unavailable"),
         ), patch(
             "e3_tracker.api.web.requests.post",
@@ -175,7 +175,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
         frame = self._frame()
         frame["source"] = "exact"
         with patch(
-            "e3_tracker.api.web.fetch_youtube_cached_frame", return_value=frame
+            "e3_tracker.api.routes.video.fetch_youtube_cached_frame", return_value=frame
         ) as fetch_frame, patch("e3_tracker.api.web.requests.post") as post:
             response = self.client.post(
                 "/admin/study-plan/video-frame",
@@ -201,7 +201,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
             "storyboard_spec": "https://i.example.test/storyboard/$L/$N.jpg|160#90#10#5#10#0#M$M#sig",
         }
         with patch(
-            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
             return_value=frame,
         ):
             response = self.client.post(
@@ -263,7 +263,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
         }
 
         with patch(
-            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
             return_value={
                 "bytes": b"RIFF" + b"\x00" * 2048,
                 "mime_type": "audio/wav",
@@ -273,7 +273,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
                 "duration_seconds": 30.0,
             },
         ) as fetch_audio, patch(
-            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
             side_effect=lambda _video_id, seconds, **_kwargs: {
                 **self._frame(),
                 "frame_seconds": seconds,
@@ -360,10 +360,10 @@ class VideoFrameQuestionTests(unittest.TestCase):
             response=failed_response
         )
         with patch(
-            "e3_tracker.api.web.fetch_youtube_audio_clip",
+            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
             side_effect=YoutubeAudioError("audio unavailable"),
         ), patch(
-            "e3_tracker.api.web.fetch_youtube_cached_frame",
+            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
             return_value=self._frame(),
         ), patch(
             "e3_tracker.api.web.requests.post",

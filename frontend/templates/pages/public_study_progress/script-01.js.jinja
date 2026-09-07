@@ -1,0 +1,378 @@
+
+        (() => {
+            const root = document.querySelector('[data-public-note-search]');
+            if (!root) return;
+            const form = root.querySelector('[data-public-note-search-form]');
+            const input = form.querySelector('input[name="q"]');
+            const subject = form.querySelector('select[name="subject"]');
+            const type = form.querySelector('select[name="type"]');
+            const submit = form.querySelector('button[type="submit"]');
+            const status = root.querySelector('[data-public-note-search-status]');
+            const count = root.querySelector('[data-public-note-search-count]');
+            const results = root.querySelector('[data-public-note-search-results]');
+            const preview = document.querySelector('[data-public-note-preview]');
+            const previewTitle = preview.querySelector('[data-public-note-preview-title]');
+            const previewMeta = preview.querySelector('[data-public-note-preview-meta]');
+            const previewImage = preview.querySelector('[data-public-note-preview-image]');
+            const previewHighlight = preview.querySelector('[data-public-note-preview-highlight]');
+            const previewClose = preview.querySelector('[data-public-note-preview-close]');
+            let activeRequest = null;
+            let searchTimer = null;
+            let lastPreviewTrigger = null;
+
+            window.renderPublicStudyMath = (scope = document) => {
+                if (!window.renderMathInElement) return;
+                scope.querySelectorAll('[data-public-math]').forEach((element) => {
+                    if (element.dataset.mathRendered === 'true') return;
+                    window.renderMathInElement(element, {
+                        delimiters: [
+                            { left: '\\[', right: '\\]', display: true },
+                            { left: '\\(', right: '\\)', display: false },
+                            { left: '$$', right: '$$', display: true },
+                        ],
+                        throwOnError: false,
+                        strict: false,
+                    });
+                    element.dataset.mathRendered = 'true';
+                });
+            };
+            const appendText = (parent, tag, className, text) => {
+                const node = document.createElement(tag);
+                node.className = className;
+                node.textContent = text;
+                parent.appendChild(node);
+                return node;
+            };
+            const closePreview = () => {
+                if (preview.hidden) return;
+                preview.hidden = true;
+                previewImage.removeAttribute('src');
+                document.body.classList.remove('public-note-preview-open');
+                lastPreviewTrigger?.focus();
+            };
+            const openPreview = (item, trigger) => {
+                lastPreviewTrigger = trigger;
+                previewTitle.textContent = item.concept_title || item.title || '筆記原圖';
+                previewTitle.dataset.publicMath = '';
+                delete previewTitle.dataset.mathRendered;
+                previewMeta.textContent = [item.subject, item.study_date, `${item.title}・第 ${item.image_index} 張`].filter(Boolean).join('・');
+                previewImage.alt = `${item.title}第 ${item.image_index} 張原始筆記`;
+                previewImage.src = item.image_url;
+                if (item.bbox) {
+                    const top = Math.max(0, Math.min(100, Number(item.bbox.top) / 10));
+                    const bottom = Math.max(top, Math.min(100, Number(item.bbox.bottom) / 10));
+                    previewHighlight.style.top = `${top}%`;
+                    previewHighlight.style.height = `${Math.max(1.5, bottom - top)}%`;
+                    previewHighlight.hidden = false;
+                } else {
+                    previewHighlight.hidden = true;
+                }
+                preview.hidden = false;
+                document.body.classList.add('public-note-preview-open');
+                window.renderPublicStudyMath(preview);
+                previewClose.focus();
+            };
+            const renderResults = (items) => {
+                results.replaceChildren();
+                if (!items.length) {
+                    appendText(results, 'div', 'public-note-search-empty', '找不到相關頁面，請換一個觀念名稱、公式或例題關鍵字。');
+                    results.hidden = false;
+                    return;
+                }
+                items.forEach((item) => {
+                    const article = document.createElement('article');
+                    article.className = 'public-note-result';
+                    article.setAttribute('role', 'listitem');
+                    const thumbnail = document.createElement('button');
+                    thumbnail.type = 'button';
+                    thumbnail.className = 'public-note-result-thumb';
+                    thumbnail.setAttribute('aria-label', `預覽${item.title}第 ${item.image_index} 張`);
+                    const image = document.createElement('img');
+                    image.src = item.image_url;
+                    image.alt = '';
+                    image.loading = 'lazy';
+                    thumbnail.appendChild(image);
+                    appendText(thumbnail, 'span', 'public-note-result-page', `第 ${item.image_index} 張`);
+                    thumbnail.addEventListener('click', () => openPreview(item, thumbnail));
+                    article.appendChild(thumbnail);
+                    const body = document.createElement('div');
+                    body.className = 'public-note-result-body';
+                    const title = appendText(body, 'h3', 'public-note-result-title', item.concept_title || item.title || '相關筆記');
+                    title.dataset.publicMath = '';
+                    const meta = document.createElement('div');
+                    meta.className = 'public-note-result-meta';
+                    [item.subject, item.study_date, `${item.title}・第 ${item.image_index} 張`, item.match_reason]
+                        .filter(Boolean)
+                        .forEach((value) => appendText(meta, 'span', '', value));
+                    body.appendChild(meta);
+                    const badges = document.createElement('div');
+                    badges.className = 'public-note-result-badges';
+                    if (item.topic) appendText(badges, 'span', 'public-note-result-badge', item.topic);
+                    if (item.card_type === 'example') appendText(badges, 'span', 'public-note-result-badge example', '例題');
+                    if (item.has_formula) appendText(badges, 'span', 'public-note-result-badge formula', '公式');
+                    if (badges.childElementCount) body.appendChild(badges);
+                    const excerpt = appendText(body, 'p', 'public-note-result-excerpt', item.excerpt || '已找到相關頁面。');
+                    excerpt.dataset.publicMath = '';
+                    const open = appendText(body, 'button', 'public-note-result-open', '查看原圖');
+                    open.type = 'button';
+                    open.addEventListener('click', () => openPreview(item, open));
+                    article.appendChild(body);
+                    results.appendChild(article);
+                });
+                results.hidden = false;
+                window.renderPublicStudyMath(results);
+            };
+            const performSearch = async () => {
+                window.clearTimeout(searchTimer);
+                const query = input.value.trim();
+                if (query.length < 2) {
+                    activeRequest?.abort();
+                    results.hidden = true;
+                    results.replaceChildren();
+                    count.textContent = '';
+                    status.textContent = query ? '請至少輸入 2 個字。' : '';
+                    status.className = 'public-note-search-status';
+                    return;
+                }
+                activeRequest?.abort();
+                activeRequest = new AbortController();
+                submit.disabled = true;
+                status.textContent = '搜尋中…';
+                status.className = 'public-note-search-status';
+                const params = new URLSearchParams({ q: query, subject: subject.value, type: type.value });
+                try {
+                    const response = await fetch(`${root.dataset.searchUrl}?${params}`, {
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        signal: activeRequest.signal,
+                        headers: { Accept: 'application/json' },
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || !payload.ok) throw new Error(payload.error || '搜尋失敗，請稍後再試。');
+                    renderResults(Array.isArray(payload.results) ? payload.results : []);
+                    count.textContent = `${Number(payload.result_count) || 0} 頁`;
+                    status.textContent = payload.result_count ? `已找到最相關的 ${payload.result_count} 頁` : '';
+                } catch (error) {
+                    if (error.name === 'AbortError') return;
+                    results.hidden = true;
+                    count.textContent = '';
+                    status.textContent = error.message || '搜尋失敗，請稍後再試。';
+                    status.className = 'public-note-search-status error';
+                } finally {
+                    submit.disabled = false;
+                }
+            };
+            form.addEventListener('submit', (event) => { event.preventDefault(); performSearch(); });
+            input.addEventListener('input', () => {
+                window.clearTimeout(searchTimer);
+                searchTimer = window.setTimeout(performSearch, 420);
+            });
+            subject.addEventListener('change', () => { if (input.value.trim().length >= 2) performSearch(); });
+            type.addEventListener('change', () => { if (input.value.trim().length >= 2) performSearch(); });
+            previewClose.addEventListener('click', closePreview);
+            preview.addEventListener('click', (event) => { if (event.target === preview) closePreview(); });
+            document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !preview.hidden) closePreview(); });
+        })();
+        (() => {
+            const root = document.querySelector('[data-public-study-calendar]');
+            const dataNode = root?.querySelector('[data-public-calendar-data]');
+            if (!root || !dataNode) return;
+            let payload;
+            try { payload = JSON.parse(dataNode.textContent || '{}'); } catch (_) { return; }
+
+            const detailsByDay = new Map((payload.days || []).map((item) => [item.date, item]));
+            const secondsByDay = new Map((payload.days || []).map((item) => [item.date, Number(item.seconds) || 0]));
+            const todayKey = String(payload.today || '');
+            const parseMonth = (value) => {
+                const [year, month] = String(value || '').split('-').map(Number);
+                return new Date(year, Math.max(0, (month || 1) - 1), 1);
+            };
+            const monthNumber = (date) => date.getFullYear() * 12 + date.getMonth();
+            const pad = (value) => String(value).padStart(2, '0');
+            const dateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+            const firstMonth = parseMonth(payload.first_month || payload.initial_month);
+            const presentMonth = parseMonth(payload.initial_month);
+            let visibleMonth = parseMonth(payload.initial_month);
+            let lastFocusedCell = null;
+
+            const grid = root.querySelector('[data-public-calendar-grid]');
+            const heading = root.querySelector('[data-public-calendar-heading]');
+            const previous = root.querySelector('[data-public-calendar-previous]');
+            const next = root.querySelector('[data-public-calendar-next]');
+            const currentButton = root.querySelector('[data-public-calendar-today]');
+            const totalNode = root.querySelector('[data-public-calendar-total]');
+            const activeNode = root.querySelector('[data-public-calendar-active]');
+            const averageNode = root.querySelector('[data-public-calendar-average]');
+            const bestNode = root.querySelector('[data-public-calendar-best]');
+            const modal = document.querySelector('[data-public-calendar-modal]');
+            const modalTitle = modal?.querySelector('[data-public-calendar-modal-title]');
+            const modalSummary = modal?.querySelector('[data-public-calendar-modal-summary]');
+            const modalList = modal?.querySelector('[data-public-calendar-modal-list]');
+            const modalClose = modal?.querySelector('[data-public-calendar-modal-close]');
+
+            const applyHeatColor = (cell, seconds, monthMaximum) => {
+                if (seconds <= 0 || monthMaximum <= 0) {
+                    cell.style.background = 'linear-gradient(145deg, #fbfdff 0%, #edf3f9 100%)';
+                    cell.style.setProperty('--calendar-cell-border', '#e2eaf3');
+                    cell.style.color = '#17324d';
+                    return;
+                }
+                const ratio = Math.min(1, Math.max(0, seconds / monthMaximum));
+                const intensity = Math.pow(ratio, .72);
+                const hue = Math.round(211 + intensity * 10);
+                const saturation = Math.round(76 + intensity * 14);
+                const topLightness = Math.round(97 - intensity * 43);
+                const bottomLightness = Math.round(94 - intensity * 54);
+                const borderLightness = Math.max(35, bottomLightness - 5);
+                cell.style.background = `linear-gradient(145deg, hsl(${hue}, ${saturation}%, ${topLightness}%) 0%, hsl(${hue + 3}, ${saturation}%, ${bottomLightness}%) 100%)`;
+                cell.style.setProperty('--calendar-cell-border', `hsla(${hue}, ${saturation}%, ${borderLightness}%, .38)`);
+                cell.style.color = intensity >= .54 ? '#fff' : '#17324d';
+            };
+            const compactDuration = (seconds) => {
+                if (seconds <= 0) return '';
+                if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}m`;
+                const hours = seconds / 3600;
+                return `${hours >= 10 ? Math.round(hours) : hours.toFixed(1).replace('.0', '')}h`;
+            };
+            const activityDuration = (seconds) => {
+                const value = Math.max(0, Number(seconds) || 0);
+                if (value <= 0) return '0 分鐘';
+                const minutes = Math.max(1, Math.round(value / 60));
+                const hours = Math.floor(minutes / 60);
+                const remainder = minutes % 60;
+                if (!hours) return `${minutes} 分鐘`;
+                return `${hours} 小時${remainder ? ` ${remainder} 分鐘` : ''}`;
+            };
+            const summaryDuration = (seconds) => {
+                if (seconds <= 0) return '0h';
+                if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} 分`;
+                return `${(seconds / 3600).toFixed(1).replace('.0', '')}h`;
+            };
+            const spokenDate = (key) => {
+                const [year, month, day] = key.split('-').map(Number);
+                const weekday = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'][new Date(year, month - 1, day).getDay()];
+                return `${month} 月 ${day} 日・${weekday}`;
+            };
+            const fullDuration = (seconds) => seconds > 0 ? `觀看 ${activityDuration(seconds)}` : '尚無影片觀看紀錄';
+            const closeModal = () => {
+                if (!modal || modal.hidden) return;
+                modal.hidden = true;
+                document.body.classList.remove('calendar-modal-open');
+                lastFocusedCell?.focus();
+            };
+            const openModal = (key) => {
+                if (!modal || !modalTitle || !modalSummary || !modalList) return;
+                const detail = detailsByDay.get(key) || { seconds: 0, learning_seconds: 0, activities: [] };
+                const activities = Array.isArray(detail.activities) ? detail.activities : [];
+                const videoSeconds = Number(detail.seconds) || 0;
+                const learningSeconds = Number(detail.learning_seconds) || 0;
+                modalTitle.textContent = spokenDate(key);
+                modalSummary.textContent = `${activities.filter((item) => !item.is_correction).length} 支影片有進度`;
+                modalList.replaceChildren();
+                const timeSummary = document.createElement('section');
+                timeSummary.className = 'calendar-time-summary';
+                timeSummary.setAttribute('aria-label', '當日影片與學習時間統計');
+                timeSummary.innerHTML = [
+                    `<div class="calendar-time-card"><span>影片觀看時間</span><strong>${activityDuration(videoSeconds)}</strong></div>`,
+                    `<div class="calendar-time-card is-learning"><span>實際學習時間</span><strong>${activityDuration(learningSeconds)}</strong></div>`,
+                ].join('');
+                modalList.appendChild(timeSummary);
+                if (!activities.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'calendar-activity-empty';
+                    empty.textContent = '這一天尚未留下影片觀看活動。';
+                    modalList.appendChild(empty);
+                } else {
+                    activities.forEach((activity) => {
+                        const item = document.createElement('article');
+                        item.className = `calendar-activity-item${activity.is_correction ? ' is-correction' : ''}`;
+                        const icon = document.createElement('span');
+                        icon.className = 'calendar-activity-icon';
+                        icon.innerHTML = activity.is_correction
+                            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11a5 5 0 0 1 0 10H9"/><path d="m8 3-4 4 4 4"/></svg>'
+                            : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5L8 5.5Z"/></svg>';
+                        const copy = document.createElement('div');
+                        copy.className = 'calendar-activity-copy';
+                        const title = document.createElement('div');
+                        title.className = 'calendar-activity-title';
+                        title.textContent = `${String(Number(activity.sequence) || 0).padStart(3, '0')}・${activity.title || '未命名影片'}`;
+                        const meta = document.createElement('div');
+                        meta.className = 'calendar-activity-meta';
+                        meta.textContent = `${activity.subject || '未分類'}・${activity.is_correction ? '進度回退校正' : `目前完成 ${Number(activity.completion) || 0}%`}`;
+                        copy.append(title, meta);
+                        const time = document.createElement('strong');
+                        time.className = 'calendar-activity-time';
+                        time.textContent = `${activity.is_correction ? '−' : '+'}${activityDuration(activity.seconds)}`;
+                        item.append(icon, copy, time);
+                        modalList.appendChild(item);
+                    });
+                }
+                lastFocusedCell = grid.querySelector(`[data-date="${key}"]`);
+                modal.hidden = false;
+                document.body.classList.add('calendar-modal-open');
+                modalClose?.focus();
+            };
+            const renderSummary = () => {
+                const prefix = `${visibleMonth.getFullYear()}-${pad(visibleMonth.getMonth() + 1)}-`;
+                const days = [...secondsByDay.entries()].filter(([key, seconds]) => key.startsWith(prefix) && seconds > 0);
+                const total = days.reduce((sum, [, seconds]) => sum + seconds, 0);
+                const best = days.reduce((winner, item) => (!winner || item[1] > winner[1] ? item : winner), null);
+                totalNode.textContent = summaryDuration(total);
+                activeNode.textContent = `${days.length} 天`;
+                averageNode.textContent = days.length ? summaryDuration(total / days.length) : '0 分';
+                bestNode.textContent = best ? `${Number(best[0].slice(5,7))}/${Number(best[0].slice(8,10))}・${summaryDuration(best[1])}` : '尚無紀錄';
+            };
+            const render = () => {
+                const year = visibleMonth.getFullYear();
+                const month = visibleMonth.getMonth();
+                const monthPrefix = `${year}-${pad(month + 1)}-`;
+                const monthMaximum = Math.max(
+                    0,
+                    ...[...secondsByDay.entries()]
+                        .filter(([key]) => key.startsWith(monthPrefix))
+                        .map(([, seconds]) => seconds),
+                );
+                const firstWeekday = new Date(year, month, 1).getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                heading.textContent = `${year} 年 ${month + 1} 月`;
+                grid.replaceChildren();
+                for (let offset = 0; offset < firstWeekday; offset += 1) {
+                    const placeholder = document.createElement('span');
+                    placeholder.className = 'public-calendar-placeholder';
+                    placeholder.setAttribute('aria-hidden', 'true');
+                    grid.appendChild(placeholder);
+                }
+                for (let day = 1; day <= daysInMonth; day += 1) {
+                    const date = new Date(year, month, day);
+                    const key = dateKey(date);
+                    const seconds = secondsByDay.get(key) || 0;
+                    const cell = document.createElement('button');
+                    cell.type = 'button';
+                    cell.className = 'public-calendar-day';
+                    cell.dataset.date = key;
+                    cell.setAttribute('role', 'gridcell');
+                    cell.setAttribute('aria-label', `${spokenDate(key)}，${fullDuration(seconds)}`);
+                    if (key === todayKey) cell.classList.add('is-today');
+                    applyHeatColor(cell, seconds, monthMaximum);
+                    const label = document.createElement('span');
+                    label.className = 'public-calendar-date';
+                    label.textContent = String(date.getDate());
+                    const duration = document.createElement('span');
+                    duration.className = 'public-calendar-duration';
+                    duration.textContent = compactDuration(seconds);
+                    cell.append(label, duration);
+                    cell.addEventListener('click', () => openModal(key));
+                    grid.appendChild(cell);
+                }
+                previous.disabled = monthNumber(visibleMonth) <= monthNumber(firstMonth);
+                next.disabled = monthNumber(visibleMonth) >= monthNumber(presentMonth);
+                renderSummary();
+            };
+            previous.addEventListener('click', () => { if (!previous.disabled) { visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1); render(); } });
+            next.addEventListener('click', () => { if (!next.disabled) { visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1); render(); } });
+            currentButton.addEventListener('click', () => { visibleMonth = new Date(presentMonth); render(); });
+            modalClose?.addEventListener('click', closeModal);
+            modal?.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+            document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && modal && !modal.hidden) closeModal(); });
+            render();
+        })();

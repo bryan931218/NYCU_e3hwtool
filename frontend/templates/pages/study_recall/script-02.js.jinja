@@ -1,0 +1,178 @@
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const shell = document.querySelector('.shell');
+            const layout = shell.querySelector('.layout');
+            const main = layout.querySelector('.main-stack');
+            const nav = main.querySelector('.recall-shortcuts');
+            const panes = new Map();
+            const makePane = (name, selectors) => {
+                const pane = document.createElement('section');
+                pane.className = 'workspace-pane';
+                pane.dataset.pane = name;
+                pane.id = 'workspace-' + name;
+                pane.setAttribute('role', 'tabpanel');
+                selectors.forEach((selector) => {
+                    document.querySelectorAll(selector).forEach((node) => pane.appendChild(node));
+                });
+                main.appendChild(pane);
+                panes.set(name, pane);
+                return pane;
+            };
+            document.querySelector('.page-head').appendChild(nav);
+            nav.setAttribute('role', 'tablist');
+            makePane('library', ['#note-library-search', '#selected-note-panel', '.main-stack > .empty']);
+            makePane('review', ['#review-zone', '.quick-review-launch', '.schedule-panel', '.rhythm-panel']);
+            makePane('assistant', ['#note-library-assistant']);
+            makePane('upload', ['#new-note']);
+            const favoritesLink = nav.querySelector('[data-favorite-shortcut]');
+            if (favoritesLink) {
+                favoritesLink.dataset.workspaceView = 'favorites';
+                makePane('favorites', ['#favorite-cards-panel']);
+            }
+            nav.querySelectorAll('[data-workspace-view]').forEach((link) => {
+                link.setAttribute('role', 'tab');
+                link.id = 'workspace-tab-' + link.dataset.workspaceView;
+                link.setAttribute('aria-controls', 'workspace-' + link.dataset.workspaceView);
+                panes.get(link.dataset.workspaceView)?.setAttribute('aria-labelledby', link.id);
+            });
+            const review = document.getElementById('review-zone');
+            review.querySelector('details.review-zone-fold')?.setAttribute('open', '');
+            document.querySelector('#new-note > details')?.setAttribute('open', '');
+            const noteHead = document.querySelector('#selected-note-panel .session-head');
+            if (noteHead) {
+                const tools = document.createElement('details');
+                tools.className = 'note-tools';
+                const summary = document.createElement('summary');
+                summary.textContent = '筆記管理';
+                tools.appendChild(summary);
+                const actions = noteHead.querySelector('.session-actions');
+                const rename = document.querySelector('#selected-note-panel > .note-settings');
+                const deletion = noteHead.querySelector('.session-title-row > form');
+                [actions, rename, deletion].forEach(node => { if (node) tools.appendChild(node); });
+                noteHead.appendChild(tools);
+            }
+            const libraryFold = document.querySelector('[data-recall-fold="library"]');
+            const mobileLayout = window.matchMedia('(max-width:760px)');
+            const syncLibraryLayout = () => { if (libraryFold) libraryFold.open = !mobileLayout.matches; };
+            syncLibraryLayout();
+            mobileLayout.addEventListener('change', syncLibraryLayout);
+            // Use one open topic at first; its cards are readable without another click.
+            const firstTopic = document.querySelector('#selected-note-panel .topic-section');
+            if (firstTopic) {
+                firstTopic.open = true;
+                firstTopic.querySelectorAll('.concept-fold').forEach((card) => { card.open = true; });
+            }
+            const switchView = (name, focusTab = false) => {
+                if (!panes.has(name)) name = 'library';
+                panes.forEach((pane, key) => { pane.hidden = key !== name; });
+                nav.querySelectorAll('[data-workspace-view]').forEach((link) => {
+                    const selected = link.dataset.workspaceView === name;
+                    link.setAttribute('aria-selected', String(selected));
+                    link.tabIndex = selected ? 0 : -1;
+                    if (selected && focusTab) link.focus();
+                });
+                layout.dataset.view = name;
+                window.renderStudyMath?.(panes.get(name));
+            };
+            window.switchRecallWorkspace = switchView;
+            const openHash = () => {
+                let id;
+                try { id = decodeURIComponent(location.hash.slice(1)); } catch (_) { id = ''; }
+                const target = id ? document.getElementById(id) : null;
+                const pane = target?.closest('.workspace-pane');
+                if (pane) {
+                    switchView(pane.dataset.pane);
+                    let parent = target;
+                    while (parent && parent !== pane) {
+                        if (parent instanceof HTMLDetailsElement) parent.open = true;
+                        parent = parent.parentElement;
+                    }
+                    window.renderStudyMath?.(target);
+                } else switchView('library');
+            };
+            nav.addEventListener('click', (event) => {
+                const tab = event.target.closest('[data-workspace-view]');
+                if (!tab) return;
+                event.preventDefault();
+                switchView(tab.dataset.workspaceView);
+                history.pushState(null, '', tab.hash);
+            });
+            nav.addEventListener('keydown', (event) => {
+                if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+                const tabs = [...nav.querySelectorAll('[data-workspace-view]')];
+                const current = tabs.indexOf(document.activeElement);
+                if (current < 0) return;
+                event.preventDefault();
+                const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 :
+                    (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+                switchView(tabs[index].dataset.workspaceView, true);
+                history.pushState(null, '', tabs[index].hash);
+            });
+            window.addEventListener('hashchange', openHash);
+            window.addEventListener('popstate', openHash);
+            shell.classList.add('workspace-ready');
+            openHash();
+
+            const list = review.querySelector('[data-recall-card-list]');
+            const subjects = {{ review_cards|map(attribute='subject')|list|tojson }};
+            [...list.children].forEach((card, index) => { card.dataset.reviewSubject = subjects[index] || '未分類'; });
+            const toolbar = document.createElement('div');
+            toolbar.className = 'workspace-toolbar';
+            toolbar.innerHTML = '<label>科目<select aria-label="複習科目"><option value="">全部科目</option></select></label><div class="workspace-segments" role="group" aria-label="複習顯示方式"><button type="button" data-mode="focus" aria-pressed="true">單張專注</button><button type="button" data-mode="list" aria-pressed="false">卡片清單</button></div>';
+            const subjectSelect = toolbar.querySelector('select');
+            [...new Set(subjects)].forEach((subject) => {
+                const option = document.createElement('option');
+                option.value = subject;
+                option.textContent = subject;
+                subjectSelect.appendChild(option);
+            });
+            list.before(toolbar);
+            const pager = document.createElement('div');
+            pager.className = 'review-pager';
+            pager.innerHTML = '<button type="button" data-prev title="上一張" aria-label="上一張">←</button><span aria-live="polite"></span><button type="button" data-next title="下一張" aria-label="下一張">→</button>';
+            list.after(pager);
+            const filteredEmpty = document.createElement('div');
+            filteredEmpty.className = 'empty';
+            filteredEmpty.textContent = '這個科目已沒有待複習的重點卡。';
+            filteredEmpty.hidden = true;
+            pager.after(filteredEmpty);
+            let mode = 'focus';
+            let index = 0;
+            let activeCard = null;
+            try { mode = localStorage.getItem('e3RecallReviewMode') === 'list' ? 'list' : 'focus'; } catch (_) {}
+            const refreshReview = () => {
+                const cards = [...list.querySelectorAll('[data-recall-card]')];
+                const matches = cards.filter((card) => !subjectSelect.value || card.dataset.reviewSubject === subjectSelect.value);
+                if (matches.includes(activeCard)) index = matches.indexOf(activeCard);
+                index = Math.max(0, Math.min(index, matches.length - 1));
+                activeCard = matches[index] || null;
+                review.dataset.mode = mode;
+                cards.forEach((card) => { card.hidden = !matches.includes(card) || (mode === 'focus' && card !== activeCard); });
+                toolbar.querySelectorAll('[data-mode]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
+                toolbar.hidden = cards.length === 0;
+                pager.hidden = mode !== 'focus' || matches.length === 0;
+                pager.querySelector('span').textContent = matches.length ? (index + 1) + ' / ' + matches.length + ' 張' : '';
+                pager.querySelector('[data-prev]').disabled = index === 0;
+                pager.querySelector('[data-next]').disabled = index >= matches.length - 1;
+                filteredEmpty.hidden = cards.length === 0 || matches.length > 0;
+                window.renderStudyMath?.(review);
+                if (!cards.length) {
+                    document.querySelectorAll('.quick-review-actions').forEach((node) => { node.hidden = true; });
+                }
+            };
+            subjectSelect.addEventListener('change', () => { index = 0; activeCard = null; refreshReview(); });
+            toolbar.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
+                mode = button.dataset.mode;
+                try { localStorage.setItem('e3RecallReviewMode', mode); } catch (_) {}
+                refreshReview();
+            }));
+            pager.querySelector('[data-prev]').addEventListener('click', () => { index--; activeCard = null; refreshReview(); });
+            pager.querySelector('[data-next]').addEventListener('click', () => { index++; activeCard = null; refreshReview(); });
+            new MutationObserver(() => {
+                refreshReview();
+                if (mode === 'focus' && layout.dataset.view === 'review' && activeCard) {
+                    activeCard.scrollIntoView({block:'start', behavior:'instant'});
+                }
+            }).observe(list, { childList:true });
+            refreshReview();
+        });

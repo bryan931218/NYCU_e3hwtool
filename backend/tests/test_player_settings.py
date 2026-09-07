@@ -1,3 +1,4 @@
+from tests.source_helpers import read_source
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -293,12 +294,8 @@ class PlayerSettingsTests(unittest.TestCase):
 
     def test_fullscreen_mouse_movement_reveals_native_controls_without_hiding_dock(self):
         template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
-        shortcut_source = (template_dir / "_player_shortcut_compat.html").read_text(
-            encoding="utf-8"
-        )
-        dock_source = (template_dir / "_player_control_dock.html").read_text(
-            encoding="utf-8"
-        )
+        shortcut_source = read_source(template_dir / "_player_shortcut_compat.html")
+        dock_source = read_source(template_dir / "_player_control_dock.html")
         self.assertIn(
             "capture.addEventListener('pointermove', releaseForNativeControls",
             shortcut_source,
@@ -313,15 +310,9 @@ class PlayerSettingsTests(unittest.TestCase):
 
     def test_quick_marker_uses_r_and_m_remains_mute(self):
         template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
-        plan_source = (template_dir / "admin_study_plan.html").read_text(
-            encoding="utf-8"
-        )
-        dock_source = (template_dir / "_player_control_dock.html").read_text(
-            encoding="utf-8"
-        )
-        shortcut_source = (template_dir / "_player_shortcut_compat.html").read_text(
-            encoding="utf-8"
-        )
+        plan_source = read_source(template_dir / "admin_study_plan.html")
+        dock_source = read_source(template_dir / "_player_control_dock.html")
+        shortcut_source = read_source(template_dir / "_player_shortcut_compat.html")
 
         self.assertIn("plainShortcut && pressedKey === 'r'", plan_source)
         self.assertNotIn("plainShortcut && pressedKey === 'm'", plan_source)
@@ -331,12 +322,10 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertIn("R 快速紀錄　M 靜音", shortcut_source)
 
     def test_seek_shortcuts_repeat_until_the_key_is_released(self):
-        shortcut_source = (
-            Path(__file__).resolve().parents[2]
+        shortcut_source = read_source(Path(__file__).resolve().parents[2]
             / "frontend"
             / "templates"
-            / "_player_shortcut_compat.html"
-        ).read_text(encoding="utf-8")
+            / "_player_shortcut_compat.html")
 
         self.assertIn("Number(settings.seek_repeat_ms) || 150", shortcut_source)
         self.assertIn("if (!event.repeat || heldSeekCode !== event.code)", shortcut_source)
@@ -346,15 +335,9 @@ class PlayerSettingsTests(unittest.TestCase):
 
     def test_player_settings_expose_fine_grained_controls(self):
         template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
-        settings_source = (template_dir / "admin_study_player_settings.html").read_text(
-            encoding="utf-8"
-        )
-        shortcut_source = (template_dir / "_player_shortcut_compat.html").read_text(
-            encoding="utf-8"
-        )
-        dock_source = (template_dir / "_player_control_dock.html").read_text(
-            encoding="utf-8"
-        )
+        settings_source = read_source(template_dir / "admin_study_player_settings.html")
+        shortcut_source = read_source(template_dir / "_player_shortcut_compat.html")
+        dock_source = read_source(template_dir / "_player_control_dock.html")
 
         for field_name in (
             "default_playback_rate",
@@ -386,10 +369,8 @@ class PlayerSettingsTests(unittest.TestCase):
             / "templates"
             / "admin_study_plan.html"
         )
-        source = template_path.read_text(encoding="utf-8")
-        tracker_source = (
-            template_path.parent / "_study_upload_tracker.html"
-        ).read_text(encoding="utf-8")
+        source = read_source(template_path)
+        tracker_source = read_source(template_path.parent / "_study_upload_tracker.html")
 
         self.assertIn("VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000", source)
         self.assertIn("scheduleVideoStudyIdleCutoff", source)

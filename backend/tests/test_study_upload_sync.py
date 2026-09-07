@@ -1,3 +1,4 @@
+from tests.source_helpers import read_source
 import os
 import json
 import tempfile
@@ -77,8 +78,8 @@ class StudyUploadSyncTests(unittest.TestCase):
 
     def test_tracker_discovers_server_job_and_uploads_with_bounded_workers(self):
         root = Path(__file__).resolve().parents[2]
-        tracker = (root / "frontend" / "templates" / "_study_upload_tracker.html").read_text(encoding="utf-8")
-        recall = (root / "frontend" / "templates" / "study_recall.html").read_text(encoding="utf-8")
+        tracker = read_source(root / "frontend" / "templates" / "_study_upload_tracker.html")
+        recall = read_source(root / "frontend" / "templates" / "study_recall.html")
 
         self.assertIn("/admin/study-recall/upload-jobs/current", tracker)
         self.assertIn("visibilitychange", tracker)

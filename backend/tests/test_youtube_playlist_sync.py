@@ -146,7 +146,7 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
                 "youtube_video_ids": ["9dXuhVJ-L5k"],
             }
             with patch(
-                "e3_tracker.api.web.sync_known_youtube_playlists",
+                "e3_tracker.api.routes.study_plan.sync_known_youtube_playlists",
                 return_value=fake_result,
             ), patch(
                 "e3_tracker.api.web._start_youtube_storyboard_index",

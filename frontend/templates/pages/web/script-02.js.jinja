@@ -1,0 +1,1476 @@
+
+const USER_PREFERENCES = {{ preferences | tojson | safe }} || {};
+const PREFERENCES_ENDPOINT = "{{ url_for('save_preferences', view_user=viewed_username) if is_admin_view else url_for('save_preferences') }}";
+const CACHE_SYNC_ENDPOINT = "{{ url_for('api_cache', view_user=viewed_username) if is_admin_view else url_for('api_cache') }}";
+const CACHE_SYNC_INTERVAL = 120000;
+let currentCacheTs = Number(document.body.dataset.cacheTs || '0');
+if (Number.isNaN(currentCacheTs)) {
+    currentCacheTs = 0;
+}
+let refreshInFlight = false;
+const IS_GUEST = {{ 'true' if guest_mode else 'false' }};
+const IS_READONLY_VIEW = document.body.dataset.readonlyView === '1';
+const loader = document.getElementById('loader');
+const loaderMessageEl = loader ? loader.querySelector('.loader-message') : null;
+const bgRefreshIndicator = document.getElementById('bgRefreshIndicator');
+const statusFilterGroup = document.getElementById('statusFilterGroup');
+const ignoredOverdueList = document.getElementById('ignoredOverdueList');
+const restoreIgnoredOverdueAll = document.getElementById('restoreIgnoredOverdueAll');
+const filterMenu = document.getElementById('filterMenu');
+const filterActiveCount = document.getElementById('filterActiveCount');
+const viewDue = document.getElementById('viewDue');
+const viewCourse = document.getElementById('viewCourse');
+const viewCourseBtn = document.getElementById('viewCourseBtn');
+const viewDueBtn = document.getElementById('viewDueBtn');
+const hasCache = document.body.dataset.hasCache === '1';
+const toastContainer = document.getElementById('toastContainer');
+const UI_EVENT_ENDPOINT = "{{ url_for('ui_event') }}";
+const themeToggle = document.getElementById('themeToggle');
+
+const totalCountEl = document.getElementById('totalCount');
+const ignoredCountEl = document.getElementById('ignoredCount');
+const addCustomAssignmentBtn = document.getElementById('addCustomAssignmentBtn');
+const dueEditModal = document.getElementById('dueEditModal');
+const dueEditForm = document.getElementById('dueEditForm');
+const dueEditUid = document.getElementById('dueEditUid');
+const dueEditInput = document.getElementById('dueEditInput');
+const dueEditTitle = document.getElementById('dueEditTitle');
+const dueResetBtn = document.getElementById('dueResetBtn');
+const customAssignmentModal = document.getElementById('customAssignmentModal');
+const customAssignmentForm = document.getElementById('customAssignmentForm');
+const customCourseInput = document.getElementById('customCourseInput');
+const customTitleInput = document.getElementById('customTitleInput');
+const customDueInput = document.getElementById('customDueInput');
+
+const TOAST_ICONS = {
+    success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
+    error: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>',
+    warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+    info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'
+};
+const googleSyncBtn = document.getElementById('googleSyncBtn');
+const googleModal = document.getElementById('googleModal');
+const googleModalList = document.getElementById('googleModalList');
+const googleModalSelectAll = document.getElementById('googleModalSelectAll');
+const googleModalSubmit = document.getElementById('googleModalSubmit');
+const googleModalCancel = document.getElementById('googleModalCancel');
+const googleModalClose = document.getElementById('googleModalClose');
+const googleSyncInput = document.getElementById('googleSyncInput');
+const googleSyncForm = document.getElementById('googleSyncForm');
+if (googleModalSubmit && !googleModalSubmit.dataset.defaultText) {
+    googleModalSubmit.dataset.defaultText = googleModalSubmit.textContent.trim();
+}
+
+function applyTheme(theme) {
+    const target = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', target);
+    document.documentElement.style.colorScheme = target;
+    try {
+        localStorage.setItem('e3_theme', target);
+    } catch (err) {}
+    if (themeToggle) {
+        themeToggle.setAttribute('title', target === 'dark' ? '切換至淺色模式' : '切換至深色模式');
+    }
+}
+if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        applyTheme(current === 'dark' ? 'light' : 'dark');
+    });
+}
+const startupTheme = (typeof window !== 'undefined' && window.__initialTheme) ? window.__initialTheme : (document.documentElement.getAttribute('data-theme') || 'light');
+applyTheme(startupTheme);
+
+function logUiEvent(action, status = 'success', meta) {
+    if (!action || !UI_EVENT_ENDPOINT) return;
+    const payload = JSON.stringify({ action, status, meta });
+    if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(UI_EVENT_ENDPOINT, blob);
+    } else {
+        fetch(UI_EVENT_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true,
+        }).catch(() => {});
+    }
+}
+
+function showLoader(message = '載入中...') {
+    if (!loader) return;
+    if (loaderMessageEl) {
+        loaderMessageEl.textContent = message;
+    }
+    loader.classList.add('active');
+    document.body.classList.add('ui-locked');
+}
+
+function hideLoader() {
+    if (!loader) return;
+    loader.classList.remove('active');
+    document.body.classList.remove('ui-locked');
+    if (loaderMessageEl) {
+        loaderMessageEl.textContent = '載入中...';
+    }
+}
+
+function showToast(message, type = 'info', duration = 5000) {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+
+    toast.innerHTML = `
+    <div class="toast-icon">${TOAST_ICONS[type] || TOAST_ICONS.info}</div>
+    <div class="toast-content">${message}</div>
+    <button class="toast-close" aria-label="關閉">×</button>
+    <div class="toast-progress"></div>
+    `;
+
+    toastContainer.appendChild(toast);
+
+    const timeout = setTimeout(() => {
+    closeToast(toast);
+    }, duration);
+
+    const closeBtn = toast.querySelector('.toast-close');
+    closeBtn.addEventListener('click', () => {
+    clearTimeout(timeout);
+    closeToast(toast);
+    });
+
+    if (toastContainer.children.length > 3) {
+    closeToast(toastContainer.children[0]);
+    }
+
+    return toast;
+}
+
+function closeToast(toast) {
+    if (!toast || toast.classList.contains('closing')) return;
+
+    toast.classList.add('closing');
+    toast.addEventListener('animationend', () => {
+    toast.remove();
+    });
+}
+
+function processFlashMessages() {
+    const flashMessages = document.getElementById('flashMessages');
+    if (flashMessages) {
+    const messages = flashMessages.querySelectorAll('div');
+    messages.forEach(msg => {
+        const category = msg.dataset.category || 'info';
+        const message = msg.dataset.message;
+        if (message) {
+        showToast(message, category);
+        }
+    });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', processFlashMessages);
+
+async function fetchAndSwapContent() {
+    const contentResponse = await fetch(window.location.href);
+    if (!contentResponse.ok) {
+        throw new Error("無法獲取更新後的內容");
+    }
+
+    const html = await contentResponse.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    const docBody = doc.querySelector('body');
+    if (docBody) {
+        const nextTs = Number(docBody.dataset.cacheTs || '0');
+        if (!Number.isNaN(nextTs)) {
+            currentCacheTs = nextTs;
+        }
+    }
+
+    const newViewDue = doc.getElementById('viewDue');
+    if (newViewDue && viewDue) {
+        viewDue.innerHTML = newViewDue.innerHTML;
+    }
+
+    const newViewCourse = doc.getElementById('viewCourse');
+    if (newViewCourse && viewCourse) {
+        viewCourse.innerHTML = newViewCourse.innerHTML;
+    }
+
+    const currentSemesterSelector = document.getElementById('semesterSelector');
+    const newSemesterSelector = doc.getElementById('semesterSelector');
+    if (currentSemesterSelector && newSemesterSelector) {
+        currentSemesterSelector.replaceWith(newSemesterSelector.cloneNode(true));
+    } else if (!currentSemesterSelector && newSemesterSelector) {
+        const toolbar = document.querySelector('.toolbar-compact');
+        if (toolbar) toolbar.before(newSemesterSelector.cloneNode(true));
+    } else if (currentSemesterSelector && !newSemesterSelector) {
+        currentSemesterSelector.remove();
+    }
+    const refreshedSemesterFilters = readCheckedSemesterFilters();
+    if (refreshedSemesterFilters.length) {
+        currentSemesterFilters = refreshedSemesterFilters;
+        USER_PREFERENCES.semester_filter = refreshedSemesterFilters.slice();
+    }
+
+    const newTotalCount = doc.getElementById('totalCount');
+    const newIgnoredCount = doc.getElementById('ignoredCount');
+
+    if (newTotalCount && totalCountEl) totalCountEl.textContent = newTotalCount.textContent;
+    if (newIgnoredCount && ignoredCountEl) ignoredCountEl.textContent = newIgnoredCount.textContent;
+
+    const excelLink = document.querySelector('.tc-center a[download]');
+    const newExcelLink = doc.querySelector('.tc-center a[download]');
+    if (excelLink && newExcelLink) {
+        excelLink.href = newExcelLink.href;
+    } else if (newExcelLink) {
+        const tcCenter = document.querySelector('.tc-center');
+        if (tcCenter) {
+            tcCenter.innerHTML = doc.querySelector('.tc-center').innerHTML;
+        }
+    }
+
+    hydrateLocalAssignments();
+    sortFlatTableAsc();
+    applyFilters();
+}
+
+async function fetchCacheStatus() {
+    const resp = await fetch(CACHE_SYNC_ENDPOINT || "{{ url_for('api_cache') }}", {
+        cache: "no-store",
+        credentials: "same-origin"
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || "cache error");
+    return data;
+}
+
+async function waitForCacheUpdate(prevTs, timeoutMs = 300000, intervalMs = 2500) {
+    const start = Date.now();
+    let lastStatus = null;
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const status = await fetchCacheStatus();
+            lastStatus = status;
+            if (status.refresh_status === 'error') {
+                throw new Error(status.refresh_error || "背景更新失敗");
+            }
+            const ts = Number(status.ts || 0);
+            if (!Number.isNaN(ts) && ts > prevTs) {
+                return { ts, pending: false };
+            }
+            if (status.refresh_status === 'success' && !status.refresh_in_progress && !Number.isNaN(ts) && ts >= prevTs) {
+                return { ts, pending: false };
+            }
+        } catch (err) {
+            if (lastStatus && lastStatus.refresh_status === 'error') {
+                throw err;
+            }
+            console.error("poll cache failed:", err.message);
+        }
+        await new Promise(res => setTimeout(res, intervalMs));
+    }
+    if (lastStatus && lastStatus.refresh_in_progress) {
+        return { ts: Number(lastStatus.ts || 0), pending: true };
+    }
+    throw new Error("等待更新逾時");
+}
+
+async function refreshAssignments(background = true, semesterFilters = currentSemesterFilters, includeArchived = false){
+    if (refreshInFlight) {
+        return;
+    }
+    refreshInFlight = true;
+    let retryAfterCurrentRefresh = false;
+    const normalizedSemesters = normalizeSemesterFilters(semesterFilters);
+    document.querySelectorAll('#manualRefreshBtn, #archiveRefreshBtn').forEach((button) => {
+        button.disabled = true;
+    });
+    try{
+    if (background) {
+        bgRefreshIndicator && bgRefreshIndicator.classList.add('active');
+    } else {
+        showLoader('資料更新中，請稍候...');
+    }
+
+    const requestPayload = normalizedSemesters.length ? {semesterFilters: normalizedSemesters} : {};
+    if (includeArchived) requestPayload.includeArchived = true;
+    const r = await fetch("{{ url_for('api_assignments') }}", {
+        method:"POST",
+        credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(requestPayload)
+    });
+
+    if(!r.ok){ throw new Error("HTTP " + r.status); }
+
+    const response = await r.json();
+    if (response.ok) {
+        retryAfterCurrentRefresh = !!response.in_progress && normalizedSemesters.length > 0;
+        const prevTs = Number(currentCacheTs || 0);
+        if (response.background) {
+            const updateResult = await waitForCacheUpdate(prevTs);
+            if (updateResult.pending) {
+                showToast("背景更新仍在進行，完成後會自動同步畫面。", "info");
+                return;
+            }
+            currentCacheTs = updateResult.ts;
+        }
+        await fetchAndSwapContent();
+        if (!retryAfterCurrentRefresh) {
+            showToast(includeArchived ? "舊學期已載入" : "資料已成功更新", "success");
+        }
+    } else {
+        throw new Error("更新失敗");
+    }
+    } catch(e) {
+    if (background) {
+        bgRefreshIndicator && bgRefreshIndicator.classList.remove('active');
+        console.error("背景更新失敗：", e.message);
+        showToast("背景更新失敗：" + e.message, "error");
+    } else {
+        hideLoader();
+        showToast("更新失敗：" + e.message, "error");
+    }
+    } finally {
+    refreshInFlight = false;
+    document.querySelectorAll('#manualRefreshBtn, #archiveRefreshBtn').forEach((button) => {
+        button.disabled = false;
+    });
+    if (background) {
+        bgRefreshIndicator && bgRefreshIndicator.classList.remove('active');
+    } else {
+        hideLoader();
+    }
+    if (retryAfterCurrentRefresh) {
+        setTimeout(() => refreshAssignments(background, normalizedSemesters, includeArchived), 100);
+    }
+    }
+}
+
+function sortFlatTableAsc(){
+    const tbody = document.querySelector('#flatTable tbody');
+    if(!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a,b)=>{
+    const A = parseInt(a.dataset.dueTs || '9999999999', 10);
+    const B = parseInt(b.dataset.dueTs || '9999999999', 10);
+    return A - B;
+    });
+    rows.forEach(r=>tbody.appendChild(r));
+}
+
+function getStatusPriority(row) {
+    const status = row.dataset.primaryStatus || 'pending';
+    if (status === 'pending' || status === 'overdue') return 0;
+    if (status === 'graded') return 1;
+    if (status === 'completed') return 2;
+    return 3;
+}
+
+function sortAssignmentTable(tbody) {
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        if (currentStatusFilters.length > 1) {
+            const priorityA = getStatusPriority(a);
+            const priorityB = getStatusPriority(b);
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+        }
+        const dueA = parseInt(a.dataset.dueTs || '9999999999', 10);
+        const dueB = parseInt(b.dataset.dueTs || '9999999999', 10);
+        return dueA - dueB;
+    });
+    rows.forEach((row) => tbody.appendChild(row));
+}
+
+const STATUS_FILTER_LABELS = {
+    pending: '待處理',
+    completed: '已完成',
+    graded: '已評分',
+    overdue: '逾期未交',
+};
+const STATUS_FILTER_KEYS = ['pending', 'completed', 'graded', 'overdue'];
+const DEFAULT_STATUS_FILTERS = ['pending'];
+
+function normalizeSemesterFilters(value) {
+    if (!Array.isArray(value)) return [];
+    const next = [];
+    value.forEach((item) => {
+        const key = String(item || '').trim().toLowerCase();
+        if (!/^\d{2,3}-(?:1|2|summer)$/.test(key) && key !== 'other') return;
+        if (!next.includes(key)) next.push(key);
+    });
+    return next;
+}
+
+function readCheckedSemesterFilters() {
+    return normalizeSemesterFilters(Array.from(document.querySelectorAll('[data-semester-filter]:checked')).map((input) => input.value));
+}
+
+let currentViewMode = (USER_PREFERENCES && USER_PREFERENCES.view_mode === 'course') ? 'course' : 'due';
+function normalizeStatusFilters(value) {
+    if (value == null) {
+        return DEFAULT_STATUS_FILTERS.slice();
+    }
+    let raw = value;
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw);
+            raw = Array.isArray(parsed) ? parsed : [raw];
+        } catch (err) {
+            raw = [raw];
+        }
+    }
+    if (!Array.isArray(raw)) {
+        return DEFAULT_STATUS_FILTERS.slice();
+    }
+    const next = [];
+    raw.forEach((item) => {
+        const key = String(item || '').trim().toLowerCase();
+        if (key === 'all') {
+            STATUS_FILTER_KEYS.forEach((statusKey) => {
+                if (!next.includes(statusKey)) next.push(statusKey);
+            });
+            return;
+        }
+        if (STATUS_FILTER_LABELS[key] && !next.includes(key)) {
+            next.push(key);
+        }
+    });
+    return next;
+}
+
+function isAllStatusFiltersSelected(filters = currentStatusFilters) {
+    return STATUS_FILTER_KEYS.every((key) => filters.includes(key));
+}
+
+function formatStatusFilterSummary(filters = currentStatusFilters) {
+    if (isAllStatusFiltersSelected(filters)) {
+        return '全部';
+    }
+    return filters.map((key) => STATUS_FILTER_LABELS[key]).filter(Boolean).join('、') || '待處理';
+}
+
+function syncStatusFilterButtons() {
+    if (!statusFilterGroup) return;
+    const selected = new Set(currentStatusFilters);
+    statusFilterGroup.querySelectorAll('[data-status-filter]').forEach((btn) => {
+        const key = btn.getAttribute('data-status-filter') || '';
+        btn.classList.toggle('active', key === 'all' ? isAllStatusFiltersSelected() : selected.has(key));
+    });
+}
+
+let currentStatusFilters = normalizeStatusFilters(USER_PREFERENCES && USER_PREFERENCES.status_filter);
+USER_PREFERENCES.status_filter = currentStatusFilters.slice();
+let currentSemesterFilters = normalizeSemesterFilters(USER_PREFERENCES && USER_PREFERENCES.semester_filter);
+if (!currentSemesterFilters.length) currentSemesterFilters = readCheckedSemesterFilters();
+USER_PREFERENCES.semester_filter = currentSemesterFilters.slice();
+USER_PREFERENCES.include_ignored_overdue = !!USER_PREFERENCES.include_ignored_overdue;
+if (!Array.isArray(USER_PREFERENCES.ignored_overdue_uids)) {
+    USER_PREFERENCES.ignored_overdue_uids = [];
+}
+
+const STORAGE_USER_KEY = (document.body.dataset.viewUser || 'guest').replace(/[^\w.-]/g, '_') || 'guest';
+const DUE_OVERRIDES_KEY = `e3_due_overrides_${STORAGE_USER_KEY}`;
+const CUSTOM_ASSIGNMENTS_KEY = `e3_custom_assignments_${STORAGE_USER_KEY}`;
+let dueOverrides = loadJsonMap(DUE_OVERRIDES_KEY);
+let customAssignments = loadJsonArray(CUSTOM_ASSIGNMENTS_KEY);
+
+function loadJsonMap(key) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (err) {
+        return {};
+    }
+}
+
+function loadJsonArray(key) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+        return [];
+    }
+}
+
+function saveDueOverrides() {
+    try {
+        localStorage.setItem(DUE_OVERRIDES_KEY, JSON.stringify(dueOverrides));
+    } catch (err) {}
+}
+
+function saveCustomAssignments() {
+    try {
+        localStorage.setItem(CUSTOM_ASSIGNMENTS_KEY, JSON.stringify(customAssignments));
+    } catch (err) {}
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[char]));
+}
+
+function cssEscapeValue(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(String(value));
+    }
+    return String(value).replace(/["\\]/g, '\\$&');
+}
+
+function formatDueDisplayFromTs(ts) {
+    if (!ts) return '';
+    const date = new Date(Number(ts) * 1000);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatDatetimeLocalFromTs(ts) {
+    if (!ts) return '';
+    return formatDueDisplayFromTs(ts).replace(' ', 'T');
+}
+
+function parseDatetimeLocalToTs(value) {
+    if (!value) return null;
+    const parsed = new Date(value);
+    const ms = parsed.getTime();
+    if (Number.isNaN(ms)) return null;
+    return Math.floor(ms / 1000);
+}
+
+function formatDuration(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    if (days > 0) return `${days}天 ${hours}小時`;
+    if (hours > 0) return `${hours}小時 ${minutes}分鐘`;
+    return `${Math.max(1, minutes)}分鐘`;
+}
+
+function computePrimaryStatus(row, dueTs) {
+    if (row.dataset.graded === '1') return 'graded';
+    if (row.dataset.completed === '1') return 'completed';
+    if (dueTs && dueTs < Math.floor(Date.now() / 1000)) return 'overdue';
+    return 'pending';
+}
+
+function updateRemainingForRow(row) {
+    if (!row) return;
+    const dueTs = Number(row.dataset.dueTs || '0');
+    const hasDue = row.dataset.hasDue === '1' && Number.isFinite(dueTs) && dueTs < 9999999999;
+    const status = row.dataset.primaryStatus || computePrimaryStatus(row, hasDue ? dueTs : null);
+    const remainingEls = row.querySelectorAll('.remaining-text');
+    if (!remainingEls.length) return;
+    let cls = 'neutral';
+    let label = '無截止資訊';
+    if (status === 'graded') {
+        cls = 'done';
+        label = '已評分';
+    } else if (status === 'completed') {
+        cls = 'done';
+        label = '已完成';
+    } else if (hasDue) {
+        const diff = dueTs - Math.floor(Date.now() / 1000);
+        if (diff < 0) {
+            cls = 'overdue';
+            label = `已逾期 ${formatDuration(-diff)}`;
+        } else if (diff <= 86400) {
+            cls = 'warning';
+            label = `剩下 ${formatDuration(diff)}`;
+        } else {
+            cls = 'normal';
+            label = `剩下 ${formatDuration(diff)}`;
+        }
+    }
+    remainingEls.forEach((el) => {
+        el.className = `remaining-text ${cls}`;
+        el.textContent = label;
+    });
+}
+
+function renderStatusBadges(row) {
+    const wrap = row.querySelector('.row-status-badges');
+    if (!wrap) return;
+    const status = row.dataset.primaryStatus || 'pending';
+    wrap.innerHTML = '';
+    if (status === 'completed') {
+        wrap.innerHTML = '<span class="badge done">已完成</span>';
+    } else if (status === 'graded') {
+        wrap.innerHTML = '<span class="badge graded">已評分</span>';
+    } else if (status === 'overdue') {
+        wrap.innerHTML = '<span class="badge overdue">逾期</span>';
+    } else {
+        wrap.innerHTML = '<span class="badge nodue">未完成</span>';
+    }
+    const stack = row.querySelector('.row-status-stack');
+    const existingIgnore = row.querySelector('[data-ignore-overdue]');
+    if (existingIgnore) existingIgnore.remove();
+    if (stack && status === 'overdue' && !IS_READONLY_VIEW && !(row.dataset.uid || '').startsWith('custom|')) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'row-ignore-btn';
+        button.dataset.ignoreOverdue = row.dataset.uid || '';
+        button.textContent = '忽略';
+        stack.appendChild(button);
+    }
+}
+
+function setRowDue(row, dueTs, dueText, sourceLabel = '自訂期限') {
+    if (!row) return;
+    const normalizedTs = Number(dueTs);
+    const hasDue = Number.isFinite(normalizedTs) && normalizedTs > 0;
+    row.dataset.dueTs = hasDue ? String(normalizedTs) : '9999999999';
+    row.dataset.hasDue = hasDue ? '1' : '0';
+    row.dataset.due = hasDue ? dueText : '無截止';
+    row.dataset.overdue = hasDue && normalizedTs < Math.floor(Date.now() / 1000) ? '1' : '0';
+    row.dataset.primaryStatus = computePrimaryStatus(row, hasDue ? normalizedTs : null);
+    const dueBox = row.querySelector('.assignment-due');
+    if (dueBox) {
+        dueBox.classList.toggle('empty', !hasDue);
+        const main = dueBox.querySelector('.assignment-due-main');
+        const sub = dueBox.querySelector('.assignment-due-sub');
+        if (main) main.textContent = hasDue ? dueText : '無截止';
+        if (sub) sub.textContent = hasDue ? sourceLabel : '截止資訊同步中';
+    }
+    updateRemainingForRow(row);
+    renderStatusBadges(row);
+}
+
+function applyDueOverrides() {
+    document.querySelectorAll('tr[data-uid]').forEach((row) => {
+        const override = dueOverrides[row.dataset.uid || ''];
+        if (override && override.due_ts) {
+            setRowDue(row, override.due_ts, override.due_at || formatDueDisplayFromTs(override.due_ts), '已手動修改期限');
+        } else if (!(row.dataset.uid || '').startsWith('custom|')) {
+            const originalTs = row.dataset.originalDueTs ? Number(row.dataset.originalDueTs) : null;
+            setRowDue(row, originalTs, row.dataset.originalDue || '', row.dataset.originalDue ? 'E3 同步期限' : '截止資訊同步中');
+        }
+    });
+}
+
+function refreshRemainingTimes() {
+    document.querySelectorAll('tr[data-uid]').forEach((row) => {
+        const dueTs = Number(row.dataset.dueTs || '0');
+        if (row.dataset.completed !== '1' && row.dataset.graded !== '1') {
+            row.dataset.overdue = row.dataset.hasDue === '1' && dueTs < Math.floor(Date.now() / 1000) ? '1' : '0';
+            row.dataset.primaryStatus = computePrimaryStatus(row, row.dataset.hasDue === '1' ? dueTs : null);
+            renderStatusBadges(row);
+        }
+        updateRemainingForRow(row);
+    });
+    applyFilters();
+}
+
+function openModalRoot(modal) {
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.style.display = 'block';
+    const backdrop = modal.querySelector('.modal-backdrop');
+    const panel = modal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.add('show');
+    panel && panel.classList.add('show');
+}
+
+function closeModalRoot(modal) {
+    if (!modal) return;
+    const backdrop = modal.querySelector('.modal-backdrop');
+    const panel = modal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.remove('show');
+    panel && panel.classList.remove('show');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }, 150);
+}
+
+function openDueEditModal(uid) {
+    if (IS_READONLY_VIEW || !uid || !dueEditModal || !dueEditForm) return;
+    const row = document.querySelector(`tr[data-uid="${cssEscapeValue(uid)}"]`);
+    if (!row) return;
+    const override = dueOverrides[uid];
+    const dueTs = override && override.due_ts ? Number(override.due_ts) : Number(row.dataset.dueTs || row.dataset.originalDueTs || '0');
+    dueEditUid.value = uid;
+    dueEditInput.value = dueTs && dueTs < 9999999999 ? formatDatetimeLocalFromTs(dueTs) : '';
+    if (dueEditTitle) dueEditTitle.textContent = `${row.dataset.course || ''}｜${row.dataset.title || ''}`.replace(/^｜/, '');
+    openModalRoot(dueEditModal);
+}
+
+function applyDueOverride(uid, dueTs) {
+    const dueText = formatDueDisplayFromTs(dueTs);
+    dueOverrides[uid] = { due_ts: dueTs, due_at: dueText };
+    saveDueOverrides();
+    document.querySelectorAll(`tr[data-uid="${cssEscapeValue(uid)}"]`).forEach((row) => {
+        setRowDue(row, dueTs, dueText, '已手動修改期限');
+    });
+    applyFilters();
+}
+
+function resetDueOverride(uid) {
+    delete dueOverrides[uid];
+    saveDueOverrides();
+    document.querySelectorAll(`tr[data-uid="${cssEscapeValue(uid)}"]`).forEach((row) => {
+        const originalTs = row.dataset.originalDueTs ? Number(row.dataset.originalDueTs) : null;
+        setRowDue(row, originalTs, row.dataset.originalDue || '', row.dataset.originalDue ? 'E3 同步期限' : '截止資訊同步中');
+    });
+    applyFilters();
+}
+
+function customAssignmentRowHtml(item, flat = false) {
+    const dueText = formatDueDisplayFromTs(item.due_ts);
+    const status = item.due_ts < Math.floor(Date.now() / 1000) ? 'overdue' : 'pending';
+    const commonAttrs = `
+        data-due-ts="${item.due_ts}"
+        data-overdue="${status === 'overdue' ? 1 : 0}"
+        data-completed="0"
+        data-graded="0"
+        data-primary-status="${status}"
+        data-ignored="0"
+        data-uid="${escapeHtml(item.uid)}"
+        data-course="${escapeHtml(item.course)}"
+        data-semester="custom"
+        data-title="${escapeHtml(item.title)}"
+        data-due="${escapeHtml(dueText)}"
+        data-has-due="1"
+        data-original-due-ts="${item.due_ts}"
+        data-original-due="${escapeHtml(dueText)}"
+    `;
+    const titleCell = flat ? `
+        <td class="assignment-cell-main">
+            <span class="assignment-eyebrow">${escapeHtml(item.course)}</span>
+            <div class="assignment-title-row"><span class="assignment-title">${escapeHtml(item.title)}</span></div>
+            <div class="assignment-meta"><span class="assignment-grade-inline empty"><span class="assignment-grade-inline-label">自訂</span><span class="assignment-grade-inline-text">代辦</span></span></div>
+        </td>
+    ` : `
+        <td class="assignment-cell-main">
+            <div class="assignment-title-row"><span class="assignment-title">${escapeHtml(item.title)}</span></div>
+            <div class="assignment-meta"><span class="remaining-text normal"></span><span class="assignment-grade-inline empty"><span class="assignment-grade-inline-label">自訂</span><span class="assignment-grade-inline-text">代辦</span></span></div>
+        </td>
+    `;
+    const signalCell = flat ? '<td class="assignment-center"><div class="assignment-signal"><span class="remaining-text normal"></span></div></td>' : '';
+    return `
+        <tr ${commonAttrs}>
+            ${signalCell}
+            ${titleCell}
+            <td>
+                <div class="assignment-due">
+                    <div class="assignment-due-header">
+                        <span class="assignment-due-main">${escapeHtml(dueText)}</span>
+                        <button type="button" class="due-edit-btn" data-edit-due="${escapeHtml(item.uid)}" aria-label="修改繳交期限" title="修改繳交期限">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                        </button>
+                    </div>
+                    <span class="assignment-due-sub">自訂期限</span>
+                </div>
+            </td>
+            <td class="assignment-center"><span class="submission-pill">-</span></td>
+            <td class="assignment-center"><div class="row-status-stack"><div class="row-status-badges"></div></div></td>
+            <td class="assignment-center assignment-link"><button type="button" class="btn custom-delete-btn" data-delete-custom="${escapeHtml(item.uid)}">刪除</button></td>
+        </tr>
+    `;
+}
+
+function ensureCustomCourseSection(courseName) {
+    if (!viewCourse) return null;
+    const existing = Array.from(viewCourse.querySelectorAll('.course-card')).find((card) => {
+        const heading = card.querySelector('h2');
+        return heading && heading.textContent.trim().startsWith(courseName);
+    });
+    if (existing) return existing.querySelector('tbody');
+    const section = document.createElement('section');
+    section.className = 'card course-card';
+    section.dataset.semester = 'custom';
+    section.innerHTML = `
+        <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div><h2>${escapeHtml(courseName)} <span style="color:var(--muted);font-size:14px">#自訂</span></h2></div>
+        </div>
+        <div class="panel">
+            <div class="table-shell">
+                <table class="courseTable assignment-table">
+                    <colgroup>
+                        <col class="course-col-title"><col class="course-col-due"><col class="course-col-stats"><col class="course-col-status"><col class="course-col-link">
+                    </colgroup>
+                    <thead><tr><th>作業名稱</th><th>截止時間</th><th class="assignment-center">繳交統計</th><th class="assignment-center">狀態</th><th class="assignment-center">連結</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    viewCourse.appendChild(section);
+    return section.querySelector('tbody');
+}
+
+function renderCustomAssignments() {
+    document.querySelectorAll('tr[data-uid^="custom|"]').forEach((row) => row.remove());
+    customAssignments = customAssignments.filter((item) => item && item.uid && item.title && item.due_ts);
+    customAssignments.forEach((item) => {
+        const flatTbody = document.querySelector('#flatTable tbody');
+        if (flatTbody) {
+            flatTbody.insertAdjacentHTML('beforeend', customAssignmentRowHtml(item, true));
+        }
+        const courseTbody = ensureCustomCourseSection(item.course || '自訂代辦');
+        if (courseTbody) {
+            courseTbody.insertAdjacentHTML('beforeend', customAssignmentRowHtml(item, false));
+        }
+    });
+    document.querySelectorAll('tr[data-uid^="custom|"]').forEach((row) => {
+        updateRemainingForRow(row);
+        renderStatusBadges(row);
+    });
+}
+
+function addCustomAssignment(course, title, dueTs) {
+    const item = {
+        uid: `custom|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`,
+        course: String(course || '').trim() || '自訂代辦',
+        title: String(title || '').trim(),
+        due_ts: dueTs,
+    };
+    if (!item.title || !item.due_ts) return false;
+    customAssignments.push(item);
+    saveCustomAssignments();
+    renderCustomAssignments();
+    applyFilters();
+    return true;
+}
+
+function deleteCustomAssignment(uid) {
+    customAssignments = customAssignments.filter((item) => item.uid !== uid);
+    delete dueOverrides[uid];
+    saveCustomAssignments();
+    saveDueOverrides();
+    document.querySelectorAll(`tr[data-uid="${cssEscapeValue(uid)}"]`).forEach((row) => row.remove());
+    applyFilters();
+}
+
+function hydrateLocalAssignments() {
+    renderCustomAssignments();
+    applyDueOverrides();
+    refreshRemainingTimes();
+}
+
+function getIgnoredOverdueUidSet() {
+    return new Set((USER_PREFERENCES.ignored_overdue_uids || []).map((item) => String(item || '').trim()).filter(Boolean));
+}
+
+function setIgnoredOverdueUids(nextUids) {
+    USER_PREFERENCES.ignored_overdue_uids = Array.from(new Set((nextUids || []).map((item) => String(item || '').trim()).filter(Boolean)));
+}
+
+function renderIgnoredOverdueList() {
+    if (!ignoredOverdueList) return;
+    const ignoredSet = getIgnoredOverdueUidSet();
+    const rows = Array.from(document.querySelectorAll('tr[data-uid][data-primary-status="overdue"]'));
+    const items = [];
+    const seen = new Set();
+    rows.forEach((row) => {
+        const uid = row.dataset.uid || '';
+        if (!ignoredSet.has(uid) || seen.has(uid)) return;
+        seen.add(uid);
+        items.push({
+            uid,
+            label: `${row.dataset.course || ''}｜${row.dataset.title || ''}`.replace(/^｜/, ''),
+        });
+    });
+    ignoredOverdueList.innerHTML = '';
+    if (restoreIgnoredOverdueAll) {
+        restoreIgnoredOverdueAll.hidden = items.length === 0;
+    }
+    if (!items.length) {
+        ignoredOverdueList.innerHTML = '<div class="muted" style="font-size:12px">目前沒有已忽略的逾期作業。</div>';
+        return;
+    }
+    items.forEach((item) => {
+        const chip = document.createElement('div');
+        chip.className = 'ignored-chip';
+        chip.innerHTML = `
+            <span class="ignored-chip-label" title="${item.label}">${item.label}</span>
+            <button type="button" class="ignored-chip-btn" data-restore-overdue="${item.uid}">復原</button>
+        `;
+        ignoredOverdueList.appendChild(chip);
+    });
+}
+
+function updateFilterSummary() {
+    if (!filterActiveCount) return;
+    filterActiveCount.textContent = String(currentStatusFilters.length + currentSemesterFilters.length);
+}
+
+function updateCounts() {
+    const currentView = currentViewMode === 'due' ? viewDue : viewCourse;
+    if (!currentView) {
+        if (totalCountEl) totalCountEl.textContent = '0';
+        if (ignoredCountEl) ignoredCountEl.textContent = String(getIgnoredOverdueUidSet().size);
+        return;
+    }
+
+    const visibleRows = currentView.querySelectorAll('tbody tr:not(.hidden)');
+    const totalVisible = visibleRows.length;
+    if (totalCountEl) totalCountEl.textContent = totalVisible;
+    if (ignoredCountEl) ignoredCountEl.textContent = String(getIgnoredOverdueUidSet().size);
+}
+
+function applyFilters(){
+const ignoredSet = getIgnoredOverdueUidSet();
+const selectedStatuses = new Set(currentStatusFilters);
+const selectedSemesters = new Set(currentSemesterFilters);
+
+    document.querySelectorAll('#flatTable tbody tr').forEach(tr=>{
+    const primaryStatus = tr.dataset.primaryStatus || 'pending';
+    const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
+    tr.dataset.ignored = ignored ? '1' : '0';
+    const semesterVisible = tr.dataset.semester === 'custom' || selectedSemesters.has(tr.dataset.semester || 'other');
+    let visible = semesterVisible && selectedStatuses.has(primaryStatus);
+    if (primaryStatus === 'overdue' && ignored) visible = false;
+    tr.classList.toggle('hidden', !visible);
+    });
+
+    document.querySelectorAll('.courseTable tbody tr').forEach(tr=>{
+    const primaryStatus = tr.dataset.primaryStatus || 'pending';
+    const ignored = primaryStatus === 'overdue' && ignoredSet.has(tr.dataset.uid || '');
+    tr.dataset.ignored = ignored ? '1' : '0';
+    const semesterVisible = tr.dataset.semester === 'custom' || selectedSemesters.has(tr.dataset.semester || 'other');
+    let visible = semesterVisible && selectedStatuses.has(primaryStatus);
+    if (primaryStatus === 'overdue' && ignored) visible = false;
+    tr.classList.toggle('hidden', !visible);
+    });
+
+    sortAssignmentTable(document.querySelector('#flatTable tbody'));
+    document.querySelectorAll('.courseTable tbody').forEach((tbody) => sortAssignmentTable(tbody));
+    document.querySelectorAll('#viewCourse .course-card').forEach((card) => {
+        card.classList.toggle('hidden', !card.querySelector('tbody tr:not(.hidden)'));
+    });
+
+    updateCounts();
+    renderIgnoredOverdueList();
+}
+
+function persistPreferences(partial = {}){
+    if (IS_READONLY_VIEW) return;
+    if (!PREFERENCES_ENDPOINT) return;
+    const payload = {};
+    if (Object.prototype.hasOwnProperty.call(partial, 'viewMode')) {
+        const mode = partial.viewMode === 'due' ? 'due' : 'course';
+        USER_PREFERENCES.view_mode = mode;
+        payload.viewMode = mode;
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'statusFilters') || Object.prototype.hasOwnProperty.call(partial, 'statusFilter')) {
+        const nextFilters = normalizeStatusFilters(
+            Object.prototype.hasOwnProperty.call(partial, 'statusFilters') ? partial.statusFilters : partial.statusFilter
+        );
+        USER_PREFERENCES.status_filter = nextFilters.slice();
+        currentStatusFilters = nextFilters.slice();
+        payload.statusFilters = nextFilters.slice();
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'semesterFilters') || Object.prototype.hasOwnProperty.call(partial, 'semesterFilter')) {
+        const nextSemesters = normalizeSemesterFilters(
+            Object.prototype.hasOwnProperty.call(partial, 'semesterFilters') ? partial.semesterFilters : partial.semesterFilter
+        );
+        if (nextSemesters.length) {
+            USER_PREFERENCES.semester_filter = nextSemesters.slice();
+            currentSemesterFilters = nextSemesters.slice();
+            payload.semesterFilters = nextSemesters.slice();
+        }
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'ignoredOverdueUids')) {
+        setIgnoredOverdueUids(partial.ignoredOverdueUids);
+        payload.ignoredOverdueUids = USER_PREFERENCES.ignored_overdue_uids.slice();
+    }
+    if (!Object.keys(payload).length) return;
+    fetch(PREFERENCES_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).catch(() => {});
+}
+
+function applyServerPreferenceState(nextPrefs){
+    if (!nextPrefs || typeof nextPrefs !== 'object') return;
+    const incoming = {
+        view_mode: nextPrefs.view_mode === 'due' ? 'due' : 'course',
+        status_filter: normalizeStatusFilters(nextPrefs.status_filter ?? nextPrefs.statusFilters),
+        semester_filter: normalizeSemesterFilters(nextPrefs.semester_filter ?? nextPrefs.semesterFilters),
+        include_ignored_overdue: !!nextPrefs.include_ignored_overdue,
+        ignored_overdue_uids: Array.isArray(nextPrefs.ignored_overdue_uids) ? nextPrefs.ignored_overdue_uids : [],
+    };
+    let viewChanged = false;
+    if (incoming.view_mode && incoming.view_mode !== currentViewMode) {
+        viewChanged = true;
+        setView(incoming.view_mode, { skipPersist: true });
+    }
+    USER_PREFERENCES.view_mode = incoming.view_mode;
+    USER_PREFERENCES.status_filter = incoming.status_filter.slice();
+    currentStatusFilters = incoming.status_filter.slice();
+    if (incoming.semester_filter.length) {
+        USER_PREFERENCES.semester_filter = incoming.semester_filter.slice();
+        currentSemesterFilters = incoming.semester_filter.slice();
+        document.querySelectorAll('[data-semester-filter]').forEach((input) => {
+            input.checked = currentSemesterFilters.includes(input.value);
+        });
+    }
+    setIgnoredOverdueUids(incoming.ignored_overdue_uids);
+    syncStatusFilterButtons();
+    updateFilterSummary();
+    if (!viewChanged) {
+        applyFilters();
+    }
+}
+
+function ignoreOverdueAssignment(uid) {
+    if (!uid || IS_READONLY_VIEW) return;
+    const next = USER_PREFERENCES.ignored_overdue_uids.slice();
+    next.push(uid);
+    persistPreferences({ ignoredOverdueUids: next });
+    applyFilters();
+}
+
+function restoreIgnoredOverdueAssignment(uid) {
+    if (!uid || IS_READONLY_VIEW) return;
+    const next = USER_PREFERENCES.ignored_overdue_uids.filter((item) => item !== uid);
+    persistPreferences({ ignoredOverdueUids: next });
+    applyFilters();
+}
+
+function restoreAllIgnoredOverdueAssignments() {
+    if (IS_READONLY_VIEW) return;
+    persistPreferences({ ignoredOverdueUids: [] });
+    applyFilters();
+}
+
+function collectVisibleAssignments(){
+    const mode = currentViewMode === 'due' ? 'due' : 'course';
+    const selector = mode === 'due' ? '#flatTable tbody tr' : '.courseTable tbody tr';
+    const rows = document.querySelectorAll(selector);
+    return Array.from(rows)
+        .filter((row) => row.dataset.uid && row.dataset.hasDue === '1' && !row.classList.contains('hidden') && row.offsetParent !== null)
+        .map((row) => ({
+            uid: row.dataset.uid,
+            course: row.dataset.course || '',
+            title: row.dataset.title || '',
+            due: row.dataset.due || '',
+            status: STATUS_FILTER_LABELS[row.dataset.primaryStatus || 'pending'] || '待處理',
+        }));
+}
+
+function openGoogleModal(){
+    if (!googleModal || !googleModalList) return;
+    const items = collectVisibleAssignments();
+    googleModalList.innerHTML = '';
+    if (googleModalSelectAll) {
+        googleModalSelectAll.disabled = items.length === 0;
+        googleModalSelectAll.checked = items.length > 0;
+    }
+    if (googleModalSubmit) {
+        googleModalSubmit.disabled = items.length === 0;
+        googleModalSubmit.textContent = googleModalSubmit.dataset.defaultText || '導入';
+    }
+    hideLoader();
+    if (!items.length) {
+        googleModalList.innerHTML = '<div class="modal-empty">目前視圖沒有可導入的作業，請調整篩選後再試。</div>';
+    } else {
+        items.forEach((item) => {
+            const wrapper = document.createElement('label');
+            wrapper.className = 'modal-item';
+            wrapper.innerHTML = `
+                <input type="checkbox" value="${item.uid}" checked>
+                <div>
+                    <div style="font-weight:600">${item.course}</div>
+                    <div>${item.title}</div>
+                    <div class="muted" style="font-size:12px;margin-top:4px">${item.due} ｜ ${item.status}</div>
+                </div>
+            `;
+            googleModalList.appendChild(wrapper);
+        });
+    }
+    googleModal.style.display = 'block';
+    googleModal.classList.remove('hidden');
+    const backdrop = googleModal.querySelector('.modal-backdrop');
+    const panel = googleModal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.add('show');
+    panel && panel.classList.add('show');
+}
+
+function closeGoogleModal(){
+    if (!googleModal) return;
+    const backdrop = googleModal.querySelector('.modal-backdrop');
+    const panel = googleModal.querySelector('.modal-panel');
+    backdrop && backdrop.classList.remove('show');
+    panel && panel.classList.remove('show');
+    setTimeout(() => {
+        googleModal.classList.add('hidden');
+        googleModal.style.display = 'none';
+    }, 150);
+}
+
+function setView(mode, options = {}){
+    const nextMode = mode === 'due' ? 'due' : 'course';
+    currentViewMode = nextMode;
+    if(nextMode === 'due'){
+    viewDue.classList.remove('hidden');
+    viewCourse.classList.add('hidden');
+    viewDueBtn.classList.add('active');
+    viewCourseBtn.classList.remove('active');
+    }else{
+    viewCourse.classList.remove('hidden');
+    viewDue.classList.add('hidden');
+    viewCourseBtn.classList.add('active');
+    viewDueBtn.classList.remove('active');
+    }
+    if(!options.skipPersist){
+        persistPreferences({ viewMode: nextMode });
+    }
+    applyFilters();
+}
+
+hydrateLocalAssignments();
+sortFlatTableAsc();
+setView(currentViewMode, { skipPersist: true });
+
+if (statusFilterGroup) {
+    statusFilterGroup.querySelectorAll('[data-status-filter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const nextFilter = btn.getAttribute('data-status-filter') || 'pending';
+            let nextFilters = currentStatusFilters.slice();
+            if (nextFilter === 'all') {
+                nextFilters = isAllStatusFiltersSelected() ? [] : STATUS_FILTER_KEYS.slice();
+            } else if (STATUS_FILTER_LABELS[nextFilter]) {
+                if (nextFilters.includes(nextFilter)) {
+                    nextFilters = nextFilters.filter((item) => item !== nextFilter);
+                } else {
+                    nextFilters.push(nextFilter);
+                }
+            }
+            currentStatusFilters = normalizeStatusFilters(nextFilters);
+            USER_PREFERENCES.status_filter = currentStatusFilters.slice();
+            syncStatusFilterButtons();
+            updateFilterSummary();
+            applyFilters();
+            persistPreferences({ statusFilters: currentStatusFilters });
+        });
+    });
+}
+
+document.addEventListener('change', (evt) => {
+    const checkbox = evt.target.closest('[data-semester-filter]');
+    if (!checkbox || IS_READONLY_VIEW) return;
+    const nextSemesters = readCheckedSemesterFilters();
+    if (!nextSemesters.length) {
+        checkbox.checked = true;
+        showToast('請至少保留一個學期。', 'warning');
+        return;
+    }
+    currentSemesterFilters = nextSemesters;
+    USER_PREFERENCES.semester_filter = nextSemesters.slice();
+    applyFilters();
+    updateFilterSummary();
+    persistPreferences({ semesterFilters: nextSemesters });
+});
+
+if (viewCourseBtn) {
+    viewCourseBtn.addEventListener('click', ()=>setView('course'));
+}
+if (viewDueBtn) {
+    viewDueBtn.addEventListener('click', ()=>setView('due'));
+}
+
+applyFilters();
+updateFilterSummary();
+
+document.addEventListener('click', (evt) => {
+    const editDueBtn = evt.target.closest('[data-edit-due]');
+    if (editDueBtn) {
+        evt.preventDefault();
+        openDueEditModal(editDueBtn.getAttribute('data-edit-due'));
+        return;
+    }
+    const deleteCustomBtn = evt.target.closest('[data-delete-custom]');
+    if (deleteCustomBtn) {
+        evt.preventDefault();
+        deleteCustomAssignment(deleteCustomBtn.getAttribute('data-delete-custom'));
+        showToast('已刪除自訂代辦。', 'success');
+        return;
+    }
+    const ignoreBtn = evt.target.closest('[data-ignore-overdue]');
+    if (ignoreBtn) {
+        evt.preventDefault();
+        ignoreOverdueAssignment(ignoreBtn.getAttribute('data-ignore-overdue'));
+        return;
+    }
+    const restoreBtn = evt.target.closest('[data-restore-overdue]');
+    if (restoreBtn) {
+        evt.preventDefault();
+        restoreIgnoredOverdueAssignment(restoreBtn.getAttribute('data-restore-overdue'));
+    }
+});
+
+if (restoreIgnoredOverdueAll) {
+    restoreIgnoredOverdueAll.addEventListener('click', () => {
+        restoreAllIgnoredOverdueAssignments();
+    });
+}
+
+if (dueEditForm) {
+    dueEditForm.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        const uid = dueEditUid ? dueEditUid.value : '';
+        const dueTs = parseDatetimeLocalToTs(dueEditInput ? dueEditInput.value : '');
+        if (!uid || !dueTs) {
+            showToast('請輸入有效的繳交期限。', 'warning');
+            return;
+        }
+        applyDueOverride(uid, dueTs);
+        const customItem = customAssignments.find((item) => item.uid === uid);
+        if (customItem) {
+            customItem.due_ts = dueTs;
+            saveCustomAssignments();
+        }
+        closeModalRoot(dueEditModal);
+        showToast('繳交期限已更新。', 'success');
+    });
+}
+
+if (dueResetBtn) {
+    dueResetBtn.addEventListener('click', () => {
+        const uid = dueEditUid ? dueEditUid.value : '';
+        if (!uid) return;
+        if (uid.startsWith('custom|')) {
+            showToast('自訂代辦沒有 E3 原始期限可還原。', 'info');
+            return;
+        }
+        resetDueOverride(uid);
+        closeModalRoot(dueEditModal);
+        showToast('已還原原本的繳交期限。', 'success');
+    });
+}
+
+document.querySelectorAll('[data-close-due-edit]').forEach((button) => {
+    button.addEventListener('click', () => closeModalRoot(dueEditModal));
+});
+if (dueEditModal) {
+    dueEditModal.addEventListener('click', (evt) => {
+        if (evt.target.classList.contains('modal-backdrop')) {
+            closeModalRoot(dueEditModal);
+        }
+    });
+}
+
+if (addCustomAssignmentBtn) {
+    addCustomAssignmentBtn.addEventListener('click', () => {
+        if (customAssignmentForm) customAssignmentForm.reset();
+        if (customCourseInput) customCourseInput.value = '自訂代辦';
+        openModalRoot(customAssignmentModal);
+    });
+}
+
+if (customAssignmentForm) {
+    customAssignmentForm.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        const dueTs = parseDatetimeLocalToTs(customDueInput ? customDueInput.value : '');
+        const title = customTitleInput ? customTitleInput.value.trim() : '';
+        if (!title || !dueTs) {
+            showToast('請輸入作業名稱與有效期限。', 'warning');
+            return;
+        }
+        addCustomAssignment(customCourseInput ? customCourseInput.value : '', title, dueTs);
+        closeModalRoot(customAssignmentModal);
+        showToast('已新增自訂代辦。', 'success');
+    });
+}
+
+document.querySelectorAll('[data-close-custom-assignment]').forEach((button) => {
+    button.addEventListener('click', () => closeModalRoot(customAssignmentModal));
+});
+if (customAssignmentModal) {
+    customAssignmentModal.addEventListener('click', (evt) => {
+        if (evt.target.classList.contains('modal-backdrop')) {
+            closeModalRoot(customAssignmentModal);
+        }
+    });
+}
+
+document.addEventListener('keydown', (evt) => {
+    if (evt.key !== 'Escape') return;
+    if (dueEditModal && !dueEditModal.classList.contains('hidden')) {
+        closeModalRoot(dueEditModal);
+    }
+    if (customAssignmentModal && !customAssignmentModal.classList.contains('hidden')) {
+        closeModalRoot(customAssignmentModal);
+    }
+});
+
+setInterval(refreshRemainingTimes, 60000);
+
+if (filterMenu) {
+    document.addEventListener('click', (evt) => {
+        if (window.innerWidth <= 780) return;
+        if (!filterMenu.open) return;
+        if (filterMenu.contains(evt.target)) return;
+        filterMenu.open = false;
+    });
+}
+
+document.querySelectorAll('[data-log-action]').forEach((el) => {
+    el.addEventListener('click', () => {
+        const action = el.getAttribute('data-log-action');
+        if (action) {
+            logUiEvent(action);
+        }
+    });
+});
+
+document.addEventListener('click', (evt) => {
+    const archiveRefreshBtn = evt.target.closest('#archiveRefreshBtn');
+    if (archiveRefreshBtn) {
+        evt.preventDefault();
+        refreshAssignments(true, currentSemesterFilters, true);
+        return;
+    }
+    const manualRefreshBtn = evt.target.closest('#manualRefreshBtn');
+    if (manualRefreshBtn) {
+        evt.preventDefault();
+        refreshAssignments(true);
+    }
+});
+
+(function () {
+    if (IS_GUEST) {
+        return;
+    }
+    const HEARTBEAT_INTERVAL = 240000;
+    let heartbeatTimer = null;
+    function sendHeartbeat() {
+        logUiEvent('heartbeat', 'info');
+    }
+    function scheduleHeartbeat() {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+    }
+    sendHeartbeat();
+    scheduleHeartbeat();
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            sendHeartbeat();
+            scheduleHeartbeat();
+        }
+    });
+    window.addEventListener('focus', () => {
+        sendHeartbeat();
+        scheduleHeartbeat();
+    });
+})();
+
+(function () {
+    if (!CACHE_SYNC_ENDPOINT || IS_READONLY_VIEW) {
+        return;
+    }
+    async function pollCacheSync() {
+        try {
+            const resp = await fetch(CACHE_SYNC_ENDPOINT, { cache: 'no-store', credentials: 'same-origin' });
+            if (!resp.ok) return;
+            const payload = await resp.json();
+            if (!payload.ok) return;
+            const nextTs = Number(payload.ts || '0');
+            if (!Number.isNaN(nextTs) && nextTs > currentCacheTs) {
+                currentCacheTs = nextTs;
+                await fetchAndSwapContent();
+                if (payload.preferences) {
+                    applyServerPreferenceState(payload.preferences);
+                }
+                return;
+            }
+            if (payload.preferences) {
+                applyServerPreferenceState(payload.preferences);
+            }
+        } catch (err) {
+            console.debug('cache sync failed', err);
+        }
+    }
+    setInterval(pollCacheSync, CACHE_SYNC_INTERVAL);
+    setTimeout(pollCacheSync, 5000);
+})();
+
+if (googleSyncBtn && googleModal) {
+    googleSyncBtn.addEventListener('click', openGoogleModal);
+if (googleModalCancel) {
+    googleModalCancel.addEventListener('click', closeGoogleModal);
+}
+if (googleModalClose) {
+    googleModalClose.addEventListener('click', closeGoogleModal);
+}
+    googleModal.addEventListener('click', (evt) => {
+        if (evt.target.classList.contains('modal-backdrop')) {
+            closeGoogleModal();
+        }
+    });
+    document.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape' && !googleModal.classList.contains('hidden')) {
+            closeGoogleModal();
+        }
+    });
+if (googleModalSelectAll && googleModalList) {
+    googleModalSelectAll.addEventListener('change', (evt) => {
+        const checked = evt.target.checked;
+        googleModalList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+            input.checked = checked;
+        });
+    });
+}
+if (googleModalSubmit && googleModalList) {
+    googleModalSubmit.addEventListener('click', () => {
+        if (!googleSyncForm || !googleSyncInput) {
+            showToast("系統設定錯誤，請重新整理頁面。", "error");
+            return;
+        }
+        if (googleSyncForm.dataset.submitting === '1') {
+            return;
+        }
+        const selected = Array.from(googleModalList.querySelectorAll('input[type="checkbox"]:checked')).map((el) => el.value);
+        if (!selected.length) {
+            showToast("請至少選擇一個作業再導入日曆。", "warning");
+            return;
+        }
+        googleSyncForm.dataset.submitting = '1';
+        if (googleModalSubmit) {
+            googleModalSubmit.disabled = true;
+            googleModalSubmit.innerHTML = '<span class="inline-spinner"></span><span style="margin-left:8px">導入中...</span>';
+        }
+        showLoader('正在匯入 Google 日曆，請稍候...');
+        closeGoogleModal();
+        googleSyncInput.value = JSON.stringify(selected);
+        logUiEvent('google_sync_submit', 'info', { count: selected.length });
+        googleSyncForm.submit();
+    });
+}
+}
+
+if (!IS_GUEST && !IS_READONLY_VIEW) {
+    setTimeout(() => {
+        try {
+            const lastAutoRefresh = Number(localStorage.getItem('e3_last_auto_refresh_ts') || '0');
+            const now = Date.now();
+            if (Number.isNaN(lastAutoRefresh) || now - lastAutoRefresh > 15 * 60 * 1000) {
+                localStorage.setItem('e3_last_auto_refresh_ts', String(now));
+                refreshAssignments(true);
+            }
+        } catch (err) {
+            refreshAssignments(true);
+        }
+    }, 1000);
+}
+
+window.addEventListener('orientationchange', function() {
+    setTimeout(() => {
+    applyFilters();
+    }, 300);
+});

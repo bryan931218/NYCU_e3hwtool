@@ -1,0 +1,131 @@
+
+(function () {
+    try {
+    const toggle = document.getElementById('announcementToggle');
+    const modal = document.getElementById('announcementModal');
+    if (!toggle || !modal) return;
+    const announcementList = document.getElementById('announcementList');
+    const announcementVersion = "{{ announcement_version or '' }}";
+    const hasAnnouncements = !!announcementVersion;
+    const storeKey = 'e3_seen_announcements';
+    const backdrop = modal.querySelector('.modal-backdrop');
+    const panel = modal.querySelector('.modal-panel');
+    const closeBtn = document.getElementById('announcementClose');
+    const dot = toggle.querySelector('.dot');
+    try {
+        const seenVersion = localStorage.getItem(storeKey);
+        if (announcementVersion && seenVersion === announcementVersion && dot) {
+            dot.remove();
+        }
+    } catch (err) {}
+    function markSeen() {
+        try {
+            if (announcementVersion) {
+                localStorage.setItem(storeKey, announcementVersion);
+            }
+            if (dot) {
+                dot.remove();
+            }
+        } catch (err) {
+            if (dot) {
+                dot.remove();
+            }
+        }
+    }
+    function openModal() {
+        modal.classList.remove('hidden');
+        modal.style.display = 'block';
+        if (backdrop) {
+            backdrop.classList.add('show');
+        }
+        if (panel) {
+            panel.classList.add('show');
+        }
+        markSeen();
+    }
+    window.__openAnnouncementModal = openModal;
+    function closeModal() {
+        if (backdrop) {
+            backdrop.classList.remove('show');
+        }
+        if (panel) {
+            panel.classList.remove('show');
+        }
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }, 150);
+    }
+    toggle.addEventListener('click', openModal);
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeModal);
+    }
+    modal.addEventListener('click', (evt) => {
+        if (backdrop && evt.target === backdrop) {
+            closeModal();
+        }
+    });
+    function applyAnnouncementVoteState(card, announcement) {
+        if (!card || !announcement) return;
+        const userVote = (announcement.user_vote || '').trim();
+        card.dataset.userVote = userVote;
+        const likeCountEl = card.querySelector('[data-role="like-count"]');
+        const dislikeCountEl = card.querySelector('[data-role="dislike-count"]');
+        if (likeCountEl) likeCountEl.textContent = String(announcement.like_count ?? 0);
+        if (dislikeCountEl) dislikeCountEl.textContent = String(announcement.dislike_count ?? 0);
+        card.querySelectorAll('.announcement-vote-btn').forEach((button) => {
+            const voteType = button.dataset.voteType || '';
+            button.classList.toggle('active-up', voteType === 'up' && userVote === 'up');
+            button.classList.toggle('active-down', voteType === 'down' && userVote === 'down');
+            button.disabled = IS_READONLY_VIEW;
+        });
+    }
+    async function submitAnnouncementVote(card, button) {
+        if (IS_READONLY_VIEW) return;
+        if (!card || !button) return;
+        const voteUrl = card.dataset.voteUrl;
+        const voteType = button.dataset.voteType;
+        if (!voteUrl || !voteType) return;
+        const currentVote = (card.dataset.userVote || '').trim();
+        const nextVote = currentVote === voteType ? 'clear' : voteType;
+        card.querySelectorAll('.announcement-vote-btn').forEach((item) => {
+            item.disabled = true;
+        });
+        try {
+            const response = await fetch(voteUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vote: nextVote }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.ok || !payload.announcement) {
+                throw new Error(payload.error || 'vote_failed');
+            }
+            applyAnnouncementVoteState(card, payload.announcement);
+        } catch (err) {
+            card.querySelectorAll('.announcement-vote-btn').forEach((item) => {
+                item.disabled = false;
+            });
+            showToast('公告投票失敗，請稍後再試。', 'error');
+        }
+    }
+    if (announcementList) {
+        announcementList.addEventListener('click', (event) => {
+            if (IS_READONLY_VIEW) return;
+            const button = event.target.closest('.announcement-vote-btn');
+            if (!button) return;
+            const card = button.closest('.announcement-card');
+            if (!card || button.disabled) return;
+            submitAnnouncementVote(card, button);
+        });
+    }
+    try {
+        const seenVersion = localStorage.getItem(storeKey);
+        if (announcementVersion && seenVersion === announcementVersion && dot) {
+            dot.remove();
+        }
+    } catch (err) {}
+    } catch (err) {
+        console.error('announcement modal init failed', err);
+    }
+})();

@@ -9,17 +9,21 @@
 | `backend/e3_tracker/bootstrap.py` | 統一安裝網站功能，供本機與正式站共同使用 |
 | `backend/server.py` | 本機伺服器、環境變數與 reload 設定 |
 | `backend/wsgi.py` | Railway / Gunicorn 的 WSGI 入口 |
-| `backend/e3_tracker/api/web.py` | Flask 路由、認證與尚未拆出的應用流程 |
+| `backend/e3_tracker/api/web.py` | 應用組裝、認證、共用上下文與排程組裝 |
+| `backend/e3_tracker/api/routes/` | 按作業、筆記、搜尋、AI、上傳、影片與管理功能分組的路由 |
+| `backend/e3_tracker/services/note_*.py` | 模型呼叫、文字整理、辨識驗證、批次分析、定位與關聯 |
 | `backend/e3_tracker/services/study_progress.py` | 完成率、有效觀看秒數、追趕進度與日期計算 |
 | `backend/e3_tracker/services/study_upload_batches.py` | 批次進度、檢查點簽章、續跑快取與跨頁索引 |
 | `backend/e3_tracker/services/traffic.py` | 流量、使用者活動與持久化統計 |
 | `backend/e3_tracker/services/collector.py` | E3 課程及作業蒐集、學期快取 |
 | `backend/e3_tracker/services/youtube_*.py` | YouTube 清單同步、音訊與畫面取得 |
-| `backend/e3_tracker/shared/storage.py` | 資料表、查詢與持久化 |
+| `backend/e3_tracker/shared/storage.py` | 儲存層入口、連線初始化與遷移，相容既有呼叫 |
+| `backend/e3_tracker/shared/persistence/` | 共用資料表與按領域拆分的資料庫操作 |
 | `backend/e3_tracker/shared/*runtime.py` | 現有功能安裝器與相容層 |
 | `backend/e3_tracker/shared/study_math.py` | 公式文字處理 |
 | `backend/e3_tracker/shared/source_localization.py` | 原始筆記定位 |
 | `frontend/templates/` | 頁面與共用介面片段 |
+| `frontend/templates/pages/` | 各大型頁面的 CSS／JavaScript Jinja 片段 |
 | `backend/e3_tracker/api/static/` | 前端靜態資源與 Discord 素材 |
 | `backend/tests/` | 自動測試 |
 | `backend/tools/` | 維護工具 |
@@ -38,7 +42,13 @@
 
 `web.py` 仍匯出已拆出的函式、常數與 `TrafficTracker`，讓現有測試與安裝器保持可用。新程式請從實際負責的 service 匯入。
 
-排程重排與休息日安裝器目前會包裝 `web._study_plan_schedule_definitions`，因此排程組裝仍留在 web；單純完成率與追趕計算已拆出。`storage.py` 與筆記 AI 路由仍偏大，後續應按資料領域與注入相依拆分，不能只用檔案文字切割改變函式作用域。
+排程重排與休息日安裝器目前會包裝 `web._study_plan_schedule_definitions`，因此排程組裝仍留在 web；單純完成率與追趕計算已拆出。
+
+路由以 `register_*_routes` 註冊，筆記服務以 `build_note_*` 建立。相依透過具名參數傳入，保留每個 app 自己的閉包，不使用全域 app 或反向匯入 web。路由名稱、URL 與權限裝飾器不變。需要支援既有 runtime 包裝的函式，透過延遲 callback 呼叫。
+
+儲存層按作業、影片、學習時間、筆記複習、上傳、助手、社群及帳號分組；`schema.py` 是唯一資料表定義來源。各 mixin 共用原本連線與交易工具，不建立另一套資料庫，也不改變既有資料。
+
+大型頁面使用 Jinja include 拆出含模板變數的 CSS／JavaScript；片段仍在原本標籤位置渲染，不增加網路請求。修改時到 `pages/<頁面名稱>/` 找對應片段。測試的 `source_helpers.read_source` 會展開 include，避免只檢查外層 HTML 而漏掉實際腳本。
 
 ## 開發與驗證
 

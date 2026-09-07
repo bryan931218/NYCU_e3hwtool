@@ -1,3 +1,4 @@
+from tests.source_helpers import read_source
 import unittest
 from pathlib import Path
 
@@ -8,7 +9,7 @@ RECALL_TEMPLATE = PROJECT_ROOT / "frontend" / "templates" / "study_recall.html"
 
 class StudySourceLocatorUiTests(unittest.TestCase):
     def test_highlight_spans_full_image_width_and_preserves_vertical_bbox(self):
-        template = RECALL_TEMPLATE.read_text(encoding="utf-8")
+        template = read_source(RECALL_TEMPLATE)
 
         self.assertIn("highlight.style.left = '0';", template)
         self.assertIn("highlight.style.width = '100%';", template)

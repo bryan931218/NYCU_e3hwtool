@@ -1,0 +1,1769 @@
+
+        window.renderStudyMath = (root = document) => {
+            if (!window.renderMathInElement) return;
+            const queryAll = (selector) => [
+                ...(root.matches?.(selector) ? [root] : []),
+                ...root.querySelectorAll(selector),
+            ];
+            const isDeferred = (element) => {
+                if (element.closest('[hidden]')) return true;
+                let ancestor = element.parentElement;
+                while (ancestor) {
+                    if (ancestor.tagName === 'DETAILS' && !ancestor.open) {
+                        const summary = Array.from(ancestor.children).find((child) => child.tagName === 'SUMMARY');
+                        if (!summary?.contains(element)) return true;
+                    }
+                    ancestor = ancestor.parentElement;
+                }
+                return false;
+            };
+            queryAll('.recall-card-title').forEach((element) => { element.dataset.mathContent = ''; });
+            queryAll('[data-math-content]').forEach((element) => {
+                if (element.dataset.mathRendered === 'true') return;
+                if (isDeferred(element)) return;
+                window.renderMathInElement(element, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '$', right: '$', display: false },
+                        { left: '\\[', right: '\\]', display: true },
+                        { left: '\\(', right: '\\)', display: false },
+                    ],
+                    throwOnError: false,
+                    strict: 'ignore',
+                });
+                element.dataset.mathRendered = 'true';
+            });
+        };
+        document.addEventListener('toggle', (event) => {
+            const detail = event.target;
+            if (detail instanceof HTMLDetailsElement && detail.open) window.renderStudyMath(detail);
+        }, true);
+        (() => {
+            document.querySelectorAll('[data-recall-card]').forEach((card) => {
+                const reveal = card.querySelector('[data-recall-reveal]');
+                const answer = card.querySelector('[data-recall-answer]');
+                if (!reveal || !answer) return;
+                reveal.addEventListener('click', () => {
+                    const shouldReveal = answer.hidden;
+                    answer.hidden = !shouldReveal;
+                    reveal.textContent = shouldReveal ? '收起重點' : '揭示重點';
+                    reveal.setAttribute('aria-expanded', shouldReveal ? 'true' : 'false');
+                    if (shouldReveal) window.renderStudyMath();
+                });
+            });
+        })();
+        (() => {
+            const updateDueCounts = (count) => {
+                document.querySelectorAll('[data-recall-due-count]').forEach((node) => {
+                    node.textContent = `${count} ${node.dataset.countLabel || '張待複習'}`;
+                });
+            };
+            const removeRatedCard = (card) => {
+                card.classList.add('is-completing');
+                window.setTimeout(() => {
+                    const list = card.closest('[data-recall-card-list]');
+                    card.remove();
+                    if (list && !list.querySelector('[data-recall-card]')) {
+                        list.hidden = true;
+                        const empty = list.parentElement.querySelector('[data-recall-empty]');
+                        if (empty) empty.hidden = false;
+                    }
+                }, 180);
+            };
+            document.querySelectorAll('form[data-recall-rating-form]').forEach((form) => {
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    if (form.dataset.submitting === 'true') return;
+                    const status = form.querySelector('[data-recall-rating-status]');
+                    const button = form.querySelector('button[type="submit"]');
+                    if (!form.querySelector('input[type="radio"]:checked')) {
+                        if (status) status.textContent = '請先選擇印象分。';
+                        return;
+                    }
+                    form.dataset.submitting = 'true';
+                    if (status) status.textContent = '';
+                    const originalLabel = button.textContent;
+                    button.disabled = true;
+                    button.textContent = '儲存中…';
+                    try {
+                        const response = await fetch(form.action, {
+                            method: 'POST',
+                            body: new FormData(form),
+                            credentials: 'same-origin',
+                            headers: { 'X-E3-Recall-Rating': '1', Accept: 'application/json' },
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result.ok) throw new Error(result.error || '印象分暫時無法儲存，請再試一次。');
+                        updateDueCounts(result.remaining_due_count);
+                        const card = form.closest('[data-recall-card]');
+                        if (card) removeRatedCard(card);
+                    } catch (error) {
+                        if (status) status.textContent = error.message || '印象分暫時無法儲存，請再試一次。';
+                        button.disabled = false;
+                        button.textContent = originalLabel;
+                        form.dataset.submitting = '';
+                    }
+                });
+            });
+        })();
+        (function () {
+            const videoSelect = document.getElementById('video_id');
+            const durationHint = document.getElementById('duration-hint');
+            const watchedInput = document.getElementById('watched_minutes');
+            const youtubePlayerPanel = document.querySelector('.youtube-player');
+            const playerEmpty = document.getElementById('player-empty');
+            const playerTitle = document.getElementById('player-title');
+            const playerDuration = document.getElementById('player-duration');
+            const playerWatched = document.getElementById('player-watched');
+            const playerSyncState = document.getElementById('player-sync-state');
+            const playerCurrentTime = document.getElementById('player-current-time');
+            const playerProgressFill = document.getElementById('player-progress-fill');
+            const playerLastSaved = document.getElementById('player-last-saved');
+            const playerStudyTime = document.getElementById('player-study-time');
+            const todayStudyTime = document.getElementById('today-study-time');
+            const todayVideoTime = document.getElementById('today-video-time');
+            const todayPracticeTime = document.getElementById('today-practice-time');
+            const studyTimeSessionsData = document.getElementById('study-time-sessions-data');
+            const studyTimeHistoryList = document.getElementById('study-time-history-list');
+            const studyTimeHistoryEmpty = document.getElementById('study-time-history-empty');
+            const studyTimeSyncStatus = document.getElementById('study-time-sync-status');
+            const practiceTimerClock = document.getElementById('practice-timer-clock');
+            const practiceTimerStatus = document.getElementById('practice-timer-status');
+            const practiceTimerLabel = document.getElementById('practice-timer-label');
+            const practiceTimerToggle = document.getElementById('practice-timer-toggle');
+            const practiceTimerFinish = document.getElementById('practice-timer-finish');
+            const markerData = document.getElementById('video-markers-data');
+            const markerNote = document.getElementById('marker-note');
+            const markerSave = document.getElementById('marker-save');
+            const markerStatus = document.getElementById('marker-status');
+            const markerList = document.getElementById('marker-list');
+            const markerCount = document.getElementById('marker-count');
+            const requestedMarkerData = document.getElementById('requested-marker-data');
+            const focusPlayerFrame = document.getElementById('focus-player-frame');
+            const focusLayer = document.getElementById('focus-layer');
+            const focusKeyboardCapture = document.getElementById('focus-keyboard-capture');
+            const focusModeToggle = document.getElementById('focus-mode-toggle');
+            const focusExit = document.getElementById('focus-exit');
+            const focusMarkerSave = document.getElementById('focus-marker-save');
+            const focusMarkerSymbol = document.getElementById('focus-marker-symbol');
+            const focusMarkerTime = document.getElementById('focus-marker-time');
+            const frameQuestionOpen = document.getElementById('frame-question-open');
+            const focusFrameQuestion = document.getElementById('focus-frame-question');
+            const frameQuestionDialog = document.getElementById('frame-question-dialog');
+            const frameQuestionForm = document.getElementById('frame-question-form');
+            const frameQuestionClose = document.getElementById('frame-question-close');
+            const frameQuestionCancel = document.getElementById('frame-question-cancel');
+            const frameQuestionInput = document.getElementById('frame-question-input');
+            const frameQuestionSubmit = document.getElementById('frame-question-submit');
+            const frameQuestionMeta = document.getElementById('frame-question-meta');
+            const frameQuestionStatus = document.getElementById('frame-question-status');
+            const frameQuestionPreview = document.getElementById('frame-question-preview');
+            const frameQuestionImage = document.getElementById('frame-question-image');
+            const frameQuestionSampleTime = document.getElementById('frame-question-sample-time');
+            const frameQuestionAnswer = document.getElementById('frame-question-answer');
+            const focusVideoTitle = document.getElementById('focus-video-title');
+            const focusToast = document.getElementById('focus-toast');
+            const videoEndScreen = document.getElementById('video-end-screen');
+            const videoEndTitle = document.getElementById('video-end-title');
+            const videoEndCount = document.getElementById('video-end-count');
+            const videoEndList = document.getElementById('video-end-list');
+            const videoEndEmpty = document.getElementById('video-end-empty');
+            const videoEndReplay = document.getElementById('video-end-replay');
+            const videoEndClose = document.getElementById('video-end-close');
+            const todayTaskVideosData = document.getElementById('today-task-videos-data');
+            const videoSummary = document.querySelector('[data-video-summary]');
+            const videoSummaryToggle = document.getElementById('video-summary-toggle');
+            const videoSummaryBody = document.getElementById('video-summary-body');
+            let player = null;
+            let youtubeApiReady = false;
+            let activeRecordId = '';
+            let saveTimer = null;
+            let playbackTimer = null;
+            let queuedSaveCount = 0;
+            let saveQueue = Promise.resolve();
+            let videoMarkers = [];
+            let requestedMarker = null;
+            let markerSaving = false;
+            let frameQuestionSubmitting = false;
+            let frameQuestionRequestId = 0;
+            let frameQuestionContext = null;
+            let frameQuestionHasResult = false;
+            let frameQuestionTrigger = null;
+            let frameQuestionPrefetch = null;
+            let markerSavedTimer = null;
+            let focusToastTimer = null;
+            let theaterScrollY = 0;
+            let videoStudySession = null;
+            let videoStudyIdleTimer = null;
+            let practiceTimer = null;
+            let studyTimePulseTimer = null;
+            let spaceBoostActive = false;
+            let spacePreviousRate = 1;
+            let studyTimeSessions = [];
+            let todayTaskVideos = [];
+            try {
+                videoMarkers = JSON.parse(markerData ? markerData.textContent || '[]' : '[]');
+                if (!Array.isArray(videoMarkers)) videoMarkers = [];
+            } catch (error) {
+                videoMarkers = [];
+            }
+            try {
+                requestedMarker = JSON.parse(requestedMarkerData ? requestedMarkerData.textContent || 'null' : 'null');
+                if (!requestedMarker || typeof requestedMarker !== 'object') requestedMarker = null;
+            } catch (error) {
+                requestedMarker = null;
+            }
+            try {
+                studyTimeSessions = JSON.parse(studyTimeSessionsData ? studyTimeSessionsData.textContent || '[]' : '[]');
+                if (!Array.isArray(studyTimeSessions)) studyTimeSessions = [];
+            } catch (error) {
+                studyTimeSessions = [];
+            }
+            try {
+                todayTaskVideos = JSON.parse(todayTaskVideosData ? todayTaskVideosData.textContent || '[]' : '[]');
+                if (!Array.isArray(todayTaskVideos)) todayTaskVideos = [];
+            } catch (error) {
+                todayTaskVideos = [];
+            }
+            const initialParams = new URLSearchParams(window.location.search);
+            const requestedVideoId = initialParams.get('video_id') || '';
+            const shouldFocusRequestedVideo = Boolean(requestedVideoId || window.location.hash === '#youtube-player-section');
+
+            if (!videoSelect || !durationHint) return;
+
+            const setVideoSummaryOpen = function (isOpen) {
+                if (!videoSummary || !videoSummaryToggle || !videoSummaryBody) return;
+                videoSummary.classList.toggle('is-open', Boolean(isOpen));
+                videoSummaryBody.hidden = !isOpen;
+                videoSummaryToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                try {
+                    window.localStorage.setItem('e3-study-plan-video-summary-open', isOpen ? '1' : '0');
+                } catch (error) {}
+            };
+            if (videoSummaryToggle && videoSummaryBody) {
+                let shouldOpen = false;
+                try {
+                    shouldOpen = window.localStorage.getItem('e3-study-plan-video-summary-open') === '1';
+                } catch (error) {}
+                setVideoSummaryOpen(shouldOpen);
+                videoSummaryToggle.addEventListener('click', function () {
+                    setVideoSummaryOpen(videoSummaryBody.hidden);
+                });
+            }
+
+            const formatMinutes = function (seconds) {
+                return (Math.max(0, Number(seconds) || 0) / 60).toFixed(1);
+            };
+            const formatClock = function (seconds) {
+                const value = Math.max(0, Math.floor(Number(seconds) || 0));
+                const minutes = Math.floor(value / 60);
+                const rest = value % 60;
+                return minutes + ':' + String(rest).padStart(2, '0');
+            };
+            const formatLongClock = function (seconds) {
+                const value = Math.max(0, Math.floor(Number(seconds) || 0));
+                const hours = Math.floor(value / 3600);
+                const minutes = Math.floor((value % 3600) / 60);
+                const rest = value % 60;
+                return [hours, minutes, rest].map(function (part) {
+                    return String(part).padStart(2, '0');
+                }).join(':');
+            };
+            const makeStudySessionId = function (prefix) {
+                const random = window.crypto && typeof window.crypto.randomUUID === 'function'
+                    ? window.crypto.randomUUID().replace(/-/g, '')
+                    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+                return prefix + '_' + random;
+            };
+            const renderStudyTimeHistory = function () {
+                if (!studyTimeHistoryList || !studyTimeHistoryEmpty) return;
+                studyTimeHistoryList.textContent = '';
+                studyTimeHistoryEmpty.hidden = studyTimeSessions.length > 0;
+                studyTimeSessions.forEach(function (session) {
+                    const item = document.createElement('div');
+                    item.className = 'study-time-history-item';
+                    const kind = document.createElement('span');
+                    kind.className = 'study-time-kind ' + (session.kind === 'practice' ? 'practice' : 'video');
+                    kind.textContent = session.kind === 'practice' ? '刷題' : '影片';
+                    const label = document.createElement('span');
+                    label.className = 'study-time-history-label';
+                    label.textContent = session.label || (session.kind === 'practice' ? '刷題' : '影片學習');
+                    const duration = document.createElement('span');
+                    duration.className = 'study-time-history-duration';
+                    duration.textContent = formatLongClock(session.elapsed_seconds || 0);
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'study-time-delete';
+                    remove.dataset.deleteStudyTime = session.session_id || '';
+                    remove.textContent = '刪除';
+                    item.append(kind, label, duration, remove);
+                    studyTimeHistoryList.appendChild(item);
+                });
+            };
+            const updateTodayStudyTime = function (today) {
+                if (!today) return;
+                if (todayStudyTime) todayStudyTime.textContent = (Number(today.total_seconds || 0) / 3600).toFixed(2) + 'h';
+                if (todayVideoTime) todayVideoTime.textContent = (Number(today.video_seconds || 0) / 3600).toFixed(2) + 'h';
+                if (todayPracticeTime) todayPracticeTime.textContent = (Number(today.practice_seconds || 0) / 3600).toFixed(2) + 'h';
+                if (Array.isArray(today.sessions)) {
+                    studyTimeSessions = today.sessions;
+                    renderStudyTimeHistory();
+                }
+            };
+            const postStudyTime = function (session, completed, keepalive) {
+                if (!session || !session.id) return Promise.resolve();
+                const elapsedSeconds = Math.max(0, Number(session.elapsed || 0))
+                    + (session.runningSince ? Math.max(0, (Date.now() - session.runningSince) / 1000) : 0);
+                return fetch('{{ url_for("admin_study_plan_study_time") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: session.id,
+                        kind: session.kind,
+                        video_id: session.videoId || null,
+                        label: session.label || '',
+                        elapsed_seconds: elapsedSeconds,
+                        completed: Boolean(completed)
+                    }),
+                    keepalive: Boolean(keepalive)
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('study_time_not_saved');
+                    return response.json();
+                }).then(function (result) {
+                    updateTodayStudyTime(result.today);
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '已同步';
+                    return result;
+                }).catch(function () {
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '同步失敗，請重試';
+                    return { ok: false };
+                });
+            };
+            const currentSessionSeconds = function (session) {
+                if (!session) return 0;
+                return Math.max(0, Number(session.elapsed || 0))
+                    + (session.runningSince ? Math.max(0, (Date.now() - session.runningSince) / 1000) : 0);
+            };
+            const renderStudyTimers = function () {
+                if (playerStudyTime) playerStudyTime.textContent = formatLongClock(currentSessionSeconds(videoStudySession));
+                if (!practiceTimerClock || !practiceTimerToggle || !practiceTimerFinish) return;
+                practiceTimerClock.textContent = formatLongClock(currentSessionSeconds(practiceTimer));
+                const hasTimer = Boolean(practiceTimer);
+                const running = Boolean(practiceTimer && practiceTimer.runningSince);
+                practiceTimerToggle.textContent = !hasTimer ? '開始' : running ? '暫停' : '繼續';
+                practiceTimerFinish.disabled = !hasTimer;
+                if (practiceTimerLabel) practiceTimerLabel.disabled = hasTimer;
+                if (practiceTimerStatus) practiceTimerStatus.textContent = !hasTimer ? '尚未開始' : running ? '計時中' : '已暫停';
+            };
+            const persistPracticeTimer = function () {
+                try {
+                    if (practiceTimer) window.localStorage.setItem('e3-practice-timer', JSON.stringify(practiceTimer));
+                    else window.localStorage.removeItem('e3-practice-timer');
+                } catch (error) {}
+            };
+            try {
+                const savedPracticeTimer = JSON.parse(window.localStorage.getItem('e3-practice-timer') || 'null');
+                if (savedPracticeTimer && savedPracticeTimer.id && savedPracticeTimer.kind === 'practice') {
+                    practiceTimer = savedPracticeTimer;
+                    if (practiceTimerLabel) practiceTimerLabel.value = practiceTimer.label || '';
+                }
+            } catch (error) {
+                practiceTimer = null;
+            }
+            const pauseSessionAt = function (session, stoppedAt) {
+                if (!session || !session.runningSince) return;
+                const stopTime = Math.max(
+                    Number(session.runningSince),
+                    Number(stoppedAt) || Date.now()
+                );
+                session.elapsed = Math.max(0, Number(session.elapsed || 0))
+                    + Math.max(0, (stopTime - Number(session.runningSince)) / 1000);
+                session.runningSince = null;
+            };
+            const pauseSession = function (session) {
+                pauseSessionAt(session, Date.now());
+            };
+            const VIDEO_STUDY_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+            const clearVideoStudyIdleTimer = function () {
+                if (videoStudyIdleTimer) window.clearTimeout(videoStudyIdleTimer);
+                videoStudyIdleTimer = null;
+            };
+            const finalizeVideoStudySession = function (reason, keepalive) {
+                if (!videoStudySession) {
+                    clearVideoStudyIdleTimer();
+                    return Promise.resolve();
+                }
+                clearVideoStudyIdleTimer();
+                const stoppedAt = videoStudySession.pausedAt
+                    ? Math.min(
+                        Date.now(),
+                        Number(videoStudySession.pausedAt) + VIDEO_STUDY_IDLE_TIMEOUT_MS
+                    )
+                    : Date.now();
+                pauseSessionAt(videoStudySession, stoppedAt);
+                const finishedSession = videoStudySession;
+                videoStudySession = null;
+                renderStudyTimers();
+                if (reason === 'idle') {
+                    playerSyncState.textContent = '已停止本輪計時，播放後將開始新一輪';
+                }
+                return postStudyTime(finishedSession, true, Boolean(keepalive));
+            };
+            const scheduleVideoStudyIdleCutoff = function () {
+                clearVideoStudyIdleTimer();
+                if (!videoStudySession) return;
+                if (!videoStudySession.pausedAt) videoStudySession.pausedAt = Date.now();
+                const sessionId = videoStudySession.id;
+                const elapsedIdle = Math.max(0, Date.now() - Number(videoStudySession.pausedAt || 0));
+                const remainingIdle = Math.max(0, VIDEO_STUDY_IDLE_TIMEOUT_MS - elapsedIdle);
+                videoStudyIdleTimer = window.setTimeout(function verifyIdleCutoff() {
+                    videoStudyIdleTimer = null;
+                    if (
+                        !videoStudySession
+                        || videoStudySession.id !== sessionId
+                        || !videoStudySession.pausedAt
+                    ) return;
+                    const idleFor = Math.max(0, Date.now() - Number(videoStudySession.pausedAt || 0));
+                    if (idleFor < VIDEO_STUDY_IDLE_TIMEOUT_MS) {
+                        scheduleVideoStudyIdleCutoff();
+                        return;
+                    }
+                    finalizeVideoStudySession('idle', false);
+                }, remainingIdle);
+            };
+            const beginVideoStudyTime = function () {
+                const option = selectedOption();
+                if (!option) return;
+                const videoId = Number(option.value);
+                if (videoStudySession && videoStudySession.videoId !== videoId) {
+                    finalizeVideoStudySession('switch', false);
+                }
+                if (
+                    videoStudySession
+                    && videoStudySession.pausedAt
+                    && Date.now() - Number(videoStudySession.pausedAt) >= VIDEO_STUDY_IDLE_TIMEOUT_MS
+                ) {
+                    finalizeVideoStudySession('idle', false);
+                }
+                clearVideoStudyIdleTimer();
+                if (!videoStudySession) {
+                    videoStudySession = {
+                        id: makeStudySessionId('video'), kind: 'video', videoId: videoId,
+                        label: option.dataset.title || '影片學習', elapsed: 0,
+                        runningSince: null, pausedAt: null
+                    };
+                }
+                videoStudySession.pausedAt = null;
+                if (!videoStudySession.runningSince) videoStudySession.runningSince = Date.now();
+                renderStudyTimers();
+            };
+            const pauseVideoStudyTime = function (completed) {
+                if (!videoStudySession) return;
+                if (completed) {
+                    finalizeVideoStudySession('complete', false);
+                    return;
+                }
+                if (!videoStudySession.pausedAt) videoStudySession.pausedAt = Date.now();
+                postStudyTime(videoStudySession, false, false);
+                scheduleVideoStudyIdleCutoff();
+                renderStudyTimers();
+            };
+            if (practiceTimerToggle) practiceTimerToggle.addEventListener('click', function () {
+                if (!practiceTimer) {
+                    practiceTimer = {
+                        id: makeStudySessionId('practice'), kind: 'practice', videoId: null,
+                        label: (practiceTimerLabel ? practiceTimerLabel.value : '').trim() || '刷題',
+                        elapsed: 0, runningSince: Date.now()
+                    };
+                } else if (practiceTimer.runningSince) {
+                    pauseSession(practiceTimer);
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '同步中…';
+                    postStudyTime(practiceTimer, false, false);
+                } else {
+                    practiceTimer.runningSince = Date.now();
+                }
+                persistPracticeTimer();
+                renderStudyTimers();
+            });
+            if (practiceTimerFinish) practiceTimerFinish.addEventListener('click', function () {
+                if (!practiceTimer) return;
+                pauseSession(practiceTimer);
+                const finished = practiceTimer;
+                persistPracticeTimer();
+                practiceTimerToggle.disabled = true;
+                practiceTimerFinish.disabled = true;
+                if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '儲存中…';
+                renderStudyTimers();
+                postStudyTime(finished, true, false).then(function (result) {
+                    practiceTimerToggle.disabled = false;
+                    if (!result || result.ok === false) {
+                        practiceTimer = finished;
+                        persistPracticeTimer();
+                        renderStudyTimers();
+                        return;
+                    }
+                    practiceTimer = null;
+                    persistPracticeTimer();
+                    if (practiceTimerLabel) practiceTimerLabel.value = '';
+                    renderStudyTimers();
+                });
+            });
+            if (studyTimeHistoryList) studyTimeHistoryList.addEventListener('click', function (event) {
+                const button = event.target.closest('[data-delete-study-time]');
+                if (!button || !button.dataset.deleteStudyTime) return;
+                button.disabled = true;
+                if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '刪除中…';
+                fetch('{{ url_for("admin_study_plan_study_time_delete", session_key="SESSION_KEY") }}'.replace('SESSION_KEY', encodeURIComponent(button.dataset.deleteStudyTime)), {
+                    method: 'DELETE',
+                    headers: { 'Accept': 'application/json' }
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('delete_failed');
+                    return response.json();
+                }).then(function (result) {
+                    updateTodayStudyTime(result.today);
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '已同步';
+                }).catch(function () {
+                    button.disabled = false;
+                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '刪除失敗，請重試';
+                });
+            });
+            studyTimePulseTimer = window.setInterval(function () {
+                if (videoStudySession && videoStudySession.runningSince) postStudyTime(videoStudySession, false, false);
+                if (practiceTimer && practiceTimer.runningSince) {
+                    persistPracticeTimer();
+                    postStudyTime(practiceTimer, false, false);
+                }
+            }, 15000);
+            window.setInterval(renderStudyTimers, 1000);
+            renderStudyTimeHistory();
+            renderStudyTimers();
+            const setPlayerPosition = function (seconds, durationSeconds) {
+                const safeSeconds = Math.max(0, Number(seconds) || 0);
+                const safeDuration = Math.max(0, Number(durationSeconds) || 0);
+                playerCurrentTime.textContent = formatLongClock(safeSeconds);
+                playerProgressFill.style.setProperty(
+                    '--progress',
+                    safeDuration ? Math.min(100, safeSeconds / safeDuration * 100) + '%' : '0%'
+                );
+                if (focusMarkerTime) focusMarkerTime.textContent = '記下 ' + formatClock(safeSeconds);
+            };
+            const selectedOption = function () {
+                const option = videoSelect.options[videoSelect.selectedIndex] || null;
+                return option && option.value ? option : null;
+            };
+            const optionByValue = function (value) {
+                if (!value) return null;
+                return Array.prototype.find.call(videoSelect.options, function (option) {
+                    return option.value === String(value);
+                }) || null;
+            };
+            const resetFrameQuestionResult = function () {
+                frameQuestionHasResult = false;
+                if (frameQuestionPreview) frameQuestionPreview.hidden = true;
+                if (frameQuestionImage) frameQuestionImage.removeAttribute('src');
+                if (frameQuestionAnswer) {
+                    frameQuestionAnswer.hidden = true;
+                    frameQuestionAnswer.textContent = '';
+                    frameQuestionAnswer.removeAttribute('data-math-rendered');
+                }
+                if (frameQuestionStatus) {
+                    frameQuestionStatus.textContent = '';
+                    frameQuestionStatus.classList.remove('is-error');
+                }
+            };
+            const playerHasFullscreenPresentation = function () {
+                if (!focusPlayerFrame) return false;
+                let matchesFullscreen = false;
+                try { matchesFullscreen = focusPlayerFrame.matches(':fullscreen'); } catch (error) {}
+                return Boolean(
+                    document.fullscreenElement
+                    || document.webkitFullscreenElement
+                    || matchesFullscreen
+                    || focusPlayerFrame.classList.contains('is-theater')
+                    || focusPlayerFrame.classList.contains('is-focus-mode')
+                );
+            };
+            const prefetchFrameQuestionImage = function (context) {
+                if (!context) return Promise.resolve(null);
+                if (frameQuestionStatus) {
+                    frameQuestionStatus.textContent = '正在背景準備這一幕…';
+                    frameQuestionStatus.classList.remove('is-error');
+                }
+                return fetch('{{ url_for("admin_study_plan_video_frame") }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({
+                        video_id: context.videoId,
+                        playback_seconds: context.playbackSeconds
+                    })
+                }).then(function (response) {
+                    return response.json().catch(function () { return {}; }).then(function (result) {
+                        if (!response.ok || !result.ok) throw new Error(result.error || '暫時無法預先讀取這一幕。');
+                        if (frameQuestionContext !== context) return result;
+                        context.frameReady = true;
+                        context.frameSource = result.frame_source || 'storyboard';
+                        context.frameSeconds = Number(result.frame_seconds || context.playbackSeconds);
+                        if (frameQuestionImage && result.frame_image) frameQuestionImage.src = result.frame_image;
+                        if (frameQuestionPreview) frameQuestionPreview.hidden = false;
+                        if (frameQuestionSampleTime) {
+                            const label = context.frameSource === 'exact' ? '精準影格' : '預覽影格';
+                            frameQuestionSampleTime.textContent = label + '・' + formatClock(context.frameSeconds);
+                        }
+                        if (frameQuestionStatus) frameQuestionStatus.textContent = '這一幕已準備完成。';
+                        return result;
+                    });
+                }).catch(function (error) {
+                    if (frameQuestionContext === context && frameQuestionStatus) {
+                        frameQuestionStatus.textContent = '送出時會自動重新讀取這一幕。';
+                    }
+                    return null;
+                });
+            };
+            const setFrameQuestionBusy = function (busy) {
+                frameQuestionSubmitting = Boolean(busy);
+                if (frameQuestionSubmit) {
+                    frameQuestionSubmit.disabled = frameQuestionSubmitting;
+                    frameQuestionSubmit.textContent = frameQuestionSubmitting ? '正在分析…' : '送出問題';
+                }
+            };
+            const closeFrameQuestion = function () {
+                if (!frameQuestionDialog) return;
+                if (frameQuestionDialog.open && typeof frameQuestionDialog.close === 'function') {
+                    frameQuestionDialog.close();
+                } else {
+                    frameQuestionDialog.removeAttribute('open');
+                }
+            };
+            const openFrameQuestion = function (trigger) {
+                if (!frameQuestionDialog || !frameQuestionInput) return;
+                if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
+                frameQuestionTrigger = trigger || frameQuestionOpen || focusFrameQuestion;
+                hideVideoEndScreen(false);
+                if (!frameQuestionHasResult && !frameQuestionSubmitting) {
+                    const option = selectedOption();
+                    if (!option || !option.dataset.youtubeVideoId) {
+                        if (markerStatus) markerStatus.textContent = '請先選擇可播放的影片。';
+                        showFocusToast('請先選擇可播放的影片', true);
+                        return;
+                    }
+                    const currentSeconds = player && typeof player.getCurrentTime === 'function'
+                        ? Math.max(0, Number(player.getCurrentTime() || 0))
+                        : Math.max(0, Number(option.dataset.playbackSeconds || 0));
+                    resetFrameQuestionResult();
+                    frameQuestionContext = {
+                        videoId: Number(option.value),
+                        playbackSeconds: currentSeconds,
+                        title: option.dataset.title || '目前影片',
+                        frameReady: false
+                    };
+                    const context = frameQuestionContext;
+                    setFrameQuestionBusy(false);
+                    frameQuestionInput.value = '';
+                    if (frameQuestionMeta) {
+                        frameQuestionMeta.textContent = context.title + '・' + formatClock(currentSeconds);
+                    }
+                    frameQuestionPrefetch = prefetchFrameQuestionImage(context);
+                }
+                if (typeof frameQuestionDialog.showModal === 'function') {
+                    if (!frameQuestionDialog.open) frameQuestionDialog.showModal();
+                } else {
+                    frameQuestionDialog.setAttribute('open', '');
+                }
+                window.setTimeout(function () { frameQuestionInput.focus({ preventScroll: true }); }, 30);
+            };
+            const submitFrameQuestion = async function () {
+                if (frameQuestionSubmitting || !frameQuestionContext || !frameQuestionInput) return;
+                const question = frameQuestionInput.value.trim();
+                if (!question) {
+                    if (frameQuestionStatus) {
+                        frameQuestionStatus.textContent = '請先輸入問題。';
+                        frameQuestionStatus.classList.add('is-error');
+                    }
+                    frameQuestionInput.focus();
+                    return;
+                }
+                if (frameQuestionHasResult) {
+                    const option = selectedOption();
+                    if (!option || !option.dataset.youtubeVideoId) {
+                        if (frameQuestionStatus) {
+                            frameQuestionStatus.textContent = '請先選擇可播放的影片。';
+                            frameQuestionStatus.classList.add('is-error');
+                        }
+                        return;
+                    }
+                    const currentSeconds = player && typeof player.getCurrentTime === 'function'
+                        ? Math.max(0, Number(player.getCurrentTime() || 0))
+                        : Math.max(0, Number(option.dataset.playbackSeconds || 0));
+                    resetFrameQuestionResult();
+                    frameQuestionContext = {
+                        videoId: Number(option.value),
+                        playbackSeconds: currentSeconds,
+                        title: option.dataset.title || '目前影片',
+                        frameReady: false
+                    };
+                    if (frameQuestionMeta) {
+                        frameQuestionMeta.textContent = frameQuestionContext.title + '・' + formatClock(currentSeconds);
+                    }
+                    frameQuestionPrefetch = prefetchFrameQuestionImage(frameQuestionContext);
+                }
+                setFrameQuestionBusy(true);
+                const requestId = ++frameQuestionRequestId;
+                if (frameQuestionPrefetch && !frameQuestionContext.frameReady) {
+                    if (frameQuestionStatus) frameQuestionStatus.textContent = '正在完成這一幕的取樣…';
+                    await frameQuestionPrefetch;
+                    if (requestId !== frameQuestionRequestId) return;
+                }
+                if (frameQuestionStatus) {
+                    frameQuestionStatus.textContent = '正在讀取前後 10 秒並分析…';
+                    frameQuestionStatus.classList.remove('is-error');
+                }
+                if (frameQuestionAnswer) frameQuestionAnswer.hidden = true;
+                try {
+                    const response = await fetch('{{ url_for("admin_study_plan_video_question") }}', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({
+                            video_id: frameQuestionContext.videoId,
+                            playback_seconds: frameQuestionContext.playbackSeconds,
+                            question: question
+                        })
+                    });
+                    const result = await response.json().catch(function () { return {}; });
+                    if (requestId !== frameQuestionRequestId) return;
+                    if (!response.ok || !result.ok) throw new Error(result.error || '目前無法分析這一幕，請稍後再試。');
+                    if (frameQuestionImage && result.frame_image) frameQuestionImage.src = result.frame_image;
+                    if (frameQuestionPreview) frameQuestionPreview.hidden = false;
+                    if (frameQuestionSampleTime) {
+                        const label = result.frame_source === 'exact' ? '精準影格' : '預覽影格';
+                        frameQuestionSampleTime.textContent = label + '・按下 ' + formatClock(result.requested_seconds)
+                            + '・取樣 ' + formatClock(result.frame_seconds) + '・前後 10 秒';
+                    }
+                    if (frameQuestionAnswer) {
+                        frameQuestionAnswer.textContent = result.answer || '';
+                        frameQuestionAnswer.hidden = false;
+                        frameQuestionAnswer.removeAttribute('data-math-rendered');
+                        if (window.renderStudyMath) window.renderStudyMath(frameQuestionAnswer);
+                    }
+                    frameQuestionHasResult = true;
+                    if (frameQuestionStatus) {
+                        const evidence = [];
+                        if (result.context_audio) evidence.push('語音');
+                        if (Number(result.context_frame_count || 0) > 0) {
+                            evidence.push(Number(result.context_frame_count) + ' 張畫面');
+                        }
+                        frameQuestionStatus.textContent = '已根據前後 10 秒的'
+                            + (evidence.length ? evidence.join('與') : '影音前後文') + '回答。';
+                    }
+                } catch (error) {
+                    if (requestId !== frameQuestionRequestId) return;
+                    if (frameQuestionStatus) {
+                        frameQuestionStatus.textContent = error.message || '目前無法分析這一幕，請稍後再試。';
+                        frameQuestionStatus.classList.add('is-error');
+                    }
+                } finally {
+                    if (requestId === frameQuestionRequestId) setFrameQuestionBusy(false);
+                }
+            };
+            const hideVideoEndScreen = function (restoreFocus) {
+                if (!videoEndScreen || videoEndScreen.hidden) return;
+                videoEndScreen.hidden = true;
+                videoEndScreen.setAttribute('aria-hidden', 'true');
+                if (restoreFocus && focusKeyboardCapture && isFocusMode()) {
+                    window.setTimeout(function () {
+                        focusKeyboardCapture.focus({ preventScroll: true });
+                    }, 0);
+                }
+            };
+            const playTodayTaskVideo = function (video) {
+                if (!video || !video.id) return;
+                hideVideoEndScreen(false);
+                const option = optionByValue(video.id);
+                if (option) {
+                    videoSelect.value = String(video.id);
+                    videoSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    return;
+                }
+                const target = new URL('{{ url_for("admin_study_plan") }}', window.location.origin);
+                target.searchParams.set('subject', String(video.subject || ''));
+                target.searchParams.set('video_id', String(video.id));
+                target.hash = 'youtube-player-section';
+                window.location.assign(target.toString());
+            };
+            const renderVideoEndScreen = function () {
+                if (!videoEndList || !videoEndEmpty) return [];
+                const candidates = todayTaskVideos.filter(function (video) {
+                    const liveOption = optionByValue(video.id);
+                    return liveOption
+                        ? liveOption.dataset.complete !== 'true'
+                        : Number(video.completion || 0) < 100;
+                });
+                videoEndList.replaceChildren();
+                candidates.forEach(function (video, index) {
+                    const card = document.createElement('button');
+                    card.type = 'button';
+                    card.className = 'video-end-card' + (index === 0 ? ' is-primary' : '');
+                    card.dataset.videoId = String(video.id || '');
+                    card.setAttribute('aria-label', '播放 ' + String(video.title || '今日任務影片'));
+
+                    const thumb = document.createElement('span');
+                    thumb.className = 'video-end-thumb';
+                    const youtubeVideoId = String(video.youtube_video_id || '').trim();
+                    if (youtubeVideoId) {
+                        const image = document.createElement('img');
+                        image.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(youtubeVideoId) + '/mqdefault.jpg';
+                        image.alt = '';
+                        image.loading = 'lazy';
+                        thumb.appendChild(image);
+                    } else {
+                        thumb.classList.add('is-unlinked');
+                        const unlinked = document.createElement('span');
+                        unlinked.className = 'video-end-unlinked';
+                        unlinked.textContent = '尚未連結';
+                        thumb.appendChild(unlinked);
+                    }
+                    if (youtubeVideoId) {
+                        const playIcon = document.createElement('span');
+                        playIcon.className = 'video-end-play';
+                        playIcon.setAttribute('aria-hidden', 'true');
+                        playIcon.textContent = '▶';
+                        thumb.appendChild(playIcon);
+                    }
+
+                    const copy = document.createElement('span');
+                    copy.className = 'video-end-copy';
+                    const title = document.createElement('span');
+                    title.className = 'video-end-title';
+                    title.textContent = String(video.title || '未命名影片');
+                    const meta = document.createElement('span');
+                    meta.className = 'video-end-meta';
+                    meta.textContent = String(video.subject || '') + '・' + (
+                        youtubeVideoId
+                            ? '剩餘 ' + Number(video.remaining_minutes || 0).toFixed(1) + ' 分'
+                            : '尚未連結 YouTube'
+                    );
+                    const callToAction = document.createElement('span');
+                    callToAction.className = 'video-end-cta';
+                    const callToActionIcon = document.createElement('span');
+                    callToActionIcon.className = 'video-end-cta-icon';
+                    callToActionIcon.setAttribute('aria-hidden', 'true');
+                    callToActionIcon.textContent = '▶';
+                    const callToActionLabel = document.createElement('span');
+                    callToActionLabel.textContent = youtubeVideoId ? '播放下一部' : '選擇此影片';
+                    callToAction.append(callToActionIcon, callToActionLabel);
+                    copy.append(title, meta, callToAction);
+                    card.append(thumb, copy);
+                    card.addEventListener('click', function () { playTodayTaskVideo(video); });
+                    videoEndList.appendChild(card);
+                });
+                videoEndList.hidden = candidates.length === 0;
+                videoEndEmpty.hidden = candidates.length > 0;
+                if (videoEndTitle) videoEndTitle.textContent = candidates.length ? '選擇下一部' : '今天先到這裡';
+                if (videoEndCount) videoEndCount.textContent = candidates.length ? candidates.length + ' 部待看' : '';
+                return candidates;
+            };
+            const showVideoEndScreen = function () {
+                if (!videoEndScreen) return;
+                const candidates = renderVideoEndScreen();
+                videoEndScreen.hidden = false;
+                videoEndScreen.setAttribute('aria-hidden', 'false');
+                window.setTimeout(function () {
+                    const target = candidates.length
+                        ? videoEndList.querySelector('.video-end-card')
+                        : videoEndReplay;
+                    if (target) target.focus({ preventScroll: true });
+                }, 0);
+            };
+            const mergeMarker = function (marker) {
+                let found = false;
+                videoMarkers = videoMarkers.map(function (item) {
+                    if (Number(item.id) !== Number(marker.id)) return item;
+                    found = true;
+                    return Object.assign({}, item, marker);
+                });
+                if (!found) videoMarkers.push(marker);
+            };
+            const requestMarkerSummary = function (marker) {
+                if (!marker || marker.summary_status === 'processing') return Promise.resolve(false);
+                mergeMarker(Object.assign({}, marker, { summary: '', summary_status: 'processing' }));
+                renderMarkers();
+                if (markerStatus) markerStatus.textContent = 'AI 正在聽取前後 15 秒並分析畫面…';
+                return fetch('{{ url_for("admin_study_plan_video_marker_summary", marker_id=0) }}'.replace('/0/summary', '/' + String(marker.id) + '/summary'), {
+                    method: 'POST'
+                }).then(function (response) {
+                    return response.json().catch(function () { return {}; }).then(function (data) {
+                        if (!response.ok || !data.marker) throw new Error(data.error || '摘要產生失敗');
+                        return data;
+                    });
+                }).then(function (data) {
+                    mergeMarker(data.marker);
+                    renderMarkers();
+                    if (markerStatus) markerStatus.textContent = 'AI 摘要已更新。';
+                    return true;
+                }).catch(function (error) {
+                    mergeMarker(Object.assign({}, marker, { summary: '', summary_status: 'failed' }));
+                    renderMarkers();
+                    if (markerStatus) markerStatus.textContent = error.message || '摘要產生失敗，稍後可重試。';
+                    return false;
+                });
+            };
+            const buildMarkerSummary = function (marker, className) {
+                const summary = document.createElement('div');
+                summary.className = className;
+                const status = String(marker.summary_status || '');
+                if (status === 'ready' && marker.summary) {
+                    summary.textContent = marker.summary;
+                    summary.dataset.mathContent = '';
+                } else {
+                    const state = document.createElement('span');
+                    state.className = 'marker-summary-state';
+                    state.textContent = status === 'processing'
+                        ? 'AI 整理中…'
+                        : status === 'needs_name'
+                            ? '重新命名後產生摘要'
+                            : status === 'unavailable'
+                                ? 'AI 尚未啟用'
+                                : '摘要尚未完成';
+                    summary.appendChild(state);
+                    if (!['processing', 'needs_name', 'unavailable'].includes(status)
+                        && marker.note && marker.note !== '關鍵片段') {
+                        const retry = document.createElement('button');
+                        retry.type = 'button';
+                        retry.className = 'marker-summary-retry';
+                        retry.textContent = '重試';
+                        retry.addEventListener('click', function () { requestMarkerSummary(marker); });
+                        summary.appendChild(retry);
+                    }
+                }
+                return summary;
+            };
+            const renderMarkers = function () {
+                if (!markerList || !markerCount) return;
+                const option = selectedOption();
+                const videoId = option ? Number(option.value) : 0;
+                const items = videoMarkers
+                    .filter(function (marker) { return Number(marker.video_id) === videoId; })
+                    .sort(function (left, right) {
+                        return Number(left.playback_seconds || 0) - Number(right.playback_seconds || 0)
+                            || Number(left.id || 0) - Number(right.id || 0);
+                    });
+                markerCount.textContent = String(items.length);
+                markerList.replaceChildren();
+                if (!items.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'marker-empty';
+                    empty.textContent = videoId ? '尚無關鍵點' : '請先選擇影片';
+                    markerList.appendChild(empty);
+                    return;
+                }
+                items.forEach(function (marker) {
+                    const row = document.createElement('div');
+                    row.className = 'marker-item';
+                    const seek = document.createElement('button');
+                    seek.type = 'button';
+                    seek.className = 'marker-seek';
+                    seek.textContent = formatClock(marker.playback_seconds);
+                    seek.title = '跳到 ' + formatClock(marker.playback_seconds);
+                    seek.addEventListener('click', function () {
+                        if (player && typeof player.seekTo === 'function') {
+                            player.seekTo(Number(marker.playback_seconds || 0), true);
+                            if (typeof player.playVideo === 'function') player.playVideo();
+                            setPlayerPosition(marker.playback_seconds, Number(option.dataset.durationSeconds || 0));
+                            markerStatus.textContent = '已跳到 ' + formatClock(marker.playback_seconds) + '・' + marker.note;
+                        }
+                    });
+                    const note = document.createElement('button');
+                    note.type = 'button';
+                    note.className = 'marker-note';
+                    note.textContent = marker.note || '關鍵片段';
+                    note.title = marker.note || '關鍵片段';
+                    note.setAttribute('aria-label', '編輯關鍵點內容：' + (marker.note || '關鍵片段'));
+                    note.addEventListener('click', function () { startMarkerEdit(row, marker); });
+                    const edit = document.createElement('button');
+                    edit.type = 'button';
+                    edit.className = 'marker-edit';
+                    edit.textContent = '✎';
+                    edit.setAttribute('aria-label', '編輯 ' + formatClock(marker.playback_seconds) + ' 關鍵點');
+                    edit.addEventListener('click', function () { startMarkerEdit(row, marker); });
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'marker-delete';
+                    remove.textContent = '×';
+                    remove.setAttribute('aria-label', '刪除 ' + formatClock(marker.playback_seconds) + ' 關鍵點');
+                    remove.addEventListener('click', function () {
+                        remove.disabled = true;
+                        fetch('{{ url_for("admin_study_plan_video_marker_delete", marker_id=0) }}'.replace(/0$/, String(marker.id)), {
+                            method: 'DELETE'
+                        }).then(function (response) {
+                            if (!response.ok) throw new Error('delete_failed');
+                            videoMarkers = videoMarkers.filter(function (item) { return Number(item.id) !== Number(marker.id); });
+                            renderMarkers();
+                            markerStatus.textContent = '關鍵點已刪除。';
+                        }).catch(function () {
+                            markerStatus.textContent = '刪除失敗，請再試一次。';
+                            remove.disabled = false;
+                        });
+                    });
+                    row.append(seek, note, edit, remove, buildMarkerSummary(marker, 'marker-summary'));
+                    markerList.appendChild(row);
+                    if (window.renderStudyMath) window.renderStudyMath(row);
+                });
+            };
+            const startMarkerEdit = function (row, marker) {
+                if (!row || !marker) return;
+                row.className = 'marker-item is-editing';
+                const time = document.createElement('span');
+                time.className = 'marker-time';
+                time.textContent = formatClock(marker.playback_seconds);
+                const input = document.createElement('input');
+                input.className = 'marker-edit-input';
+                input.type = 'text';
+                input.maxLength = 280;
+                input.value = marker.note || '';
+                input.setAttribute('aria-label', '關鍵點內容');
+                const actions = document.createElement('div');
+                actions.className = 'marker-edit-actions';
+                const save = document.createElement('button');
+                save.type = 'button';
+                save.className = 'marker-edit-save';
+                save.textContent = '儲存';
+                const cancel = document.createElement('button');
+                cancel.type = 'button';
+                cancel.textContent = '取消';
+                const submit = function () {
+                    if (save.disabled) return;
+                    save.disabled = true;
+                    cancel.disabled = true;
+                    markerStatus.textContent = '名稱儲存中，AI 正在聽取前後 15 秒…';
+                    fetch('{{ url_for("admin_study_plan_video_marker_update", marker_id=0) }}'.replace(/0$/, String(marker.id)), {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ note: input.value.trim() })
+                    }).then(function (response) {
+                        if (!response.ok) throw new Error('update_failed');
+                        return response.json();
+                    }).then(function (data) {
+                        if (!data.ok || !data.marker) throw new Error('update_failed');
+                        mergeMarker(data.marker);
+                        renderMarkers();
+                        markerStatus.textContent = data.summary_error
+                            ? '名稱已更新；AI 摘要稍後可重試。'
+                            : '名稱與 AI 摘要已更新。';
+                    }).catch(function () {
+                        markerStatus.textContent = '更新失敗，請再試一次。';
+                        save.disabled = false;
+                        cancel.disabled = false;
+                    });
+                };
+                save.addEventListener('click', submit);
+                cancel.addEventListener('click', renderMarkers);
+                input.addEventListener('keydown', function (event) {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        submit();
+                    } else if (event.key === 'Escape') {
+                        event.preventDefault();
+                        renderMarkers();
+                    }
+                });
+                actions.append(save, cancel);
+                row.replaceChildren(time, input, actions);
+                input.focus();
+                input.select();
+            };
+            const showFocusToast = function (message, isError) {
+                if (!focusToast) return;
+                if (focusToastTimer) window.clearTimeout(focusToastTimer);
+                focusToast.textContent = message;
+                focusToast.classList.toggle('is-error', Boolean(isError));
+                focusToast.classList.add('is-visible');
+                focusToastTimer = window.setTimeout(function () {
+                    focusToast.classList.remove('is-visible');
+                }, isError ? 3600 : 2400);
+            };
+            const setMarkerSaving = function (isSaving) {
+                markerSaving = Boolean(isSaving);
+                if (markerSave) markerSave.disabled = markerSaving;
+                if (focusMarkerSave) focusMarkerSave.disabled = markerSaving;
+            };
+            const flashMarkerSuccess = function () {
+                if (!focusMarkerSave) return;
+                if (markerSavedTimer) window.clearTimeout(markerSavedTimer);
+                focusMarkerSave.classList.add('is-saved');
+                if (focusMarkerSymbol) focusMarkerSymbol.textContent = '✓';
+                markerSavedTimer = window.setTimeout(function () {
+                    focusMarkerSave.classList.remove('is-saved');
+                    if (focusMarkerSymbol) focusMarkerSymbol.textContent = '＋';
+                }, 1300);
+            };
+            const saveMarker = function () {
+                const option = selectedOption();
+                if (!option || markerSaving) return Promise.resolve(false);
+                let seconds = Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0);
+                if (player && typeof player.getCurrentTime === 'function') {
+                    seconds = Math.max(0, Number(player.getCurrentTime() || 0));
+                }
+                setMarkerSaving(true);
+                const hasName = Boolean(markerNote && markerNote.value.trim());
+                markerStatus.textContent = hasName ? '正在標記並分析前後 15 秒影音…' : '正在標記 ' + formatClock(seconds) + '…';
+                showFocusToast(hasName ? '正在建立 AI 摘要…' : '正在標記 ' + formatClock(seconds) + '…', false);
+                return fetch('{{ url_for("admin_study_plan_video_markers") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_id: Number(option.value),
+                        playback_seconds: seconds,
+                        note: markerNote ? markerNote.value.trim() : ''
+                    })
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('save_failed');
+                    return response.json();
+                }).then(function (data) {
+                    if (!data.ok || !data.marker) throw new Error('save_failed');
+                    mergeMarker(data.marker);
+                    if (markerNote) markerNote.value = '';
+                    renderMarkers();
+                    const successMessage = data.summary_error
+                        ? '已記下；AI 摘要稍後可重試。'
+                        : '已記下 ' + formatClock(data.marker.playback_seconds) + '。';
+                    markerStatus.textContent = successMessage;
+                    showFocusToast('✓ ' + formatClock(data.marker.playback_seconds), false);
+                    flashMarkerSuccess();
+                    return true;
+                }).catch(function () {
+                    markerStatus.textContent = '標記失敗，請再試一次。';
+                    showFocusToast('標記失敗，請檢查網路後重試', true);
+                    return false;
+                }).finally(function () {
+                    setMarkerSaving(false);
+                });
+            };
+            const sortVideoOptions = function () {
+                const selectedValue = videoSelect.value;
+                const options = Array.prototype.slice.call(videoSelect.options, 1);
+                options.sort(function (left, right) {
+                    const leftComplete = left.dataset.complete === 'true' ? 1 : 0;
+                    const rightComplete = right.dataset.complete === 'true' ? 1 : 0;
+                    if (leftComplete !== rightComplete) return leftComplete - rightComplete;
+                    return Number(left.dataset.sequence || 0) - Number(right.dataset.sequence || 0);
+                });
+                options.forEach(function (option) { videoSelect.appendChild(option); });
+                if (selectedValue) videoSelect.value = selectedValue;
+            };
+            const focusVideoArea = function () {
+                if (!shouldFocusRequestedVideo) return;
+                const target = youtubePlayerPanel && !youtubePlayerPanel.classList.contains('is-hidden')
+                    ? youtubePlayerPanel
+                    : videoSelect.closest('.panel');
+                if (!target) return;
+                window.setTimeout(function () {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    if (target === youtubePlayerPanel && typeof target.focus === 'function') {
+                        target.focus({ preventScroll: true });
+                    }
+                }, 120);
+            };
+            const syncPlaybackPosition = function () {
+                const option = optionByValue(activeRecordId) || selectedOption();
+                if (!option) return 0;
+                const durationSeconds = Number(option.dataset.durationSeconds || 0);
+                const savedSeconds = Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0);
+                let currentSeconds = savedSeconds;
+                if (player && typeof player.getCurrentTime === 'function') {
+                    currentSeconds = Math.max(0, Number(player.getCurrentTime() || 0));
+                }
+                setPlayerPosition(currentSeconds, durationSeconds);
+                return currentSeconds;
+            };
+            const updateDuration = function () {
+                const option = selectedOption();
+                if (!option) {
+                    durationHint.textContent = '請先選擇影片';
+                    if (watchedInput) watchedInput.value = '0';
+                    updatePlayerPanel(null);
+                    renderMarkers();
+                    return;
+                }
+                const duration = option.dataset.duration;
+                const youtube = option.dataset.youtubeUrl;
+                durationHint.textContent = '原始片長：' + duration + ' 分鐘' + (youtube ? '・YouTube 已對應' : '');
+                if (watchedInput) watchedInput.value = formatMinutes(option.dataset.watchedSeconds);
+                updatePlayerPanel(option);
+                renderMarkers();
+            };
+            const updatePlayerPanel = function (option) {
+                hideVideoEndScreen(false);
+                if (!option) {
+                    if (youtubePlayerPanel) youtubePlayerPanel.classList.add('is-hidden');
+                    stopPlaybackTimer();
+                    playerTitle.textContent = '尚未載入影片';
+                    playerDuration.textContent = '片長 —';
+                    playerWatched.textContent = '已看 —';
+                    setPlayerPosition(0, 0);
+                    playerSyncState.textContent = '等待選擇影片';
+                    playerEmpty.style.display = 'grid';
+                    if (focusModeToggle) focusModeToggle.disabled = true;
+                    if (player && typeof player.stopVideo === 'function') player.stopVideo();
+                    return;
+                }
+                const youtubeId = option ? option.dataset.youtubeVideoId : '';
+                const youtubeUrl = option ? option.dataset.youtubeUrl : '';
+                const title = option ? option.dataset.title : '';
+                const sequence = option ? String(option.dataset.sequence || '').padStart(3, '0') : '';
+                const durationSeconds = option ? Number(option.dataset.durationSeconds || 0) : 0;
+                const watchedSeconds = option ? Number(option.dataset.watchedSeconds || 0) : 0;
+                const playbackSeconds = option ? Number(option.dataset.playbackSeconds || watchedSeconds) : 0;
+                if (youtubePlayerPanel) youtubePlayerPanel.classList.toggle('is-hidden', !youtubeId);
+                playerTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '尚未載入影片';
+                if (focusVideoTitle) focusVideoTitle.textContent = option ? '第 ' + sequence + ' 支・' + title : '目前影片';
+                playerDuration.textContent = '片長 ' + formatLongClock(durationSeconds);
+                playerWatched.textContent = '已看 ' + formatLongClock(watchedSeconds);
+                setPlayerPosition(playbackSeconds, durationSeconds);
+                playerSyncState.textContent = youtubeId ? '可播放並自動儲存' : '這支影片尚未對應 YouTube';
+                playerEmpty.style.display = youtubeId ? 'none' : 'grid';
+                if (focusModeToggle) focusModeToggle.disabled = !youtubeId;
+                if (!youtubeId) {
+                    stopPlaybackTimer();
+                    if (player && typeof player.stopVideo === 'function') player.stopVideo();
+                }
+            };
+            const applyProgressResult = function (result) {
+                const option = result ? optionByValue(result.video_id) : null;
+                if (!result || !result.ok || !option) return false;
+                const watchedSeconds = Number(result.watched_seconds || 0);
+                const playbackSeconds = Number(result.playback_seconds || 0);
+                const durationSeconds = Number(result.duration_seconds || option.dataset.durationSeconds || 0);
+                const resultVersion = Math.max(0, Number(result.progress_version || 0));
+                const knownVersion = Math.max(0, Number(option.dataset.progressVersion || 0));
+                if (resultVersion < knownVersion) return false;
+                option.dataset.watchedSeconds = String(watchedSeconds);
+                option.dataset.playbackSeconds = String(playbackSeconds);
+                option.dataset.durationSeconds = String(durationSeconds);
+                option.dataset.progressVersion = String(resultVersion);
+                const isSelectedVideo = String(videoSelect.value) === String(result.video_id);
+                if (isSelectedVideo) {
+                    if (watchedInput) watchedInput.value = formatMinutes(watchedSeconds);
+                    playerWatched.textContent = '已看 ' + formatMinutes(watchedSeconds) + ' 分';
+                    // Keep the indicator attached to the player's actual seek position;
+                    // cumulative study progress must never seek the player forward again.
+                    syncPlaybackPosition();
+                }
+                const watchedCell = document.querySelector('[data-video-watched="' + result.video_id + '"]');
+                const completionCell = document.querySelector('[data-video-completion="' + result.video_id + '"]');
+                const fill = document.querySelector('[data-video-fill="' + result.video_id + '"]');
+                const row = document.querySelector('[data-video-row="' + result.video_id + '"]');
+                const isComplete = Number(result.completion || 0) >= 100;
+                if (Array.isArray(result.today_task_videos)) {
+                    // Finishing one task can reveal the next unfinished video in the
+                    // same subject. Replace the whole server-computed queue so the
+                    // end screen never keeps using the stale page-load candidates.
+                    todayTaskVideos = result.today_task_videos;
+                } else {
+                    const taskVideo = todayTaskVideos.find(function (video) {
+                        return String(video.id || '') === String(result.video_id || '');
+                    });
+                    if (taskVideo) {
+                        taskVideo.completion = Math.min(100, Math.max(0, Number(result.completion || 0)));
+                        taskVideo.remaining_minutes = Math.max(0, durationSeconds - watchedSeconds) / 60;
+                    }
+                }
+                if (watchedCell) watchedCell.textContent = formatMinutes(watchedSeconds);
+                if (completionCell) completionCell.textContent = Math.round(Number(result.completion || 0));
+                if (fill) fill.style.setProperty('--progress', Math.min(100, Number(result.completion || 0)) + '%');
+                if (row) row.classList.toggle('video-row-complete', isComplete);
+                option.dataset.complete = isComplete ? 'true' : 'false';
+                if (option.dataset.optionLabel) {
+                    option.textContent = (isComplete ? '✓ 已完成・' : '') + option.dataset.optionLabel;
+                }
+                sortVideoOptions();
+                if (result.summary) {
+                    const summaryWatched = document.getElementById('summary-watched-hours');
+                    const summaryCompletion = document.getElementById('summary-completion');
+                    const summaryCompleted = document.getElementById('summary-completed-videos');
+                    const summaryTotal = document.getElementById('summary-total-videos');
+                    if (summaryWatched) summaryWatched.textContent = result.summary.total_watched_hours;
+                    if (summaryCompletion) summaryCompletion.textContent = result.summary.completion;
+                    if (summaryCompleted) summaryCompleted.textContent = result.summary.completed_videos;
+                    if (summaryTotal) summaryTotal.textContent = result.summary.total_videos;
+                }
+                if (result.current_week) {
+                    const weekWatched = document.getElementById('current-week-watched');
+                    const weekRemaining = document.getElementById('current-week-remaining');
+                    const weekCompletion = document.getElementById('current-week-completion');
+                    const weekFill = document.getElementById('current-week-fill');
+                    const weekState = document.getElementById('current-week-state');
+                    if (weekWatched) weekWatched.textContent = result.current_week.watched_hours;
+                    if (weekRemaining) weekRemaining.textContent = result.current_week.remaining_hours;
+                    if (weekCompletion) weekCompletion.textContent = result.current_week.completion;
+                    if (weekFill) weekFill.style.setProperty('--progress', result.current_week.completion + '%');
+                    if (weekState && result.current_week.state) {
+                        weekState.className = 'state ' + result.current_week.state;
+                        weekState.textContent = result.current_week.state_label || '';
+                    }
+                    const timelineWeek = document.querySelector(
+                        '[data-timeline-week-start="' + result.current_week.start + '"]'
+                    );
+                    if (timelineWeek) {
+                        timelineWeek.className = 'week-row ' + result.current_week.state;
+                        const timelineState = timelineWeek.querySelector('.state');
+                        const timelineWatched = timelineWeek.querySelector('[data-week-watched]');
+                        const timelineRemaining = timelineWeek.querySelector('[data-week-remaining]');
+                        const timelineCompletion = timelineWeek.querySelector('[data-week-completion]');
+                        if (timelineState) {
+                            timelineState.className = 'state ' + result.current_week.state;
+                            timelineState.textContent = result.current_week.state_label || '';
+                        }
+                        if (timelineWatched) {
+                            timelineWatched.textContent = Number(result.current_week.watched_hours || 0).toFixed(1) + 'h';
+                        }
+                        if (timelineRemaining) {
+                            timelineRemaining.textContent = Number(result.current_week.remaining_hours || 0).toFixed(1) + 'h';
+                        }
+                        if (timelineCompletion) {
+                            timelineCompletion.textContent = Number(result.current_week.completion || 0).toFixed(1) + '%';
+                        }
+                    }
+                    (result.current_week.daily_recommendations || []).forEach(function (day, index) {
+                        const card = document.querySelector('[data-focus-day-index="' + index + '"]');
+                        if (!card) return;
+                        card.className = 'day-chip ' + day.state;
+                        card.style.setProperty('--day-progress', day.completion + '%');
+                        const status = card.querySelector('.day-status');
+                        const completion = card.querySelector('.day-completion strong');
+                        if (status) status.textContent = day.state_label;
+                        if (completion) completion.textContent = day.has_target ? Math.round(Number(day.completion || 0)) + '%' : '—';
+                        (day.subject_progress || []).forEach(function (subjectProgress) {
+                            const subjectRow = Array.from(card.querySelectorAll('[data-day-subject]')).find(function (row) {
+                                return row.dataset.daySubject === subjectProgress.name;
+                            });
+                            if (!subjectRow) return;
+                            const value = subjectRow.querySelector('.day-subject-value');
+                            const fill = subjectRow.querySelector('.day-subject-fill');
+                            if (value) value.textContent = Math.round(Number(subjectProgress.completion || 0)) + '%';
+                            if (fill) fill.style.setProperty('--subject-progress', Number(subjectProgress.completion || 0) + '%');
+                        });
+                        const timelineCard = document.querySelector('[data-timeline-day-date="' + day.date + '"]');
+                        if (timelineCard) {
+                            timelineCard.className = 'day-chip ' + day.state;
+                            timelineCard.style.setProperty('--day-progress', Number(day.completion || 0) + '%');
+                            const timelineStatus = timelineCard.querySelector('.day-status');
+                            const timelineCompletion = timelineCard.querySelector('.day-completion strong');
+                            if (timelineStatus) timelineStatus.textContent = day.state_label || '';
+                            if (timelineCompletion) {
+                                timelineCompletion.textContent = day.has_target
+                                    ? Math.round(Number(day.completion || 0)) + '%'
+                                    : '—';
+                            }
+                        }
+                    });
+                }
+                return isSelectedVideo;
+            };
+            const saveProgress = function (reason, useKeepalive, explicitOption) {
+                const option = explicitOption || optionByValue(activeRecordId) || selectedOption();
+                const youtubeId = option ? option.dataset.youtubeVideoId : '';
+                if (!option || !youtubeId || !player || typeof player.getCurrentTime !== 'function') return Promise.resolve();
+                if (queuedSaveCount && reason === 'interval') return Promise.resolve();
+                const playerSeconds = Math.max(0, Number(player.getCurrentTime() || 0));
+                if (String(videoSelect.value) === String(option.value)) {
+                    setPlayerPosition(playerSeconds, Number(option.dataset.durationSeconds || 0));
+                }
+                const durationSeconds = Number(option.dataset.durationSeconds || 0);
+                const currentSeconds = reason === 'ended' && durationSeconds > 0 ? durationSeconds : playerSeconds;
+                const videoId = Number(option.value);
+                queuedSaveCount += 1;
+                playerSyncState.textContent = '儲存中…';
+                const performRequest = function () {
+                    const expectedVersion = Math.max(0, Number(option.dataset.progressVersion || 0));
+                    return fetch('{{ url_for("admin_study_plan_video_progress") }}', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            video_id: videoId,
+                            watched_seconds: currentSeconds,
+                            expected_version: expectedVersion
+                        }),
+                        keepalive: Boolean(useKeepalive)
+                    }).then(function (response) {
+                        if (!response.ok) throw new Error('save_failed');
+                        return response.json();
+                    }).then(function (data) {
+                        if (!applyProgressResult(data)) return;
+                        playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+                        playerSyncState.textContent = data.stale
+                            ? '偵測到較新的紀錄，已保留最新進度'
+                            : reason === 'ended' ? '已完成並儲存' : '已自動儲存';
+                    });
+                };
+                // A keepalive request must start during beforeunload. Normal saves stay
+                // serialized so an older player position cannot overwrite a newer one.
+                const queuedRequest = useKeepalive
+                    ? performRequest()
+                    : saveQueue.catch(function () {}).then(performRequest);
+                if (!useKeepalive) saveQueue = queuedRequest.catch(function () {});
+                return queuedRequest.catch(function () {
+                    playerSyncState.textContent = '儲存失敗，稍後重試';
+                }).finally(function () {
+                    queuedSaveCount = Math.max(0, queuedSaveCount - 1);
+                });
+            };
+            const startSaveTimer = function () {
+                if (saveTimer) return;
+                saveTimer = window.setInterval(function () { saveProgress('interval', false); }, 15000);
+            };
+            const stopSaveTimer = function () {
+                if (saveTimer) window.clearInterval(saveTimer);
+                saveTimer = null;
+            };
+            const startPlaybackTimer = function () {
+                if (playbackTimer) return;
+                syncPlaybackPosition();
+                playbackTimer = window.setInterval(syncPlaybackPosition, 1000);
+            };
+            const stopPlaybackTimer = function () {
+                if (playbackTimer) window.clearInterval(playbackTimer);
+                playbackTimer = null;
+                syncPlaybackPosition();
+            };
+            const loadSelectedVideo = function () {
+                const option = selectedOption();
+                const youtubeId = option ? option.dataset.youtubeVideoId : '';
+                if (!youtubeId || !youtubeApiReady) return;
+                const hasRequestedMarker = Boolean(
+                    requestedMarker
+                    && Number(requestedMarker.video_id) === Number(option.value)
+                );
+                const requestedStartSeconds = hasRequestedMarker
+                    ? Math.max(0, Number(requestedMarker.playback_seconds || 0))
+                    : null;
+                const startSeconds = Math.floor(requestedStartSeconds !== null
+                    ? requestedStartSeconds
+                    : Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0));
+                activeRecordId = option.value;
+                playerEmpty.style.display = 'none';
+                if (!player) {
+                    player = new YT.Player('youtube-player', {
+                        videoId: youtubeId,
+                        playerVars: { rel: 0, fs: 0, playsinline: 1, origin: window.location.origin, start: startSeconds > 5 ? startSeconds : 0 },
+                        events: {
+                            onReady: function () {
+                                playerSyncState.textContent = '播放器已就緒';
+                                if (requestedStartSeconds !== null && typeof player.seekTo === 'function') {
+                                    player.seekTo(requestedStartSeconds, true);
+                                    setPlayerPosition(requestedStartSeconds, Number(option.dataset.durationSeconds || 0));
+                                    requestedMarker = null;
+                                }
+                            },
+                            onStateChange: function (event) {
+                                if (event.data === YT.PlayerState.PLAYING) {
+                                    hideVideoEndScreen(false);
+                                    beginVideoStudyTime();
+                                    startPlaybackTimer();
+                                    startSaveTimer();
+                                    playerSyncState.textContent = '播放中，自動儲存啟用';
+                                } else if (event.data === YT.PlayerState.PAUSED) {
+                                    pauseVideoStudyTime(false);
+                                    stopPlaybackTimer();
+                                    stopSaveTimer();
+                                    saveProgress('paused', false);
+                                } else if (event.data === YT.PlayerState.ENDED) {
+                                    pauseVideoStudyTime(true);
+                                    stopPlaybackTimer();
+                                    stopSaveTimer();
+                                    saveProgress('ended', false).finally(showVideoEndScreen);
+                                } else if (event.data === YT.PlayerState.CUED) {
+                                    pauseVideoStudyTime(false);
+                                    syncPlaybackPosition();
+                                } else if (event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.UNSTARTED) {
+                                    pauseVideoStudyTime(false);
+                                }
+                            },
+                            onError: function () { pauseVideoStudyTime(false); }
+                        }
+                    });
+                } else if (typeof player.loadVideoById === 'function') {
+                    player.loadVideoById({ videoId: youtubeId, startSeconds: startSeconds > 5 ? startSeconds : 0 });
+                    if (requestedStartSeconds !== null) {
+                        setPlayerPosition(requestedStartSeconds, Number(option.dataset.durationSeconds || 0));
+                        requestedMarker = null;
+                    }
+                }
+            };
+            window.onYouTubeIframeAPIReady = function () {
+                youtubeApiReady = true;
+                const option = selectedOption();
+                if (option && option.dataset.youtubeVideoId) loadSelectedVideo();
+                focusVideoArea();
+            };
+            const tag = document.createElement('script');
+            tag.src = 'https://www.youtube.com/iframe_api';
+            document.head.appendChild(tag);
+
+            videoSelect.addEventListener('change', function () {
+                const previousOption = optionByValue(activeRecordId);
+                pauseVideoStudyTime(true);
+                stopPlaybackTimer();
+                stopSaveTimer();
+                const loadNextVideo = function () {
+                    updateDuration();
+                    const option = selectedOption();
+                    if (option && option.dataset.youtubeVideoId && youtubeApiReady) {
+                        loadSelectedVideo();
+                    } else {
+                        activeRecordId = '';
+                    }
+                };
+                if (previousOption && String(previousOption.value) !== String(videoSelect.value)) {
+                    saveProgress('switch', false, previousOption);
+                }
+                loadNextVideo();
+            });
+            if (markerSave) markerSave.addEventListener('click', saveMarker);
+            if (frameQuestionOpen) frameQuestionOpen.addEventListener('click', function () {
+                openFrameQuestion(frameQuestionOpen);
+            });
+            if (focusFrameQuestion) focusFrameQuestion.addEventListener('click', function () {
+                openFrameQuestion(focusFrameQuestion);
+            });
+            if (frameQuestionForm) frameQuestionForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+                submitFrameQuestion();
+            });
+            if (frameQuestionClose) frameQuestionClose.addEventListener('click', closeFrameQuestion);
+            if (frameQuestionCancel) frameQuestionCancel.addEventListener('click', closeFrameQuestion);
+            if (frameQuestionDialog) frameQuestionDialog.addEventListener('close', function () {
+                if (frameQuestionTrigger && typeof frameQuestionTrigger.focus === 'function') {
+                    frameQuestionTrigger.focus({ preventScroll: true });
+                }
+            });
+            if (videoEndReplay) videoEndReplay.addEventListener('click', function () {
+                hideVideoEndScreen(false);
+                if (!player) return;
+                if (typeof player.seekTo === 'function') player.seekTo(0, true);
+                if (typeof player.playVideo === 'function') player.playVideo();
+            });
+            if (videoEndClose) videoEndClose.addEventListener('click', function () {
+                hideVideoEndScreen(true);
+            });
+            const fullscreenElement = function () {
+                return document.fullscreenElement || document.webkitFullscreenElement || null;
+            };
+            const isFocusMode = function () {
+                if (!focusPlayerFrame) return false;
+                let matchesFullscreen = false;
+                try { matchesFullscreen = focusPlayerFrame.matches(':fullscreen'); } catch (error) {}
+                return Boolean(
+                    fullscreenElement() === focusPlayerFrame
+                    || matchesFullscreen
+                    || focusPlayerFrame.classList.contains('is-theater')
+                );
+            };
+            const updateFocusMode = function () {
+                if (!focusPlayerFrame) return;
+                const active = isFocusMode();
+                focusPlayerFrame.classList.toggle('is-focus-mode', active);
+                if (focusLayer) {
+                    focusLayer.setAttribute('aria-hidden', active ? 'false' : 'true');
+                    focusLayer.toggleAttribute('inert', !active);
+                }
+                if (focusModeToggle) {
+                    focusModeToggle.setAttribute('aria-pressed', active ? 'true' : 'false');
+                    focusModeToggle.setAttribute('aria-label', active ? '離開專注模式' : '進入專注全螢幕');
+                    const label = focusModeToggle.querySelector('[data-focus-label]');
+                    if (label) label.textContent = active ? '離開專注模式' : '專注播放';
+                }
+                if (active) {
+                    window.setTimeout(function () {
+                        if (isFocusMode() && focusKeyboardCapture) {
+                            focusKeyboardCapture.focus({ preventScroll: true });
+                        }
+                    }, 0);
+                }
+            };
+            const activateTheaterMode = function () {
+                if (!focusPlayerFrame || focusPlayerFrame.classList.contains('is-theater')) return;
+                theaterScrollY = window.scrollY || window.pageYOffset || 0;
+                focusPlayerFrame.classList.add('is-theater');
+                document.body.classList.add('has-focus-theater');
+                updateFocusMode();
+            };
+            const enterFocusMode = function () {
+                const option = selectedOption();
+                if (!focusPlayerFrame || !option || !option.dataset.youtubeVideoId) {
+                    showFocusToast('請先選擇可播放的影片', true);
+                    return;
+                }
+                if (isFocusMode()) return;
+                const requestFullscreen = focusPlayerFrame.requestFullscreen
+                    || focusPlayerFrame.webkitRequestFullscreen;
+                if (!requestFullscreen) {
+                    activateTheaterMode();
+                    return;
+                }
+                try {
+                    const result = requestFullscreen.call(focusPlayerFrame);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(function () { activateTheaterMode(); });
+                    }
+                } catch (error) {
+                    activateTheaterMode();
+                }
+            };
+            const exitFocusMode = function () {
+                if (!focusPlayerFrame) return;
+                if (focusPlayerFrame.classList.contains('is-theater')) {
+                    focusPlayerFrame.classList.remove('is-theater');
+                    document.body.classList.remove('has-focus-theater');
+                    updateFocusMode();
+                    window.scrollTo(0, theaterScrollY);
+                    return;
+                }
+                const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+                if (playerHasFullscreenPresentation() && exitFullscreen) {
+                    try {
+                        const result = exitFullscreen.call(document);
+                        if (result && typeof result.finally === 'function') {
+                            result.catch(function () {}).finally(updateFocusMode);
+                        }
+                    } catch (error) {}
+                }
+                window.setTimeout(updateFocusMode, 120);
+            };
+            const playerCanReceiveShortcuts = function () {
+                return Boolean(player && typeof player.getCurrentTime === 'function');
+            };
+            const seekPlayerBy = function (deltaSeconds) {
+                if (!playerCanReceiveShortcuts() || typeof player.seekTo !== 'function') return;
+                const current = Math.max(0, Number(player.getCurrentTime() || 0));
+                const duration = typeof player.getDuration === 'function'
+                    ? Math.max(0, Number(player.getDuration() || 0))
+                    : 0;
+                const next = Math.max(0, duration ? Math.min(duration, current + deltaSeconds) : current + deltaSeconds);
+                player.seekTo(next, true);
+                setPlayerPosition(next, duration);
+                showFocusToast((deltaSeconds < 0 ? '後退 ' : '快進 ') + Math.abs(deltaSeconds) + ' 秒');
+            };
+            const beginSpaceBoost = function () {
+                if (spaceBoostActive || !player || typeof player.setPlaybackRate !== 'function') return;
+                spacePreviousRate = typeof player.getPlaybackRate === 'function'
+                    ? Math.max(0.25, Number(player.getPlaybackRate() || 1))
+                    : 1;
+                const availableRates = typeof player.getAvailablePlaybackRates === 'function'
+                    ? (player.getAvailablePlaybackRates() || []).map(Number).filter(Number.isFinite)
+                    : [];
+                const candidates = availableRates.filter(function (rate) {
+                    return rate > spacePreviousRate && rate <= 2;
+                });
+                const boostRate = candidates.length ? Math.max.apply(Math, candidates) : 2;
+                if (!Number.isFinite(boostRate) || boostRate <= spacePreviousRate) return;
+                spaceBoostActive = true;
+                player.setPlaybackRate(boostRate);
+                showFocusToast('暫時 ' + boostRate + '× 播放');
+            };
+            const endSpaceBoost = function () {
+                if (!spaceBoostActive) return;
+                spaceBoostActive = false;
+                if (player && typeof player.setPlaybackRate === 'function') {
+                    player.setPlaybackRate(spacePreviousRate);
+                }
+                showFocusToast('恢復 ' + spacePreviousRate + '× 播放');
+            };
+            if (focusModeToggle) focusModeToggle.addEventListener('click', function () {
+                if (isFocusMode()) exitFocusMode();
+                else enterFocusMode();
+            });
+            if (focusExit) focusExit.addEventListener('click', exitFocusMode);
+            if (focusMarkerSave) focusMarkerSave.addEventListener('click', saveMarker);
+            if (focusKeyboardCapture) focusKeyboardCapture.addEventListener('click', function () {
+                if (!player || typeof player.getPlayerState !== 'function') return;
+                if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+                    if (typeof player.pauseVideo === 'function') player.pauseVideo();
+                } else if (typeof player.playVideo === 'function') {
+                    player.playVideo();
+                }
+                focusKeyboardCapture.focus({ preventScroll: true });
+            });
+            document.addEventListener('fullscreenchange', updateFocusMode);
+            document.addEventListener('webkitfullscreenchange', updateFocusMode);
+            if (markerNote) markerNote.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveMarker();
+                }
+            });
+            document.addEventListener('keydown', function (event) {
+                const target = event.target;
+                const isTyping = target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
+                const plainShortcut = !isTyping && !event.altKey && !event.ctrlKey && !event.metaKey;
+                const pressedKey = String(event.key || '').toLowerCase();
+                if (plainShortcut && playerCanReceiveShortcuts() && (pressedKey === 'j' || pressedKey === 'l')) {
+                    event.preventDefault();
+                    seekPlayerBy(pressedKey === 'j' ? -10 : 10);
+                    return;
+                }
+                if (plainShortcut && playerCanReceiveShortcuts() && event.code === 'Space') {
+                    event.preventDefault();
+                    if (!event.repeat) beginSpaceBoost();
+                    return;
+                }
+                if (plainShortcut && pressedKey === 'q') {
+                    const option = selectedOption();
+                    if (!option || !option.dataset.youtubeVideoId || !frameQuestionOpen || frameQuestionOpen.disabled) return;
+                    event.preventDefault();
+                    openFrameQuestion(isFocusMode() ? focusFrameQuestion : frameQuestionOpen);
+                    return;
+                }
+                if (plainShortcut && pressedKey === 'r') {
+                    const option = selectedOption();
+                    if (!option || !option.dataset.youtubeVideoId) return;
+                    event.preventDefault();
+                    saveMarker();
+                }
+                if (!isTyping && event.key === 'Escape' && (!frameQuestionDialog || !frameQuestionDialog.open) && focusPlayerFrame && focusPlayerFrame.classList.contains('is-theater')) {
+                    event.preventDefault();
+                    exitFocusMode();
+                }
+            });
+            document.addEventListener('keyup', function (event) {
+                if (event.code !== 'Space') return;
+                event.preventDefault();
+                endSpaceBoost();
+            });
+            window.addEventListener('blur', endSpaceBoost);
+            window.addEventListener('resize', updateFocusMode);
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) endSpaceBoost();
+                else updateFocusMode();
+            });
+            document.querySelectorAll('[data-select-video]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const option = optionByValue(button.dataset.selectVideo);
+                    if (!option) return;
+                    videoSelect.value = option.value;
+                    videoSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    window.setTimeout(function () {
+                        if (youtubePlayerPanel) {
+                            youtubePlayerPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            youtubePlayerPanel.focus({ preventScroll: true });
+                        }
+                    }, 80);
+                });
+            });
+            window.addEventListener('beforeunload', function () {
+                saveProgress('leave', true);
+                if (videoStudySession) postStudyTime(videoStudySession, false, true);
+                if (practiceTimer) {
+                    persistPracticeTimer();
+                    postStudyTime(practiceTimer, false, true);
+                }
+            });
+            if (requestedVideoId) {
+                const requestedOption = optionByValue(requestedVideoId);
+                if (requestedOption) videoSelect.value = requestedOption.value;
+            }
+            sortVideoOptions();
+            updateDuration();
+            const smartReplan = document.getElementById('smart-replan');
+            if (smartReplan && window.location.hash === '#smart-replan') smartReplan.open = true;
+            focusVideoArea();
+        }());

@@ -1,0 +1,180 @@
+
+        const QUICK_CODE_LANGUAGE_LABELS = Object.freeze({ c:'C', cpp:'C++', 'c++':'C++', py:'Python', python:'Python', js:'JavaScript', javascript:'JavaScript', ts:'TypeScript', typescript:'TypeScript', java:'Java', sql:'SQL', pseudocode:'虛擬碼', pseudo:'虛擬碼', text:'程式碼', plaintext:'程式碼' });
+        const appendQuickInlineCode = (fragment, value) => {
+            const pattern = /`([^`\n]+)`/g;
+            let cursor = 0;
+            let match;
+            while ((match = pattern.exec(value)) !== null) {
+                if (match.index > cursor) fragment.append(document.createTextNode(value.slice(cursor, match.index)));
+                const code = document.createElement('code');
+                code.className = 'study-inline-code';
+                code.textContent = match[1];
+                fragment.append(code);
+                cursor = pattern.lastIndex;
+            }
+            if (cursor < value.length) fragment.append(document.createTextNode(value.slice(cursor)));
+        };
+        window.renderStudyCodeBlocks = (element) => {
+            if (!element || element.dataset.studyCodeRendered === 'true') return;
+            const source = element.textContent || '';
+            if (!source.includes('`')) {
+                element.dataset.studyCodeRendered = 'true';
+                return;
+            }
+            const fencePattern = /```[ \t]*([A-Za-z0-9_+#.\-]*)[ \t]*\n([\s\S]*?)```/g;
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+            let match;
+            while ((match = fencePattern.exec(source)) !== null) {
+                appendQuickInlineCode(fragment, source.slice(cursor, match.index));
+                const rawLanguage = (match[1] || 'text').toLowerCase();
+                const block = document.createElement('div');
+                block.className = 'study-code-block';
+                const head = document.createElement('div');
+                head.className = 'study-code-head';
+                const language = document.createElement('span');
+                language.className = 'study-code-language';
+                language.textContent = QUICK_CODE_LANGUAGE_LABELS[rawLanguage] || rawLanguage || '程式碼';
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.className = 'study-code-copy';
+                copy.textContent = '複製';
+                copy.title = '複製程式碼';
+                copy.setAttribute('aria-label', '複製程式碼');
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.dataset.studyCode = '';
+                code.textContent = match[2].replace(/^\n/, '').replace(/\n[ \t]*$/, '');
+                pre.append(code);
+                head.append(language, copy);
+                block.append(head, pre);
+                fragment.append(block);
+                cursor = fencePattern.lastIndex;
+            }
+            appendQuickInlineCode(fragment, source.slice(cursor));
+            element.replaceChildren(fragment);
+            element.dataset.studyCodeRendered = 'true';
+        };
+        document.addEventListener('click', async (event) => {
+            const button = event.target.closest?.('.study-code-copy');
+            if (!button) return;
+            const value = button.closest('.study-code-block')?.querySelector('[data-study-code]')?.textContent || '';
+            try {
+                if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
+                await navigator.clipboard.writeText(value);
+            } catch (_error) {
+                const textarea = document.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.append(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            button.textContent = '已複製';
+            button.classList.add('is-copied');
+            window.setTimeout(() => {
+                button.textContent = '複製';
+                button.classList.remove('is-copied');
+            }, 1400);
+        });
+        window.renderQuickMath = () => {
+            document.querySelectorAll('[data-math-content]:not([data-math-rendered])').forEach((element) => {
+                window.renderStudyCodeBlocks(element);
+                if (typeof window.renderMathInElement !== 'function') return;
+                window.renderMathInElement(element, { delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false},{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], ignoredTags:['script','noscript','style','textarea','pre','code'], throwOnError:false });
+                element.dataset.mathRendered = 'true';
+            });
+        };
+        (() => {
+            const stage = document.querySelector('[data-card-stage]');
+            if (!stage) return;
+            const cards = Array.from(stage.querySelectorAll('[data-quick-card]'));
+            const mainCount = cards.length;
+            const rescueQueue = [];
+            const completion = stage.querySelector('[data-completion]');
+            const progressBar = document.querySelector('[data-progress-bar]');
+            const progressLabel = document.querySelector('[data-progress-label]');
+            const timer = document.querySelector('[data-timer]');
+            const scores = { 1:0, 3:0, 5:0 };
+            let currentCard = cards[0] || null;
+            let completedMain = 0;
+            let rescueIndex = 0;
+            let rescueMode = false;
+            let busy = false;
+            const startedAt = Date.now();
+            const elapsedText = () => { const seconds = Math.max(0,Math.floor((Date.now()-startedAt)/1000)); return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`; };
+            const timerHandle = window.setInterval(() => { timer.textContent = elapsedText(); },1000);
+            const updateProgress = () => {
+                if (rescueMode) { progressLabel.textContent=`補強 ${Math.min(rescueIndex+1,rescueQueue.length)} / ${rescueQueue.length} 題`; progressBar.style.width=`${rescueQueue.length?rescueIndex/rescueQueue.length*100:100}%`; return; }
+                progressLabel.textContent=`第 ${Math.min(completedMain+1,mainCount)} / ${mainCount} 題`; progressBar.style.width=`${mainCount?completedMain/mainCount*100:100}%`;
+            };
+            const isObjective = (card) => Boolean(card?.querySelector('[data-submit-objective]'));
+            const resetCard = (card,isRescue) => {
+                card.hidden=false; card.classList.remove('is-revealed'); card.dataset.rescue=isRescue?'true':''; card.dataset.hintUsed='';
+                card.dataset.objectiveRating=''; card.querySelector('[data-answer]').hidden=true; card.querySelector('[data-reveal-wrap]').hidden=false; card.querySelector('[data-rating-panel]').hidden=false; card.querySelector('[data-save-status]').textContent='';
+                card.querySelectorAll('[data-rating]').forEach((button)=>{ button.hidden=false; button.disabled=false; });
+                card.querySelectorAll('[data-exam-option]').forEach((button)=>{ button.disabled=false; button.setAttribute('aria-pressed','false'); button.classList.remove('is-selected','is-correct','is-wrong'); });
+                const objectiveSubmit=card.querySelector('[data-submit-objective]'); if(objectiveSubmit){objectiveSubmit.disabled=true;objectiveSubmit.textContent='請先選一個答案';}
+                const objectiveFeedback=card.querySelector('[data-objective-feedback]'); if(objectiveFeedback){objectiveFeedback.hidden=true;objectiveFeedback.classList.remove('is-wrong');}
+                const objectiveNext=card.querySelector('[data-objective-next]'); if(objectiveNext){objectiveNext.hidden=true;objectiveNext.dataset.action='next';}
+                const rescueNext=card.querySelector('[data-rescue-next]'); const rescueNote=card.querySelector('[data-rescue-note]'); if(rescueNext)rescueNext.hidden=true; if(rescueNote)rescueNote.hidden=true;
+                const writtenAnswer=card.querySelector('[data-written-answer]'); if(writtenAnswer)writtenAnswer.value='';
+                const hintButton=card.querySelector('[data-hint]'); const hintBox=card.querySelector('[data-hint-box]'); if(hintButton) hintButton.hidden=isRescue; if(hintBox) hintBox.hidden=true;
+                const label=card.querySelector('[data-question-type]'); const mission=card.querySelector('[data-question-mission]'); const revealButton=card.querySelector('[data-reveal]');
+                if(label){ if(!label.dataset.originalText) label.dataset.originalText=label.textContent; label.textContent=isRescue?'立即補強':label.dataset.originalText; }
+                if(mission){ if(!mission.dataset.originalText) mission.dataset.originalText=mission.textContent; mission.textContent=isRescue?(isObjective(card)?'不看正解，再選一次':'移開正解，再完整做一次'):mission.dataset.originalText; }
+                if(revealButton)revealButton.textContent=isRescue?'我重新作答完了，核對一次':(card.dataset.interaction==='calculation'?'完成作答，查看來源正解':'完成作答，揭曉答案'); window.scrollTo({top:0,behavior:'smooth'});
+            };
+            const showHint = () => { if(!currentCard||!currentCard.querySelector('[data-answer]').hidden)return; const button=currentCard.querySelector('[data-hint]'); const box=currentCard.querySelector('[data-hint-box]'); if(!button||!box)return; currentCard.dataset.hintUsed='true'; button.hidden=true; box.hidden=false; window.renderQuickMath(); };
+            const reveal = () => { if(!currentCard||!currentCard.querySelector('[data-answer]').hidden)return; currentCard.classList.add('is-revealed'); currentCard.querySelector('[data-answer]').hidden=false; currentCard.querySelector('[data-reveal-wrap]').hidden=true; if(rescueMode&&!isObjective(currentCard)){ currentCard.querySelectorAll('[data-rating]').forEach((button)=>{button.hidden=true;}); const note=currentCard.querySelector('[data-rescue-note]'); const next=currentCard.querySelector('[data-rescue-next]'); if(note)note.hidden=false; if(next)next.hidden=false; } window.renderQuickMath(); };
+            const selectObjectiveOption = (button) => {
+                if(!currentCard||busy||!currentCard.querySelector('[data-answer]').hidden||button.disabled)return;
+                currentCard.querySelectorAll('[data-exam-option]').forEach((option)=>{option.classList.remove('is-selected');option.setAttribute('aria-pressed','false');});
+                button.classList.add('is-selected'); button.setAttribute('aria-pressed','true');
+                const submit=currentCard.querySelector('[data-submit-objective]'); submit.disabled=false; submit.textContent='確認答案';
+            };
+            const submitObjective = () => {
+                if(!currentCard||busy||!isObjective(currentCard)||!currentCard.querySelector('[data-answer]').hidden)return;
+                const selected=currentCard.querySelector('[data-exam-option].is-selected'); if(!selected)return;
+                const correct=selected.dataset.correct==='true';
+                currentCard.querySelectorAll('[data-exam-option]').forEach((option)=>{ option.disabled=true; if(option.dataset.correct==='true')option.classList.add('is-correct'); });
+                if(!correct)selected.classList.add('is-wrong');
+                currentCard.dataset.objectiveRating=String(correct?(currentCard.dataset.hintUsed==='true'?3:5):1);
+                const feedback=currentCard.querySelector('[data-objective-feedback]'); const title=feedback.querySelector('[data-objective-title]'); const copy=feedback.querySelector('[data-objective-copy]');
+                feedback.hidden=false; feedback.classList.toggle('is-wrong',!correct); title.textContent=correct?'答對':'答錯'; copy.textContent=correct?'判斷正確，請再核對來源解析與成立條件。':'綠色選項是正確答案；請找出自己判斷失誤的條件。';
+                const next=currentCard.querySelector('[data-objective-next]'); next.hidden=false; next.dataset.action=rescueMode&&!correct?'retry':'next'; next.textContent=rescueMode&&!correct?'再作答一次':(rescueMode?'答對了，完成補強':'看完解析，下一題');
+                reveal();
+            };
+            const finish = () => {
+                currentCard=null; cards.forEach((card)=>{card.hidden=true;}); completion.hidden=false; progressBar.style.width='100%'; progressLabel.textContent=rescueQueue.length?`完成 ${mainCount} 題與 ${rescueQueue.length} 題補強`:`已完成 ${mainCount} 題`;
+                document.querySelector('[data-result-know]').textContent=scores[5]; document.querySelector('[data-result-fuzzy]').textContent=scores[3]; document.querySelector('[data-result-forgot]').textContent=scores[1];
+                const remaining=Number(stage.dataset.remaining||0); document.querySelector('[data-completion-copy]').textContent=remaining>0?`用時 ${elapsedText()}；今天還有 ${remaining} 題，休息後再繼續也可以。`:`用時 ${elapsedText()}；今天到期的記憶都已處理完成。`; if(remaining<=0) document.querySelector('[data-continue-link]').hidden=true; window.clearInterval(timerHandle);
+            };
+            const showNext = () => { if(currentCard)currentCard.hidden=true; if(!rescueMode&&completedMain<mainCount){currentCard=cards[completedMain];resetCard(currentCard,false);updateProgress();return;} if(!rescueMode&&rescueQueue.length){rescueMode=true;rescueIndex=0;} if(rescueMode&&rescueIndex<rescueQueue.length){currentCard=rescueQueue[rescueIndex];resetCard(currentCard,true);updateProgress();return;} finish(); };
+            const recordRating = async (rating) => {
+                if(!currentCard||rescueMode||busy||![1,3,5].includes(rating))return; busy=true; const status=currentCard.querySelector('[data-save-status]'); const buttons=currentCard.querySelectorAll('[data-rating]'); buttons.forEach((button)=>{button.disabled=true;}); const formData=new FormData(); formData.set(`rating_${currentCard.dataset.conceptIndex}`,String(rating));
+                try { const response=await fetch(currentCard.dataset.rateUrl,{method:'POST',body:formData,credentials:'same-origin',headers:{'X-E3-Recall-Rating':'1',Accept:'application/json'}}); const result=await response.json().catch(()=>({})); if(!response.ok||!result.ok)throw new Error(result.error||'紀錄失敗，請再試一次。'); scores[rating]+=1; if(rating===1)rescueQueue.push(currentCard); completedMain+=1; showNext(); }
+                catch(error){ status.textContent=error.message||'紀錄失敗，請再試一次。'; buttons.forEach((button)=>{button.disabled=false;}); } finally { busy=false; }
+            };
+            stage.addEventListener('click',(event)=>{
+                const option=event.target.closest('[data-exam-option]'); if(option){selectObjectiveOption(option);return;}
+                if(event.target.closest('[data-submit-objective]')){submitObjective();return;}
+                const objectiveNext=event.target.closest('[data-objective-next]'); if(objectiveNext){ if(objectiveNext.dataset.action==='retry'){resetCard(currentCard,true);return;} if(rescueMode){rescueIndex+=1;showNext();return;} recordRating(Number(currentCard.dataset.objectiveRating||1));return; }
+                if(event.target.closest('[data-hint]')){showHint();return;} if(event.target.closest('[data-reveal]')){reveal();return;}
+                const ratingButton=event.target.closest('[data-rating]'); if(ratingButton){recordRating(Number(ratingButton.dataset.rating));return;} if(event.target.closest('[data-rescue-next]')&&rescueMode){rescueIndex+=1;showNext();}
+            });
+            document.addEventListener('keydown',(event)=>{
+                if(!currentCard||event.metaKey||event.ctrlKey||event.altKey)return; const target=event.target; if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return;
+                if(event.key.toLowerCase()==='h'){showHint();return;}
+                const answerHidden=currentCard.querySelector('[data-answer]').hidden;
+                if(answerHidden&&isObjective(currentCard)){ if(/^[1-4]$/.test(event.key)){const option=currentCard.querySelectorAll('[data-exam-option]')[Number(event.key)-1];if(option)selectObjectiveOption(option);} if(event.key==='Enter')submitObjective(); return; }
+                if(answerHidden&&event.code==='Space'){event.preventDefault();reveal();return;}
+                if(isObjective(currentCard)){ if(event.key==='Enter')currentCard.querySelector('[data-objective-next]')?.click(); return; }
+                if(rescueMode){if(event.key==='Enter')currentCard.querySelector('[data-rescue-next]')?.click();return;}
+                if(event.key==='1')recordRating(1); if(event.key==='2')recordRating(3); if(event.key==='3')recordRating(5);
+            });
+            updateProgress(); window.renderQuickMath();
+        })();

@@ -1,0 +1,16 @@
+
+(function(){
+    try{
+        const stored = localStorage.getItem('e3_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const choice = stored || (prefersDark ? 'dark' : 'light');
+        const normalized = choice === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', normalized);
+        document.documentElement.style.colorScheme = normalized;
+        window.__initialTheme = normalized;
+    }catch(err){
+        document.documentElement.setAttribute('data-theme','light');
+        document.documentElement.style.colorScheme = 'light';
+        window.__initialTheme = 'light';
+    }
+})();
