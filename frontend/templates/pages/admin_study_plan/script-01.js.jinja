@@ -733,7 +733,7 @@
                     if (requestId !== frameQuestionRequestId) return;
                     if (!response.ok || !result.ok) throw new Error(result.error || '目前無法分析這一幕，請稍後再試。');
                     if (frameQuestionImage && result.frame_image) frameQuestionImage.src = result.frame_image;
-                    if (frameQuestionPreview) frameQuestionPreview.hidden = false;
+                    if (frameQuestionPreview) frameQuestionPreview.hidden = !result.frame_image;
                     if (frameQuestionSampleTime) {
                         const label = result.frame_source === 'exact' ? '精準影格' : '預覽影格';
                         frameQuestionSampleTime.textContent = label + '・按下 ' + formatClock(result.requested_seconds)
@@ -754,6 +754,7 @@
                         }
                         frameQuestionStatus.textContent = '已根據前後 10 秒的'
                             + (evidence.length ? evidence.join('與') : '影音前後文') + '回答。';
+                        if (result.context_warning) frameQuestionStatus.textContent += ' ' + result.context_warning;
                     }
                 } catch (error) {
                     if (requestId !== frameQuestionRequestId) return;

@@ -20,6 +20,7 @@ from typing import Any, Dict, Iterator, List, Tuple
 import requests
 import yt_dlp
 from PIL import Image
+from .media_cache import MediaCache
 
 
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -52,8 +53,8 @@ _EXTRACTOR_STRATEGIES = (
 _metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _metadata_video_locks: Dict[str, threading.Lock] = {}
 _metadata_lock = threading.Lock()
-_frame_cache: Dict[Tuple[str, float], Tuple[float, Dict[str, Any]]] = {}
-_frame_video_locks: Dict[Tuple[str, float], threading.Lock] = {}
+_frame_cache: Dict[Tuple[str, float, bool], Tuple[float, Dict[str, Any]]] = {}
+_frame_video_locks: Dict[Tuple[str, float, bool], threading.Lock] = {}
 _frame_lock = threading.Lock()
 _audio_metadata_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _pot_provider_home: str | None = None
@@ -62,6 +63,7 @@ _pot_provider_lock = threading.Lock()
 _storyboard_catalog: Dict[str, Dict[str, Any]] | None = None
 _storyboard_catalog_lock = threading.Lock()
 _logger = logging.getLogger(__name__)
+_audio_clip_cache = MediaCache(limit=24, ttl=15 * 60)
 
 
 class YoutubeFrameError(RuntimeError):
@@ -199,7 +201,7 @@ def _youtube_dl_options(
     return options
 
 
-def _ensure_youtube_pot_provider() -> str:
+def _ensure_youtube_pot_provider(*, allow_build: bool = True) -> str:
     """Build the pinned yt-dlp token provider once in the application cache."""
     global _pot_provider_home, _pot_provider_last_failure
     configured = str(os.getenv("E3_YTDLP_POT_SERVER_HOME") or "").strip()
@@ -223,6 +225,9 @@ def _ensure_youtube_pot_provider() -> str:
         if generated_script.is_file():
             _pot_provider_home = str(server_home)
             return _pot_provider_home
+
+        if not allow_build:
+            return ""
 
         git = str(shutil.which("git") or "")
         npm = str(shutil.which("npm") or shutil.which("npm.cmd") or "")
@@ -585,22 +590,24 @@ def _has_audio_formats(info: Dict[str, Any]) -> bool:
     )
 
 
-def _extract_youtube_audio_info(video_id: str) -> Dict[str, Any]:
+def _extract_youtube_audio_info(video_id: str, *, deadline: float | None = None) -> Dict[str, Any]:
     """Resolve playable audio streams without falling back to image-only metadata."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     last_error: BaseException | None = None
-    pot_server_home = _ensure_youtube_pot_provider()
+    pot_server_home = _ensure_youtube_pot_provider(allow_build=False)
     strategies: Tuple[Tuple[str, ...] | None, ...] = _EXTRACTOR_STRATEGIES
     if pot_server_home:
         strategies = (("mweb",),) + strategies
     for strategy_index, player_clients in enumerate(strategies):
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         try:
-            with yt_dlp.YoutubeDL(
-                _youtube_dl_options(
-                    player_clients,
-                    pot_server_home=pot_server_home if player_clients == ("mweb",) else "",
-                )
-            ) as ydl:
+            options = _youtube_dl_options(
+                player_clients, pot_server_home=pot_server_home if player_clients == ("mweb",) else "",
+            )
+            if deadline is not None:
+                options.update(socket_timeout=max(1, min(5, deadline - time.monotonic())), retries=0, extractor_retries=0)
+            with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(url, download=False)
             if isinstance(info, dict) and _has_audio_formats(info):
                 return info
@@ -618,7 +625,7 @@ def _extract_youtube_audio_info(video_id: str) -> Dict[str, Any]:
     raise YoutubeAudioError("YouTube 暫時無法提供這部影片的音訊，請稍後再試。") from last_error
 
 
-def _youtube_audio_info(video_id: str, *, force_refresh: bool = False) -> Dict[str, Any]:
+def _youtube_audio_info(video_id: str, *, force_refresh: bool = False, deadline: float | None = None) -> Dict[str, Any]:
     now = time.monotonic()
     if not force_refresh:
         with _metadata_lock:
@@ -633,7 +640,7 @@ def _youtube_audio_info(video_id: str, *, force_refresh: bool = False) -> Dict[s
                 cached = _audio_metadata_cache.get(video_id)
                 if cached and now - cached[0] < _AUDIO_METADATA_CACHE_TTL_SECONDS:
                     return cached[1]
-        info = _extract_youtube_audio_info(video_id)
+        info = _extract_youtube_audio_info(video_id, deadline=deadline)
         streams = [
             item
             for item in (info.get("formats") or [])
@@ -1056,7 +1063,7 @@ def _proxied_media_url(
                     total_size = 0
                     headers_sent = False
                     while total_size <= 0 or chunk_start < total_size:
-                        chunk_end = chunk_start + 1024 * 1024 - 1
+                        chunk_end = chunk_start + 256 * 1024 - 1
                         if total_size > 0:
                             chunk_end = min(chunk_end, total_size - 1)
                         request_headers = {
@@ -1122,7 +1129,8 @@ def _proxied_media_url(
                             if chunk:
                                 self.wfile.write(chunk)
             except requests.RequestException as exc:
-                _logger.warning("YouTube audio proxy request failed: %s", type(exc).__name__)
+                status = exc.response.status_code if getattr(exc, 'response', None) is not None else None
+                _logger.warning("YouTube audio proxy request failed: %s (HTTP %s)", type(exc).__name__, status)
                 if not self.wfile.closed:
                     self.close_connection = True
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
@@ -1202,7 +1210,7 @@ def _audio_clip_from_stream(
     return completed.stdout
 
 
-def fetch_youtube_audio_clip(
+def _fetch_youtube_audio_clip_uncached(
     youtube_video_id: str,
     playback_seconds: float,
     *,
@@ -1231,6 +1239,7 @@ def fetch_youtube_audio_clip(
             info = _youtube_audio_info(
                 video_id,
                 force_refresh=metadata_attempt > 0,
+                deadline=deadline,
             )
         except YoutubeAudioError as exc:
             last_error = exc
@@ -1275,6 +1284,28 @@ def fetch_youtube_audio_clip(
     if last_error is not None:
         raise last_error
     raise YoutubeAudioError("目前無法擷取這段影片音訊。")
+
+
+def fetch_youtube_audio_clip(
+    youtube_video_id: str,
+    playback_seconds: float,
+    *,
+    radius_seconds: float = 15.0,
+    timeout: int = _AUDIO_CLIP_TIMEOUT_SECONDS,
+) -> Dict[str, Any]:
+    video_id, seconds = _validate_frame_request(youtube_video_id, playback_seconds)
+    try:
+        radius = float(radius_seconds)
+    except (TypeError, ValueError) as exc:
+        raise YoutubeAudioError("音訊範圍無效。") from exc
+    if not math.isfinite(radius) or not 0 < radius <= 60:
+        raise YoutubeAudioError("音訊範圍無效。")
+    key = (video_id, seconds, radius)
+    return dict(_audio_clip_cache.get_or_create(
+        key, lambda: _fetch_youtube_audio_clip_uncached(
+            video_id, seconds, radius_seconds=radius, timeout=timeout,
+        ),
+    ))
 
 
 def _frame_from_stream(
@@ -1518,10 +1549,11 @@ def fetch_youtube_cached_frame(
     *,
     timeout: int = 18,
     storyboard_metadata: Dict[str, Any] | None = None,
+    prefer_exact: bool = False,
 ) -> Dict[str, Any]:
     """Reuse a recently prefetched frame for the matching video timestamp."""
     video_id, requested_seconds = _validate_frame_request(youtube_video_id, playback_seconds)
-    key = (video_id, round(requested_seconds, 3))
+    key = (video_id, round(requested_seconds, 3), prefer_exact)
     now = time.monotonic()
     with _frame_lock:
         cached = _frame_cache.get(key)
@@ -1535,12 +1567,17 @@ def fetch_youtube_cached_frame(
             cached = _frame_cache.get(key)
             if cached and now - cached[0] < _FRAME_CACHE_TTL_SECONDS:
                 return cached[1]
-        frame = fetch_youtube_storyboard_frame(
-            video_id,
-            requested_seconds,
-            timeout=timeout,
-            storyboard_metadata=storyboard_metadata,
-        )
+        frame = None
+        if prefer_exact:
+            try:
+                frame = fetch_youtube_precise_frame(video_id, requested_seconds, timeout=min(timeout, 8))
+            except YoutubeFrameError:
+                pass
+        if frame is None:
+            frame = fetch_youtube_storyboard_frame(
+                video_id, requested_seconds, timeout=timeout,
+                storyboard_metadata=storyboard_metadata,
+            )
         with _frame_lock:
             if len(_frame_cache) >= _FRAME_CACHE_LIMIT:
                 oldest = min(_frame_cache, key=lambda item: _frame_cache[item][0])

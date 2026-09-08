@@ -1,13 +1,18 @@
 """Video routes and their feature helpers."""
 
 import base64
+import hashlib
 import math
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 import requests
 from flask import request
 from ...services.youtube_frames import YoutubeAudioError, YoutubeFrameError, fetch_youtube_audio_clip, fetch_youtube_cached_frame
 from ...shared.config import normalize_openai_reasoning_effort
+from ...services.media_cache import MediaCache
+from ...services.local_video_media import find_local_video, local_audio_clip, local_frame
 
 
 def register_video_routes(*,
@@ -32,6 +37,9 @@ def register_video_routes(*,
     record_ui_event,
     storage,
 ):
+    transcript_cache = MediaCache(limit=64, ttl=1800)
+    original_cache = MediaCache(limit=24, ttl=900)
+
     def _transcribe_study_plan_marker_audio(
         audio_clip: Dict[str, Any],
         *,
@@ -44,32 +52,49 @@ def register_video_routes(*,
             raise ValueError("empty audio clip")
         context_prompt = (
             "研究所考試課程影片，請保留中文、英文專有名詞、公式念法與程式術語。"
-            f"科目：{subject[:48]}；影片：{video_title[:120]}；"
-            f"關鍵點：{marker_name[:160]}。"
+            f"科目：{subject[:48]}；影片：{video_title[:120]}。"
+            "只轉錄確實聽到的內容，不補寫問題的答案；無法辨識的語句不要猜測。"
         )
-        response = requests.post(
-            "https://api.openai.com/v1/audio/transcriptions",
-            headers={"Authorization": f"Bearer {openai_api_key}"},
-            files={
-                "file": (
-                    str(audio_clip.get("filename") or "marker-context.wav"),
-                    audio_bytes,
-                    str(audio_clip.get("mime_type") or "audio/wav"),
-                )
-            },
-            data={
-                "model": openai_transcription_model,
-                "language": "zh",
-                "response_format": "json",
-                "prompt": context_prompt,
-            },
-            timeout=90,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise ValueError("invalid transcription response")
-        return " ".join(str(payload.get("text") or "").split()).strip()[:6000]
+        cache_key = (hashlib.sha256(audio_bytes).hexdigest(), openai_transcription_model, subject, video_title)
+
+        def transcribe():
+            for attempt in range(2):
+                try:
+                    return request_transcription()
+                except requests.HTTPError as exc:
+                    if attempt or exc.response is None or exc.response.status_code not in (429, 500, 502, 503, 504):
+                        raise
+                except (requests.ConnectionError, requests.Timeout):
+                    if attempt:
+                        raise
+                time.sleep(.3)
+
+        def request_transcription():
+            response = requests.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {openai_api_key}"},
+                files={
+                    "file": (
+                        str(audio_clip.get("filename") or "marker-context.wav"),
+                        audio_bytes,
+                        str(audio_clip.get("mime_type") or "audio/wav"),
+                    )
+                },
+                data={
+                    "model": openai_transcription_model,
+                    "language": "zh",
+                    "response_format": "json",
+                    "prompt": context_prompt,
+                },
+                timeout=(5, 30),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("invalid transcription response")
+            return " ".join(str(payload.get("text") or "").split()).strip()[:6000]
+
+        return transcript_cache.get_or_create(cache_key, transcribe)
 
     def _collect_study_plan_video_context(
         video: Dict[str, Any],
@@ -87,31 +112,31 @@ def register_video_routes(*,
         if duration_seconds > 0:
             window_end = min(duration_seconds, window_end)
 
+        context_started = time.monotonic()
+        original = find_local_video(video)
+        original_key = (str(original), original.stat().st_mtime_ns, original.stat().st_size) if original else None
+        def collect_audio():
+            clip = None
+            if original:
+                try:
+                    clip = original_cache.get_or_create(
+                        ('audio', original_key, window_start, window_end),
+                        lambda: local_audio_clip(original, window_start, window_end),
+                    )
+                except YoutubeAudioError:
+                    app.logger.warning('Original video audio unavailable; trying YouTube')
+            if clip is None:
+                clip = fetch_youtube_audio_clip(youtube_video_id, playback_seconds, radius_seconds=radius_seconds)
+            transcript = _transcribe_study_plan_marker_audio(
+                clip, subject=str(video.get("subject") or ""),
+                video_title=str(video.get("title") or ""), marker_name=context_name,
+            )
+            return clip, transcript
+
+        # Audio and image extraction do not depend on each other.
         audio_transcript = ""
         audio_error = ""
         audio_clip: Optional[Dict[str, Any]] = None
-        try:
-            audio_clip = fetch_youtube_audio_clip(
-                youtube_video_id,
-                playback_seconds,
-                radius_seconds=radius_seconds,
-            )
-            audio_transcript = _transcribe_study_plan_marker_audio(
-                audio_clip,
-                subject=str(video.get("subject") or ""),
-                video_title=str(video.get("title") or ""),
-                marker_name=context_name,
-            )
-            window_start = float(audio_clip.get("start_seconds") or window_start)
-            window_end = float(audio_clip.get("end_seconds") or window_end)
-        except (YoutubeAudioError, requests.RequestException, ValueError, TypeError) as exc:
-            audio_error = str(exc)
-            app.logger.warning(
-                "Video audio context unavailable for %s: %s",
-                youtube_video_id,
-                type(exc).__name__,
-            )
-
         sample_points: List[float] = []
         for offset in (
             -radius_seconds,
@@ -127,23 +152,44 @@ def register_video_routes(*,
                 sample_points.append(point)
 
         storyboard_metadata = storage.get_youtube_storyboard_metadata(youtube_video_id)
+        executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="video-context")
+        audio_future = executor.submit(collect_audio)
         sampled_frames: List[Dict[str, Any]] = []
         frame_errors: List[str] = []
-        for sample_seconds in sample_points:
-            try:
-                frame = fetch_youtube_cached_frame(
-                    youtube_video_id,
-                    sample_seconds,
-                    storyboard_metadata=storyboard_metadata,
-                )
-            except YoutubeFrameError as exc:
-                frame_errors.append(str(exc))
-                continue
-            refreshed_metadata = frame.get("storyboard_metadata")
-            _persist_youtube_storyboard_metadata(storage, refreshed_metadata, app.logger)
-            if isinstance(refreshed_metadata, dict):
-                storyboard_metadata = refreshed_metadata
-            sampled_frames.append(frame)
+        def frame_at(sample_seconds):
+            if original:
+                try:
+                    return original_cache.get_or_create(
+                        ('frame', original_key, sample_seconds),
+                        lambda: local_frame(original, sample_seconds),
+                    )
+                except YoutubeFrameError:
+                    pass
+            return fetch_youtube_cached_frame(
+                youtube_video_id, sample_seconds, storyboard_metadata=storyboard_metadata,
+                prefer_exact=abs(sample_seconds - playback_seconds) < .5,
+            )
+
+        frame_futures = [executor.submit(frame_at, point) for point in sample_points]
+        try:
+            for future in frame_futures:
+                try:
+                    frame = future.result()
+                except YoutubeFrameError as exc:
+                    frame_errors.append(str(exc))
+                    continue
+                _persist_youtube_storyboard_metadata(storage, frame.get('storyboard_metadata'), app.logger)
+                sampled_frames.append(frame)
+            audio_clip, audio_transcript = audio_future.result()
+            window_start = float(audio_clip.get("start_seconds", window_start))
+            window_end = float(audio_clip.get("end_seconds", window_end))
+            if not audio_transcript:
+                audio_error = "片段內沒有可辨識的語音。"
+        except (YoutubeAudioError, requests.RequestException, ValueError, TypeError) as exc:
+            audio_error = str(exc)
+            app.logger.warning("Video audio context unavailable for %s: %s", youtube_video_id, type(exc).__name__)
+        finally:
+            executor.shutdown(wait=True)
 
         return {
             "window_start": window_start,
@@ -153,6 +199,7 @@ def register_video_routes(*,
             "audio_clip": audio_clip,
             "frames": sampled_frames,
             "frame_errors": frame_errors,
+            "elapsed_seconds": round(time.monotonic() - context_started, 2),
         }
 
     def _generate_study_plan_marker_summary(
@@ -456,6 +503,11 @@ def register_video_routes(*,
             "不要只是摘要片段。科目與影片標題只能作背景，影音中能確認的內容才是主要依據。"
             "若部分畫面或聲音取得失敗，仍須善用成功取得的前後文回答；只有現有影音確實不足以判斷時，"
             "才精確指出缺少的條件，不可猜測。回答使用精簡、好理解的繁體中文，控制在 2 至 8 個短段落。"
+            "預覽縮圖不等同高清原始畫面；看不清的數字、正負號、上下標與程式碼不可自行補成確定內容。"
+            "語音沒有取得時，不得聲稱老師說過什麼。先直接回答，再列必要推導；一般知識推論須與影片可見事實區分。"
+            "先用一句話回答，再用 2 至 4 個短重點說明理由。不要逐張描述畫面、重述問題或重複相同結論。"
+            "不要加『直接回答』『必要推導』等制式前言，也不要在結尾主動追加提問。"
+            "引用公式前核對符號、條件及數學意義；不要把線段、射線、向量等不同概念混用。"
             "數學表達式一律使用 LaTeX：行內公式用 \\( ... \\)，獨立公式用 \\[ ... \\]。"
             "不要輸出 Markdown 標題、粗體標記或程式碼區塊。\n\n"
             f"科目：{str(video.get('subject') or '')[:48]}\n"
@@ -470,7 +522,7 @@ def register_video_routes(*,
         for index, frame in enumerate(sampled_frames, start=1):
             content.append({
                 "type": "input_text",
-                "text": f"畫面 {index}，影片時間約 {float(frame.get('frame_seconds') or 0):.1f} 秒：",
+                "text": f"畫面 {index}，影片時間約 {float(frame.get('frame_seconds') or 0):.1f} 秒；來源 {frame.get('source') or '預覽影格'}：",
             })
             content.append({
                 "type": "input_image",
@@ -510,6 +562,7 @@ def register_video_routes(*,
             return {"ok": False, "error": "AI 暫時無法回答，請稍後再試。"}, 502
         if not answer:
             return {"ok": False, "error": "AI 沒有產生有效回答，請換個方式提問。"}, 502
+        answer_incomplete = response_payload.get('status') == 'incomplete'
         record_ui_event(
             "study_plan_video_frame_question",
             meta={
@@ -534,6 +587,11 @@ def register_video_routes(*,
             "context_end_seconds": round(window_end, 2),
             "context_frame_count": len(sampled_frames),
             "context_audio": bool(audio_transcript),
+            "context_warning": (
+                ("" if audio_transcript else "未取得可辨識語音，本次僅依畫面回答。")
+                + ("回答未完整生成，請縮小問題範圍後重試。" if answer_incomplete else "")
+            ),
+            "context_elapsed_seconds": context.get("elapsed_seconds"),
         }
 
     @app.post("/admin/study-plan/video-frame")

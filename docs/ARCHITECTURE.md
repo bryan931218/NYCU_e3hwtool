@@ -17,6 +17,7 @@
 | `backend/e3_tracker/services/traffic.py` | 流量、使用者活動與持久化統計 |
 | `backend/e3_tracker/services/collector.py` | E3 課程及作業蒐集、學期快取 |
 | `backend/e3_tracker/services/youtube_*.py` | YouTube 清單同步、音訊與畫面取得 |
+| `backend/e3_tracker/services/media_cache.py`、`local_video_media.py` | 影音快取、同片段請求合併與可選原片取材 |
 | `backend/e3_tracker/shared/storage.py` | 儲存層入口、連線初始化與遷移，相容既有呼叫 |
 | `backend/e3_tracker/shared/persistence/` | 共用資料表與按領域拆分的資料庫操作 |
 | `backend/e3_tracker/shared/*runtime.py` | 現有功能安裝器與相容層 |
@@ -73,6 +74,8 @@ python -m unittest tests.test_study_plan_progress tests.test_study_upload_progre
 ```
 
 測試多以暫存資料庫及模擬外部服務執行。通過測試不代表正式 YouTube、AI 額度或 Railway 環境已驗證。正式站使用 `backend/wsgi.py`，本機使用 `backend/server.py`，兩者經相同 bootstrap 建立完整應用。
+
+影片提問的取材、快取與實際 API 診斷方式見 [影片提問維護](VIDEO_QUESTIONS.md)。
 
 ## Git 維護
 

@@ -24,7 +24,27 @@ class YoutubeStoryboardFrameTests(unittest.TestCase):
         youtube_frames._frame_cache.clear()
         youtube_frames._frame_video_locks.clear()
         youtube_frames._audio_metadata_cache.clear()
+        youtube_frames._audio_clip_cache.values.clear()
         youtube_frames._storyboard_catalog = None
+
+    def test_exact_frame_does_not_reuse_low_resolution_preview(self):
+        with patch.object(youtube_frames, 'fetch_youtube_storyboard_frame', return_value={'source': 'storyboard'}), \
+             patch.object(youtube_frames, 'fetch_youtube_precise_frame', return_value={'source': 'exact'}) as precise:
+            preview = fetch_youtube_cached_frame('9dXuhVJ-L5k', 120)
+            exact = fetch_youtube_cached_frame('9dXuhVJ-L5k', 120, prefer_exact=True)
+            self.assertEqual(preview['source'], 'storyboard')
+            self.assertEqual(exact['source'], 'exact')
+            precise.assert_called_once()
+
+    def test_audio_cache_preserves_success_but_not_failure(self):
+        with patch.object(youtube_frames, '_fetch_youtube_audio_clip_uncached', side_effect=[
+            youtube_frames.YoutubeAudioError('blocked'), {'bytes': b'audio'},
+        ]) as fetch:
+            with self.assertRaises(youtube_frames.YoutubeAudioError):
+                fetch_youtube_audio_clip('9dXuhVJ-L5k', 120)
+            self.assertEqual(fetch_youtube_audio_clip('9dXuhVJ-L5k', 120)['bytes'], b'audio')
+            self.assertEqual(fetch_youtube_audio_clip('9dXuhVJ-L5k', 120)['bytes'], b'audio')
+            self.assertEqual(fetch.call_count, 2)
 
     @staticmethod
     def _sprite_bytes(width, height, color=(25, 60, 225)):

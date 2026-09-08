@@ -3,6 +3,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock, patch
 
@@ -23,6 +24,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
                 "E3_DATABASE_URL": "",
                 "E3_SESSION_COOKIE_SECURE": "0",
                 "OPENAI_API_KEY": "test-key",
+                "E3_VIDEO_MEDIA_ROOT": "",
             },
         )
         self.env_patch.start()
@@ -170,6 +172,32 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertEqual(result["context_frame_count"], 0)
         self.assertTrue(result["context_audio"])
         self.assertEqual(result["frame_image"], "")
+
+    def test_frames_start_before_audio_finishes_and_transcript_is_reused(self):
+        frame_started = threading.Event()
+        def audio(*args, **kwargs):
+            self.assertTrue(frame_started.wait(2), 'frame collection waited for audio')
+            return {'bytes': b'audio', 'start_seconds': 40, 'end_seconds': 60}
+        def frame(*args, **kwargs):
+            frame_started.set()
+            return self._frame()
+        transcript = Mock()
+        transcript.json.return_value = {'text': 'voice evidence'}
+        answer = Mock()
+        answer.json.return_value = {'status': 'completed', 'output': [
+            {'type': 'message', 'content': [{'type': 'output_text', 'text': 'answer'}]}]}
+        with patch('e3_tracker.api.routes.video.fetch_youtube_audio_clip', side_effect=audio), \
+             patch('e3_tracker.api.routes.video.fetch_youtube_cached_frame', side_effect=frame), \
+             patch('e3_tracker.api.web.requests.post', side_effect=[transcript, answer, answer]) as post:
+            for question in ('first question', 'second question'):
+                response = self.client.post('/admin/study-plan/video-question', json={
+                    'video_id': self.video['id'], 'playback_seconds': 50, 'question': question,
+                })
+                self.assertEqual(response.status_code, 200)
+            self.assertEqual(post.call_count, 3)
+            prompt = post.call_args_list[0].kwargs['data']['prompt']
+            self.assertNotIn('first question', prompt)
+            self.assertNotIn('second question', prompt)
 
     def test_prefetches_frame_without_calling_openai(self):
         frame = self._frame()
