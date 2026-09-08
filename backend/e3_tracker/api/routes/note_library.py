@@ -7,6 +7,7 @@ import hashlib
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from flask import Response, render_template_string, request, session, url_for
 from ...shared.source_localization import SOURCE_BBOX_VERSION, collapse_source_refs_by_image
+from ...services.note_topics import coarse_study_topic
 
 
 def register_note_library_routes(*,
@@ -251,7 +252,8 @@ def register_note_library_routes(*,
                             }
                         )
                 concept["related_cards"] = related_cards[:2]
-                topic_groups.setdefault(concept["topic"], []).append(concept)
+                display_topic = coarse_study_topic(concept["topic"], concept["concept"])
+                topic_groups.setdefault(display_topic, []).append(concept)
             session["note_topic"] = note_topic
             session["concept_groups"] = [
                 {"topic": topic, "concepts": concepts}

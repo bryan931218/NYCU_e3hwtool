@@ -993,7 +993,7 @@ def build_note_batch_analysis(*,
                 "source_pages 的 uncertain_fragments 若標為『已補全』且信心為高或中，代表該缺字已由第二輪模型依局部上下文獨立核對，可將 transcription 中補全後的連續文字正常整理成卡片；標為『未補全』或仍含〔無法推定〕的片段不得作為關鍵事實。不要在卡片正文提到補全過程。"
                 "整理時盡量沿用轉錄稿原本的名詞、短語、變數、條件排列與公式，不要為了流暢改成課本式同義說法。只有字元辨識不清、前後自相矛盾、公式結構不可能成立或可由來源直接驗算出錯時，才做最小必要補全或校正。每張卡的 search_keywords 保留 3 至 8 個最可能被使用者回想起來搜尋的原文詞、專有名詞、縮寫、變數組合或公式名稱；只能取自該卡內容、source_refs 或已完成的高信心校正，不得加入來源外同義詞。"
                 "topic 必須是科目底下精確的細分觀念，例如『線性映射判定』『像與反像』『直和與基底』『矩陣可逆性』；禁止直接使用線性代數、離散數學、資料結構、演算法、作業系統、計算機組織等科目名稱，也不要使用『其他』『綜合重點』『課堂筆記』等空泛名稱。"
-                "依內容自然分成 3 至 8 個細分主題；同一 topic 的卡片應共享明確觀念脈絡，彼此不同的定義、方法或章節必須拆開。topic 只能表達一個觀念群組，不得為湊數而用斜線、頓號或『與』串接像／反像、直和、線性判定等無直接從屬關係的分類。related_concepts 最多 2 個，只連結本批卡片中明確有推導、比較或前置關係者。summary 最多 5 個完整短句，只列最後保留的核心結論，不重複推導與例子，不可新增資訊，也不可在句中截斷。"
+                "依內容自然分成 2 至 6 個母主題；同一知識對象的定義、性質、操作、方法與例題應共用 topic，只有不同資料結構、理論或章節才分開。例如 Heap 的定義、建構、插入與刪除都歸入 Heap，Deap 與 SMMH 各自成組。topic 不得為湊數而用斜線、頓號或『與』串接互不從屬的分類。related_concepts 最多 2 個，只連結本批卡片中明確有推導、比較或前置關係者。summary 最多 5 個完整短句，只列最後保留的核心結論，不重複推導與例子，不可新增資訊，也不可在句中截斷。"
                 + correction_rule
                 + "\n\n逐頁忠實轉錄稿：\n"
                 + json.dumps(source_pages, ensure_ascii=False, separators=(",", ":"))
@@ -1022,7 +1022,7 @@ def build_note_batch_analysis(*,
                 "先逐段清點 source_pages 與圖片中的標題、定義、公式、例題方法與結論；draft 漏掉但圖片或高／中信心的上下文補全仍足以確認核心觀念時，必須補回卡片。局部字跡不清不代表整段都要刪除；先利用重複記號、句法、公式結構與相鄰推導補全，只略過仍有多種合理結果且會影響正確性的字元。來源中清楚可辨但結論錯誤的觀念必須修正後補回，不得視為無來源。"
                 f"各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}。逐頁檢查 source_refs，優先讓有公式、定義、方法或例題策略的頁面得到代表卡；一般補充內容可併入相關卡片，不得用無關卡片虛報引用。"
                 f"逐一核對 coverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}；priority=required 的 id 優先保留，supporting id 可合併；coverage_ids 的來源 evidence 仍必須與該段重疊。"
-                "逐張檢查 topic：不得等於任何科目名稱或空泛大分類，必須改成能描述該卡核心內容的單一細分觀念；明顯不同章節或方法不得共用同一 topic，禁止用斜線、頓號或『與』拼接互不從屬的分類。依全部內容整理成 3 至 8 個群組。"
+                "逐張檢查 topic：不得等於任何科目名稱或空泛大分類，必須使用能涵蓋同一知識對象多張卡片的母主題；同一對象的定義、性質、操作與例題共用 topic，明顯不同資料結構、理論或章節才分開。依全部內容整理成 2 至 6 個群組。"
                 f"\nallow_corrections={str(allow_corrections).lower()}"
                 "\nsource_pages=" + json.dumps(source_pages, ensure_ascii=False, separators=(",", ":"))
                 + "\ndraft=" + json.dumps(draft, ensure_ascii=False, separators=(",", ":"))
@@ -1061,7 +1061,7 @@ def build_note_batch_analysis(*,
                 f"稽核前先建立 source_pages 的內容清單，逐段比對 verified；依目前資訊量，本批建議至少約 {audit_card_floor} 張互不重複的候選卡片，但卡片數量不設上限，也不可為達成張數拆出空泛卡。圖片或高／中信心補全仍可確認核心定義、公式、方法或結論的段落若遭漏掉，應優先補回；同一張卡若混入可各自複習的獨立定義、方法或章節，才需要拆卡。局部不清先做最小上下文補全，不得刪除其餘可確認觀念；若清楚觀念本身寫錯且允許校正，補回修正後的正確卡片。"
                 f"各頁資訊量參考值為 {json.dumps(page_card_quotas, ensure_ascii=False)}。逐頁計數 source_refs，優先補回缺頁的公式、定義、方法、例題策略與結論；一般補充段落可以併入同觀念卡。不可用與該頁無關的卡片虛報引用。"
                 f"輸出前再核對 coverage_checklist={json.dumps(coverage_checklist, ensure_ascii=False, separators=(',', ':'))}；priority=required 的區塊優先進入卡片，supporting 區塊可合併；coverage_ids 與 evidence 必須實際對應。"
-                "topic 必須是科目內的單一細分觀念，不得使用六科科目名稱、整份筆記標題或『綜合重點』等空泛文字，也不得用斜線、頓號或『與』把無直接從屬關係的分類硬併在一起；依最後保留卡片整理成 3 至 8 個群組。"
+                "topic 必須是科目內可涵蓋同一知識對象的母主題，不得使用六科科目名稱、整份筆記標題或『綜合重點』等空泛文字，也不得用斜線、頓號或『與』把無直接從屬關係的分類硬併在一起；同一對象的定義、性質、操作與例題必須放在一起，依最後保留卡片整理成 2 至 6 個群組。"
                 "修正過程只放在 correction。summary 最多 5 個完整短句，只可摘要最後保留的卡片，禁止句中截斷或用空公式結尾。"
                 f"\nallow_corrections={str(allow_corrections).lower()}"
             )
@@ -1644,7 +1644,7 @@ def build_note_batch_analysis(*,
                 "包括變數與函數式、集合與邏輯式、上下標、向量、矩陣、映射、等式、不等式、複雜度、機率、求和、遞迴式及所有含運算符的式子。普通中文必須留在 LaTeX 定界符外；禁止輸出 \\(T為線性\\) 這類把中文直接放進數學模式的格式，應寫成 \\(T\\) 為線性。禁止在一組 \\( ... \\) 或 \\[ ... \\] 內再嵌套另一組定界符。"
                 "禁止使用 $ 或 $$；禁止留下像 T(a,b)=...、R^2、x_i、rank(A) 這種沒有分隔符的裸露公式。"
                 "程式碼與虛擬碼是唯一例外：完整程式、函式、類別或連續兩行以上操作必須使用帶語言名稱的 Markdown fenced code block，禁止放進 LaTeX。保留原有縮排、大小寫、括號、分號、陣列索引、指標符號、運算子與註解；行內識別字或短指令使用單反引號。"
-                "topic 必須依全部卡片自然整理成 3 至 8 個單一觀念群組；不得等於任何六科科目名稱、整份筆記標題、其他、綜合重點或課堂筆記，也不得用斜線、頓號或『與』把無直接從屬關係的分類硬併在一起。相同知識脈絡共用 topic，明顯不同的定義、方法或章節分開。"
+                "topic 必須依全部卡片自然整理成 2 至 6 個母主題群組；不得等於任何六科科目名稱、整份筆記標題、其他、綜合重點或課堂筆記，也不得用斜線、頓號或『與』把無直接從屬關係的分類硬併在一起。同一知識對象的定義、性質、操作、方法與例題共用 topic，明顯不同資料結構、理論或章節才分開。"
                 "cards 的數量、順序與 concept_index 必須完全不變。不要在 explanation 或 summary 中提及修正過程，也不要重複 source_evidence。輸出文字禁止出現『筆記給出』『筆記註明』『筆記記載』『根據筆記』『保留來源內容』『如來源所列』或任何描述整理過程與引用來源的套話，直接陳述觀念。只輸出 schema 指定的 JSON。\n\n待整理內容：\n"
                 f"allow_corrections={str(allow_corrections).lower()}。allow_corrections=false 時 correction_applied 必須全部為 false。\n"
                 + json.dumps(latex_input, ensure_ascii=False, separators=(",", ":"))
@@ -1816,7 +1816,7 @@ def build_note_batch_analysis(*,
             )
 
             card_count = len(audited_cards)
-            desired_topic_count = min(8, max(3, round(math.sqrt(card_count)) + 1, card_count // 4))
+            desired_topic_count = min(6, max(2, round(math.sqrt(card_count) / 1.4)))
             desired_topic_count = min(card_count, desired_topic_count)
             current_topics = {
                 str(card.get("topic") or "").strip()
@@ -1858,8 +1858,9 @@ def build_note_batch_analysis(*,
                 ]
                 topic_prompt = (
                     "你是筆記章節編輯。請只重新分組下列重點卡，不可改寫卡片內容。"
-                    f"必須把 {card_count} 張卡完整分成恰好 {desired_topic_count} 個不重複的細分觀念主題；"
-                    "同一概念脈絡、定義與應用、方法與例題應共用主題，不可讓每張卡各自成為一個主題。"
+                    f"必須把 {card_count} 張卡完整分成恰好 {desired_topic_count} 個不重複的母主題；"
+                    "同一知識對象的定義、性質、操作、方法與例題應共用主題，不可讓每張卡各自成為一個主題。"
+                    "例如 Heap 的定義、建構、插入與刪除都使用 Heap；Deap、SMMH 等不同資料結構則各自成組。"
                     "主題名稱用 4 至 14 個繁體中文字直接描述共同觀念，不可含公式、變數、題號、破折號、未閉合括號，"
                     "不可等於線性代數、離散數學、資料結構、演算法、作業系統、計算機組織等科目名稱，也不可使用其他、綜合重點或課堂筆記。"
                     "每個 concept_index 必須恰好出現一次；相同群組的 topic 字串必須逐字完全相同。只輸出 schema 指定的 JSON。\n\n"

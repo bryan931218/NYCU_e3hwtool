@@ -14,11 +14,11 @@ class StudyRecallLibraryScrollbarTests(unittest.TestCase):
 
         self.assertIn(".workspace-ready .subject-library-groups {", stylesheet)
         self.assertIn("display:block", stylesheet)
-        self.assertIn("max-height:max(260px,min(520px,calc(100dvh - 350px)))", stylesheet)
+        self.assertIn("max-height:max(320px,min(680px,calc(100dvh - 270px)))", stylesheet)
         self.assertIn("overflow-y:scroll", stylesheet)
         self.assertIn("overscroll-behavior:contain", stylesheet)
         self.assertIn("scrollbar-gutter:stable", stylesheet)
-        self.assertIn(".workspace-ready .subject-library-groups { max-height:300px; }", stylesheet)
+        self.assertIn(".workspace-ready .subject-library-groups { max-height:360px; }", stylesheet)
         self.assertIn(".subject-library-groups { display:block; }", library_partial)
         self.assertNotIn(".subject-library-groups { display:grid;", library_partial)
         self.assertIn(".subject-library-group + .subject-library-group { margin-top:8px; }", library_partial)
