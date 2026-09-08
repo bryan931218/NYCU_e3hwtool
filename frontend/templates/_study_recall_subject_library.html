@@ -14,8 +14,9 @@
     .subject-library-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--muted); font-size:10px; }
     .subject-library-actions { display:flex; gap:5px; }
     .subject-library-action { padding:4px 6px; border:0; border-radius:3px; color:var(--blue); background:var(--blue-soft); font-size:10px; font-weight:850; cursor:pointer; }
-    .subject-library-groups { display:grid; gap:8px; }
+    .subject-library-groups { display:block; }
     .subject-library-group { overflow:hidden; border:1px solid var(--line); border-radius:5px; background:#fff; }
+    .subject-library-group + .subject-library-group { margin-top:8px; }
     .subject-library-group[hidden] { display:none; }
     .subject-library-group > summary { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 11px; cursor:pointer; list-style:none; background:#fafcff; }
     .subject-library-group > summary::-webkit-details-marker { display:none; }
