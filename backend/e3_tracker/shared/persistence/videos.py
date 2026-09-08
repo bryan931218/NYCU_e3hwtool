@@ -1004,7 +1004,7 @@ class VideosStorage:
         status: str,
     ) -> Optional[Dict[str, Any]]:
         normalized_status = str(status or "").strip()[:16]
-        normalized_summary = str(summary or "").strip()[:2400]
+        normalized_summary = str(summary or "").strip()
         now = self._now_iso()
         generated_at = now if normalized_status == "ready" else None
         with self._lock, self._engine.begin() as conn:

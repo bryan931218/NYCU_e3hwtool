@@ -28,6 +28,7 @@ def register_note_uploads_routes(*,
     _read_study_upload_manifest,
     _rebuild_all_study_recall_relations,
     _remove_study_upload_staging,
+    _reconcile_study_upload_job,
     _set_study_upload_job,
     _study_plan_business_date,
     _study_upload_error,
@@ -347,7 +348,11 @@ def register_note_uploads_routes(*,
                 if hasattr(study_upload_context, "job_id"):
                     del study_upload_context.job_id
 
-        threading.Thread(target=_run_study_upload, daemon=True).start()
+        worker_thread = threading.Thread(target=_run_study_upload, daemon=True)
+        with study_upload_jobs_lock:
+            if job_id in study_upload_jobs:
+                study_upload_jobs[job_id]["worker_thread"] = worker_thread
+        worker_thread.start()
         return job_id
 
     @app.post("/admin/study-recall/upload")
@@ -455,6 +460,7 @@ def register_note_uploads_routes(*,
             job = storage.get_study_note_upload_job(job_id)
         if not job or job.get("username") != user.get("username"):
             return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
+        job = _reconcile_study_upload_job(job)
         payload = {
             "ok": True,
             "status": job.get("status") or "running",
@@ -464,7 +470,7 @@ def register_note_uploads_routes(*,
         if job.get("status") == "success" and job.get("session_id"):
             payload["session_id"] = int(job["session_id"])
             payload["redirect_url"] = url_for("admin_study_recall", session_id=int(job["session_id"]))
-        elif job.get("status") == "error":
+        elif job.get("status") in {"error", "interrupted"}:
             payload["can_resume"] = _study_upload_job_can_resume(
                 job_id,
                 str(user.get("username") or ""),
@@ -479,6 +485,7 @@ def register_note_uploads_routes(*,
         job = storage.get_current_study_note_upload_job(username)
         if not job:
             return {"ok": True, "job": None}
+        job = _reconcile_study_upload_job(job)
         payload: Dict[str, Any] = {
             "ok": True,
             "job_id": str(job.get("job_id") or ""),
@@ -492,7 +499,7 @@ def register_note_uploads_routes(*,
                 "admin_study_recall",
                 session_id=int(job["session_id"]),
             )
-        elif job.get("status") == "error":
+        elif job.get("status") in {"error", "interrupted"}:
             payload["can_resume"] = _study_upload_job_can_resume(
                 str(job.get("job_id") or ""),
                 username,
@@ -507,8 +514,8 @@ def register_note_uploads_routes(*,
         job = storage.get_study_note_upload_job(job_id)
         if not job or str(job.get("username") or "") != username:
             return {"ok": False, "error": "找不到這次筆記處理工作。"}, 404
-        if str(job.get("status") or "") != "error":
-            return {"ok": False, "error": "只有失敗的筆記工作可以從中斷處繼續。"}, 409
+        if str(job.get("status") or "") not in {"error", "interrupted"}:
+            return {"ok": False, "error": "只有失敗或中斷的筆記工作可以接續處理。"}, 409
         active_job_id = _active_study_upload_job(username)
         if active_job_id:
             return {"ok": False, "error": "已有一份筆記正在背景整理。"}, 409

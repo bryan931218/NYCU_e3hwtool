@@ -2122,6 +2122,7 @@
                 const job = event.detail || {};
                 if (job.status === 'success') setStatus('筆記與全庫關聯已完成，可從右下角開啟。', 'ready');
                 else if (job.status === 'error') setStatus(job.message || '筆記背景處理失敗，請再試一次。', 'error');
+                else if (job.status === 'interrupted') setStatus(job.message || '筆記上傳中斷，可以從右下角接續處理。', 'error');
                 else if (job.status === 'cancelled') setStatus('已取消這次筆記處理，可以立即選擇照片重新上傳。', 'ready');
                 else setStatus(`${job.message || '筆記背景處理中'}（${Number(job.progress) || 0}%）`, 'ready');
             });

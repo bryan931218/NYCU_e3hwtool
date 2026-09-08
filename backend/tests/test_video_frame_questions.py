@@ -343,11 +343,11 @@ class VideoFrameQuestionTests(unittest.TestCase):
         self.assertIn("SVD 的幾何意義", content[0]["text"])
         self.assertIn("旋轉、伸縮與旋轉", content[0]["text"])
         self.assertIn("108.4 至 138.4 秒", content[0]["text"])
-        self.assertIn("兩行格式", content[0]["text"])
+        self.assertIn("不設字數或行數限制", content[0]["text"])
         self.assertIn("重點｜", content[0]["text"])
         self.assertIn("關鍵｜", content[0]["text"])
-        self.assertIn("120 個中文字內", content[0]["text"])
-        self.assertEqual(post.call_args_list[1].kwargs["json"]["max_output_tokens"], 320)
+        self.assertNotIn("120 個中文字內", content[0]["text"])
+        self.assertNotIn("max_output_tokens", post.call_args_list[1].kwargs["json"])
 
         page = self.client.get(
             f"/admin/study-plan?subject={self.video['subject']}&video_id={self.video['id']}"
@@ -367,6 +367,23 @@ class VideoFrameQuestionTests(unittest.TestCase):
             f"video_id={self.video['id']}&amp;marker_id={marker_id}",
             marker_page,
         )
+
+    def test_marker_summary_is_not_truncated(self):
+        marker = self.storage.create_study_plan_video_marker(
+            video_id=self.video["id"],
+            playback_seconds=45,
+            note="完整長摘要",
+        )
+        long_summary = "這是一段需要完整保留的關鍵點摘要。" * 300
+
+        saved = self.storage.update_study_plan_video_marker_summary(
+            marker["id"],
+            summary=long_summary,
+            status="ready",
+        )
+
+        self.assertEqual(saved["summary"], long_summary)
+        self.assertGreater(len(saved["summary"]), 2400)
 
     def test_marker_name_is_saved_when_summary_generation_fails(self):
         marker_response = self.client.post(
