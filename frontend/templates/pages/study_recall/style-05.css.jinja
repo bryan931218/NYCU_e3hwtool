@@ -146,7 +146,19 @@
         .workspace-ready .library-panel > details > summary { padding-bottom:14px; }
         .workspace-ready .library-panel h2 { font-size:15px; }
         .workspace-ready .side-stack .history { max-height:none; overflow:visible; }
-        .workspace-ready .subject-library-groups { max-height:calc(100dvh - 340px); overflow-y:auto; padding-right:8px; scrollbar-width:thin; }
+        .workspace-ready .subject-library-groups {
+            max-height:max(260px,min(520px,calc(100dvh - 350px)));
+            overflow-x:hidden;
+            overflow-y:scroll;
+            padding-right:8px;
+            overscroll-behavior:contain;
+            scrollbar-gutter:stable;
+            scrollbar-width:thin;
+            scrollbar-color:#a9bfd7 transparent;
+        }
+        .workspace-ready .subject-library-groups::-webkit-scrollbar { width:8px; }
+        .workspace-ready .subject-library-groups::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:#a9bfd7; background-clip:padding-box; }
+        .workspace-ready .subject-library-groups::-webkit-scrollbar-track { background:transparent; }
         .workspace-ready .subject-library-select { width:100%; height:36px; padding:0 10px; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:6px; font-size:12px; }
         .workspace-ready .subject-library-subject small { display:none; }
         .workspace-ready .subject-library-list .history-note { padding:0; margin:3px 0; }
