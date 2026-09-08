@@ -19,6 +19,7 @@ from ..services.note_localization_consensus import build_note_localization_conse
 from ..services.note_localization import build_note_localization
 from ..services.note_validation import build_note_validation
 from ..services.note_batch_analysis import build_note_batch_analysis
+from ..shared.study_note_quality import is_study_note_process_metadata_card
 from ..services.note_analysis import build_note_analysis
 from ..services.note_relations import build_note_relations
 
@@ -2877,6 +2878,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
 
     def _is_recall_concept_eligible(concept: Any) -> bool:
         if not isinstance(concept, dict):
+            return False
+        if is_study_note_process_metadata_card(concept):
             return False
         required_fields = (("concept", 120), ("explanation", 900))
         for field, max_length in required_fields:

@@ -7,6 +7,7 @@ from fsrs import Card as FSRSCard
 from fsrs import Rating as FSRSRating
 from sqlalchemy import delete, insert, select, update
 from ..source_localization import canonicalize_source_text
+from ..study_note_quality import is_study_note_process_metadata_card
 
 from .schema import study_recall_sessions_table, study_recall_glossaries_table, study_recall_attempts_table, study_recall_card_reviews_table
 from .recall_support import _recall_search_similarity, _recall_search_formula_similarity, _recall_search_contains_formula, _recall_search_excerpt, _recall_search_resolved_page, RECALL_DAILY_CAPACITY, RECALL_FSRS_SCHEDULER
@@ -413,6 +414,8 @@ class RecallStorage:
             cards_by_page: Dict[int, List[Dict[str, Any]]] = {}
             for concept_index, concept in enumerate(self._decode_json_list(row.key_concepts)):
                 if not isinstance(concept, dict):
+                    continue
+                if is_study_note_process_metadata_card(concept):
                     continue
                 concept_title = str(concept.get("concept") or "").strip()
                 topic = str(concept.get("topic") or concept.get("note_topic") or "").strip()

@@ -460,6 +460,8 @@ def build_note_model_client(*,
             "操作、插入、刪除與例題各拆成不同 topic。例如 Heap 的定義、建構與刪除都使用 Heap；Deap、"
             "SMMH 等不同資料結構則各自成組。topic 不能直接等於六科科目名稱，也不能使用『其他』或"
             "『綜合重點』。recall_cue 可為 null；系統會安全產生後備提示。\n"
+            "轉錄規則、OCR／核對流程、來源保留範圍與『已保留所有可見文字、數字、括號、箭頭』等"
+            "完整性聲明都不是學習內容，絕對不可呼叫 add_note_block 建卡，也不可放入 overview。\n"
             "每個 sources.evidence 都必須逐字複製對應 transcription 中連續出現的原文；工具會拒絕改寫、"
             "摘要、錯頁或不存在的 evidence。coverage_checklist 中 is_example=true 的項目必須各自建立 "
             "example 區塊，其餘 required 項目必須被至少一個區塊覆蓋。coverage_ids 只能填實際涵蓋的 id。\n"

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence, Set
 
 from .study_math import protect_markdown_code, restore_markdown_code
+from .study_note_quality import is_study_note_process_metadata_card
 
 
 CONTENT_KINDS = (
@@ -305,6 +306,10 @@ class StudyNoteToolAccumulator:
         block_type = str(arguments.get("block_type") or "").strip()
         if block_type not in CONTENT_KINDS:
             raise StudyNoteToolError("invalid block_type")
+        if is_study_note_process_metadata_card(arguments):
+            raise StudyNoteToolError(
+                "workflow, OCR, source-preservation, and transcription-audit text is not a study block"
+            )
 
         sources: List[Dict[str, Any]] = []
         seen_sources: Set[tuple[int, str]] = set()

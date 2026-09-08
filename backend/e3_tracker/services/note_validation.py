@@ -5,6 +5,11 @@ import re
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from ..shared.study_note_quality import (
+    is_study_note_process_metadata_card,
+    is_study_note_process_metadata_text,
+)
+
 
 def build_note_validation(*,
     _canonical_study_source_match_text,
@@ -76,6 +81,8 @@ def build_note_validation(*,
                 compact = " ".join(block.split()).strip()
                 clear_text = re.sub(r"〔[^〕]*〕", "", compact).strip(" -—_")
                 if "〔無法推定〕" in compact:
+                    continue
+                if is_study_note_process_metadata_text(clear_text, title=True):
                     continue
                 example_block = is_example_block(clear_text)
                 has_structure = bool(
@@ -538,6 +545,24 @@ def build_note_validation(*,
             ] if isinstance(item.get("reasoning_steps"), list) else []
             topic = _normalize_study_concept_title(item.get("topic"), detected_topic)
             concept = _normalize_study_concept_title(concept, topic or detected_topic)
+            if is_study_note_process_metadata_card(
+                {
+                    **item,
+                    "concept": concept,
+                    "topic": topic,
+                    "recall_cue": recall_cue,
+                    "core_summary": core_summary,
+                    "explanation": explanation,
+                    "simple_example": simple_example,
+                    "example_problem": example_problem,
+                    "example_method": example_method,
+                    "common_confusion": common_confusion,
+                    "memory_hint": memory_hint,
+                    "reasoning_steps": reasoning_steps,
+                }
+            ):
+                rejected_corrupted_content = True
+                continue
             quality_issues = (
                 _study_text_quality_issue(concept, max_length=120),
                 _study_text_quality_issue(recall_cue, max_length=180),
