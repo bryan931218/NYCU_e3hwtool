@@ -1385,6 +1385,11 @@ document.addEventListener('click', (evt) => {
     if (!CACHE_SYNC_ENDPOINT || IS_READONLY_VIEW) {
         return;
     }
+    const refreshBroadcastKey = `e3_assignment_refresh_broadcast_${STORAGE_USER_KEY}`;
+    let seenRefreshBroadcast = '';
+    try {
+        seenRefreshBroadcast = localStorage.getItem(refreshBroadcastKey) || '';
+    } catch (err) {}
     async function pollCacheSync() {
         try {
             const resp = await fetch(CACHE_SYNC_ENDPOINT, { cache: 'no-store', credentials: 'same-origin' });
@@ -1392,6 +1397,18 @@ document.addEventListener('click', (evt) => {
             const payload = await resp.json();
             if (!payload.ok) return;
             const nextTs = Number(payload.ts || '0');
+            const requestedRefresh = String(payload.assignment_refresh_version || '');
+            const requestedAfterTs = Number(payload.assignment_refresh_after_ts || '0');
+            if (!IS_GUEST && requestedRefresh && requestedRefresh !== seenRefreshBroadcast) {
+                seenRefreshBroadcast = requestedRefresh;
+                try {
+                    localStorage.setItem(refreshBroadcastKey, requestedRefresh);
+                } catch (err) {}
+                if (Number.isNaN(nextTs) || !requestedAfterTs || nextTs < requestedAfterTs) {
+                    await refreshAssignments(true, currentSemesterFilters);
+                    return;
+                }
+            }
             if (!Number.isNaN(nextTs) && nextTs > currentCacheTs) {
                 currentCacheTs = nextTs;
                 await fetchAndSwapContent();

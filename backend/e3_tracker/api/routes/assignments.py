@@ -14,6 +14,10 @@ from ...services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorize
 from ...services.http import login_with_password
 
 
+ASSIGNMENT_REFRESH_BROADCAST_VERSION = "2026-09-12-course-scope-v1"
+ASSIGNMENT_REFRESH_BROADCAST_AFTER_TS = 1789145942
+
+
 def register_assignments_routes(*,
     LOGIN_TEMPLATE,
     PRIVACY_TEMPLATE,
@@ -271,6 +275,8 @@ def register_assignments_routes(*,
             "refresh_in_progress": bool(refresh_state and refresh_state.get("status") == "running"),
             "refresh_started_at": refresh_state.get("started_at") if refresh_state else None,
             "refresh_finished_at": refresh_state.get("finished_at") if refresh_state else None,
+            "assignment_refresh_version": ASSIGNMENT_REFRESH_BROADCAST_VERSION,
+            "assignment_refresh_after_ts": ASSIGNMENT_REFRESH_BROADCAST_AFTER_TS,
         }
         if include_cache:
             payload["cache"] = cache

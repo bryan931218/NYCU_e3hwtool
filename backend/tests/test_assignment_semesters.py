@@ -718,6 +718,8 @@ class AssignmentSemesterTests(unittest.TestCase):
                 self.assertIn("currentSemesterFilters = readCheckedSemesterFilters()", html)
                 self.assertIn('id="archiveRefreshBtn"', html)
                 self.assertIn("requestPayload.includeArchived = true", html)
+                self.assertIn("assignment_refresh_version", client.get("/api/cache").get_json())
+                self.assertIn("e3_assignment_refresh_broadcast_", html)
                 self.assertNotIn("semesterRefreshTimer", html)
                 self.assertNotIn("data-e3-global-ai", html)
 
