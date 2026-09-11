@@ -26,6 +26,16 @@ from ..shared.parsing import (
 from ..shared.utils import cleanup_debug_glob
 
 
+NON_ASSIGNMENT_COURSE_IDS = frozenset({7528, 7536, 11636, 15573, 19609, 19610})
+NON_ASSIGNMENT_COURSE_TITLE_MARKERS = (
+    "turnitin originality",
+    "主計業務探索地圖",
+    "學生社團補給站",
+    "性別平等教育線上課程",
+    "資訊安全與個資保護教育訓練課程",
+)
+
+
 @dataclass
 class CollectOptions:
     base_url: str
@@ -179,6 +189,22 @@ def normalize_semester_keys(value: Any) -> List[str]:
     return normalized[:12]
 
 
+def normalize_semester_selection(value: Any) -> List[str]:
+    """Normalize the user-facing semester filter to zero or one key."""
+    return normalize_semester_keys(value)[:1]
+
+
+def _is_non_assignment_course(course_id: Any, title: Any) -> bool:
+    try:
+        normalized_id = int(course_id)
+    except (TypeError, ValueError):
+        normalized_id = None
+    if normalized_id in NON_ASSIGNMENT_COURSE_IDS:
+        return True
+    normalized_title = unescape(str(title or "")).strip().lower()
+    return any(marker in normalized_title for marker in NON_ASSIGNMENT_COURSE_TITLE_MARKERS)
+
+
 def _semester_catalog(courses: Sequence[Dict[str, Any]], now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     grouped: Dict[str, Dict[str, Any]] = {}
     for course in courses:
@@ -221,7 +247,7 @@ def annotate_result_semesters(
         except (TypeError, ValueError):
             continue
         title_text = str(course.get("title") or "").strip()
-        if len(title_text) > 300:
+        if len(title_text) > 300 or _is_non_assignment_course(course_id, title_text):
             continue
         valid_courses.append(course)
         course_by_id[course_id] = course
@@ -237,6 +263,8 @@ def annotate_result_semesters(
         except (TypeError, ValueError):
             continue
         if course_id <= 1 and course_id not in course_by_id:
+            continue
+        if _is_non_assignment_course(course_id, item.get("course_title")):
             continue
         valid_all_assignments.append(item)
         course = course_by_id.get(course_id)
@@ -273,12 +301,14 @@ def annotate_result_semesters(
         message = str(error.get("message") or "")
         if error_course_id is not None and error_course_id <= 1:
             continue
+        if _is_non_assignment_course(error_course_id, error.get("course_title")):
+            continue
         if "取得作業列表失敗" in message and ("404" in message or "Not Found" in message):
             continue
         cleaned_errors.append(error)
     result["errors"] = cleaned_errors
-    result_selected_hint = normalize_semester_keys(result.get("selected_semesters"))
-    selected_hint = normalize_semester_keys(selected_keys)
+    result_selected_hint = normalize_semester_selection(result.get("selected_semesters"))
+    selected_hint = normalize_semester_selection(selected_keys)
     if not selected_hint:
         selected_hint = result_selected_hint
     if len(result_selected_hint) == 1 and result_selected_hint[0] != "other":
@@ -308,9 +338,15 @@ def annotate_result_semesters(
         item["semester_label"] = label
     if not isinstance(result.get("available_semesters"), list) or (not result.get("available_semesters") and catalog):
         result["available_semesters"] = catalog
-    selected = selected_hint
+    available_keys = {item["key"] for item in catalog}
+    selected = [key for key in selected_hint if key in available_keys]
     if not selected:
-        selected = [item["key"] for item in catalog]
+        current_key = current_semester_key()
+        selected = (
+            [current_key]
+            if any(item["key"] == current_key for item in catalog)
+            else [item["key"] for item in catalog[:1]]
+        )
     result["selected_semesters"] = selected
     return result
 
@@ -353,6 +389,8 @@ def _merge_course(
     if cid <= 1:
         return
     normalized_title = unescape(str(title or "")).strip()
+    if _is_non_assignment_course(cid, normalized_title):
+        return
     if len(normalized_title) > 300:
         return
     normalized_url = str(url or "").strip()
@@ -463,6 +501,8 @@ def _gather_embedded_courses(html_text: str, base_url: str, *, allow_unmarked: b
                 or element.get("aria-label")
                 or extract_text(element)
             )
+            if not allow_unmarked and parse_course_semester(title)["key"] == "other":
+                continue
             _merge_course(
                 found,
                 course_id=element.get(attr_name),
@@ -501,11 +541,11 @@ def gather_my_courses(
     pages = [
         f"{base_url}/my/",
         f"{base_url}/my/courses.php",
-        f"{base_url}/course/index.php?mycourses=1",
     ]
     if not only_current_term:
         pages.extend(
             [
+                f"{base_url}/course/index.php?mycourses=1",
                 f"{base_url}/my/courses.php?classification=all",
                 f"{base_url}/my/courses.php?classification=past",
                 f"{base_url}/my/courses.php?classification=hidden",
@@ -522,10 +562,10 @@ def gather_my_courses(
             resp = safe_request(sess, "GET", url, headers=HEADERS, timeout=timeout)
             if not sesskey:
                 sesskey = _extract_moodle_sesskey(resp.text)
-            for course in _gather_embedded_courses(resp.text, base_url, allow_unmarked=only_current_term):
+            for course in _gather_embedded_courses(resp.text, base_url, allow_unmarked=False):
                 course_title = str(course.get("title") or "")
                 semester = parse_course_semester(course_title)
-                if only_current_term and semester["key"] not in {current_key, "other"}:
+                if only_current_term and semester["key"] != current_key:
                     continue
                 _merge_course(
                     found,
@@ -542,7 +582,7 @@ def gather_my_courses(
                 cid = int(match.group(1))
                 title = extract_text(a_tag)
                 semester = parse_course_semester(title)
-                if only_current_term and semester["key"] not in {current_key, "other"}:
+                if only_current_term and semester["key"] != current_key:
                     continue
                 _merge_course(
                     found,
@@ -567,16 +607,9 @@ def gather_my_courses(
             pass
     courses = [found[idx] for idx in sorted(found.keys())]
     if only_current_term:
-        current_semester = _semester_from_key(current_key)
         for course in courses:
             semester = parse_course_semester(course.get("title"))
-            if semester["key"] == "other":
-                course.update(
-                    semester_key=current_semester["key"],
-                    semester_label=current_semester["label"],
-                )
-            else:
-                course.update(semester_key=semester["key"], semester_label=semester["label"])
+            course.update(semester_key=semester["key"], semester_label=semester["label"])
     return courses
 
 
@@ -897,9 +930,9 @@ def merge_current_semester_cache(
 
     catalog = _semester_catalog(courses, now)
     available_keys = {item["key"] for item in catalog}
-    selected = normalize_semester_keys(selected_keys)
+    selected = normalize_semester_selection(selected_keys)
     if not selected:
-        selected = normalize_semester_keys(previous.get("selected_semesters"))
+        selected = normalize_semester_selection(previous.get("selected_semesters"))
     selected = [key for key in selected if key in available_keys]
     if not selected:
         selected = [current_key] if current_key in available_keys else [item["key"] for item in catalog[:1]]

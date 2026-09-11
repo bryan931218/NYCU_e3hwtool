@@ -103,6 +103,7 @@ from ..services.collector import (
     current_semester_key,
     merge_current_semester_cache,
     normalize_semester_keys,
+    normalize_semester_selection,
 )
 from ..services.google_calendar import (
     GOOGLE_CALENDAR_SCOPE,
@@ -1371,7 +1372,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             if "semesterFilters" in raw:
                 semester_filter_provided = True
         if semester_filter_provided:
-            clean["semester_filter"] = normalize_semester_keys(semester_filter)
+            clean["semester_filter"] = normalize_semester_selection(semester_filter)
         include_ignored_overdue = raw.get("include_ignored_overdue")
         if include_ignored_overdue is None:
             include_ignored_overdue = raw.get("includeIgnoredOverdue")
@@ -1884,9 +1885,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         excel_data = cache.get("excel_data") if cache else None
         preferences = get_user_preferences(viewed_username)
         if result:
-            preferred_semesters = None
-            if not result.get("selected_semesters"):
-                preferred_semesters = preferences.get("semester_filter") or None
+            preferred_semesters = preferences.get("semester_filter") or None
             annotate_result_semesters(result, selected_keys=preferred_semesters)
         guest_mode = bool(user.get("is_guest"))
         if result and not excel_data:
@@ -3566,10 +3565,10 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         semester_keys: Optional[Sequence[str]] = None,
         include_archived: bool = False,
     ) -> Tuple[Dict[str, Any], Optional[str]]:
-        selected_semesters = normalize_semester_keys(semester_keys)
+        selected_semesters = normalize_semester_selection(semester_keys)
         if semester_keys is None:
             stored = _sanitize_preferences(storage.load_user_preferences(str(user.get("username") or "")))
-            selected_semesters = normalize_semester_keys(stored.get("semester_filter"))
+            selected_semesters = normalize_semester_selection(stored.get("semester_filter"))
         if not selected_semesters:
             selected_semesters = [current_semester_key()]
         previous_cache = storage.load_user_cache(str(user.get("username") or "")) or {}
@@ -3586,8 +3585,6 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             ]
         )
         cached_archived = [key for key in cached_semesters if key != current_key]
-        if include_archived:
-            selected_semesters = normalize_semester_keys([*selected_semesters, *cached_semesters])
         opts = CollectOptions(
             base_url=base_url,
             scope=default_scope,

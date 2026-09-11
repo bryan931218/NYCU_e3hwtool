@@ -36,6 +36,7 @@
 {% else %}
     {% set selected_semesters = [] %}
 {% endif %}
+{% set selected_semester = selected_semesters|first if selected_semesters else '' %}
 {% macro format_time_diff(seconds) -%}
     {% if seconds is none %}
         -
@@ -277,7 +278,7 @@
         <div class="semester-filter-group" id="semesterFilterGroup">
             {% for semester in available_semesters %}
             <label class="semester-filter-option">
-                <input type="checkbox" value="{{ semester.key }}" data-semester-filter{% if semester.key in selected_semesters %} checked{% endif %}{% if is_admin_view %} disabled{% endif %}>
+                <input type="radio" name="semester_filter" value="{{ semester.key }}" data-semester-filter{% if semester.key == selected_semester %} checked{% endif %}{% if is_admin_view %} disabled{% endif %}>
                 <span>{{ semester.label }}</span>
                 <small>{{ semester.course_count }} 門</small>
                 {% if semester.is_current %}<span class="semester-current">本學期</span>{% endif %}

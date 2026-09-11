@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import requests
+from bs4 import BeautifulSoup
 
 from e3_tracker.api.web import create_app
 from e3_tracker.services.collector import (
@@ -16,6 +17,7 @@ from e3_tracker.services.collector import (
     gather_my_courses,
     merge_current_semester_cache,
     normalize_semester_keys,
+    normalize_semester_selection,
     parse_course_semester,
 )
 from e3_tracker.shared.constants import TAIPEI_TZ
@@ -45,6 +47,11 @@ class AssignmentSemesterTests(unittest.TestCase):
             "115_1 資料庫系統": "115-1",
             "115年第1學期 線性代數": "115-1",
             "1142 離散數學": "114-2",
+            "1132.515617.正規語言概論": "113-2",
+            "[112 Fall] Algorithms": "112-1",
+            "114 Turnitin Originality": "other",
+            "2026年09月行事曆": "other",
+            "514028娛樂敘事概論": "other",
             "沒有學期標記": "other",
         }
         for title, expected in cases.items():
@@ -56,6 +63,7 @@ class AssignmentSemesterTests(unittest.TestCase):
             normalize_semester_keys(["115-1", "115-1", "other", "bad", "115-3"]),
             ["115-1", "other"],
         )
+        self.assertEqual(normalize_semester_selection(["115-1", "114-2"]), ["115-1"])
 
     def test_semester_catalog_is_ordered_from_newest_to_oldest(self):
         result = {
@@ -81,7 +89,7 @@ class AssignmentSemesterTests(unittest.TestCase):
         annotate_result_semesters(result)
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
         self.assertEqual(result["all_assignments"][0]["semester_key"], "115-1")
-        self.assertEqual(result["selected_semesters"], ["115-1", "114-2"])
+        self.assertEqual(result["selected_semesters"], ["115-1"])
 
     def test_old_cache_rebuilds_missing_course_rows_from_assignment_cache(self):
         result = {
@@ -127,6 +135,35 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertEqual([course["id"] for course in result["courses"]], [202])
         self.assertEqual(result["all_assignments"], [])
         self.assertEqual([error["course_id"] for error in result["errors"]], [202])
+
+    def test_old_cache_discards_e3_shared_resource_courses(self):
+        result = {
+            "courses": [
+                {"id": 25089, "title": "【115上】娛樂敘事概論", "assignments": []},
+                {"id": 25889, "title": "【115上】視訊壓縮", "assignments": []},
+                {
+                    "id": 19609,
+                    "title": "114 Turnitin Originality 論文原創性比對系統(碩士班Master's students)",
+                    "semester_key": "115-1",
+                    "assignments": [],
+                },
+                {"id": 11636, "title": "主計業務探索地圖", "semester_key": "115-1", "assignments": []},
+                {"id": 15573, "title": "學生社團補給站", "semester_key": "115-1", "assignments": []},
+                {"id": 7528, "title": "性別平等教育線上課程", "semester_key": "115-1", "assignments": []},
+                {"id": 7536, "title": "資訊安全與個資保護教育訓練課程", "semester_key": "115-1", "assignments": []},
+            ],
+            "all_assignments": [],
+            "errors": [
+                {"course_id": 7536, "course_title": "資訊安全與個資保護教育訓練課程", "message": "404"}
+            ],
+            "selected_semesters": ["115-1"],
+        }
+
+        annotate_result_semesters(result)
+
+        self.assertEqual([course["id"] for course in result["courses"]], [25089, 25889])
+        self.assertEqual(result["available_semesters"][0]["course_count"], 2)
+        self.assertEqual(result["errors"], [])
 
     def test_cached_course_semester_metadata_is_preserved_when_title_has_no_marker(self):
         result = {
@@ -183,6 +220,16 @@ class AssignmentSemesterTests(unittest.TestCase):
         annotate_result_semesters(result, selected_keys=["114-2"])
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["other"])
         self.assertEqual(result["all_assignments"][0]["semester_key"], "other")
+
+    def test_unavailable_saved_semester_falls_back_to_current_semester(self):
+        result = {
+            "courses": [{"id": 101, "title": "【115上】資料結構", "assignments": []}],
+            "all_assignments": [],
+        }
+
+        annotate_result_semesters(result, selected_keys=["114-2"])
+
+        self.assertEqual(result["selected_semesters"], ["115-1"])
 
     def test_collection_only_opens_courses_from_selected_semesters(self):
         response = Mock()
@@ -524,13 +571,15 @@ class AssignmentSemesterTests(unittest.TestCase):
             <div data-course-id="101" data-course-name="【115 Autumn】資料結構"></div>
             <div data-course-id="202" data-course-name="【114 Spring】離散數學"></div>
         """
-        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+        with patch("e3_tracker.services.collector.safe_request", return_value=page) as request:
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
 
         self.assertEqual([course["id"] for course in courses], [101])
+        requested_urls = [str(call.args[2]) for call in request.call_args_list]
+        self.assertTrue(all("/course/index.php" not in url for url in requested_urls))
 
     @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
-    def test_current_course_discovery_treats_unmarked_current_page_courses_as_current(self, _current_key):
+    def test_current_course_discovery_rejects_unmarked_links_outside_current_course_titles(self, _current_key):
         page = Mock()
         page.text = """
             <a href="/course/view.php?id=101">資料結構</a>
@@ -540,20 +589,33 @@ class AssignmentSemesterTests(unittest.TestCase):
         with patch("e3_tracker.services.collector.safe_request", return_value=page):
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
 
-        self.assertEqual([course["id"] for course in courses], [101, 202])
-        self.assertEqual({course["semester_key"] for course in courses}, {"115-1"})
+        self.assertEqual(courses, [])
 
     @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
     def test_course_discovery_ignores_calendar_front_page_course(self, _current_key):
         page = Mock()
         page.text = """
             <a href="/course/view.php?id=1">09月 1日 星期二，沒有事件</a>
-            <a href="/course/view.php?id=101">資料結構</a>
+            <a href="/course/view.php?id=101">【115上】資料結構</a>
         """
         with patch("e3_tracker.services.collector.safe_request", return_value=page):
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
 
         self.assertEqual([course["id"] for course in courses], [101])
+
+    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    def test_course_discovery_ignores_e3_shared_resource_courses(self, _current_key):
+        page = Mock()
+        page.text = """
+            <a href="/course/view.php?id=25089">【115上】娛樂敘事概論</a>
+            <a href="/course/view.php?id=19610">114 Turnitin Originality 論文原創性比對系統</a>
+            <a href="/course/view.php?id=15573">學生社團補給站</a>
+            <a href="/course/view.php?id=7536">資訊安全與個資保護教育訓練課程</a>
+        """
+        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+            courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
+
+        self.assertEqual([course["id"] for course in courses], [25089])
 
     def test_semester_preferences_and_catalog_survive_database_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -622,6 +684,7 @@ class AssignmentSemesterTests(unittest.TestCase):
                                         }
                                     ],
                                 },
+                                {"id": 3, "title": "【114下】離散數學", "url": "", "assignments": []},
                             ],
                             "all_assignments": [],
                             "errors": [],
@@ -643,8 +706,12 @@ class AssignmentSemesterTests(unittest.TestCase):
                 html = response.get_data(as_text=True)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('id="semesterFilterGroup"', html)
-                self.assertIn('value="115-1" data-semester-filter checked', html)
-                self.assertIn('value="114-2" data-semester-filter>', html)
+                self.assertIn('type="radio" name="semester_filter"', html)
+                semester_inputs = BeautifulSoup(html, "html.parser").select("[data-semester-filter]")
+                self.assertEqual(
+                    {item.get("value"): item.has_attr("checked") for item in semester_inputs},
+                    {"115-1": False, "114-2": True},
+                )
                 self.assertIn('class="card course-card" data-semester="115-1" data-assignment-count="0"', html)
                 self.assertIn('data-course-empty', html)
                 self.assertIn("這門課目前沒有符合篩選條件的作業。", html)
@@ -658,7 +725,13 @@ class AssignmentSemesterTests(unittest.TestCase):
                 self.assertEqual(saved.status_code, 200)
                 self.assertEqual(
                     storage.load_user_preferences("student")["semester_filter"],
-                    ["115-1", "114-2"],
+                    ["115-1"],
+                )
+                refreshed_html = client.get("/").get_data(as_text=True)
+                refreshed_inputs = BeautifulSoup(refreshed_html, "html.parser").select("[data-semester-filter]")
+                self.assertEqual(
+                    {item.get("value"): item.has_attr("checked") for item in refreshed_inputs},
+                    {"115-1": True, "114-2": False},
                 )
             finally:
                 storage._engine.dispose()

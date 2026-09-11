@@ -9,7 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 from flask import Response, flash, redirect, render_template_string, request, send_file, session, url_for
 from werkzeug.http import http_date
-from ...services.collector import normalize_semester_keys
+from ...services.collector import normalize_semester_selection
 from ...services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
 from ...services.http import login_with_password
 
@@ -593,7 +593,7 @@ def register_assignments_routes(*,
         include_archived = bool(payload.get("includeArchived"))
         requested_semesters: Optional[List[str]] = None
         if "semesterFilters" in payload or "semester_filter" in payload:
-            requested_semesters = normalize_semester_keys(
+            requested_semesters = normalize_semester_selection(
                 payload.get("semesterFilters", payload.get("semester_filter"))
             )
             if not requested_semesters:

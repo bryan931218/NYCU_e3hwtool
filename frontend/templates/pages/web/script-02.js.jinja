@@ -405,7 +405,7 @@ function normalizeSemesterFilters(value) {
         if (!/^\d{2,3}-(?:1|2|summer)$/.test(key) && key !== 'other') return;
         if (!next.includes(key)) next.push(key);
     });
-    return next;
+    return next.slice(0, 1);
 }
 
 function readCheckedSemesterFilters() {
@@ -1173,11 +1173,11 @@ if (statusFilterGroup) {
 }
 
 document.addEventListener('change', (evt) => {
-    const checkbox = evt.target.closest('[data-semester-filter]');
-    if (!checkbox || IS_READONLY_VIEW) return;
+    const semesterInput = evt.target.closest('[data-semester-filter]');
+    if (!semesterInput || IS_READONLY_VIEW) return;
     const nextSemesters = readCheckedSemesterFilters();
     if (!nextSemesters.length) {
-        checkbox.checked = true;
+        semesterInput.checked = true;
         showToast('請至少保留一個學期。', 'warning');
         return;
     }
