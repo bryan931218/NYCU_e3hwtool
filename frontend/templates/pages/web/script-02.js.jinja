@@ -467,8 +467,8 @@ function syncStatusFilterButtons() {
 
 let currentStatusFilters = normalizeStatusFilters(USER_PREFERENCES && USER_PREFERENCES.status_filter);
 USER_PREFERENCES.status_filter = currentStatusFilters.slice();
-let currentSemesterFilters = normalizeSemesterFilters(USER_PREFERENCES && USER_PREFERENCES.semester_filter);
-if (!currentSemesterFilters.length) currentSemesterFilters = readCheckedSemesterFilters();
+let currentSemesterFilters = readCheckedSemesterFilters();
+if (!currentSemesterFilters.length) currentSemesterFilters = normalizeSemesterFilters(USER_PREFERENCES && USER_PREFERENCES.semester_filter);
 USER_PREFERENCES.semester_filter = currentSemesterFilters.slice();
 USER_PREFERENCES.include_ignored_overdue = !!USER_PREFERENCES.include_ignored_overdue;
 if (!Array.isArray(USER_PREFERENCES.ignored_overdue_uids)) {

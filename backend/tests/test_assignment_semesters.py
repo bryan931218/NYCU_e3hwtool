@@ -39,6 +39,10 @@ class AssignmentSemesterTests(unittest.TestCase):
             "【115 Autumn】515515作業系統概論": "115-1",
             "【114 Spring】515521機器學習概論": "114-2",
             "114學年度第2學期 離散數學": "114-2",
+            "1151 計算機概論": "115-1",
+            "115_1 資料庫系統": "115-1",
+            "115年第1學期 線性代數": "115-1",
+            "1142 離散數學": "114-2",
             "沒有學期標記": "other",
         }
         for title, expected in cases.items():
@@ -76,6 +80,62 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
         self.assertEqual(result["all_assignments"][0]["semester_key"], "115-1")
         self.assertEqual(result["selected_semesters"], ["115-1", "114-2"])
+
+    def test_cached_course_semester_metadata_is_preserved_when_title_has_no_marker(self):
+        result = {
+            "courses": [
+                {
+                    "id": 1,
+                    "title": "資料結構",
+                    "semester_key": "115-1",
+                    "semester_label": "115 上學期",
+                    "assignments": [{"title": "作業一"}],
+                },
+                {
+                    "id": 2,
+                    "title": "離散數學",
+                    "semester_key": "114-2",
+                    "semester_label": "114 下學期",
+                    "assignments": [{"title": "作業二"}],
+                },
+            ],
+            "all_assignments": [
+                {"course_id": 1, "course_title": "資料結構", "title": "作業一"},
+                {"course_id": 2, "course_title": "離散數學", "title": "作業二"},
+            ],
+        }
+        annotate_result_semesters(result)
+        self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
+        self.assertEqual([item["semester_key"] for item in result["all_assignments"]], ["115-1", "114-2"])
+
+    def test_single_selected_semester_backfills_unmarked_legacy_cache(self):
+        result = {
+            "courses": [
+                {"id": 1, "title": "資料結構", "assignments": [{"title": "作業一"}]},
+                {"id": 2, "title": "作業系統", "semester_key": "other", "assignments": [{"title": "作業二"}]},
+            ],
+            "all_assignments": [
+                {"course_id": 1, "course_title": "資料結構", "title": "作業一"},
+                {"course_id": 2, "course_title": "作業系統", "title": "作業二"},
+            ],
+            "selected_semesters": ["115-1"],
+        }
+        annotate_result_semesters(result)
+        self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1"])
+        self.assertEqual([item["semester_key"] for item in result["all_assignments"]], ["115-1", "115-1"])
+
+    def test_external_selected_keys_do_not_backfill_unmarked_cache_metadata(self):
+        result = {
+            "courses": [
+                {"id": 1, "title": "資料結構", "assignments": [{"title": "作業一"}]},
+            ],
+            "all_assignments": [
+                {"course_id": 1, "course_title": "資料結構", "title": "作業一"},
+            ],
+        }
+        annotate_result_semesters(result, selected_keys=["114-2"])
+        self.assertEqual([item["key"] for item in result["available_semesters"]], ["other"])
+        self.assertEqual(result["all_assignments"][0]["semester_key"], "other")
 
     def test_collection_only_opens_courses_from_selected_semesters(self):
         response = Mock()
@@ -361,6 +421,20 @@ class AssignmentSemesterTests(unittest.TestCase):
 
         self.assertEqual([course["id"] for course in courses], [101])
 
+    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    def test_current_course_discovery_treats_unmarked_current_page_courses_as_current(self, _current_key):
+        page = Mock()
+        page.text = """
+            <a href="/course/view.php?id=101">資料結構</a>
+            <div data-course-id="202" data-course-name="作業系統"></div>
+            <div data-course-id="303" data-course-name="【114 Spring】離散數學"></div>
+        """
+        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+            courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
+
+        self.assertEqual([course["id"] for course in courses], [101, 202])
+        self.assertEqual({course["semester_key"] for course in courses}, {"115-1"})
+
     def test_semester_preferences_and_catalog_survive_database_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = PersistentStorage(f"sqlite:///{Path(temp_dir) / 'semester.db'}")
@@ -421,6 +495,7 @@ class AssignmentSemesterTests(unittest.TestCase):
                         },
                     },
                 )
+                storage.save_user_preferences("student", {"semester_filter": ["114-2"]})
                 client = app.test_client()
                 with client.session_transaction() as browser_session:
                     browser_session["username"] = "student"
@@ -431,7 +506,7 @@ class AssignmentSemesterTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('id="semesterFilterGroup"', html)
                 self.assertIn('value="115-1" data-semester-filter checked', html)
-                self.assertIn('value="114-2" data-semester-filter', html)
+                self.assertIn('value="114-2" data-semester-filter>', html)
                 self.assertIn('id="archiveRefreshBtn"', html)
                 self.assertIn("requestPayload.includeArchived = true", html)
                 self.assertNotIn("semesterRefreshTimer", html)

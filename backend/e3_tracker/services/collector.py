@@ -53,6 +53,29 @@ def current_semester_key(now: Optional[datetime] = None) -> str:
     return f"{now.year - 1912}-2"
 
 
+def _semester_from_key(key: Any, now: Optional[datetime] = None, label: Optional[str] = None) -> Dict[str, Any]:
+    normalized = normalize_semester_keys([key])
+    semester_key = normalized[0] if normalized else "other"
+    current_key = current_semester_key(now)
+    if semester_key == "other":
+        return {
+            "key": "other",
+            "label": label or "其他課程",
+            "sort_key": (-1, -1),
+            "is_current": False,
+        }
+    year_text, term = semester_key.split("-", 1)
+    year = int(year_text)
+    term_label = {"1": "上學期", "2": "下學期", "summer": "暑期"}[term]
+    term_order = {"1": 1, "2": 2, "summer": 3}[term]
+    return {
+        "key": semester_key,
+        "label": label or f"{year} {term_label}",
+        "sort_key": (year, term_order),
+        "is_current": semester_key == current_key,
+    }
+
+
 def parse_course_semester(title: Any, now: Optional[datetime] = None) -> Dict[str, Any]:
     text = str(title or "").strip()
     current_key = current_semester_key(now)
@@ -92,6 +115,21 @@ def parse_course_semester(title: Any, now: Optional[datetime] = None) -> Dict[st
             year = int(numeric_match.group(1))
             term = numeric_match.group(2)
     if year is None:
+        numeric_match = re.search(r"(?<!\d)(\d{2,3})\s*[_]\s*([12])(?!\d)", text)
+        if numeric_match:
+            year = int(numeric_match.group(1))
+            term = numeric_match.group(2)
+    if year is None:
+        compact_match = re.search(r"(?<!\d)(\d{3})([12])(?!\d)", text)
+        if compact_match:
+            year = int(compact_match.group(1))
+            term = compact_match.group(2)
+    if year is None:
+        zh_numeric_match = re.search(r"(?<!\d)(\d{2,3})\s*年\s*(?:第\s*)?([12])\s*學期", text)
+        if zh_numeric_match:
+            year = int(zh_numeric_match.group(1))
+            term = zh_numeric_match.group(2)
+    if year is None:
         western_match = re.search(r"(?<!\d)(20\d{2})\s*[-/]?\s*(Fall|Autumn|Spring|Summer)\b", text, re.IGNORECASE)
         if western_match:
             calendar_year = int(western_match.group(1))
@@ -118,6 +156,14 @@ def parse_course_semester(title: Any, now: Optional[datetime] = None) -> Dict[st
     }
 
 
+def _course_semester(course: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    existing_keys = normalize_semester_keys([course.get("semester_key")])
+    if existing_keys and existing_keys[0] != "other":
+        existing_label = str(course.get("semester_label") or "").strip() or None
+        return _semester_from_key(existing_keys[0], now, existing_label)
+    return parse_course_semester(course.get("title"), now)
+
+
 def normalize_semester_keys(value: Any) -> List[str]:
     if isinstance(value, str):
         value = [value]
@@ -136,7 +182,7 @@ def normalize_semester_keys(value: Any) -> List[str]:
 def _semester_catalog(courses: Sequence[Dict[str, Any]], now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     grouped: Dict[str, Dict[str, Any]] = {}
     for course in courses:
-        semester = parse_course_semester(course.get("title"), now)
+        semester = _course_semester(course, now)
         course.update(semester_key=semester["key"], semester_label=semester["label"])
         entry = grouped.setdefault(
             semester["key"],
@@ -165,6 +211,20 @@ def annotate_result_semesters(
     courses = result.get("courses")
     if not isinstance(courses, list):
         courses = []
+    result_selected_hint = normalize_semester_keys(result.get("selected_semesters"))
+    selected_hint = normalize_semester_keys(selected_keys)
+    if not selected_hint:
+        selected_hint = result_selected_hint
+    if len(result_selected_hint) == 1 and result_selected_hint[0] != "other":
+        fallback_semester = _semester_from_key(result_selected_hint[0])
+        for course in courses:
+            if not isinstance(course, dict):
+                continue
+            if _course_semester(course)["key"] == "other":
+                course.update(
+                    semester_key=fallback_semester["key"],
+                    semester_label=fallback_semester["label"],
+                )
     catalog = _semester_catalog([course for course in courses if isinstance(course, dict)])
     course_semesters = {
         str(course.get("id")): (course.get("semester_key"), course.get("semester_label"))
@@ -182,9 +242,7 @@ def annotate_result_semesters(
         item["semester_label"] = label
     if not isinstance(result.get("available_semesters"), list) or (not result.get("available_semesters") and catalog):
         result["available_semesters"] = catalog
-    selected = normalize_semester_keys(selected_keys)
-    if not selected:
-        selected = normalize_semester_keys(result.get("selected_semesters"))
+    selected = selected_hint
     if not selected:
         selected = [item["key"] for item in catalog]
     result["selected_semesters"] = selected
@@ -320,7 +378,7 @@ def _gather_timeline_courses(
     return list(found.values())
 
 
-def _gather_embedded_courses(html_text: str, base_url: str) -> List[Dict[str, Any]]:
+def _gather_embedded_courses(html_text: str, base_url: str, *, allow_unmarked: bool = False) -> List[Dict[str, Any]]:
     if not html_text:
         return []
     found: Dict[int, Dict[str, Any]] = {}
@@ -349,7 +407,7 @@ def _gather_embedded_courses(html_text: str, base_url: str) -> List[Dict[str, An
     )
     for match in json_course_pattern.finditer(decoded_html):
         title = match.group(2).replace(r"\/", "/")
-        if parse_course_semester(title)["key"] == "other":
+        if not allow_unmarked and parse_course_semester(title)["key"] == "other":
             continue
         _merge_course(
             found,
@@ -392,9 +450,10 @@ def gather_my_courses(
             resp = safe_request(sess, "GET", url, headers=HEADERS, timeout=timeout)
             if not sesskey:
                 sesskey = _extract_moodle_sesskey(resp.text)
-            for course in _gather_embedded_courses(resp.text, base_url):
+            for course in _gather_embedded_courses(resp.text, base_url, allow_unmarked=only_current_term):
                 course_title = str(course.get("title") or "")
-                if only_current_term and parse_course_semester(course_title)["key"] != current_key:
+                semester = parse_course_semester(course_title)
+                if only_current_term and semester["key"] not in {current_key, "other"}:
                     continue
                 _merge_course(
                     found,
@@ -410,7 +469,8 @@ def gather_my_courses(
                     continue
                 cid = int(match.group(1))
                 title = extract_text(a_tag)
-                if only_current_term and parse_course_semester(title)["key"] != current_key:
+                semester = parse_course_semester(title)
+                if only_current_term and semester["key"] not in {current_key, "other"}:
                     continue
                 _merge_course(
                     found,
@@ -433,7 +493,19 @@ def gather_my_courses(
                 )
         except Exception:
             pass
-    return [found[idx] for idx in sorted(found.keys())]
+    courses = [found[idx] for idx in sorted(found.keys())]
+    if only_current_term:
+        current_semester = _semester_from_key(current_key)
+        for course in courses:
+            semester = parse_course_semester(course.get("title"))
+            if semester["key"] == "other":
+                course.update(
+                    semester_key=current_semester["key"],
+                    semester_label=current_semester["label"],
+                )
+            else:
+                course.update(semester_key=semester["key"], semester_label=semester["label"])
+    return courses
 
 
 def _course_sort_key(item: Dict[str, Any]):

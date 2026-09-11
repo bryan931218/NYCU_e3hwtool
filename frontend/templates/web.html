@@ -29,10 +29,10 @@
     {% set selected_status_filters = ['pending'] %}
 {% endif %}
 {% set available_semesters = result.available_semesters if result and result.available_semesters is defined else [] %}
-{% if preferences.semester_filter is defined and preferences.semester_filter %}
-    {% set selected_semesters = preferences.semester_filter %}
-{% elif result and result.selected_semesters is defined %}
+{% if result and result.selected_semesters is defined and result.selected_semesters %}
     {% set selected_semesters = result.selected_semesters %}
+{% elif preferences.semester_filter is defined and preferences.semester_filter %}
+    {% set selected_semesters = preferences.semester_filter %}
 {% else %}
     {% set selected_semesters = [] %}
 {% endif %}
