@@ -3572,13 +3572,32 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             selected_semesters = normalize_semester_keys(stored.get("semester_filter"))
         if not selected_semesters:
             selected_semesters = [current_semester_key()]
+        previous_cache = storage.load_user_cache(str(user.get("username") or "")) or {}
+        previous_result = previous_cache.get("result")
+        if not isinstance(previous_result, dict):
+            previous_result = {}
+        annotate_result_semesters(previous_result)
+        current_key = current_semester_key()
+        cached_semesters = normalize_semester_keys(
+            [
+                item.get("key")
+                for item in (previous_result.get("available_semesters") or [])
+                if isinstance(item, dict)
+            ]
+        )
+        cached_archived = [key for key in cached_semesters if key != current_key]
+        if include_archived:
+            selected_semesters = normalize_semester_keys([*selected_semesters, *cached_semesters])
         opts = CollectOptions(
             base_url=base_url,
             scope=default_scope,
             course_id=None,
             include_completed=True,
             all_courses=False,
-            all_courses_all_terms=bool(include_archived),
+            # Once historical courses exist locally, refresh only the active
+            # semester and merge the archived semesters from the durable cache.
+            # This avoids repeatedly requesting removed E3 course endpoints.
+            all_courses_all_terms=bool(include_archived and not cached_archived),
             semester_keys=None,
             username=None,
             password=None,
@@ -3588,9 +3607,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
             debug=False,
         )
         refreshed_result = collect_assignments(opts)
-        previous_cache = storage.load_user_cache(str(user.get("username") or "")) or {}
         result = merge_current_semester_cache(
-            previous_cache.get("result"),
+            previous_result,
             refreshed_result,
             selected_keys=selected_semesters,
         )

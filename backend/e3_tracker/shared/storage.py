@@ -140,6 +140,17 @@ class PersistentStorage(AssignmentsStorage, VideosStorage, StudyTimeStorage, Rec
                 with self._lock, self._engine.begin() as conn:
                     for column_name, column_type in missing_fetch_state_columns:
                         conn.execute(text(f"ALTER TABLE user_fetch_state ADD COLUMN {column_name} {column_type}"))
+        if inspector.has_table("courses"):
+            course_columns = {col["name"] for col in inspector.get_columns("courses")}
+            missing_course_columns = []
+            if "semester_key" not in course_columns:
+                missing_course_columns.append(("semester_key", "VARCHAR(32)"))
+            if "semester_label" not in course_columns:
+                missing_course_columns.append(("semester_label", "VARCHAR(64)"))
+            if missing_course_columns:
+                with self._lock, self._engine.begin() as conn:
+                    for column_name, column_type in missing_course_columns:
+                        conn.execute(text(f"ALTER TABLE courses ADD COLUMN {column_name} {column_type}"))
         if not inspector.has_table("web_sessions"):
             metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
         if not inspector.has_table("assignment_views"):

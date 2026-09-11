@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 from e3_tracker.api.web import create_app
 from e3_tracker.services.collector import (
     CollectOptions,
@@ -80,6 +82,51 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
         self.assertEqual(result["all_assignments"][0]["semester_key"], "115-1")
         self.assertEqual(result["selected_semesters"], ["115-1", "114-2"])
+
+    def test_old_cache_rebuilds_missing_course_rows_from_assignment_cache(self):
+        result = {
+            "courses": [],
+            "all_assignments": [
+                {
+                    "course_id": 202,
+                    "course_title": "【114下】離散數學",
+                    "semester_key": "114-2",
+                    "semester_label": "114 下學期",
+                    "title": "歷史作業",
+                    "url": "https://e3/mod/assign/view.php?id=9001",
+                    "due_ts": 20,
+                }
+            ],
+            "selected_semesters": ["114-2"],
+        }
+
+        annotate_result_semesters(result)
+
+        self.assertEqual([course["id"] for course in result["courses"]], [202])
+        self.assertEqual(result["courses"][0]["assignments"][0]["title"], "歷史作業")
+        self.assertEqual(result["available_semesters"][0]["key"], "114-2")
+
+    def test_old_cache_discards_calendar_site_course(self):
+        result = {
+            "courses": [
+                {"id": 1, "title": "09月 1日 星期二，沒有事件" * 30, "assignments": []},
+                {"id": 202, "title": "【114下】離散數學", "assignments": []},
+            ],
+            "all_assignments": [
+                {"course_id": 1, "course_title": "月曆", "title": "沒有事件"},
+            ],
+            "errors": [
+                {"course_id": 1, "course_title": "月曆", "message": "取得作業列表失敗：404"},
+                {"course_id": 7536, "course_title": "舊課程", "message": "取得作業列表失敗：404 Client Error"},
+                {"course_id": 202, "course_title": "離散數學", "message": "解析失敗：格式異常"},
+            ],
+        }
+
+        annotate_result_semesters(result)
+
+        self.assertEqual([course["id"] for course in result["courses"]], [202])
+        self.assertEqual(result["all_assignments"], [])
+        self.assertEqual([error["course_id"] for error in result["errors"]], [202])
 
     def test_cached_course_semester_metadata_is_preserved_when_title_has_no_marker(self):
         result = {
@@ -161,6 +208,33 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertTrue(all("101" not in url for url in requested_urls))
         self.assertEqual(result["selected_semesters"], ["114-2"])
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
+
+    def test_collection_suppresses_expected_404_for_removed_archived_course(self):
+        empty_response = Mock()
+        empty_response.text = "<html></html>"
+        not_found = requests.HTTPError("404 Client Error")
+        not_found.response = Mock(status_code=404)
+
+        def fake_request(_session, _method, url, **_kwargs):
+            if "/local/courseextension/" in url:
+                raise not_found
+            return empty_response
+
+        with patch(
+            "e3_tracker.services.collector.gather_my_courses",
+            return_value=[{"id": 202, "title": "【114下】離散數學", "url": ""}],
+        ), patch("e3_tracker.services.collector.safe_request", side_effect=fake_request):
+            result = collect_assignments(
+                CollectOptions(
+                    base_url="https://e3.nycu.edu.tw",
+                    moodle_session="cookie",
+                    include_completed=True,
+                    all_courses_all_terms=True,
+                )
+            )
+
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["courses"][0]["id"], 202)
 
     def test_current_refresh_replaces_current_courses_and_keeps_archived_semesters(self):
         previous = {
@@ -268,6 +342,40 @@ class AssignmentSemesterTests(unittest.TestCase):
                     [item["key"] for item in reloaded["available_semesters"]],
                     ["115-1", "114-2"],
                 )
+            finally:
+                storage._engine.dispose()
+
+    def test_unmarked_course_semester_metadata_survives_database_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = PersistentStorage(f"sqlite:///{Path(temp_dir) / 'course-semester.db'}")
+            try:
+                storage.save_user_cache(
+                    "student",
+                    {
+                        "ts": 1,
+                        "result": {
+                            "courses": [
+                                {
+                                    "id": 202,
+                                    "title": "離散數學",
+                                    "semester_key": "114-2",
+                                    "semester_label": "114 下學期",
+                                    "assignments": [],
+                                }
+                            ],
+                            "all_assignments": [],
+                            "errors": [],
+                            "available_semesters": [],
+                            "selected_semesters": ["114-2"],
+                        },
+                    },
+                )
+
+                reloaded = storage.load_user_cache("student")["result"]
+                annotate_result_semesters(reloaded)
+
+                self.assertEqual(reloaded["courses"][0]["semester_key"], "114-2")
+                self.assertEqual(reloaded["available_semesters"][0]["key"], "114-2")
             finally:
                 storage._engine.dispose()
 
@@ -435,6 +543,18 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertEqual([course["id"] for course in courses], [101, 202])
         self.assertEqual({course["semester_key"] for course in courses}, {"115-1"})
 
+    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    def test_course_discovery_ignores_calendar_front_page_course(self, _current_key):
+        page = Mock()
+        page.text = """
+            <a href="/course/view.php?id=1">09月 1日 星期二，沒有事件</a>
+            <a href="/course/view.php?id=101">資料結構</a>
+        """
+        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+            courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
+
+        self.assertEqual([course["id"] for course in courses], [101])
+
     def test_semester_preferences_and_catalog_survive_database_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = PersistentStorage(f"sqlite:///{Path(temp_dir) / 'semester.db'}")
@@ -484,6 +604,24 @@ class AssignmentSemesterTests(unittest.TestCase):
                         "result": {
                             "courses": [
                                 {"id": 1, "title": "【115上】資料結構", "url": "", "assignments": []},
+                                {
+                                    "id": 2,
+                                    "title": "【115上】作業系統",
+                                    "url": "",
+                                    "assignments": [
+                                        {
+                                            "course_id": 2,
+                                            "course_title": "【115上】作業系統",
+                                            "title": "已完成作業",
+                                            "url": "https://e3.example/assign/2",
+                                            "due_at": "2026-09-20 23:59",
+                                            "due_ts": 1790006340,
+                                            "completed": True,
+                                            "overdue": False,
+                                            "raw_status_text": "已繳交",
+                                        }
+                                    ],
+                                },
                             ],
                             "all_assignments": [],
                             "errors": [],
@@ -507,6 +645,10 @@ class AssignmentSemesterTests(unittest.TestCase):
                 self.assertIn('id="semesterFilterGroup"', html)
                 self.assertIn('value="115-1" data-semester-filter checked', html)
                 self.assertIn('value="114-2" data-semester-filter>', html)
+                self.assertIn('class="card course-card" data-semester="115-1" data-assignment-count="0"', html)
+                self.assertIn('data-course-empty', html)
+                self.assertIn("這門課目前沒有符合篩選條件的作業。", html)
+                self.assertIn("currentSemesterFilters = readCheckedSemesterFilters()", html)
                 self.assertIn('id="archiveRefreshBtn"', html)
                 self.assertIn("requestPayload.includeArchived = true", html)
                 self.assertNotIn("semesterRefreshTimer", html)

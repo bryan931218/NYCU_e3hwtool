@@ -160,6 +160,8 @@ class AssignmentsStorage:
                         course_code=course_code,
                         title=title,
                         url=url,
+                        semester_key=course.get("semester_key"),
+                        semester_label=course.get("semester_label"),
                         created_at=now,
                         updated_at=now,
                     )
@@ -327,6 +329,8 @@ class AssignmentsStorage:
                     courses_table.c.course_code,
                     courses_table.c.title,
                     courses_table.c.url,
+                    courses_table.c.semester_key,
+                    courses_table.c.semester_label,
                 )
                 .where(courses_table.c.user_id == user_row.id)
             ).fetchall()
@@ -338,6 +342,8 @@ class AssignmentsStorage:
                     "id": row.course_code,
                     "title": row.title,
                     "url": row.url,
+                    "semester_key": row.semester_key,
+                    "semester_label": row.semester_label,
                     "assignments": [],
                     "detected_assign_links": 0,
                 }

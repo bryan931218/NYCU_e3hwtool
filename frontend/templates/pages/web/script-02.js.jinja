@@ -949,7 +949,18 @@ const selectedSemesters = new Set(currentSemesterFilters);
     sortAssignmentTable(document.querySelector('#flatTable tbody'));
     document.querySelectorAll('.courseTable tbody').forEach((tbody) => sortAssignmentTable(tbody));
     document.querySelectorAll('#viewCourse .course-card').forEach((card) => {
-        card.classList.toggle('hidden', !card.querySelector('tbody tr:not(.hidden)'));
+        const courseSemester = card.dataset.semester || 'other';
+        const semesterVisible = courseSemester === 'custom' || selectedSemesters.has(courseSemester);
+        const visibleRows = card.querySelectorAll('tbody tr:not(.hidden)');
+        const allRows = card.querySelectorAll('tbody tr');
+        const emptyState = card.querySelector('[data-course-empty]');
+        card.classList.toggle('hidden', !semesterVisible);
+        if (emptyState) {
+            emptyState.textContent = allRows.length
+                ? '這門課目前沒有符合篩選條件的作業。'
+                : '這門課目前沒有同步到作業。';
+            emptyState.classList.toggle('hidden', !semesterVisible || visibleRows.length > 0);
+        }
     });
 
     updateCounts();

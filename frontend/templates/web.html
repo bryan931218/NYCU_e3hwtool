@@ -505,7 +505,7 @@
 
         <section id="viewCourse">
         {% for course in result.courses %}
-            <section class="card course-card" data-semester="{{ course.semester_key or 'other' }}">
+            <section class="card course-card" data-semester="{{ course.semester_key or 'other' }}" data-assignment-count="{{ course.assignments|length }}">
             <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
                 <h2>{{ course.title }} <span style="color:var(--muted);font-size:14px">#{{ course.id }}</span></h2>
@@ -592,6 +592,9 @@
                     {% endfor %}
                 </tbody>
                 </table>
+                </div>
+                <div class="course-empty-state hidden" data-course-empty>
+                    這門課目前沒有符合篩選條件的作業。
                 </div>
             </div>
             </section>

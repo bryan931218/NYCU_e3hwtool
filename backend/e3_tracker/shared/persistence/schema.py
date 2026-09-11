@@ -37,6 +37,8 @@ courses_table = Table(
     Column("course_code", Integer, nullable=False),
     Column("title", Text, nullable=False),
     Column("url", Text),
+    Column("semester_key", String(32)),
+    Column("semester_label", String(64)),
     Column("created_at", String(64), nullable=False),
     Column("updated_at", String(64), nullable=False),
     UniqueConstraint("user_id", "course_code", name="uq_courses_user_course"),

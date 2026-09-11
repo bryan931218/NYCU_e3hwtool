@@ -211,6 +211,72 @@ def annotate_result_semesters(
     courses = result.get("courses")
     if not isinstance(courses, list):
         courses = []
+    valid_courses: List[Dict[str, Any]] = []
+    course_by_id: Dict[int, Dict[str, Any]] = {}
+    for course in courses:
+        if not isinstance(course, dict):
+            continue
+        try:
+            course_id = int(course.get("id"))
+        except (TypeError, ValueError):
+            continue
+        title_text = str(course.get("title") or "").strip()
+        if len(title_text) > 300:
+            continue
+        valid_courses.append(course)
+        course_by_id[course_id] = course
+        if not isinstance(course.get("assignments"), list):
+            course["assignments"] = []
+    courses = valid_courses
+    valid_all_assignments: List[Dict[str, Any]] = []
+    for item in result.get("all_assignments") or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            course_id = int(item.get("course_id"))
+        except (TypeError, ValueError):
+            continue
+        if course_id <= 1 and course_id not in course_by_id:
+            continue
+        valid_all_assignments.append(item)
+        course = course_by_id.get(course_id)
+        if course is None:
+            course = {
+                "id": course_id,
+                "title": str(item.get("course_title") or f"Course {course_id}"),
+                "url": str(item.get("course_url") or ""),
+                "semester_key": item.get("semester_key"),
+                "semester_label": item.get("semester_label"),
+                "assignments": [],
+            }
+            courses.append(course)
+            course_by_id[course_id] = course
+        assignments = course["assignments"]
+        signature = (str(item.get("url") or ""), str(item.get("title") or ""), item.get("due_ts"))
+        existing_signatures = {
+            (str(saved.get("url") or ""), str(saved.get("title") or ""), saved.get("due_ts"))
+            for saved in assignments
+            if isinstance(saved, dict)
+        }
+        if signature not in existing_signatures:
+            assignments.append(deepcopy(item))
+    result["courses"] = courses
+    result["all_assignments"] = valid_all_assignments
+    cleaned_errors: List[Dict[str, Any]] = []
+    for error in result.get("errors") or []:
+        if not isinstance(error, dict):
+            continue
+        try:
+            error_course_id = int(error.get("course_id"))
+        except (TypeError, ValueError):
+            error_course_id = None
+        message = str(error.get("message") or "")
+        if error_course_id is not None and error_course_id <= 1:
+            continue
+        if "取得作業列表失敗" in message and ("404" in message or "Not Found" in message):
+            continue
+        cleaned_errors.append(error)
+    result["errors"] = cleaned_errors
     result_selected_hint = normalize_semester_keys(result.get("selected_semesters"))
     selected_hint = normalize_semester_keys(selected_keys)
     if not selected_hint:
@@ -282,7 +348,13 @@ def _merge_course(
         cid = int(course_id)
     except (TypeError, ValueError):
         return
+    # Moodle reserves course id 1 for the site/front page. Calendar widgets often
+    # link to it, but it is not an enrolled course and has no assignment endpoint.
+    if cid <= 1:
+        return
     normalized_title = unescape(str(title or "")).strip()
+    if len(normalized_title) > 300:
+        return
     normalized_url = str(url or "").strip()
     if not normalized_url:
         normalized_url = f"{base_url.rstrip('/')}/course/view.php?id={cid}"
@@ -597,6 +669,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
         ctitle = course.get("title", f"Course {cid}")
         list_url = f"{options.base_url}/local/courseextension/index.php?courseid={cid}&scope={options.scope}"
         assign_links: List[Any] = []
+        list_error: Optional[Exception] = None
         try:
             resp = safe_request(
                 sess,
@@ -614,7 +687,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
         except RuntimeError:
             raise
         except Exception as exc:
-            errors.append({"course_id": cid, "course_title": ctitle, "message": f"取得作業列表失敗：{exc}"})
+            list_error = exc
 
         if not assign_links:
             fallback_urls = [
@@ -640,6 +713,17 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                     raise
                 except Exception:
                     pass
+
+        if not assign_links and list_error is not None:
+            response = getattr(list_error, "response", None)
+            status_code = getattr(response, "status_code", None)
+            # Removed/archived E3 courses commonly return 404 from the optional
+            # courseextension page. The fallback pages have already been tried,
+            # so this is an empty old course rather than a parsing failure.
+            if status_code != 404:
+                errors.append(
+                    {"course_id": cid, "course_title": ctitle, "message": f"取得作業列表失敗：{list_error}"}
+                )
         
         now = datetime.now(TAIPEI_TZ)
         course_results: List[Dict[str, Any]] = []
@@ -783,7 +867,7 @@ def merge_current_semester_cache(
             course_id = int(course.get("id"))
         except (TypeError, ValueError):
             continue
-        semester = parse_course_semester(course.get("title"), now)
+        semester = _course_semester(course, now)
         course["semester_key"] = semester["key"]
         course["semester_label"] = semester["label"]
         merged_by_id[course_id] = course
