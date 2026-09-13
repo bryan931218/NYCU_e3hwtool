@@ -1,6 +1,7 @@
 """Assignments routes and their feature helpers."""
 
 import json
+import os
 import secrets
 import threading
 import hashlib
@@ -201,7 +202,25 @@ def register_assignments_routes(*,
 
     @app.route("/healthz", methods=["GET"])
     def health_check():
-        return {"status": "ok"}, 200
+        videos = [
+            video
+            for video in storage.list_study_plan_videos_with_records()
+            if video.get("subject") == "資料結構"
+        ]
+        missing_sequences = [
+            int(video["sequence"])
+            for video in videos
+            if not str(video.get("youtube_video_id") or "").strip()
+        ]
+        return {
+            "status": "ok",
+            "release": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or "")[:12],
+            "study_plan_youtube": {
+                "data_structure_total": len(videos),
+                "data_structure_linked": len(videos) - len(missing_sequences),
+                "data_structure_missing_sequences": missing_sequences,
+            },
+        }, 200
 
     @app.route("/traffic/stats", methods=["GET"])
     def traffic_stats():

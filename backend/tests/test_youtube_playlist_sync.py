@@ -81,6 +81,33 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
             self.assertIn("AUTOSYNC002", refreshed[second["id"]]["youtube_url"])
             storage._engine.dispose()
 
+    def test_database_sync_repairs_empty_manual_override(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = PersistentStorage(str(Path(temp_dir) / "sync.sqlite3"))
+            storage.sync_study_plan_videos(STUDY_PLAN_VIDEO_INVENTORY)
+            video = storage.list_study_plan_videos_with_records()[0]
+            storage.update_study_plan_video_youtube(
+                video_id=video["id"],
+                youtube_video_id="",
+                youtube_playlist_id="",
+                youtube_url="",
+            )
+
+            result = storage.sync_study_plan_youtube_links(
+                [{
+                    "subject": video["subject"],
+                    "sequence": video["sequence"],
+                    "youtube_video_id": "AUTOSYNC001",
+                    "youtube_playlist_id": "PLAYLIST001",
+                    "youtube_url": "https://www.youtube.com/watch?v=AUTOSYNC001&list=PLAYLIST001",
+                }]
+            )
+
+            refreshed = storage.list_study_plan_videos_with_records()[0]
+            self.assertEqual(result["manual_overrides_preserved"], 0)
+            self.assertEqual(refreshed["youtube_video_id"], "AUTOSYNC001")
+            storage._engine.dispose()
+
     def test_service_fetches_playlists_and_reports_partial_failure(self):
         class FakeStorage:
             def list_study_plan_videos_with_records(self):

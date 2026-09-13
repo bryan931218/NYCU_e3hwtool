@@ -511,11 +511,23 @@ class VideosStorage:
                 (str(row.subject), int(row.sequence)): row
                 for row in rows
             }
+            override_rows = conn.execute(
+                select(
+                    study_plan_video_overrides_table.c.video_id,
+                    study_plan_video_overrides_table.c.youtube_video_id,
+                    study_plan_video_overrides_table.c.youtube_url,
+                )
+            ).fetchall()
             override_ids = {
-                int(row.video_id)
-                for row in conn.execute(
-                    select(study_plan_video_overrides_table.c.video_id)
-                ).fetchall()
+                int(override.video_id)
+                for override in override_rows
+                if str(override.youtube_video_id or "").strip()
+                and str(override.youtube_url or "").strip()
+            }
+            empty_override_ids = {
+                int(override.video_id)
+                for override in override_rows
+                if int(override.video_id) not in override_ids
             }
             for key, values in normalized.items():
                 row = existing.get(key)
@@ -525,6 +537,14 @@ class VideosStorage:
                 result["matched"] += 1
                 if int(row.id) in override_ids:
                     result["manual_overrides_preserved"] += 1
+                elif int(row.id) in empty_override_ids:
+                    # An empty override used to mask a valid playlist-derived link
+                    # forever. It is not a manual URL, so let automatic sync repair it.
+                    conn.execute(
+                        delete(study_plan_video_overrides_table).where(
+                            study_plan_video_overrides_table.c.video_id == int(row.id)
+                        )
+                    )
                 before = (
                     str(row.youtube_video_id or ""),
                     str(row.youtube_playlist_id or ""),
