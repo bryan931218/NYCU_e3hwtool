@@ -32,7 +32,7 @@
         {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash {{ category }}" role="status">{{ message }}</div>{% endfor %}{% endwith %}
         <section class="page-head"><div><p class="eyebrow">VIDEO SETTINGS</p><h1>影片連結設定</h1><p class="intro">依科目與影片編號手動新增或修改 YouTube 連結。設定會保存於資料庫，不會因為網站重新部署或同步影片清單而消失。</p></div></section>
         <section class="sync-bar" aria-labelledby="youtube-sync-title">
-            <div class="sync-copy"><strong id="youtube-sync-title">自動同步播放清單</strong><span>同步 {{ synced_playlist_subjects|join('、') }}，依科目與影片編號配對；觀看紀錄與手動設定不會被覆蓋。</span></div>
+            <div class="sync-copy"><strong id="youtube-sync-title">自動同步播放清單</strong><span>正式站啟動時及每天 13:00 自動同步 {{ synced_playlist_subjects|join('、') }}；也可立即手動同步。觀看紀錄與手動設定不會被覆蓋。</span></div>
             <form id="youtube-sync-form" method="post" action="{{ url_for('admin_study_settings_youtube_sync') }}"><button class="sync-button" id="youtube-sync-button" type="submit"><span class="sync-icon" aria-hidden="true">↻</span><span>一鍵同步</span></button></form>
             <p class="sync-status" id="youtube-sync-status" role="status" aria-live="polite"></p>
         </section>

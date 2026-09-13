@@ -118,6 +118,7 @@ from ..services.http import login_with_password
 from ..services.youtube_playlists import (
     KNOWN_YOUTUBE_PLAYLISTS,
     YoutubePlaylistSyncBusyError,
+    start_youtube_playlist_auto_sync,
     sync_known_youtube_playlists,
 )
 from ..services.youtube_frames import (
@@ -4023,5 +4024,8 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
     app.extensions["study_note_image_analyzer"] = _analyze_study_note_images
     app.extensions["study_note_coverage_builder"] = _study_source_coverage_items
     app.extensions["visual_note_pipeline_enabled"] = visual_note_pipeline_enabled
+    app.extensions["youtube_playlist_auto_sync_started"] = (
+        start_youtube_playlist_auto_sync(storage, app.logger)
+    )
 
     return app

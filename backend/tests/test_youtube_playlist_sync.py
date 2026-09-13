@@ -1,16 +1,38 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from e3_tracker.api.web import create_app
-from e3_tracker.services.youtube_playlists import sync_known_youtube_playlists
+from e3_tracker.services.youtube_playlists import (
+    _auto_sync_enabled,
+    _seconds_until_next_auto_sync,
+    sync_known_youtube_playlists,
+)
 from e3_tracker.shared.storage import PersistentStorage
 from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class YoutubePlaylistSyncTests(unittest.TestCase):
+    def test_auto_sync_defaults_to_railway_and_can_be_disabled(self):
+        with patch.dict(os.environ, {"RAILWAY_ENVIRONMENT": "production"}, clear=True):
+            self.assertTrue(_auto_sync_enabled())
+        with patch.dict(
+            os.environ,
+            {"RAILWAY_ENVIRONMENT": "production", "E3_YOUTUBE_AUTO_SYNC_ENABLED": "false"},
+            clear=True,
+        ):
+            self.assertFalse(_auto_sync_enabled())
+
+    def test_auto_sync_targets_next_one_pm_in_taipei(self):
+        taipei = timezone(timedelta(hours=8))
+        before = datetime(2026, 9, 13, 12, 30, tzinfo=taipei)
+        after = datetime(2026, 9, 13, 13, 30, tzinfo=taipei)
+        self.assertEqual(_seconds_until_next_auto_sync(before), 30 * 60)
+        self.assertEqual(_seconds_until_next_auto_sync(after), 23.5 * 60 * 60)
+
     def test_database_sync_updates_source_and_preserves_manual_override(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = PersistentStorage(str(Path(temp_dir) / "sync.sqlite3"))

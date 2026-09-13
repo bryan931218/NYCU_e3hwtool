@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from .youtube_matching import match_playlist_entries
@@ -47,6 +49,10 @@ class YoutubePlaylistSyncBusyError(RuntimeError):
 
 
 _sync_lock = threading.Lock()
+_auto_sync_start_lock = threading.Lock()
+_auto_sync_started = False
+_TAIPEI_TZ = timezone(timedelta(hours=8))
+_AUTO_SYNC_HOUR = 13
 
 
 def fetch_youtube_playlist(source: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -149,3 +155,68 @@ def sync_known_youtube_playlists(
         }
     finally:
         _sync_lock.release()
+
+
+def _auto_sync_enabled() -> bool:
+    configured = str(os.getenv("E3_YOUTUBE_AUTO_SYNC_ENABLED") or "").strip().lower()
+    if configured:
+        return configured not in {"0", "false", "no", "off"}
+    return bool(str(os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+
+
+def _seconds_until_next_auto_sync(now: Optional[datetime] = None) -> float:
+    current = now.astimezone(_TAIPEI_TZ) if now else datetime.now(_TAIPEI_TZ)
+    target = current.replace(
+        hour=_AUTO_SYNC_HOUR,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if target <= current:
+        target += timedelta(days=1)
+    return max(1.0, (target - current).total_seconds())
+
+
+def _run_auto_sync_once(storage: Any, logger: Any) -> Dict[str, Any]:
+    try:
+        result = sync_known_youtube_playlists(storage)
+    except YoutubePlaylistSyncBusyError:
+        logger.info("YouTube playlist auto sync skipped because another sync is running")
+        return {"ok": False, "busy": True}
+    except Exception:
+        logger.exception("YouTube playlist auto sync failed")
+        return {"ok": False, "error": "sync_failed"}
+
+    logger.info(
+        "YouTube playlist auto sync completed: fetched=%s matched=%s updated=%s review=%s errors=%s",
+        len(result.get("fetched_subjects") or []),
+        result.get("matched", 0),
+        result.get("updated", 0),
+        result.get("needs_review", 0),
+        len(result.get("errors") or []),
+    )
+    return result
+
+
+def start_youtube_playlist_auto_sync(storage: Any, logger: Any) -> bool:
+    """Sync once after deployment startup, then every day at 13:00 Taipei time."""
+    global _auto_sync_started
+    if not _auto_sync_enabled():
+        return False
+    with _auto_sync_start_lock:
+        if _auto_sync_started:
+            return False
+        _auto_sync_started = True
+
+    def worker() -> None:
+        _run_auto_sync_once(storage, logger)
+        while True:
+            threading.Event().wait(_seconds_until_next_auto_sync())
+            _run_auto_sync_once(storage, logger)
+
+    threading.Thread(
+        target=worker,
+        name="youtube-playlist-auto-sync",
+        daemon=True,
+    ).start()
+    return True
