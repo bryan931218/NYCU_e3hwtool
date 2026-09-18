@@ -273,24 +273,35 @@
     {% endif %}
 
     {% if result and available_semesters %}
-    <section class="card semester-selector" id="semesterSelector" aria-label="顯示學期">
-        <span class="semester-selector-label">顯示學期</span>
-        <div class="semester-filter-group" id="semesterFilterGroup">
+    <details class="card semester-selector" id="semesterSelector">
+        <summary class="semester-selector-summary" aria-label="選擇顯示學期">
+            <span class="semester-selector-label">學期</span>
             {% for semester in available_semesters %}
-            <label class="semester-filter-option">
-                <input type="radio" name="semester_filter" value="{{ semester.key }}" data-semester-filter{% if semester.key == selected_semester %} checked{% endif %}{% if is_admin_view %} disabled{% endif %}>
-                <span>{{ semester.label }}</span>
-                <small>{{ semester.course_count }} 門</small>
-                {% if semester.is_current %}<span class="semester-current">本學期</span>{% endif %}
-            </label>
+                {% if semester.key == selected_semester %}
+                <strong class="semester-selected-label" id="semesterSelectedLabel">{{ semester.label }}</strong>
+                <span class="semester-selected-count" id="semesterSelectedCount">{{ semester.course_count }} 門課</span>
+                {% endif %}
             {% endfor %}
+            <span class="semester-selector-chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="semester-selector-body">
+            <div class="semester-filter-group" id="semesterFilterGroup" aria-label="顯示學期">
+                {% for semester in available_semesters %}
+                <label class="semester-filter-option">
+                    <input type="radio" name="semester_filter" value="{{ semester.key }}" data-semester-filter data-semester-label="{{ semester.label }}" data-course-count="{{ semester.course_count }}"{% if semester.key == selected_semester %} checked{% endif %}{% if is_admin_view %} disabled{% endif %}>
+                    <span>{{ semester.label }}</span>
+                    <small>{{ semester.course_count }} 門</small>
+                    {% if semester.is_current %}<span class="semester-current">本學期</span>{% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            {% if not guest_mode and not is_admin_view %}
+            <button class="btn semester-archive-refresh" type="button" id="archiveRefreshBtn" title="重新從 E3 載入舊學期課程">
+                載入舊學期
+            </button>
+            {% endif %}
         </div>
-        {% if not guest_mode and not is_admin_view %}
-        <button class="btn semester-archive-refresh" type="button" id="archiveRefreshBtn" title="重新從 E3 載入舊學期課程">
-            載入舊學期
-        </button>
-        {% endif %}
-    </section>
+    </details>
     {% endif %}
 
     <section class="card panel toolbar-compact">

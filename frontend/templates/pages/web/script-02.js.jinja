@@ -412,6 +412,18 @@ function readCheckedSemesterFilters() {
     return normalizeSemesterFilters(Array.from(document.querySelectorAll('[data-semester-filter]:checked')).map((input) => input.value));
 }
 
+function syncSemesterSelectorSummary(input, { collapse = false } = {}) {
+    if (!input) return;
+    const label = document.getElementById('semesterSelectedLabel');
+    const count = document.getElementById('semesterSelectedCount');
+    if (label) label.textContent = input.dataset.semesterLabel || input.value;
+    if (count) count.textContent = `${input.dataset.courseCount || 0} 門課`;
+    if (collapse) {
+        const selector = document.getElementById('semesterSelector');
+        if (selector) selector.open = false;
+    }
+}
+
 let currentViewMode = (USER_PREFERENCES && USER_PREFERENCES.view_mode === 'course') ? 'course' : 'due';
 function normalizeStatusFilters(value) {
     if (value == null) {
@@ -1029,6 +1041,7 @@ function applyServerPreferenceState(nextPrefs){
         document.querySelectorAll('[data-semester-filter]').forEach((input) => {
             input.checked = currentSemesterFilters.includes(input.value);
         });
+        syncSemesterSelectorSummary(document.querySelector('[data-semester-filter]:checked'));
     }
     setIgnoredOverdueUids(incoming.ignored_overdue_uids);
     syncStatusFilterButtons();
@@ -1183,6 +1196,7 @@ document.addEventListener('change', (evt) => {
     }
     currentSemesterFilters = nextSemesters;
     USER_PREFERENCES.semester_filter = nextSemesters.slice();
+    syncSemesterSelectorSummary(semesterInput, { collapse: true });
     applyFilters();
     updateFilterSummary();
     persistPreferences({ semesterFilters: nextSemesters });

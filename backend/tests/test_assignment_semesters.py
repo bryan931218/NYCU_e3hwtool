@@ -706,6 +706,10 @@ class AssignmentSemesterTests(unittest.TestCase):
                 html = response.get_data(as_text=True)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('id="semesterFilterGroup"', html)
+                semester_selector = BeautifulSoup(html, "html.parser").select_one("details#semesterSelector")
+                self.assertIsNotNone(semester_selector)
+                self.assertEqual(semester_selector.select_one("#semesterSelectedLabel").get_text(strip=True), "114 下學期")
+                self.assertEqual(semester_selector.select_one("#semesterSelectedCount").get_text(strip=True), "5 門課")
                 self.assertIn('type="radio" name="semester_filter"', html)
                 semester_inputs = BeautifulSoup(html, "html.parser").select("[data-semester-filter]")
                 self.assertEqual(
@@ -716,6 +720,7 @@ class AssignmentSemesterTests(unittest.TestCase):
                 self.assertIn('data-course-empty', html)
                 self.assertIn("這門課目前沒有符合篩選條件的作業。", html)
                 self.assertIn("currentSemesterFilters = readCheckedSemesterFilters()", html)
+                self.assertIn("syncSemesterSelectorSummary(semesterInput, { collapse: true })", html)
                 self.assertIn('id="archiveRefreshBtn"', html)
                 self.assertIn("requestPayload.includeArchived = true", html)
                 self.assertIn("assignment_refresh_version", client.get("/api/cache").get_json())
