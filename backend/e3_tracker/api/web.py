@@ -1,4 +1,5 @@
 from .routes.assignments import register_assignments_routes
+from .assets import register_frontend_assets
 from .routes.study_home import register_study_home_routes
 from .routes.note_library import register_note_library_routes
 from .routes.note_search import register_note_search_routes
@@ -220,24 +221,7 @@ STUDY_RECALL_QUICK_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "study_recall_quick.h
 STUDY_RECALL_QUICK_TEMPLATE = STUDY_RECALL_QUICK_TEMPLATE_PATH.read_text(encoding="utf-8")
 STUDY_UPLOAD_TRACKER_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "_study_upload_tracker.html"
 STUDY_UPLOAD_TRACKER_TEMPLATE = STUDY_UPLOAD_TRACKER_TEMPLATE_PATH.read_text(encoding="utf-8")
-GLOBAL_STUDY_ASSISTANT_TEMPLATE_PATH = FRONTEND_TEMPLATE_DIR / "_global_study_assistant.html"
-GLOBAL_STUDY_ASSISTANT_TEMPLATE = GLOBAL_STUDY_ASSISTANT_TEMPLATE_PATH.read_text(encoding="utf-8")
 
-
-def _attach_global_study_assistant(template: str) -> str:
-    """Mount the authenticated assistant without duplicating page-specific markup."""
-    if "data-e3-global-ai" in template or "</body>" not in template:
-        return template
-    return template.replace("</body>", f"{GLOBAL_STUDY_ASSISTANT_TEMPLATE}\n</body>", 1)
-
-
-# Keep the assistant inside the study center. The assignment tracker and public pages
-# stay focused on their own workflows.
-STUDY_PLAN_TEMPLATE = _attach_global_study_assistant(STUDY_PLAN_TEMPLATE)
-STUDY_MARKERS_TEMPLATE = _attach_global_study_assistant(STUDY_MARKERS_TEMPLATE)
-STUDY_SETTINGS_TEMPLATE = _attach_global_study_assistant(STUDY_SETTINGS_TEMPLATE)
-STUDY_HOME_TEMPLATE = _attach_global_study_assistant(STUDY_HOME_TEMPLATE)
-STUDY_RECALL_QUICK_TEMPLATE = _attach_global_study_assistant(STUDY_RECALL_QUICK_TEMPLATE)
 
 STUDY_PLAN_BLOCKS = (
     {"subject": "線性代數", "weeks": 4, "total_minutes": 4107.8, "lesson_targets": (11, 22, 32, 42)},
@@ -256,7 +240,7 @@ STUDY_PLAN_PHASE_ONE_SUBJECTS = ("離散數學", "資料結構")
 STUDY_PLAN_PHASE_TWO_SUBJECTS = ("作業系統", "計算機組織", "演算法")
 STUDY_NOTE_MAX_IMAGE_BYTES = 2 * 1024 * 1024
 STUDY_NOTE_MAX_REQUEST_BYTES = 16 * 1024 * 1024
-STUDY_NOTE_AI_BATCH_SIZE = 8
+STUDY_NOTE_AI_BATCH_SIZE = 4
 STUDY_NOTE_STAGING_TTL_SECONDS = 24 * 60 * 60
 
 
@@ -820,7 +804,9 @@ def _start_youtube_storyboard_index(
     return len(scheduled)
 
 
-def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "assignment", default_timeout: int = 30) -> Flask:
+def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "assignment", default_timeout: int = 30, storage_class=None, schedule_builder=None) -> Flask:
+    storage_class = storage_class or PersistentStorage
+    schedule_builder = schedule_builder or _study_plan_schedule_definitions
     env_defaults = load_env_defaults()
     visual_note_pipeline_enabled = _env_flag_truthy(
         os.getenv("E3_VISUAL_NOTE_PIPELINE", "1")
@@ -846,13 +832,13 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         db_location = database_url
     else:
         db_location = str((data_root / "e3_tracker.sqlite3").resolve())
-    storage = PersistentStorage(db_location)
+    storage = storage_class(db_location)
     storage.sync_study_plan_videos(STUDY_PLAN_VIDEO_INVENTORY)
 
     app = Flask(__name__, template_folder=str(FRONTEND_TEMPLATE_DIR))
+    register_frontend_assets(app)
     app.secret_key = env_defaults["web_secret"]
     app.extensions["e3_storage"] = storage
-    app.jinja_env.globals["study_upload_tracker"] = STUDY_UPLOAD_TRACKER_TEMPLATE
     session_cookie_secure = _env_flag_truthy(env_defaults.get("session_cookie_secure"))
     session_cookie_samesite = env_defaults.get("session_cookie_samesite") or "Lax"
     app.config.update(
@@ -1852,6 +1838,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         return "\r\n".join(lines)
 
     def _build_dashboard_context(user: Dict[str, Any]) -> Dict[str, Any]:
+        user = dict(user, surname=storage.load_user_surname(user["username"]))
         admin_view_options: List[Dict[str, Any]] = []
         viewed_username = user["username"]
         if user.get("is_admin"):
@@ -1977,7 +1964,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         week_rows: List[Dict[str, Any]] = []
         planned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
         replanned_before = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
-        for definition in _study_plan_schedule_definitions(videos, replan_settings, rest_days):
+        for definition in schedule_builder(videos, replan_settings, rest_days):
             week_start = definition["start"]
             week_end = definition["end"]
             subject_targets = dict(definition["subject_targets"])
@@ -3824,7 +3811,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         _repair_legacy_study_assistant_time_moves=lambda *args, **kwargs: _repair_legacy_study_assistant_time_moves(*args, **kwargs),
         _study_plan_business_date=lambda *args, **kwargs: _study_plan_business_date(*args, **kwargs),
         _study_plan_nonnegative_number=lambda *args, **kwargs: _study_plan_nonnegative_number(*args, **kwargs),
-        _study_plan_schedule_definitions=lambda *args, **kwargs: _study_plan_schedule_definitions(*args, **kwargs),
+        _study_plan_schedule_definitions=schedule_builder,
         _study_plan_video_is_complete=lambda *args, **kwargs: _study_plan_video_is_complete(*args, **kwargs),
         _study_plan_week_start=lambda *args, **kwargs: _study_plan_week_start(*args, **kwargs),
         admin_required=admin_required,
@@ -3930,7 +3917,7 @@ def create_app(*, default_base_url: Optional[str] = None, default_scope: str = "
         _study_plan_nonnegative_number=lambda *args, **kwargs: _study_plan_nonnegative_number(*args, **kwargs),
         _study_plan_progress_week=lambda *args, **kwargs: _study_plan_progress_week(*args, **kwargs),
         _study_plan_replan_preview=lambda *args, **kwargs: _study_plan_replan_preview(*args, **kwargs),
-        _study_plan_schedule_definitions=lambda *args, **kwargs: _study_plan_schedule_definitions(*args, **kwargs),
+        _study_plan_schedule_definitions=schedule_builder,
         _study_plan_today_task_videos=_study_plan_today_task_videos,
         _study_plan_total_is_complete=lambda *args, **kwargs: _study_plan_total_is_complete(*args, **kwargs),
         _study_plan_video_completion=lambda *args, **kwargs: _study_plan_video_completion(*args, **kwargs),

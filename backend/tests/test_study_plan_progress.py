@@ -794,7 +794,7 @@ class StudyPlanProgressTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 html = response.get_data(as_text=True)
                 self.assertIn("2026-09-03 已設為休息日", html)
-                self.assertIn("恢復 2026-09-03 的原定安排", html)
+                self.assertIn('aria-label="取消 2026-09-03 的休息日"', html)
                 self.assertIn("將 2026-09-04 設為休息日", html)
                 self.assertNotIn("將 2026-09-07 設為休息日", html)
                 self.assertIn("休息日", html)
@@ -1313,7 +1313,8 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertEqual(public_today_entry["activities"][0]["title"], first_video["title"])
             storage._engine.dispose()
 
-    def test_progress_api_refreshes_all_subject_candidates_after_video_ends(self):
+    @patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 3))
+    def test_progress_api_refreshes_all_subject_candidates_after_video_ends(self, _business_date):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(
                 os.environ,

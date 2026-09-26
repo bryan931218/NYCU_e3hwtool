@@ -41,5 +41,6 @@
         {% else %}<section class="empty-state"><div><div class="completion-icon">✓</div><h2>今天的記憶已清空</h2><p>目前沒有到期卡片。系統會在最值得複習的時間把它們帶回來，不必重複刷已經熟悉的內容。</p><a href="{{ url_for('admin_study_recall') }}">回筆記庫</a></div></section>{% endif %}
     </main>
     <script>{% include 'pages/study_recall_quick/script-01.js.jinja' %}</script>
+{% include '_global_study_assistant.html' %}
 </body>
 </html>

@@ -5,13 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 {% set site_description = "E3作業追蹤系統可以幫助交大學生統整 E3 平台上的所有作業。系統會列出所有課程作業、狀態、截止日期，也能導出 Excel 或同步到 Google 日曆。" %}
 <meta name="description" content="{{ site_description }}" />
-<meta property="og:title" content="交大作業追蹤系統" />
+<meta property="og:title" content="E3作業追蹤系統" />
 <meta property="og:description" content="{{ site_description }}" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
 <meta name="theme-color" content="#3730a3" />
-<title>交大作業追蹤系統</title>
-<script>{% include 'pages/web/script-01.js.jinja' %}</script>
-<style>{% include 'pages/web/style-01.css.jinja' %}</style>
+<title>E3作業追蹤系統</title>
+<script src="{{ url_for('frontend_asset', filename='js/theme-init.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='css/components.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='css/workbench.css') }}">
 </head>
 <body data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}" data-readonly-view="{{ 1 if is_admin_view else 0 }}" data-view-user="{{ viewed_username or '' }}">
 {% set server_now_ts = now_ts if now_ts is defined else none %}
@@ -37,142 +39,8 @@
     {% set selected_semesters = [] %}
 {% endif %}
 {% set selected_semester = selected_semesters|first if selected_semesters else '' %}
-{% macro format_time_diff(seconds) -%}
-    {% if seconds is none %}
-        -
-    {% else %}
-        {% set total_minutes = (seconds + 59) // 60 %}
-        {% set days = total_minutes // 1440 %}
-        {% set hours = (total_minutes % 1440) // 60 %}
-        {% set minutes = total_minutes % 60 %}
-        {% set parts = [] %}
-        {% if days %}
-            {% set parts = parts + [days ~ '日'] %}
-        {% endif %}
-        {% if hours %}
-            {% set parts = parts + [hours ~ '小時'] %}
-        {% endif %}
-        {% if not parts and minutes %}
-            {% set parts = parts + [minutes ~ '分鐘'] %}
-        {% endif %}
-        {% if not parts %}
-            {% set parts = ['不足1分鐘'] %}
-        {% endif %}
-        {{ parts | join(' ') }}
-    {% endif %}
-{%- endmacro %}
-{% macro render_remaining_text(item, now_ts) -%}
-    {% set raw_status_text = item.raw_status_text or '' %}
-    {% set is_graded = item.get('grade_text') or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
-    {% if is_graded %}
-        <span class="remaining-text done">已評分</span>
-    {% elif item.completed %}
-        <span class="remaining-text done">已完成</span>
-    {% elif not item.due_ts or now_ts is none %}
-        <span class="remaining-text neutral">{{ item.raw_status_text or "無截止資訊" }}</span>
-    {% else %}
-        {% set diff = item.due_ts - now_ts %}
-        {% if diff <= 0 %}
-            <span class="remaining-text overdue">已逾期 {{ format_time_diff(-diff) }}</span>
-        {% elif diff < 86400 %}
-            <span class="remaining-text warning">剩下 {{ format_time_diff(diff) }}</span>
-        {% else %}
-            <span class="remaining-text normal">剩下 {{ format_time_diff(diff) }}</span>
-        {% endif %}
-    {% endif %}
-{%- endmacro %}
-{% macro render_submission_pill(item) -%}
-    {% set participant_count = item.get('participant_count') %}
-    {% set submitted_count = item.get('submitted_count') %}
-    {% if participant_count is not none and submitted_count is not none %}
-        {% if item.completed %}
-            {% set ratio_class = 'ratio-active' %}
-        {% else %}
-            {% set ratio_class = 'ratio-progress' %}
-            {% set submission_ratio = (submitted_count / participant_count) if participant_count > 0 else 0 %}
-            {% set submission_hue = 8 + (submission_ratio * 126) %}
-            {% set submission_glow = 0.04 + (submission_ratio * 0.08) %}
-        {% endif %}
-        {% set submission_text_len = (submitted_count|string|length) + (participant_count|string|length) %}
-        {% if submission_text_len >= 8 %}
-            {% set submission_count_size = '10px' %}
-            {% set submission_divider_size = '9px' %}
-            {% set submission_total_size = '9px' %}
-        {% elif submission_text_len >= 6 %}
-            {% set submission_count_size = '11px' %}
-            {% set submission_divider_size = '10px' %}
-            {% set submission_total_size = '10px' %}
-        {% elif submission_text_len >= 4 %}
-            {% set submission_count_size = '12px' %}
-            {% set submission_divider_size = '11px' %}
-            {% set submission_total_size = '11px' %}
-        {% else %}
-            {% set submission_count_size = '14px' %}
-            {% set submission_divider_size = '12px' %}
-            {% set submission_total_size = '12px' %}
-        {% endif %}
-        <div
-            class="submission-pill {{ ratio_class }}"
-            style="--submission-count-size: {{ submission_count_size }}; --submission-divider-size: {{ submission_divider_size }}; --submission-total-size: {{ submission_total_size }};{% if ratio_class == 'ratio-progress' %} --submission-hue: {{ '%.1f'|format(submission_hue) }}; --submission-glow: {{ '%.3f'|format(submission_glow) }};{% endif %}"
-            title="已繳交 {{ submitted_count }} 人，共 {{ participant_count }} 人"
-        >
-            <span class="submission-pill-count">{{ submitted_count }}</span>
-            <span class="submission-pill-divider">/</span>
-            <span class="submission-pill-total">{{ participant_count }}</span>
-        </div>
-    {% else %}
-        <span class="assignment-due-sub">-</span>
-    {% endif %}
-{%- endmacro %}
-{% macro render_grade_pill(item) -%}
-    {% set grade_text = item.get('grade_text') %}
-    {% if grade_text %}
-        {% set normalized_grade = (grade_text|string)|replace('／', '/')|replace(' / ', '/')|replace('/ ', '/')|replace(' /', '/') %}
-        {% set grade_parts = normalized_grade.split('/') %}
-        {% set grade_len = grade_text|string|length %}
-        {% set grade_class = '' %}
-        {% if grade_len >= 13 %}
-            {% set grade_class = 'tiny' %}
-        {% elif grade_len >= 9 %}
-            {% set grade_class = 'compact' %}
-        {% endif %}
-        {% if grade_parts|length == 2 and (grade_parts[0]|trim) and (grade_parts[1]|trim) %}
-            <div class="grade-pill {{ grade_class }}" title="成績：{{ grade_text }}">
-                <span class="grade-pill-content">
-                    <span class="grade-pill-main">{{ grade_parts[0]|trim }}</span>
-                    <span class="grade-pill-sub">/ {{ grade_parts[1]|trim }}</span>
-                </span>
-            </div>
-        {% else %}
-            <div class="grade-pill textual {{ grade_class }}" title="成績：{{ grade_text }}">
-                <span class="grade-pill-content">
-                    <span class="grade-pill-main">{{ grade_text }}</span>
-                </span>
-            </div>
-        {% endif %}
-    {% else %}
-        <div class="grade-pill empty" title="尚無成績">
-            <span class="grade-pill-content">
-                <span class="grade-pill-main">-</span>
-            </span>
-        </div>
-    {% endif %}
-{%- endmacro %}
-{% macro render_grade_inline(item) -%}
-    {% set grade_text = item.get('grade_text') %}
-    {% if grade_text %}
-        <span class="assignment-grade-inline" title="成績：{{ grade_text }}">
-            <span class="assignment-grade-inline-label">成績</span>
-            <span class="assignment-grade-inline-text">{{ grade_text }}</span>
-        </span>
-    {% else %}
-        <span class="assignment-grade-inline empty" title="尚無成績">
-            <span class="assignment-grade-inline-label">成績</span>
-            <span class="assignment-grade-inline-text">-</span>
-        </span>
-    {% endif %}
-{%- endmacro %}
 {% set ignored_overdue_uids = preferences.ignored_overdue_uids if preferences.ignored_overdue_uids is defined else [] %}
+{% from 'components/assignments.html' import render_assignment_row with context %}
 <div class="loader-wrap" id="loader">
     <div class="loader-content">
         <div class="loader" aria-label="載入中"></div>
@@ -184,11 +52,18 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <div class="container">
-    <header>
-    <h1>E3 作業追蹤系統</h1>
+    <header class="app-header">
+    <div class="app-brand">
+        <h1>E3作業追蹤系統</h1>
+    </div>
     <div class="header-actions">
         {% if user %}
-        <span class="user-meta" style="color:var(--muted);font-size:14px">已登入：<strong>{{ user.username }}</strong>{% if user.is_admin %} <span style="background:var(--primary);color:#fff;font-size:11px;padding:1px 6px;border-radius:10px;margin-left:4px">管理員</span>{% endif %}</span>
+        <span class="user-meta">
+            <span id="userAvatar" class="user-avatar" aria-hidden="true" data-avatar-length="{{ user.surname|length if user.surname else 0 }}"{% if not guest_mode %} data-profile-url="{{ url_for('user_profile') }}"{% endif %}>
+                {% if guest_mode %}訪{% elif user.surname %}{{ user.surname }}{% else %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{% endif %}
+            </span>
+            <strong>{{ user.username }}</strong>{% if user.is_admin %}<span class="admin-badge">管理員</span>{% endif %}
+        </span>
         {% endif %}
         <button type="button" class="icon-button" id="announcementToggle" title="查看公告" onclick="if(window.__openAnnouncementModal){window.__openAnnouncementModal();}">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V4a2 2 0 10-4 0v1.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
@@ -197,7 +72,8 @@
             {% endif %}
         </button>
         <button type="button" class="icon-button" id="themeToggle" title="切換主題">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-9H21m-17 0H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-9H21m-17 0H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" /></svg>
         </button>
         {% if user %}
             {% if user.is_admin %}
@@ -205,17 +81,17 @@
             <a class="btn" href="{{ url_for('admin_announcements') }}">公告管理</a>
             <a class="btn" href="{{ url_for('admin_traffic', view_user=viewed_username) if is_admin_view else url_for('admin_traffic') }}">流量監控</a>
             {% endif %}
-            <a class="btn" href="{{ url_for('logout') }}">登出</a>
+            <a class="btn logout-link" href="{{ url_for('logout') }}">登出</a>
         {% else %}
             <a class="btn primary" href="{{ url_for('login') }}">登入</a>
         {% endif %}
     </div>
+    <div class="site-stats" aria-label="網站統計">
+        <span class="site-stat">線上人數：<strong id="siteOnlineCount">{{ stats.online }}</strong></span>
+        <span class="site-stat">累積訪問次數：<strong id="siteTotalCount">{{ stats.total }}</strong> 次</span>
+        <span class="site-stat site-stat-updated">上次更新：<strong id="siteLastUpdated">{{ last_updated_label or "尚未更新" }}</strong></span>
+    </div>
     </header>
-    <section class="stats" aria-live="polite" style="margin-bottom:12px">
-        <span class="chip" title="最近 5 分鐘內仍有操作的唯一帳號數">線上人數：<strong>{{ stats.online }}</strong></span>
-        <span class="chip" title="自服務啟動以來的總頁面載入次數">累積訪問次數：<strong>{{ stats.total }}</strong> 次</span>
-        <span class="chip" title="最後一次成功更新作業清單的時間">上次更新：<strong>{{ last_updated_label or "尚未更新" }}</strong></span>
-    </section>
 
     {% with messages = get_flashed_messages(with_categories=True) %}
     {% if messages %}
@@ -239,15 +115,16 @@
     {% endif %}
 
     {% if guest_mode %}
-    <section class="card panel" style="margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-            <div>
-                <h3 style="margin:0 0 4px;font-size:18px">訪客模式資料匯入</h3>
-                <p class="muted" style="margin:0;font-size:13px">
+    <section class="card panel guest-import">
+        <div class="guest-import-head">
+            <div class="guest-import-copy">
+                <span class="guest-import-kicker">訪客工具</span>
+                <h3>匯入 E3 作業資料</h3>
+                <p class="muted">
                     先下載匯出工具（guest_export.exe）產生 JSON，再上傳即可使用所有功能（不會自動從 E3 抓資料）。
                 </p>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="guest-import-downloads">
                 <a class="btn accent" href="{{ url_for('guest_tool') }}" download>
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 3v12"></path>
@@ -265,56 +142,72 @@
                 </a>
             </div>
         </div>
-        <form method="post" action="{{ url_for('guest_import') }}" enctype="multipart/form-data" style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
-            <input id="guestFile" name="guest_file" type="file" accept="application/json" required style="flex:1" />
+        <form class="guest-import-form" method="post" action="{{ url_for('guest_import') }}" enctype="multipart/form-data">
+            <input id="guestFile" name="guest_file" type="file" accept="application/json" required />
             <button class="btn primary" type="submit">匯入 JSON</button>
         </form>
     </section>
     {% endif %}
 
-    {% if result and available_semesters %}
-    <details class="card semester-selector" id="semesterSelector">
-        <summary class="semester-selector-summary" aria-label="選擇顯示學期">
-            <span class="semester-selector-label">學期</span>
-            {% for semester in available_semesters %}
-                {% if semester.key == selected_semester %}
-                <strong class="semester-selected-label" id="semesterSelectedLabel">{{ semester.label }}</strong>
-                <span class="semester-selected-count" id="semesterSelectedCount">{{ semester.course_count }} 門課</span>
-                {% endif %}
-            {% endfor %}
-            <span class="semester-selector-chevron" aria-hidden="true"></span>
-        </summary>
-        <div class="semester-selector-body">
-            <div class="semester-filter-group" id="semesterFilterGroup" aria-label="顯示學期">
-                {% for semester in available_semesters %}
-                <label class="semester-filter-option">
-                    <input type="radio" name="semester_filter" value="{{ semester.key }}" data-semester-filter data-semester-label="{{ semester.label }}" data-course-count="{{ semester.course_count }}"{% if semester.key == selected_semester %} checked{% endif %}{% if is_admin_view %} disabled{% endif %}>
-                    <span>{{ semester.label }}</span>
-                    <small>{{ semester.course_count }} 門</small>
-                    {% if semester.is_current %}<span class="semester-current">本學期</span>{% endif %}
-                </label>
-                {% endfor %}
+    <section class="workspace-actions" aria-label="學期與作業操作">
+            {% if result and available_semesters %}
+            <details class="card semester-selector" id="semesterSelector">
+                <summary class="semester-selector-summary" aria-label="選擇顯示學期">
+                    {% for semester in available_semesters %}{% if semester.key == selected_semester %}
+                    <strong class="semester-selected-label" id="semesterSelectedLabel">{{ semester.label }}</strong>
+                    <span class="semester-selected-count" id="semesterSelectedCount">{{ semester.course_count }} 門課</span>
+                    {% endif %}{% endfor %}
+                    <span class="semester-selector-chevron" aria-hidden="true"></span>
+                </summary>
+                <div class="semester-selector-body">
+                    <div class="semester-filter-group" id="semesterFilterGroup" aria-label="顯示學期">
+                        {% for semester in available_semesters %}
+                        <label class="semester-filter-option">
+                            <input type="radio" name="semester_filter" value="{{ semester.key }}" data-semester-filter data-semester-label="{{ semester.label }}" data-course-count="{{ semester.course_count }}"{% if semester.key == selected_semester %} checked{% endif %}{% if is_admin_view %} disabled{% endif %}>
+                            <span class="semester-option-label">{{ semester.label }}</span><small>{{ semester.course_count }} 門課</small>
+                            {% if semester.is_current %}<span class="semester-current">本學期</span>{% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% if not guest_mode and not is_admin_view %}<button class="btn semester-archive-refresh" type="button" id="archiveRefreshBtn" title="重新從 E3 載入舊學期課程">載入舊學期</button>{% endif %}
+                </div>
+            </details>
+            {% endif %}
+            <div class="workspace-summary" aria-live="polite">
+                <span>待處理 <strong id="pendingSummaryCount">0</strong></span>
+                <span class="workspace-summary-overdue">逾期 <strong id="overdueSummaryCount">0</strong></span>
             </div>
+            <div class="workspace-commands">
             {% if not guest_mode and not is_admin_view %}
-            <button class="btn semester-archive-refresh" type="button" id="archiveRefreshBtn" title="重新從 E3 載入舊學期課程">
-                載入舊學期
+            <button class="btn workspace-refresh" type="button" id="manualRefreshBtn" title="更新作業">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.3"></path><path d="M3 12a9 9 0 0 1 15.5-6.3"></path><path d="M18 3v5h-5"></path><path d="M6 21v-5h5"></path></svg>
+                更新作業
             </button>
             {% endif %}
-        </div>
-    </details>
-    {% endif %}
-
-    <section class="card panel toolbar-compact">
-        <div class="tc-left">
-        <div class="toolbar-stack">
-            <div class="seg">
-                <button id="viewDueBtn" class="seg-btn" data-view="due">到期日排序</button>
-                <button id="viewCourseBtn" class="seg-btn" data-view="course">依課程排序</button>
+            {% if not is_admin_view %}
+            <button class="btn accent workspace-add" type="button" id="addCustomAssignmentBtn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                新增代辦
+            </button>
+            {% endif %}
             </div>
+    </section>
+
+    <section class="toolbar-compact">
+        <div class="tc-left"><div class="toolbar-stack">
+            <label class="assignment-search">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+                <input id="assignmentSearch" type="search" placeholder="搜尋作業或課程" autocomplete="off">
+            </label>
+            <select class="course-filter" id="courseFilter" aria-label="篩選課程">
+                <option value="">全部課程</option>
+                {% if result %}{% for course in result.courses %}{% if (course.semester_key or 'other') == selected_semester %}<option value="{{ course.title }}">{{ course.title }}</option>{% endif %}{% endfor %}{% endif %}
+                <option value="custom">個人代辦</option>
+            </select>
             <details class="filter-menu" id="filterMenu">
-                <summary class="filter-trigger">
-                    <span class="filter-trigger-label">篩選條件</span>
-                    <span class="filter-trigger-count" id="filterActiveCount">0</span>
+                <summary class="filter-trigger" title="篩選狀態">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3Z"></path></svg>
+                    <span class="filter-trigger-label">篩選</span><span class="filter-trigger-count" id="filterActiveCount">0</span>
                 </summary>
                 <div class="filter-panel">
                     <p class="filter-panel-title">狀態（可複選）</p>
@@ -325,85 +218,27 @@
                         <button type="button" class="status-filter-btn{% if 'overdue' in selected_status_filters %} active{% endif %}" data-status-filter="overdue">逾期未交</button>
                         <button type="button" class="status-filter-btn{% if selected_status_filters|length >= status_filter_labels|length %} active{% endif %}" data-status-filter="all" style="grid-column:1 / -1">全部</button>
                     </div>
-                    <div class="filter-subsection">
-                        <p class="filter-panel-title" style="margin-bottom:6px">已忽略逾期作業</p>
-                        <div class="muted" style="font-size:12px">這裡可以復原你先前排除的逾期作業。</div>
-                        <button type="button" class="ignored-restore-all" id="restoreIgnoredOverdueAll" hidden>全部復原</button>
-                        <div class="ignored-list" id="ignoredOverdueList"></div>
-                    </div>
+                    <div class="filter-subsection"><p class="filter-panel-title" style="margin-bottom:6px">已忽略逾期作業</p><div class="muted" style="font-size:12px">這裡可以復原你先前排除的逾期作業。</div><button type="button" class="ignored-restore-all" id="restoreIgnoredOverdueAll" hidden>全部復原</button><div class="ignored-list" id="ignoredOverdueList"></div></div>
                 </div>
             </details>
-        </div>
-        </div>
-        <div class="tc-center">
-            {% if not guest_mode and not is_admin_view %}
-                <button class="btn accent" type="button" id="manualRefreshBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 12a9 9 0 0 1-15.5 6.3"></path>
-                        <path d="M3 12a9 9 0 0 1 15.5-6.3"></path>
-                        <path d="M18 3v5h-5"></path>
-                        <path d="M6 21v-5h5"></path>
-                    </svg>
-                    手動更新
-                </button>
-            {% endif %}
-            {% if not is_admin_view %}
-                <button class="btn" type="button" id="addCustomAssignmentBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 5v14"></path>
-                        <path d="M5 12h14"></path>
-                    </svg>
-                    新增代辦
-                </button>
-            {% endif %}
-            {% if result and excel_data %}
-                <a class="btn primary excel-btn" data-log-action="download_excel" download="待繳作業.xlsx"
-                href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="12" y1="18" x2="12" y2="12"></line>
-                    <line x1="9" y1="15" x2="15" y2="15"></line>
-                </svg>
-                導出作業資訊
-                </a>
-            {% endif %}
-            {% if is_admin_view %}
-                <span class="btn disabled">唯讀檢視不提供更新與 Google 同步</span>
-            {% elif google_ready %}
-                {% if google_linked %}
-                    <button class="btn google" type="button" id="googleSyncBtn">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M17 3h4v4"></path>
-                            <path d="M3 17h4v4"></path>
-                            <path d="m21 3-6 6"></path>
-                            <path d="m3 21 6-6"></path>
-                            <path d="M3 9V5a2 2 0 0 1 2-2h4"></path>
-                            <path d="M15 21h4a2 2 0 0 0 2-2v-4"></path>
-                        </svg>
-                        導入至 Google 日曆
-                    </button>
-                    <form method="post" action="{{ url_for('google_unlink') }}" style="display:inline">
-                        <button class="btn" type="submit">解除 Google 連結</button>
-                    </form>
-                {% else %}
-                    <a class="btn google" href="{{ url_for('google_authorize') }}">
-                        連結 Google 日曆
-                    </a>
-                {% endif %}
-            {% else %}
-                <span class="btn disabled">尚未啟用 Google 日曆整合</span>
-            {% endif %}
-        </div>
-        {% if google_ready and google_linked %}
-        <form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none">
-            <input type="hidden" name="selected_uids" id="googleSyncInput">
-        </form>
-        {% endif %}
-        <div class="tc-right stats">
-        <span class="chip">目前顯示：<strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong></span>
-        <span class="chip">已忽略逾期：<strong id="ignoredCount" style="color:var(--err-fg)">{{ (preferences.ignored_overdue_uids|length) if preferences.ignored_overdue_uids is defined else 0 }}</strong></span>
-        </div>
+            <div class="seg"><button id="viewDueBtn" class="seg-btn" data-view="due">到期日</button><button id="viewCourseBtn" class="seg-btn" data-view="course">依課程</button></div>
+        </div></div>
+        <details class="more-menu">
+            <summary class="icon-button more-trigger" title="更多操作" aria-label="更多操作">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+            </summary>
+            <div class="more-panel tc-center">
+            {% if result and excel_data %}<a class="btn excel-btn" data-log-action="download_excel" download="待繳作業.xlsx" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}">匯出 Excel</a>{% endif %}
+            {% if is_admin_view %}<span class="btn disabled">唯讀檢視</span>
+            {% elif google_ready %}{% if google_linked %}
+                <button class="btn google" type="button" id="googleSyncBtn">同步 Google 日曆</button>
+                <form method="post" action="{{ url_for('google_unlink') }}"><button class="btn" type="submit">管理 Google 連結</button></form>
+            {% else %}<a class="btn google" href="{{ url_for('google_authorize') }}">連結 Google 日曆</a>{% endif %}
+            {% else %}<span class="btn disabled">尚未啟用 Google 日曆</span>{% endif %}
+            </div>
+        </details>
+        {% if google_ready and google_linked %}<form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none"><input type="hidden" name="selected_uids" id="googleSyncInput"></form>{% endif %}
+        <div class="tc-right toolbar-counts"><span>顯示 <strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong> 筆</span><span class="ignored-count">忽略 <strong id="ignoredCount">{{ (preferences.ignored_overdue_uids|length) if preferences.ignored_overdue_uids is defined else 0 }}</strong></span></div>
     </section>
 
     {% if result and result.errors %}
@@ -418,9 +253,11 @@
         </section>
     {% endif %}
 
-    {% if result %}
-        <section id="viewDue" class="card panel hidden">
+        <section id="viewDue" class="assignment-workspace hidden">
         <div class="table-shell">
+        <div class="assignment-column-head" aria-hidden="true">
+            <span>課程／作業名稱</span><span>截止時間</span><span>剩餘時間</span><span>繳交人數</span><span>狀態</span><span>操作</span>
+        </div>
         <table id="flatTable" class="assignment-table">
             <colgroup>
                 <col class="assignment-col-signal">
@@ -432,83 +269,17 @@
             </colgroup>
             <thead>
             <tr>
-                <th class="assignment-center">剩餘時間</th>
-                <th>作業名稱</th>
-                <th>截止時間</th>
-                <th class="assignment-center">繳交統計</th>
-                <th class="assignment-center">狀態</th>
-                <th class="assignment-center">連結</th>
+                <th scope="col" class="assignment-center">剩餘時間</th>
+                <th scope="col">作業名稱</th>
+                <th scope="col">截止時間</th>
+                <th scope="col" class="assignment-center">已繳交／總人數</th>
+                <th scope="col" class="assignment-center">狀態</th>
+                <th scope="col" class="assignment-center">操作</th>
             </tr>
             </thead>
             <tbody>
             {% for item in result.all_assignments %}
-            {% set item_uid = item.course_id ~ '|' ~ item.title ~ '|' ~ (item.url or '') %}
-            {% set raw_status_text = item.raw_status_text or '' %}
-            {% set is_graded = item.grade_text or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
-            {% set filter_overdue = item.overdue %}
-            {% set display_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
-            {% set primary_status = 'graded' if is_graded else ('completed' if item.completed else ('overdue' if filter_overdue else 'pending')) %}
-            {% set can_ignore_overdue = primary_status == 'overdue' %}
-            <tr
-                data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
-                data-overdue="{{ 1 if filter_overdue else 0 }}"
-                data-completed="{{ 1 if item.completed else 0 }}"
-                data-graded="{{ 1 if is_graded else 0 }}"
-                data-primary-status="{{ primary_status }}"
-                data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
-                data-uid="{{ item_uid }}"
-                data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
-                data-original-due="{{ item.due_at or '' }}"
-                data-course="{{ item.course_title }}"
-                data-semester="{{ item.semester_key or 'other' }}"
-                data-title="{{ item.title }}"
-                data-due="{{ item.due_at or '無截止' }}"
-                data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
-            >
-                <td class="assignment-center">
-                    <div class="assignment-signal">
-                        {{ render_remaining_text(item, server_now_ts)|safe }}
-                    </div>
-                </td>
-                <td class="assignment-cell-main">
-                    <span class="assignment-eyebrow">{{ item.course_title }}</span>
-                    <div class="assignment-title-row">
-                        <span class="assignment-title">{{ item.title }}</span>
-                        {% if item.is_new %}<span class="assignment-new-badge">New</span>{% endif %}
-                    </div>
-                    <div class="assignment-meta">{{ render_grade_inline(item) }}</div>
-                </td>
-                <td>
-                    <div class="assignment-due {% if not item.due_at %}empty{% endif %}">
-                        <div class="assignment-due-header">
-                            <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
-                            {% if not is_admin_view %}
-                            <button type="button" class="due-edit-btn" data-edit-due="{{ item_uid }}" aria-label="修改繳交期限" title="修改繳交期限">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
-                            </button>
-                            {% endif %}
-                        </div>
-                        <span class="assignment-due-sub">{{ item.raw_status_text or "截止資訊同步中" }}</span>
-                    </div>
-                </td>
-                <td class="assignment-center">
-                    {{ render_submission_pill(item) }}
-                </td>
-                <td class="assignment-center">
-                    <div class="row-status-stack">
-                    <div class="row-status-badges">
-                    {% if item.completed and not is_graded %}<span class="badge done">已完成</span>{% endif %}
-                    {% if display_overdue %}<span class="badge overdue">逾期</span>{% endif %}
-                    {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}
-                    {% if primary_status == 'pending' %}<span class="badge nodue">未完成</span>{% endif %}
-                    </div>
-                    {% if can_ignore_overdue and not is_admin_view %}
-                        <button type="button" class="row-ignore-btn" data-ignore-overdue="{{ item_uid }}">忽略</button>
-                    {% endif %}
-                    </div>
-                </td>
-                <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
-            </tr>
+                {{ render_assignment_row(item, item.course_title, item.semester_key, true) }}
             {% endfor %}
             </tbody>
         </table>
@@ -517,7 +288,7 @@
 
         <section id="viewCourse">
         {% for course in result.courses %}
-            <section class="card course-card" data-semester="{{ course.semester_key or 'other' }}" data-assignment-count="{{ course.assignments|length }}">
+            <section class="card course-card" data-semester="{{ course.semester_key or 'other' }}" data-assignment-count="{{ course.assignments|length }}" data-course-title="{{ course.title }}">
             <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
                 <h2>{{ course.title }} <span style="color:var(--muted);font-size:14px">#{{ course.id }}</span></h2>
@@ -534,73 +305,10 @@
                     <col class="course-col-status">
                     <col class="course-col-link">
                 </colgroup>
-                <thead><tr><th>作業名稱</th><th>截止時間</th><th class="assignment-center">繳交統計</th><th class="assignment-center">狀態</th><th class="assignment-center">連結</th></tr></thead>
+                <thead><tr><th scope="col">作業名稱</th><th scope="col">截止時間</th><th scope="col" class="assignment-center">繳交人數</th><th scope="col" class="assignment-center">狀態</th><th scope="col" class="assignment-center">操作</th></tr></thead>
                 <tbody>
                     {% for item in course.assignments %}
-                    {% set item_uid = item.course_id ~ '|' ~ item.title ~ '|' ~ (item.url or '') %}
-                    {% set raw_status_text = item.raw_status_text or '' %}
-                    {% set is_graded = item.grade_text or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
-                    {% set filter_overdue = item.overdue %}
-                    {% set display_overdue = filter_overdue and (not item.completed) and (not is_graded) %}
-                    {% set primary_status = 'graded' if is_graded else ('completed' if item.completed else ('overdue' if filter_overdue else 'pending')) %}
-                    {% set can_ignore_overdue = primary_status == 'overdue' %}
-                    <tr
-                    data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
-                    data-overdue="{{ 1 if filter_overdue else 0 }}"
-                    data-completed="{{ 1 if item.completed else 0 }}"
-                    data-graded="{{ 1 if is_graded else 0 }}"
-                    data-primary-status="{{ primary_status }}"
-                    data-ignored="{{ 1 if item_uid in ignored_overdue_uids else 0 }}"
-                    data-uid="{{ item_uid }}"
-                    data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
-                    data-original-due="{{ item.due_at or '' }}"
-                    data-course="{{ course.title }}"
-                    data-semester="{{ item.semester_key or course.semester_key or 'other' }}"
-                    data-title="{{ item.title }}"
-                    data-due="{{ item.due_at or '無截止' }}"
-                    data-has-due="{{ 1 if item.due_ts is not none else 0 }}"
-                    >
-                    <td class="assignment-cell-main">
-                        <div class="assignment-title-row">
-                            <span class="assignment-title">{{ item.title }}</span>
-                            {% if item.is_new %}<span class="assignment-new-badge">New</span>{% endif %}
-                        </div>
-                        <div class="assignment-meta">
-                            {{ render_remaining_text(item, server_now_ts)|safe }}
-                            {{ render_grade_inline(item) }}
-                        </div>
-                    </td>
-                    <td>
-                        <div class="assignment-due {% if not item.due_at %}empty{% endif %}">
-                            <div class="assignment-due-header">
-                                <span class="assignment-due-main">{{ item.due_at or "無截止" }}</span>
-                                {% if not is_admin_view %}
-                                <button type="button" class="due-edit-btn" data-edit-due="{{ item_uid }}" aria-label="修改繳交期限" title="修改繳交期限">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
-                                </button>
-                                {% endif %}
-                            </div>
-                            <span class="assignment-due-sub">{{ item.raw_status_text or "截止資訊同步中" }}</span>
-                        </div>
-                    </td>
-                    <td class="assignment-center">
-                        {{ render_submission_pill(item) }}
-                    </td>
-                    <td class="assignment-center">
-                        <div class="row-status-stack">
-                        <div class="row-status-badges">
-                        {% if item.completed and not is_graded %}<span class="badge done">已完成</span>{% endif %}
-                        {% if display_overdue %}<span class="badge overdue">逾期</span>{% endif %}
-                        {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}
-                        {% if primary_status == 'pending' %}<span class="badge nodue">未完成</span>{% endif %}
-                        </div>
-                        {% if can_ignore_overdue and not is_admin_view %}
-                            <button type="button" class="row-ignore-btn" data-ignore-overdue="{{ item_uid }}">忽略</button>
-                        {% endif %}
-                        </div>
-                    </td>
-                    <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url }}" target="_blank" rel="noopener">開啟</a></td>
-                    </tr>
+                    {{ render_assignment_row(item, course.title, item.semester_key or course.semester_key) }}
                     {% endfor %}
                 </tbody>
                 </table>
@@ -612,9 +320,7 @@
             </section>
         {% endfor %}
         </section>
-    {% else %}
-        <section class="card panel"><div style="color:var(--muted)">尚未取得課程資訊</div></section>
-    {% endif %}
+    {% if not result %}<section id="workspaceEmpty" class="panel"><div class="muted">尚未取得課程資訊</div></section>{% endif %}
     {% endif %}
 {% if google_ready and google_linked %}
 <div id="googleModal" class="modal-root hidden" style="display:none">
@@ -764,8 +470,7 @@
     </div>
 </footer>
 
-<script>{% include 'pages/web/script-02.js.jinja' %}</script>
-<script>{% include 'pages/web/script-03.js.jinja' %}</script>
-<script>{% include 'pages/web/script-04.js.jinja' %}</script>
+{% include 'pages/web/config.html' %}
+<script type="module" src="{{ url_for('frontend_asset', filename='js/workbench/index.js') }}"></script>
 </body>
 </html>

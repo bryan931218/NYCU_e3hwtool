@@ -89,6 +89,7 @@ from .persistence.uploads import UploadsStorage
 from .persistence.assistant import AssistantStorage
 from .persistence.community import CommunityStorage
 from .persistence.accounts import AccountsStorage
+from .persistence.migrations import run_migrations
 
 
 class PersistentStorage(AssignmentsStorage, VideosStorage, StudyTimeStorage, RecallStorage, UploadsStorage, AssistantStorage, CommunityStorage, AccountsStorage):
@@ -107,167 +108,18 @@ class PersistentStorage(AssignmentsStorage, VideosStorage, StudyTimeStorage, Rec
         self._recall_search_cache_lock = threading.Lock()
         self._recall_search_cache_signature: tuple[tuple[int, str], ...] = ()
         self._recall_search_cache_documents: List[Dict[str, Any]] = []
-        metadata.create_all(self._engine)
-        self._ensure_schema()
+        try:
+            self._ensure_schema()
+        except Exception:
+            self._engine.dispose()
+            raise
 
     def _ensure_schema(self) -> None:
-        inspector = inspect(self._engine)
-        if inspector.has_table("user_preferences"):
-            pref_columns = {col["name"] for col in inspector.get_columns("user_preferences")}
-            if "status_filter" not in pref_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN status_filter TEXT"))
-            if "include_ignored_overdue" not in pref_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN include_ignored_overdue INTEGER"))
-            if "show_graded" not in pref_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN show_graded INTEGER"))
-            if "ignored_overdue_uids" not in pref_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN ignored_overdue_uids TEXT"))
-            if "semester_filter" not in pref_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE user_preferences ADD COLUMN semester_filter TEXT"))
-        if inspector.has_table("user_fetch_state"):
-            fetch_state_columns = {col["name"] for col in inspector.get_columns("user_fetch_state")}
-            missing_fetch_state_columns = []
-            if "semester_catalog" not in fetch_state_columns:
-                missing_fetch_state_columns.append(("semester_catalog", "TEXT"))
-            if "selected_semesters" not in fetch_state_columns:
-                missing_fetch_state_columns.append(("selected_semesters", "TEXT"))
-            if missing_fetch_state_columns:
-                with self._lock, self._engine.begin() as conn:
-                    for column_name, column_type in missing_fetch_state_columns:
-                        conn.execute(text(f"ALTER TABLE user_fetch_state ADD COLUMN {column_name} {column_type}"))
-        if inspector.has_table("courses"):
-            course_columns = {col["name"] for col in inspector.get_columns("courses")}
-            missing_course_columns = []
-            if "semester_key" not in course_columns:
-                missing_course_columns.append(("semester_key", "VARCHAR(32)"))
-            if "semester_label" not in course_columns:
-                missing_course_columns.append(("semester_label", "VARCHAR(64)"))
-            if missing_course_columns:
-                with self._lock, self._engine.begin() as conn:
-                    for column_name, column_type in missing_course_columns:
-                        conn.execute(text(f"ALTER TABLE courses ADD COLUMN {column_name} {column_type}"))
-        if not inspector.has_table("web_sessions"):
-            metadata.tables["web_sessions"].create(self._engine, checkfirst=True)
-        if not inspector.has_table("assignment_views"):
-            metadata.tables["assignment_views"].create(self._engine, checkfirst=True)
-        if not inspector.has_table("study_plan_daily_snapshots"):
-            metadata.tables["study_plan_daily_snapshots"].create(self._engine, checkfirst=True)
-        if not inspector.has_table("study_plan_activity_events"):
-            metadata.tables["study_plan_activity_events"].create(self._engine, checkfirst=True)
-        if not inspector.has_table("study_time_sessions"):
-            metadata.tables["study_time_sessions"].create(self._engine, checkfirst=True)
-        if inspector.has_table("study_plan_video_markers"):
-            marker_columns = {
-                col["name"] for col in inspector.get_columns("study_plan_video_markers")
-            }
-            missing_marker_columns = []
-            if "summary" not in marker_columns:
-                missing_marker_columns.append(("summary", "TEXT NOT NULL DEFAULT ''"))
-            if "summary_status" not in marker_columns:
-                missing_marker_columns.append(("summary_status", "VARCHAR(16) NOT NULL DEFAULT ''"))
-            if "summary_generated_at" not in marker_columns:
-                missing_marker_columns.append(("summary_generated_at", "VARCHAR(64)"))
-            if missing_marker_columns:
-                with self._lock, self._engine.begin() as conn:
-                    for column_name, column_type in missing_marker_columns:
-                        conn.execute(
-                            text(
-                                "ALTER TABLE study_plan_video_markers "
-                                f"ADD COLUMN {column_name} {column_type}"
-                            )
-                        )
-        if inspector.has_table("study_plan_video_records"):
-            video_record_columns = {col["name"] for col in inspector.get_columns("study_plan_video_records")}
-            if "playback_seconds" not in video_record_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE study_plan_video_records ADD COLUMN playback_seconds FLOAT"))
-                    # Existing records only stored accumulated progress. Use it as the
-                    # initial resume point once, then persist real player positions.
-                    conn.execute(
-                        text(
-                            "UPDATE study_plan_video_records "
-                            "SET playback_seconds = watched_seconds "
-                            "WHERE playback_seconds IS NULL"
-                        )
-                    )
-            if "progress_version" not in video_record_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(
-                        text(
-                            "ALTER TABLE study_plan_video_records "
-                            "ADD COLUMN progress_version INTEGER NOT NULL DEFAULT 0"
-                        )
-                    )
-        if inspector.has_table("study_recall_card_reviews"):
-            card_review_columns = {col["name"] for col in inspector.get_columns("study_recall_card_reviews")}
-            if "ideal_review_at" not in card_review_columns:
-                with self._lock, self._engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE study_recall_card_reviews ADD COLUMN ideal_review_at VARCHAR(10)"))
-        if inspector.has_table("study_recall_sessions"):
-            recall_columns = {col["name"] for col in inspector.get_columns("study_recall_sessions")}
-            missing_recall_columns = []
-            if "source_transcription" not in recall_columns:
-                missing_recall_columns.append(("source_transcription", "TEXT"))
-            if "uncertain_fragments" not in recall_columns:
-                missing_recall_columns.append(("uncertain_fragments", "TEXT"))
-            if "correction_records" not in recall_columns:
-                missing_recall_columns.append(("correction_records", "TEXT"))
-            if "organization_mode" not in recall_columns:
-                missing_recall_columns.append(("organization_mode", "VARCHAR(32)"))
-            if missing_recall_columns:
-                with self._lock, self._engine.begin() as conn:
-                    for column_name, column_type in missing_recall_columns:
-                        conn.execute(text(f"ALTER TABLE study_recall_sessions ADD COLUMN {column_name} {column_type}"))
-        if inspector.has_table("study_plan_videos"):
-            study_video_columns = {col["name"] for col in inspector.get_columns("study_plan_videos")}
-            missing_study_video_columns = []
-            if "youtube_video_id" not in study_video_columns:
-                missing_study_video_columns.append(("youtube_video_id", "VARCHAR(64)"))
-            if "youtube_playlist_id" not in study_video_columns:
-                missing_study_video_columns.append(("youtube_playlist_id", "VARCHAR(128)"))
-            if "youtube_url" not in study_video_columns:
-                missing_study_video_columns.append(("youtube_url", "TEXT"))
-            if missing_study_video_columns:
-                with self._lock, self._engine.begin() as conn:
-                    for column_name, column_type in missing_study_video_columns:
-                        conn.execute(text(f"ALTER TABLE study_plan_videos ADD COLUMN {column_name} {column_type}"))
-        if not inspector.has_table("assignments"):
-            return
-        existing_columns = {col["name"] for col in inspector.get_columns("assignments")}
-        missing_columns = []
-        if "submitted_count" not in existing_columns:
-            missing_columns.append(("submitted_count", "INTEGER"))
-        if "participant_count" not in existing_columns:
-            missing_columns.append(("participant_count", "INTEGER"))
-        if "grade_text" not in existing_columns:
-            missing_columns.append(("grade_text", "TEXT"))
-        if "submitted_at" not in existing_columns:
-            missing_columns.append(("submitted_at", "TEXT"))
-        if "submitted_ts" not in existing_columns:
-            missing_columns.append(("submitted_ts", "INTEGER"))
-        if "remaining_text" not in existing_columns:
-            missing_columns.append(("remaining_text", "TEXT"))
-        if missing_columns:
-            with self._lock, self._engine.begin() as conn:
-                for column_name, column_type in missing_columns:
-                    conn.execute(text(f"ALTER TABLE assignments ADD COLUMN {column_name} {column_type}"))
-        self._ensure_indexes()
+        run_migrations(self._engine)
 
-    def _ensure_indexes(self) -> None:
-        for table in metadata.sorted_tables:
-            for index in table.indexes:
-                try:
-                    index.create(self._engine, checkfirst=True)
-                except Exception:
-                    pass
-
-    def _normalize_url(self, raw: str) -> str:
-        raw = self._normalize_filesystem_path(raw)
+    @staticmethod
+    def _normalize_url(raw: str) -> str:
+        raw = PersistentStorage._normalize_filesystem_path(raw)
         if raw.startswith("postgres://"):
             return "postgresql+psycopg://" + raw[len("postgres://") :]
         if raw.startswith("postgresql://"):
@@ -280,7 +132,8 @@ class PersistentStorage(AssignmentsStorage, VideosStorage, StudyTimeStorage, Rec
         path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{path.as_posix()}"
 
-    def _normalize_filesystem_path(self, raw: str) -> str:
+    @staticmethod
+    def _normalize_filesystem_path(raw: str) -> str:
         value = str(raw or "").strip()
         if not value:
             return value

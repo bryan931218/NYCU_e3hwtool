@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, Response, render_template, request
+from flask import Flask, Response, render_template, request, send_from_directory, url_for
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=ROOT / ".env", override=False)
@@ -19,8 +19,15 @@ DEV_RELOAD_INTERVAL_MS = int(os.getenv("E3_DEV_RELOAD_INTERVAL_MS", "1200"))
 SUPPORTED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
-app.jinja_env.globals["url_for"] = lambda endpoint, **values: f"/{endpoint}"
+app.jinja_env.globals["url_for"] = lambda endpoint, **values: (
+    url_for(endpoint, **values) if endpoint == "frontend_asset" else f"/{endpoint}"
+)
 app.jinja_env.globals["get_flashed_messages"] = lambda **__: []
+
+
+@app.get("/assets/<path:filename>")
+def frontend_asset(filename):
+    return send_from_directory(ROOT / "frontend" / "static", filename, max_age=0)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -36,7 +43,7 @@ def _dev_reload_enabled() -> bool:
 
 def _compute_reload_token() -> str:
     latest_mtime = 0
-    watch_paths = [TEMPLATE_DIR, ROOT / "frontend" / "server.py"]
+    watch_paths = [TEMPLATE_DIR, ROOT / "frontend" / "static", ROOT / "frontend" / "server.py"]
     for path in watch_paths:
         if not path.exists():
             continue

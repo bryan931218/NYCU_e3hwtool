@@ -1,32 +1,32 @@
-"""Shared application assembly for local development and WSGI deployment."""
+"""Build one application and register each feature explicitly."""
+import os
+import warnings
 
 from .api import web
-from .shared.deployment_runtime import install_deployment_runtime
-from .shared.player_control_runtime import install_player_control_dock
-from .shared.study_activity_progress_runtime import install_unique_study_activity_progress
-from .shared.study_calendar_runtime import install_study_calendar_runtime
-from .shared.study_note_upload_runtime import install_study_note_upload_runtime
-from .shared.study_recall_favorites_runtime import install_study_recall_favorites_runtime
-from .shared.study_recall_library_runtime import install_study_recall_library_runtime
-from .shared.study_rest_day_toggle_runtime import install_rest_day_toggle
-from .shared.study_rest_day_runtime import install_study_rest_day_runtime
-from .shared.study_timeline_rest_cancel_runtime import install_timeline_rest_cancel
-from .shared.storage import PersistentStorage
+from .application_storage import ApplicationStorage
+from .api.features import register_application_features
+from .shared.study_rest_day_runtime import redistribute_rest_day_allocations
 
 
-# These installers wrap the app factory and templates; preserve their order.
-install_unique_study_activity_progress(PersistentStorage)
-install_deployment_runtime(web)
-install_player_control_dock(web)
-install_study_calendar_runtime(web)
-install_study_note_upload_runtime(web)
-install_study_recall_library_runtime(web)
-install_study_recall_favorites_runtime(web)
-install_rest_day_toggle(web)
-install_study_rest_day_runtime(web)
-install_timeline_rest_cancel(web)
+def _build_schedule(videos, replan_settings=None, rest_days=None):
+    weeks = web._study_plan_schedule_definitions(videos, replan_settings, None)
+    return redistribute_rest_day_allocations(weeks, rest_days)
 
 
 def create_app(**kwargs):
-    """Create the same configured app for every server entry point."""
-    return web.create_app(**kwargs)
+    if os.getenv("RAILWAY_ENVIRONMENT") and not any(
+        str(os.getenv(name) or "").strip()
+        for name in ("E3_DATABASE_URL", "DATABASE_URL", "RAILWAY_VOLUME_MOUNT_PATH")
+    ):
+        warnings.warn(
+            "Railway has no configured persistent database or volume; SQLite data is ephemeral.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    app = web.create_app(
+        storage_class=ApplicationStorage,
+        schedule_builder=_build_schedule,
+        **kwargs,
+    )
+    register_application_features(app)
+    return app

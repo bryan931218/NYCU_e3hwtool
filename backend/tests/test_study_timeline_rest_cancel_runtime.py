@@ -1,4 +1,5 @@
 import unittest
+import re
 from types import SimpleNamespace
 
 from e3_tracker.shared.study_timeline_rest_cancel_runtime import (
@@ -12,11 +13,12 @@ class StudyTimelineRestCancelRuntimeTests(unittest.TestCase):
         template = "<html><head></head><body></body></html>"
         rendered = decorate_timeline_rest_cancel(template)
 
-        self.assertIn(".week-daily .day-chip.rest .day-status { display:none; }", rendered)
+        compact = re.sub(r'\s+', '', rendered)
+        self.assertIn(".week-daily.day-chip.rest.day-status{display:none;}", compact)
         self.assertIn(".week-daily .day-chip.rest .day-rest-button.restore", rendered)
-        self.assertIn("position:absolute", rendered)
-        self.assertIn("right:5px", rendered)
-        self.assertIn("z-index:3", rendered)
+        self.assertIn("position:absolute", compact)
+        self.assertIn("right:5px", compact)
+        self.assertIn("z-index:3", compact)
 
     def test_installer_updates_study_plan_template_once(self):
         web = SimpleNamespace(STUDY_PLAN_TEMPLATE="<html><head></head><body></body></html>")

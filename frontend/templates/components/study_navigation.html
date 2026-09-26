@@ -1,0 +1,15 @@
+<header class="study-nav" aria-label="學習中心導覽">
+    <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
+    <nav class="nav-links">
+        {% for endpoint, label in [
+            ('public_study_progress', '公開頁面'),
+            ('admin_study_home', '學習首頁'),
+            ('admin_study_recall', '筆記彙整'),
+            ('admin_study_plan', '影片紀錄'),
+            ('admin_study_plan_markers', '關鍵點總覽')
+        ] %}
+        <a href="{{ url_for(endpoint) }}"{% if active_study_page == endpoint %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+        <span class="admin">{{ admin_user.username }}・管理員</span>
+    </nav>
+</header>

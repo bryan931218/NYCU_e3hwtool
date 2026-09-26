@@ -8,6 +8,7 @@ users_table = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("username", String(191), nullable=False, unique=True),
+    Column("profile_surname", String(16)),
     Column("is_guest", Integer, nullable=False, default=0),
     Column("is_admin", Integer, nullable=False, default=0),
     Column("created_at", String(64), nullable=False),

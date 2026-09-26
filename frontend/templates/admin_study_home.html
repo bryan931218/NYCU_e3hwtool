@@ -10,17 +10,11 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" onload="window.renderStudyMath && window.renderStudyMath()"></script>
     <style>{% include 'pages/admin_study_home/style-01.css.jinja' %}</style>
     <style>{% include 'pages/admin_study_home/style-02.css.jinja' %}</style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='study_center_theme.css') }}">
+    {% include 'components/study_assets.html' %}
 </head>
 <body class="study-center-page study-home-page">
     <div class="shell">
-        <header class="study-nav" aria-label="學習中心導覽">
-            <a class="brand" href="{{ url_for('admin_study_home') }}"><span class="mark">E3</span><span>研究所備考中心</span></a>
-            <nav class="nav-links">
-                <a href="{{ url_for('public_study_progress') }}">公開頁面</a><a class="active" href="{{ url_for('admin_study_home') }}">學習首頁</a><a href="{{ url_for('admin_study_recall') }}">筆記彙整</a><a href="{{ url_for('admin_study_plan') }}">影片紀錄</a><a href="{{ url_for('admin_study_plan_markers') }}">關鍵點總覽</a>
-                <span class="admin">{{ admin_user.username }}・管理員</span>
-            </nav>
-        </header>
+        {% with active_study_page='admin_study_home' %}{% include 'components/study_navigation.html' %}{% endwith %}
 
         <main class="content">
             <section class="page-head" aria-label="學習首頁標題">
@@ -306,6 +300,8 @@
         </main>
     </div>
     <script>{% include 'pages/admin_study_home/script-01.js.jinja' %}</script>
-    {{ study_upload_tracker|safe }}
+    {% include '_study_upload_tracker.html' %}
+{% include '_global_study_assistant.html' %}
+{% include '_study_calendar_time_split.html' %}
 </body>
 </html>

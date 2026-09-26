@@ -1,11 +1,26 @@
 """Persistence operations for accounts."""
 from typing import Any, Dict, Optional
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 
 from .schema import users_table, google_tokens_table, web_sessions_table
 
 
 class AccountsStorage:
+    def load_user_surname(self, username: str) -> str:
+        with self._lock, self._engine.connect() as conn:
+            return conn.execute(
+                select(users_table.c.profile_surname).where(users_table.c.username == username)
+            ).scalar() or ""
+
+    def save_user_surname(self, username: str, surname: str) -> None:
+        surname = str(surname or "").strip()
+        if not username or not surname or len(surname) > 16:
+            return
+        with self._lock, self._engine.begin() as conn:
+            user_id = self._ensure_user(conn, username)
+            conn.execute(update(users_table).where(users_table.c.id == user_id)
+                         .values(profile_surname=surname))
+
     def save_google_tokens(self, username: str, payload: Dict[str, Any]) -> None:
         if not username:
             return

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 
-from flask import session
 _MAX_CALENDAR_RANGE_DAYS = 550
 
 
@@ -22,50 +20,8 @@ def _study_calendar_time_rows(
 
 
 def _register_study_calendar_routes(app: Any, storage: Any) -> None:
-    if "admin_study_calendar_time_summary" in app.view_functions:
-        return
-
-    def admin_study_calendar_time_summary():
-        username = str(session.get("username") or "").strip()
-        session_token = str(session.get("session_token") or "").strip()
-        authenticated = bool(
-            username
-            and session_token
-            and storage.is_valid_web_session(session_token, username)
-        )
-        if not authenticated:
-            return {"ok": False, "error": "unauthorized"}, 401
-        if not session.get("is_admin"):
-            return {"ok": False, "error": "forbidden"}, 403
-
-        from flask import request
-
-        try:
-            start = date.fromisoformat(str(request.args.get("start") or ""))
-            end = date.fromisoformat(str(request.args.get("end") or ""))
-        except ValueError:
-            return {"ok": False, "error": "invalid_date"}, 400
-        if end < start or (end - start).days > _MAX_CALENDAR_RANGE_DAYS:
-            return {"ok": False, "error": "invalid_range"}, 400
-
-        days = _study_calendar_time_rows(
-            storage,
-            start_day=start.isoformat(),
-            end_day=end.isoformat(),
-        )
-        return {
-            "ok": True,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "days": days,
-        }
-
-    app.add_url_rule(
-        "/admin/study-calendar/time-summary.json",
-        endpoint="admin_study_calendar_time_summary",
-        view_func=admin_study_calendar_time_summary,
-        methods=["GET"],
-    )
+    from ..api.routes.study_calendar import register_study_calendar_routes
+    return register_study_calendar_routes(app, storage)
 
 
 def install_study_calendar_runtime(web_module: Any) -> None:

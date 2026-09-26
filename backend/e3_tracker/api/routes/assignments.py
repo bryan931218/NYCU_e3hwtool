@@ -12,7 +12,8 @@ from flask import Response, flash, redirect, render_template_string, request, se
 from werkzeug.http import http_date
 from ...services.collector import normalize_semester_selection
 from ...services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
-from ...services.http import login_with_password
+from ...services.http import apply_cookie, login_with_password
+from ...services.profile import fetch_profile_surname
 
 
 ASSIGNMENT_REFRESH_BROADCAST_VERSION = "2026-09-12-course-scope-v1"
@@ -272,6 +273,25 @@ def register_assignments_routes(*,
     def session_status():
         user = current_user()
         return {"ok": True, "username": user["username"] if user else None}
+
+    @app.get("/api/profile")
+    @login_required
+    def user_profile():
+        user = current_user()
+        if user.get("is_guest"):
+            return {"ok": True, "surname": ""}
+        surname = storage.load_user_surname(user["username"])
+        if (not surname or request.args.get("refresh") == "1") and user.get("moodle_session"):
+            try:
+                with requests.Session() as sess:
+                    apply_cookie(sess, base_url, user["moodle_session"])
+                    latest = fetch_profile_surname(sess, base_url, timeout=min(default_timeout, 8))
+                if latest:
+                    storage.save_user_surname(user["username"], latest)
+                    surname = latest
+            except (requests.RequestException, RuntimeError):
+                app.logger.warning("E3 profile unavailable; keeping the existing avatar")
+        return {"ok": True, "surname": surname}
 
     @app.get("/api/cache")
     @login_required
