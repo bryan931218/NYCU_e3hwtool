@@ -585,10 +585,7 @@ class SourceLocalizationTests(unittest.TestCase):
     def test_separator_detector_returns_dashed_line_pixel_position(self) -> None:
         image = Image.new("RGB", (800, 1000), "white")
         draw = ImageDraw.Draw(image)
-        try:
-            font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 32)
-        except OSError:
-            font = ImageFont.load_default()
+        font = ImageFont.load_default(size=32)
         draw.text((60, 120), "rank(A)=n", fill="black", font=font)
         for left in range(35, 765, 55):
             draw.line((left, 410, left + 30, 410), fill="black", width=4)
@@ -615,10 +612,7 @@ class SourceLocalizationTests(unittest.TestCase):
         image = Image.new("RGB", (800, 1000), "white")
         draw = ImageDraw.Draw(image)
         draw.rectangle((0, 0, 800, 90), fill=(20, 88, 176))
-        try:
-            font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 34)
-        except OSError:
-            font = ImageFont.load_default()
+        font = ImageFont.load_default(size=34)
         draw.text((90, 160), "rank(A)=n", fill="black", font=font)
         draw.text((90, 235), "Ax=0", fill="black", font=font)
         for left in range(50, 750, 70):
