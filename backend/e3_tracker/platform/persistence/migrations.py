@@ -71,12 +71,20 @@ def _user_profile_name_schema(conn):
     _add_columns(conn, "users", {"profile_name": "VARCHAR(128)"})
 
 
+def _guest_retention_cleanup(conn):
+    from .guest_cleanup import purge_inactive_guests, remove_legacy_guest_traffic
+
+    guests = purge_inactive_guests(conn)
+    remove_legacy_guest_traffic(conn, guests)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
     ("0003_user_profile", _user_profile_schema),
     ("0004_security", _security_schema),
     ("0005_user_profile_name", _user_profile_name_schema),
+    ("0006_guest_retention", _guest_retention_cleanup),
 )
 
 

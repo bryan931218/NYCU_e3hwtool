@@ -1,5 +1,7 @@
 """Persistence operations for community."""
 
+from e3_tracker.platform.guest_privacy import is_guest_event, without_guest_traffic
+
 import json
 from typing import Any, Dict, List, Optional
 from sqlalchemy import delete, insert, func, select, update
@@ -218,7 +220,7 @@ class CommunityStorage:
             return None
 
     def save_traffic_state(self, payload: Dict[str, Any]) -> None:
-        data = json.dumps(payload, ensure_ascii=False)
+        data = json.dumps(without_guest_traffic(payload), ensure_ascii=False)
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
             result = conn.execute(
@@ -234,6 +236,8 @@ class CommunityStorage:
                 )
 
     def append_traffic_event(self, event: Dict[str, Any], max_events: int) -> None:
+        if is_guest_event(event):
+            return
         record = dict(event)
         meta = record.get("meta") or {}
         meta_json = json.dumps(meta, ensure_ascii=False)

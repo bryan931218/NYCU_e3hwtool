@@ -212,6 +212,10 @@ def create_app(
         session["session_token"] = session_token
         session.permanent = permanent
 
+    @app.before_request
+    def clean_expired_guest_data():
+        storage.purge_expired_guest_data()
+
     def current_user() -> Optional[Dict[str, Any]]:
         session_token = session.get("session_token")
         user = storage.load_web_session(session_token)
@@ -406,9 +410,9 @@ def create_app(
         details["site"] = traffic_event_site(action, getattr(handler, "__module__", ""))
         user = current_user() if has_request_context() else None
         if user:
-            details.setdefault("username", user["username"])
-            details.setdefault("is_guest", user.get("is_guest"))
-            details.setdefault("is_admin", user.get("is_admin"))
+            details["username"] = user["username"]
+            details["is_guest"] = user.get("is_guest")
+            details["is_admin"] = user.get("is_admin")
         traffic_tracker.record_visit(
             _client_ip(), action=action, status=status, metadata=details
         )

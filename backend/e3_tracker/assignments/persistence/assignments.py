@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import delete, insert, func, select
 
 from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
+from e3_tracker.platform.persistence.guest_cleanup import guest_account_condition
 from e3_tracker.assignments.persistence.schema import (
     user_preferences_table,
     courses_table,
@@ -549,7 +550,7 @@ class AssignmentsStorage:
                         assignments_table.c.course_id == courses_table.c.id,
                     )
                 )
-                .where(users_table.c.is_guest == 0)
+                .where(~guest_account_condition())
                 .group_by(
                     users_table.c.id,
                     users_table.c.username,

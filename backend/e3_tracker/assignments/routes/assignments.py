@@ -505,12 +505,10 @@ def register_assignments_routes(*,
         session_token = session.get("session_token")
         was_guest = bool(user.get("is_guest"))
         if old_user:
-            if was_guest:
-                storage.delete_user_cache(old_user)
             clear_google_tokens(old_user)
         if session_token:
             storage.clear_web_session(session_token)
-        if old_user:
+        if old_user and not was_guest:
             record_ui_event("logout", meta={"username": old_user})
         session.clear()
         session.permanent = False

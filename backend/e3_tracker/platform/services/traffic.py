@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from e3_tracker.platform.constants import TAIPEI_TZ
+from e3_tracker.platform.guest_privacy import is_guest_event, is_guest_identity, without_guest_traffic
 
 PASSIVE_TRAFFIC_ACTIONS = {"heartbeat", "refresh_assignments"}
 
@@ -86,6 +87,7 @@ class TrafficTracker:
                 self._recent_events = []
         elif self._log_path:
             self._load_recent_events()
+        self._recent_events = [event for event in self._recent_events if not is_guest_event(event)]
 
     def _purge_expired(self, now: float) -> bool:
         expired_ips = [ip for ip, ts in self._active_ips.items() if now - ts > self._activity_window]
@@ -144,9 +146,7 @@ class TrafficTracker:
         if not username:
             return False
         normalized = str(username)
-        if normalized in self._user_flags:
-            return bool(self._user_flags[normalized])
-        return normalized.startswith("訪客")
+        return is_guest_identity(normalized) or bool(self._user_flags.get(normalized))
 
     def record_visit(
         self,
@@ -156,7 +156,7 @@ class TrafficTracker:
         status: str = "success",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        if not action:
+        if not action or is_guest_event({"action": action, "meta": metadata}):
             return
         action_lc = str(action).lower()
         now = time.time()
@@ -265,6 +265,7 @@ class TrafficTracker:
     def _apply_state_payload(self, data: Optional[Dict[str, Any]]) -> None:
         if not isinstance(data, dict):
             return
+        data = without_guest_traffic(data)
         try:
             self._total_hits = int(data.get("total", 0))
         except Exception:
@@ -446,7 +447,7 @@ class TrafficTracker:
             "hourly_series": self._hourly_series,
             "hourly_buckets": {ts: list(names) for ts, names in self._hourly_buckets.items()},
         }
-        self._persist_state_payload(payload)
+        self._persist_state_payload(without_guest_traffic(payload))
 
     def _purge_old_total_entries(self, now: float) -> None:
         expire_after = self._count_interval * 2

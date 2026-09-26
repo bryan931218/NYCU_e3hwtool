@@ -6,6 +6,12 @@ import time
 from cryptography.fernet import InvalidToken
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
+from e3_tracker.platform.guest_privacy import is_guest_identity
+from .guest_cleanup import (
+    delete_guest_accounts,
+    guest_account_condition,
+    purge_inactive_guests,
+)
 
 from e3_tracker.platform.persistence.core_schema import (
     users_table,
@@ -48,7 +54,7 @@ class AccountsStorage:
             rows = (
                 conn.execute(
                     select(users_table.c.username, users_table.c.profile_name)
-                    .where(users_table.c.is_guest == 0)
+                    .where(~guest_account_condition())
                     .order_by(users_table.c.username)
                 ).mappings().all()
             )
@@ -89,14 +95,11 @@ class AccountsStorage:
     ) -> None:
         if not session_token or not username:
             return
+        is_guest = bool(is_guest or is_guest_identity(username))
         now = self._now_iso()
         session_token = hashlib.sha256(session_token.encode()).hexdigest()
         with self._lock, self._engine.begin() as conn:
-            conn.execute(
-                delete(web_sessions_table).where(
-                    web_sessions_table.c.expires_at <= time.time()
-                )
-            )
+            purge_inactive_guests(conn)
             conn.execute(
                 delete(web_sessions_table).where(
                     web_sessions_table.c.session_token == session_token
@@ -129,7 +132,6 @@ class AccountsStorage:
                 conn.execute(
                     select(web_sessions_table)
                     .where(web_sessions_table.c.session_token == digest)
-                    .where(web_sessions_table.c.expires_at > time.time())
                     .limit(1)
                 )
                 .mappings()
@@ -137,16 +139,20 @@ class AccountsStorage:
             )
         if not row or (username and row["username"] != username):
             return None
+        if row["expires_at"] <= time.time():
+            self.clear_web_session(session_token)
+            return None
         try:
             credential = self._credential_cipher.decrypt(
                 row["moodle_credential"], f"moodle:{row['username']}"
             )
         except (ValueError, InvalidToken):
             return None
+        is_guest = bool(row["is_guest"] or is_guest_identity(row["username"]))
         return {
             "username": row["username"],
-            "is_guest": bool(row["is_guest"]),
-            "is_admin": bool(row["is_admin"] and not row["is_guest"]),
+            "is_guest": is_guest,
+            "is_admin": bool(row["is_admin"] and not is_guest),
             "moodle_session": credential,
         }
 
@@ -155,11 +161,35 @@ class AccountsStorage:
             return
         session_token = hashlib.sha256(session_token.encode()).hexdigest()
         with self._lock, self._engine.begin() as conn:
+            row = (
+                conn.execute(
+                    select(web_sessions_table).where(
+                        web_sessions_table.c.session_token == session_token
+                    )
+                ).mappings().first()
+            )
             conn.execute(
                 delete(web_sessions_table).where(
                     web_sessions_table.c.session_token == session_token
                 )
             )
+            if row and (row["is_guest"] or is_guest_identity(row["username"])):
+                active = conn.execute(
+                    select(web_sessions_table.c.session_token)
+                    .where(web_sessions_table.c.username == row["username"])
+                    .where(web_sessions_table.c.expires_at > time.time())
+                ).first()
+                if not active:
+                    delete_guest_accounts(conn, [row["username"]])
+
+    def purge_expired_guest_data(self, *, force=False) -> None:
+        with self._lock:
+            now = time.monotonic()
+            if not force and now - getattr(self, "_guest_cleanup_at", 0) < 60:
+                return
+            with self._engine.begin() as conn:
+                purge_inactive_guests(conn)
+            self._guest_cleanup_at = now
 
     def consume_security_limit(self, key: str, limit: int, window: int) -> bool:
         now = time.time()
@@ -204,6 +234,8 @@ class AccountsStorage:
         is_guest: Optional[bool] = None,
         is_admin: Optional[bool] = None,
     ) -> int:
+        if is_guest_identity(username):
+            is_guest, is_admin = True, False
         row = conn.execute(
             select(
                 users_table.c.id, users_table.c.is_guest, users_table.c.is_admin

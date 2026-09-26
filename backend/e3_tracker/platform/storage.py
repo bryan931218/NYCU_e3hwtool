@@ -55,6 +55,7 @@ class PersistentStorage(
         self._initialize_recall_cache()
         try:
             self._ensure_schema()
+            self.purge_expired_guest_data(force=True)
             self.migrate_google_credentials()
         except Exception:
             self._engine.dispose()
