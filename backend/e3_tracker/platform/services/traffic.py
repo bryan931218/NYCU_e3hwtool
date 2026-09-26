@@ -11,6 +11,24 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 PASSIVE_TRAFFIC_ACTIONS = {"heartbeat", "refresh_assignments"}
 
 
+def traffic_event_site(action: str, handler_module: str = "") -> str:
+    action = str(action or "").strip().lower()
+    if handler_module.startswith("e3_tracker.study.") or action.startswith(
+        ("study_", "public_study_")
+    ):
+        return "study"
+    return "assignments"
+
+
+def is_assignment_event(event: Dict[str, Any]) -> bool:
+    # Older events have no site tag; retain their action-based classification.
+    meta = event.get("meta") or {}
+    return (
+        meta.get("site") in (None, "", "assignments")
+        and traffic_event_site(event.get("action")) == "assignments"
+    )
+
+
 class TrafficTracker:
     def __init__(
         self,

@@ -3,7 +3,7 @@ from e3_tracker.platform.routes.administration import register_administration_ro
 from e3_tracker.platform.routes.common import register_platform_routes
 from e3_tracker.study.health import youtube_inventory_health
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE
-from e3_tracker.platform.services.traffic import TrafficTracker
+from e3_tracker.platform.services.traffic import TrafficTracker, traffic_event_site
 import os
 import secrets
 import threading
@@ -402,6 +402,8 @@ def create_app(
         if not action:
             return
         details = dict(meta or {})
+        handler = app.view_functions.get(request.endpoint) if has_request_context() else None
+        details["site"] = traffic_event_site(action, getattr(handler, "__module__", ""))
         user = current_user() if has_request_context() else None
         if user:
             details.setdefault("username", user["username"])

@@ -1,6 +1,6 @@
 """Administration routes and their feature helpers."""
 
-from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS
+from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS, is_assignment_event
 import json
 import time
 from collections import Counter
@@ -94,7 +94,8 @@ def register_administration_routes(*,
             if (ev.get("action") or "").lower() not in PASSIVE_TRAFFIC_ACTIONS
         ]
         formatted_events = []
-        for ev in reversed(filtered_events[-200:]):
+        assignment_events = [ev for ev in filtered_events if is_assignment_event(ev)]
+        for ev in reversed(assignment_events[-200:]):
             meta = ev.get("meta") or {}
             role = "訪客" if meta.get("is_guest") else ("管理員" if meta.get("is_admin") else "一般使用者")
             detail_parts: List[str] = []
@@ -106,7 +107,7 @@ def register_administration_routes(*,
                 key: value
                 for key, value in meta.items()
                 if key
-                not in {"username", "is_guest", "is_admin", "info", "course", "message", "target", "action_detail"}
+                not in {"username", "is_guest", "is_admin", "site", "info", "course", "message", "target", "action_detail"}
             }
             if extra:
                 try:
