@@ -2,13 +2,18 @@
 import re
 from pathlib import Path
 
-TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / 'frontend' / 'templates'
+FRONTEND_ROOT = Path(__file__).resolve().parents[2] / 'frontend'
+
+
+def included_source(name):
+    owner, relative = name.split('/', 1)
+    return read_source(FRONTEND_ROOT / owner / 'templates' / relative)
 
 
 def read_source(path):
     source = Path(path).read_text(encoding='utf-8')
     return re.sub(
         r"\{% include '([^']+)' %\}",
-        lambda match: read_source(TEMPLATE_ROOT / match.group(1)),
+        lambda match: included_source(match.group(1)),
         source,
     )

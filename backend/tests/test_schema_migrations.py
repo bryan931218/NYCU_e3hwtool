@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sqlalchemy import create_engine, inspect, text
-from e3_tracker.shared.persistence import migrations
+from e3_tracker.platform.persistence import migrations
 
 
 class SchemaMigrationTests(unittest.TestCase):
@@ -82,7 +82,7 @@ class SchemaMigrationTests(unittest.TestCase):
     def test_separate_workers_apply_each_version_once(self):
         code = (
             "import json; from sqlalchemy import create_engine; "
-            "from e3_tracker.shared.persistence.migrations import run_migrations; "
+            "from e3_tracker.platform.persistence.migrations import run_migrations; "
             f"engine = create_engine({str(self.engine.url)!r}); "
             "print(json.dumps(run_migrations(engine))); engine.dispose()"
         )

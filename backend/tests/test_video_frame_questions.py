@@ -10,8 +10,8 @@ from unittest.mock import Mock, patch
 import requests
 from PIL import Image
 
-from e3_tracker.api.web import create_app
-from e3_tracker.services.youtube_frames import YoutubeAudioError, YoutubeFrameError
+from e3_tracker.platform.application import create_app
+from e3_tracker.study.services.youtube_frames import YoutubeAudioError, YoutubeFrameError
 
 
 class VideoFrameQuestionTests(unittest.TestCase):
@@ -36,8 +36,9 @@ class VideoFrameQuestionTests(unittest.TestCase):
             if video.get("youtube_video_id")
         )
         token = "video-frame-question-session"
-        self.storage.save_web_session(token, "test-admin")
-        self.client = self.app.test_client()
+        self.storage.save_web_session(token, "test-admin", is_admin=True)
+        from tests.security_helpers import csrf_client
+        self.client = csrf_client(self.app)
         with self.client.session_transaction() as browser_session:
             browser_session["username"] = "test-admin"
             browser_session["session_token"] = token
@@ -77,7 +78,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
             ],
         }
         with patch(
-            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
+            "e3_tracker.study.routes.video.fetch_youtube_audio_clip",
             return_value={
                 "bytes": b"RIFF" + b"\x00" * 2048,
                 "mime_type": "audio/wav",
@@ -87,13 +88,13 @@ class VideoFrameQuestionTests(unittest.TestCase):
                 "duration_seconds": 20.0,
             },
         ) as fetch_audio, patch(
-            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
+            "e3_tracker.study.routes.video.fetch_youtube_cached_frame",
             side_effect=lambda _video_id, seconds, **_kwargs: {
                 **self._frame(),
                 "frame_seconds": seconds,
             },
         ) as fetch_frame, patch(
-            "e3_tracker.api.web.requests.post",
+            "e3_tracker.study.services.note_model_client.requests.post",
             side_effect=[transcription_response, answer_response],
         ) as post:
             response = self.client.post(
@@ -141,7 +142,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
             ],
         }
         with patch(
-            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
+            "e3_tracker.study.routes.video.fetch_youtube_audio_clip",
             return_value={
                 "bytes": b"RIFF" + b"\x00" * 2048,
                 "mime_type": "audio/wav",
@@ -151,10 +152,10 @@ class VideoFrameQuestionTests(unittest.TestCase):
                 "duration_seconds": 20.0,
             },
         ), patch(
-            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
+            "e3_tracker.study.routes.video.fetch_youtube_cached_frame",
             side_effect=YoutubeFrameError("frame unavailable"),
         ), patch(
-            "e3_tracker.api.web.requests.post",
+            "e3_tracker.study.services.note_model_client.requests.post",
             side_effect=[transcription_response, answer_response],
         ):
             response = self.client.post(
@@ -186,9 +187,9 @@ class VideoFrameQuestionTests(unittest.TestCase):
         answer = Mock()
         answer.json.return_value = {'status': 'completed', 'output': [
             {'type': 'message', 'content': [{'type': 'output_text', 'text': 'answer'}]}]}
-        with patch('e3_tracker.api.routes.video.fetch_youtube_audio_clip', side_effect=audio), \
-             patch('e3_tracker.api.routes.video.fetch_youtube_cached_frame', side_effect=frame), \
-             patch('e3_tracker.api.web.requests.post', side_effect=[transcript, answer, answer]) as post:
+        with patch('e3_tracker.study.routes.video.fetch_youtube_audio_clip', side_effect=audio), \
+             patch('e3_tracker.study.routes.video.fetch_youtube_cached_frame', side_effect=frame), \
+             patch('e3_tracker.study.services.note_model_client.requests.post', side_effect=[transcript, answer, answer]) as post:
             for question in ('first question', 'second question'):
                 response = self.client.post('/admin/study-plan/video-question', json={
                     'video_id': self.video['id'], 'playback_seconds': 50, 'question': question,
@@ -203,8 +204,8 @@ class VideoFrameQuestionTests(unittest.TestCase):
         frame = self._frame()
         frame["source"] = "exact"
         with patch(
-            "e3_tracker.api.routes.video.fetch_youtube_cached_frame", return_value=frame
-        ) as fetch_frame, patch("e3_tracker.api.web.requests.post") as post:
+            "e3_tracker.study.routes.video.fetch_youtube_cached_frame", return_value=frame
+        ) as fetch_frame, patch("e3_tracker.study.services.note_model_client.requests.post") as post:
             response = self.client.post(
                 "/admin/study-plan/video-frame",
                 json={"video_id": self.video["id"], "playback_seconds": 123.4},
@@ -229,7 +230,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
             "storyboard_spec": "https://i.example.test/storyboard/$L/$N.jpg|160#90#10#5#10#0#M$M#sig",
         }
         with patch(
-            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
+            "e3_tracker.study.routes.video.fetch_youtube_cached_frame",
             return_value=frame,
         ):
             response = self.client.post(
@@ -291,7 +292,7 @@ class VideoFrameQuestionTests(unittest.TestCase):
         }
 
         with patch(
-            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
+            "e3_tracker.study.routes.video.fetch_youtube_audio_clip",
             return_value={
                 "bytes": b"RIFF" + b"\x00" * 2048,
                 "mime_type": "audio/wav",
@@ -301,13 +302,13 @@ class VideoFrameQuestionTests(unittest.TestCase):
                 "duration_seconds": 30.0,
             },
         ) as fetch_audio, patch(
-            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
+            "e3_tracker.study.routes.video.fetch_youtube_cached_frame",
             side_effect=lambda _video_id, seconds, **_kwargs: {
                 **self._frame(),
                 "frame_seconds": seconds,
             },
         ) as fetch_frame, patch(
-            "e3_tracker.api.web.requests.post",
+            "e3_tracker.study.services.note_model_client.requests.post",
             side_effect=[transcription_response, summary_response],
         ) as post:
             response = self.client.patch(
@@ -405,13 +406,13 @@ class VideoFrameQuestionTests(unittest.TestCase):
             response=failed_response
         )
         with patch(
-            "e3_tracker.api.routes.video.fetch_youtube_audio_clip",
+            "e3_tracker.study.routes.video.fetch_youtube_audio_clip",
             side_effect=YoutubeAudioError("audio unavailable"),
         ), patch(
-            "e3_tracker.api.routes.video.fetch_youtube_cached_frame",
+            "e3_tracker.study.routes.video.fetch_youtube_cached_frame",
             return_value=self._frame(),
         ), patch(
-            "e3_tracker.api.web.requests.post",
+            "e3_tracker.study.services.note_model_client.requests.post",
             return_value=failed_response,
         ):
             response = self.client.patch(

@@ -15,9 +15,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from e3_tracker.api.web import create_app
-from e3_tracker.shared.config import load_env_defaults
-from e3_tracker.shared.storage import PersistentStorage
+from e3_tracker.platform.application import create_app
+from e3_tracker.platform.config import load_env_defaults
+from e3_tracker.platform.storage import PersistentStorage
 
 
 def configured_paths() -> Tuple[PersistentStorage, Path]:

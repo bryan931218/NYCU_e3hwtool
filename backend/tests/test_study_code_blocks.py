@@ -4,10 +4,10 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RECALL_TEMPLATE = PROJECT_ROOT / "frontend" / "templates" / "study_recall.html"
-HOME_TEMPLATE = PROJECT_ROOT / "frontend" / "templates" / "admin_study_home.html"
-QUICK_TEMPLATE = PROJECT_ROOT / "frontend" / "templates" / "study_recall_quick.html"
-WEB_MODULE = PROJECT_ROOT / "backend" / "e3_tracker" / "api" / "web.py"
+RECALL_TEMPLATE = PROJECT_ROOT / "frontend" / "study" / "templates" / "study_recall.html"
+HOME_TEMPLATE = PROJECT_ROOT / "frontend" / "study" / "templates" / "admin_study_home.html"
+QUICK_TEMPLATE = PROJECT_ROOT / "frontend" / "study" / "templates" / "study_recall_quick.html"
+WEB_MODULE = PROJECT_ROOT / "backend" / "e3_tracker" / "study" / "application.py"
 
 
 class StudyCodeBlockTests(unittest.TestCase):
@@ -24,9 +24,9 @@ class StudyCodeBlockTests(unittest.TestCase):
                 self.assertIn("overflow:auto", template)
 
     def test_ai_prompts_keep_program_code_out_of_latex(self):
-        module_root = WEB_MODULE.parent.parent
+        module_root = WEB_MODULE.parent
         sources = [WEB_MODULE, *sorted((module_root / 'services').glob('note_*.py'))]
-        sources.extend(sorted((module_root / 'api' / 'routes').glob('*.py')))
+        sources.extend(sorted((module_root / 'routes').glob('*.py')))
         source = '\n'.join(read_source(path) for path in sources)
 
         self.assertIn("程式碼不是數學公式，禁止轉成 LaTeX", source)

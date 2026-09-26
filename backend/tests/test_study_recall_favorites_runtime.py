@@ -3,12 +3,7 @@ import unittest
 
 from sqlalchemy import create_engine
 
-from e3_tracker.shared.study_recall_favorites_runtime import (
-    _ensure_favorite_table,
-    _favorite_count,
-    _favorite_rows,
-    _set_favorite,
-)
+from e3_tracker.study.domain.study_recall_favorites_runtime import _ensure_favorite_table, _favorite_count, _favorite_rows, _set_favorite
 
 
 class FakeStorage:

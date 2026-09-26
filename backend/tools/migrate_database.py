@@ -8,9 +8,9 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from e3_tracker.shared.config import load_env_defaults
-from e3_tracker.shared.storage import PersistentStorage
-from e3_tracker.shared.persistence.migrations import migration_status, run_migrations
+from e3_tracker.platform.config import load_env_defaults
+from e3_tracker.platform.storage import PersistentStorage
+from e3_tracker.platform.persistence.migrations import migration_status, run_migrations
 
 
 def main():

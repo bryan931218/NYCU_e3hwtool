@@ -3,8 +3,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-STYLE_PATH = PROJECT_ROOT / "frontend" / "templates" / "pages" / "study_recall" / "style-05.css.jinja"
-LIBRARY_PARTIAL_PATH = PROJECT_ROOT / "frontend" / "templates" / "_study_recall_subject_library.html"
+STYLE_PATH = PROJECT_ROOT / "frontend" / "study" / "templates" / "pages" / "study_recall" / "style-05.css.jinja"
+LIBRARY_PARTIAL_PATH = PROJECT_ROOT / "frontend" / "study" / "templates" / "_study_recall_subject_library.html"
 
 
 class StudyRecallLibraryScrollbarTests(unittest.TestCase):

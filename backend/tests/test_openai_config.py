@@ -2,11 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from e3_tracker.shared.config import (
-    DEFAULT_OPENAI_MODEL,
-    load_env_defaults,
-    normalize_openai_reasoning_effort,
-)
+from e3_tracker.platform.config import DEFAULT_OPENAI_MODEL, load_env_defaults, normalize_openai_reasoning_effort
 
 
 class OpenAIConfigTests(unittest.TestCase):

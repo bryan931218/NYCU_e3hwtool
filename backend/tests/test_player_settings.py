@@ -7,17 +7,11 @@ from pathlib import Path
 from flask import Flask
 from sqlalchemy import text
 
-from e3_tracker.shared.deployment_runtime import (
-    DeploymentSafeStorage,
-    PLAYER_SETTINGS_DEFAULTS,
-    _register_player_settings_routes,
-    build_discord_presence_payload,
-    format_discord_study_duration,
-    issue_discord_presence_token,
-    normalize_player_settings,
-    verify_discord_presence_signed_token,
-)
-from e3_tracker.shared.player_control_runtime import install_player_control_dock
+from e3_tracker.platform.deployment_runtime import DeploymentSafeStorage
+from e3_tracker.study.domain.player_settings import PLAYER_SETTINGS_DEFAULTS, normalize_player_settings
+from e3_tracker.study.routes.player_settings import register_player_settings_routes as _register_player_settings_routes
+from e3_tracker.study.services.discord_presence import build_discord_presence_payload, format_discord_study_duration, issue_discord_presence_token, verify_discord_presence_signed_token
+from e3_tracker.study.domain.player_control_runtime import install_player_control_dock
 
 
 class PlayerSettingsTests(unittest.TestCase):
@@ -136,7 +130,8 @@ class PlayerSettingsTests(unittest.TestCase):
                 token=token,
                 enabled=True,
             )
-            client = app.test_client()
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
 
             denied = client.get("/api/discord-presence")
             allowed = client.get(
@@ -165,7 +160,9 @@ class PlayerSettingsTests(unittest.TestCase):
             application_id = "123456789012345678"
             signed_token = issue_discord_presence_token(application_id, app.secret_key)
 
-            response = app.test_client().get(
+            from tests.security_helpers import csrf_client
+
+            response = csrf_client(app).get(
                 "/api/discord-presence",
                 headers={"Authorization": f"Bearer {signed_token}"},
             )
@@ -293,7 +290,7 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertIn('data-e3-rate type="range" min="0.25" max="2" step="0.05"', module.STUDY_UPLOAD_TRACKER_TEMPLATE)
 
     def test_fullscreen_mouse_movement_reveals_native_controls_without_hiding_dock(self):
-        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
+        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "study" / "templates"
         shortcut_source = read_source(template_dir / "_player_shortcut_compat.html")
         dock_source = read_source(template_dir / "_player_control_dock.html")
         self.assertIn(
@@ -309,7 +306,7 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertIn("pointer-events: auto;\n        font: inherit;", dock_source)
 
     def test_quick_marker_uses_r_and_m_remains_mute(self):
-        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
+        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "study" / "templates"
         plan_source = read_source(template_dir / "admin_study_plan.html")
         dock_source = read_source(template_dir / "_player_control_dock.html")
         shortcut_source = read_source(template_dir / "_player_shortcut_compat.html")
@@ -324,6 +321,7 @@ class PlayerSettingsTests(unittest.TestCase):
     def test_seek_shortcuts_repeat_until_the_key_is_released(self):
         shortcut_source = read_source(Path(__file__).resolve().parents[2]
             / "frontend"
+            / "study"
             / "templates"
             / "_player_shortcut_compat.html")
 
@@ -334,7 +332,7 @@ class PlayerSettingsTests(unittest.TestCase):
         self.assertNotIn("if (!event.repeat) seekBy", shortcut_source)
 
     def test_player_settings_expose_fine_grained_controls(self):
-        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "templates"
+        template_dir = Path(__file__).resolve().parents[2] / "frontend" / "study" / "templates"
         settings_source = read_source(template_dir / "admin_study_player_settings.html")
         shortcut_source = read_source(template_dir / "_player_shortcut_compat.html")
         dock_source = read_source(template_dir / "_player_control_dock.html")
@@ -366,6 +364,7 @@ class PlayerSettingsTests(unittest.TestCase):
         template_path = (
             Path(__file__).resolve().parents[2]
             / "frontend"
+            / "study"
             / "templates"
             / "admin_study_plan.html"
         )

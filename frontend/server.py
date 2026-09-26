@@ -1,24 +1,31 @@
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import quote
+from bs4 import BeautifulSoup
 
 import requests
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request, send_from_directory, url_for
+from jinja2 import FileSystemLoader, PrefixLoader
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=ROOT / ".env", override=False)
 
 BACKEND_BASE = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
-FRONTEND_HOST = os.getenv("FRONTEND_HOST", "0.0.0.0")
+FRONTEND_HOST = os.getenv("FRONTEND_HOST", "127.0.0.1")
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
-TEMPLATE_DIR = ROOT / "frontend" / "templates"
+FRONTEND_ROOT = ROOT / "frontend"
+FRONTEND_OWNERS = ("assignments", "study", "shared")
 DEV_RELOAD_INTERVAL_MS = int(os.getenv("E3_DEV_RELOAD_INTERVAL_MS", "1200"))
 
 SUPPORTED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
-app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
+app = Flask(__name__, static_folder=None)
+app.jinja_loader = PrefixLoader({
+    owner: FileSystemLoader(FRONTEND_ROOT / owner / "templates")
+    for owner in FRONTEND_OWNERS
+})
 app.jinja_env.globals["url_for"] = lambda endpoint, **values: (
     url_for(endpoint, **values) if endpoint == "frontend_asset" else f"/{endpoint}"
 )
@@ -27,7 +34,10 @@ app.jinja_env.globals["get_flashed_messages"] = lambda **__: []
 
 @app.get("/assets/<path:filename>")
 def frontend_asset(filename):
-    return send_from_directory(ROOT / "frontend" / "static", filename, max_age=0)
+    owner, separator, asset = filename.partition("/")
+    if not separator or owner not in FRONTEND_OWNERS:
+        return Response(status=404)
+    return send_from_directory(FRONTEND_ROOT / owner / "static", asset, max_age=0)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -43,7 +53,7 @@ def _dev_reload_enabled() -> bool:
 
 def _compute_reload_token() -> str:
     latest_mtime = 0
-    watch_paths = [TEMPLATE_DIR, ROOT / "frontend" / "static", ROOT / "frontend" / "server.py"]
+    watch_paths = [FRONTEND_ROOT / owner for owner in FRONTEND_OWNERS] + [FRONTEND_ROOT / "server.py"]
     for path in watch_paths:
         if not path.exists():
             continue
@@ -59,8 +69,10 @@ def _compute_reload_token() -> str:
 def _inject_live_reload(html: str) -> str:
     if not _dev_reload_enabled():
         return html
+    nonce_tag = BeautifulSoup(html, "html.parser").find("script", nonce=True)
+    nonce = str(nonce_tag.get("nonce") or "") if nonce_tag else ""
     script = f"""
-<script>
+<script nonce="{nonce}">
 (function () {{
     const endpoint = "/_dev/reload-token";
     const intervalMs = {DEV_RELOAD_INTERVAL_MS};
@@ -95,8 +107,7 @@ def _non_hop_headers():
     hop_headers = {"host", "content-length", "connection", "accept-encoding"}
     headers = {k: v for k, v in request.headers.items() if k.lower() not in hop_headers}
     if request.remote_addr:
-        chain = headers.get("X-Forwarded-For")
-        headers["X-Forwarded-For"] = f"{chain}, {request.remote_addr}" if chain else request.remote_addr
+        headers["X-Forwarded-For"] = request.remote_addr
     headers["X-Forwarded-Host"] = request.host
     headers["X-Forwarded-Proto"] = request.scheme
     return headers
@@ -104,7 +115,7 @@ def _non_hop_headers():
 
 def _build_target(path: str) -> str:
     path = path.lstrip("/")
-    return urljoin(f"{BACKEND_BASE}/", path)
+    return f"{BACKEND_BASE}/{quote(path, safe='/')}"
 
 
 @app.route("/healthz", methods=["GET"])
@@ -270,7 +281,7 @@ def _mock_context() -> dict:
 
 
 def _render_mock_page(path: str, exc: Exception) -> Response:
-    template = "login.html" if path.strip("/").startswith("login") else "web.html"
+    template = "assignments/login.html" if path.strip("/").startswith("login") else "assignments/web.html"
     context = _mock_context()
     context["mock_message"] = str(exc)
     html = render_template(template, **context)
@@ -278,12 +289,14 @@ def _render_mock_page(path: str, exc: Exception) -> Response:
 
 
 def main():
+    if os.getenv("E3_ENV", "").lower() == "production" or FRONTEND_HOST not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError("The frontend proxy is loopback-only development tooling; deploy backend/wsgi.py")
     reload_enabled = _dev_reload_enabled()
-    extra_files = [str(path) for path in TEMPLATE_DIR.rglob("*.html")]
+    extra_files = [str(path) for owner in FRONTEND_OWNERS for path in (FRONTEND_ROOT / owner).rglob("*.html")]
     app.run(
         host=FRONTEND_HOST,
         port=FRONTEND_PORT,
-        debug=reload_enabled,
+        debug=False,
         use_reloader=reload_enabled,
         extra_files=extra_files if reload_enabled else None,
     )

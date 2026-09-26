@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from e3_tracker.api.web import create_app
+from e3_tracker.platform.application import create_app
 
 
 class StudyRecallLibraryAssistantTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
     def login_admin(app, client):
         storage = app.extensions["e3_storage"]
         token = "library-assistant-test-session"
-        storage.save_web_session(token, "test-admin")
+        storage.save_web_session(token, "test-admin", is_admin=True)
         with client.session_transaction() as browser_session:
             browser_session["username"] = "test-admin"
             browser_session["session_token"] = token
@@ -77,11 +77,12 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
                     source_transcription=[{"image_index": 1, "transcription": "DATA_STRUCTURE_ONLY"}],
                     key_concepts=[],
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
 
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(
                         "| 公式 | 條件 |\n|---|---|\n| \\(n!\\) | 相異物件 [來源 1] |"
                     ),
@@ -129,7 +130,8 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
                     source_transcription=[{"image_index": 1, "transcription": "矩陣乘法"}],
                     key_concepts=[],
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
 
                 too_wide = client.post(
@@ -173,7 +175,8 @@ class StudyRecallLibraryAssistantTests(unittest.TestCase):
                     ],
                     key_concepts=[],
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 malformed_answer = r"""步驟總覽（目標：求 SVD）：
 
@@ -210,7 +213,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
 
 如需，我可以再提供完整計算。"""
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(malformed_answer),
                 ):
                     response = client.post(
@@ -274,7 +277,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     source_transcription=[{"image_index": 1, "transcription": "最佳子結構"}],
                     key_concepts=[],
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
 
                 response = client.get("/admin/study-recall")
@@ -308,10 +312,11 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(r"雜湊表的平均查詢時間為 \\(O(1)\\)。"),
                 ) as openai_post:
                     response = client.post(
@@ -357,9 +362,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     watched_seconds=min(600, video["duration_seconds"]),
                     expected_version=0,
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post:
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
                         json={"question": "我要查詢離散的進度"},
@@ -382,9 +388,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post:
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
                         json={
@@ -408,9 +415,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post:
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
                         json={"question": "可以幫我修正時數嗎"},
@@ -432,7 +440,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 ai_payload = {
                     "answer": "請提供 session_id 與 target_minutes，我會使用 set_study_time_session。",
@@ -450,7 +459,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     },
                 }
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
                 ):
                     response = client.post(
@@ -472,7 +481,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             storage = app.extensions["e3_storage"]
             try:
                 video = storage.list_study_plan_videos_with_records()[0]
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 ai_payload = {
                     "answer": "已準備把影片位置修正為 12 分鐘，請確認變更。",
@@ -490,7 +500,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     },
                 }
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
                 ):
                     ask_response = client.post(
@@ -544,7 +554,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     label="演算法練習",
                     elapsed_seconds=3600,
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 ai_payload = {
                     "answer": "找到這筆紀錄，準備改為 35 分鐘。",
@@ -562,7 +573,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     },
                 }
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
                 ):
                     proposal = client.post(
@@ -585,7 +596,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             storage = app.extensions["e3_storage"]
             try:
                 video = storage.list_study_plan_videos_with_records()[0]
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 ai_payload = {
                     "answer": "準備修正觀看位置。",
@@ -603,7 +615,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     },
                 }
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
                 ):
                     proposal = client.post(
@@ -632,7 +644,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 ai_payload = {
                     "answer": "準備將平日調整為 3.5 小時、假日 4 小時。",
@@ -650,7 +663,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     },
                 }
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
                 ):
                     proposal = client.post(
@@ -678,9 +691,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     item for item in storage.list_study_plan_videos_with_records()
                     if item["subject"] == "離散數學" and item["sequence"] == 13
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post:
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
                         json={"question": "離散數學的第13部調成100%"},
@@ -720,9 +734,10 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     item for item in storage.list_study_plan_videos_with_records()
                     if item["subject"] == "離散數學" and item["sequence"] == 13
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post:
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
                         json={
@@ -752,14 +767,15 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 before_videos = storage.list_study_plan_videos_with_records()
                 remaining_seconds = sum(
                     max(0.0, float(item["duration_seconds"]) - float(item["watched_seconds"]))
                     for item in before_videos
                 )
-                with patch("e3_tracker.api.web.requests.post") as openai_post:
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post:
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
                         json={
@@ -792,7 +808,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 ai_payload = {
                     "answer": "已依你選擇的方式處理：昨天所有學習紀錄已刪除。",
@@ -804,7 +821,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     },
                 }
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(json.dumps(ai_payload, ensure_ascii=False)),
                 ):
                     response = client.post(
@@ -825,7 +842,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 proposal = client.post(
                     "/admin/study-recall/assistant/ask",
@@ -869,10 +887,11 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                         elapsed_seconds=30 * 60,
                         video_id=video["id"],
                     )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post, patch(
-                    "e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post, patch(
+                    "e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 2)
                 ):
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
@@ -954,10 +973,12 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                         expected_version=int(first_progress.get("progress_version") or 0),
                     )
 
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post, patch(
-                    "e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post, patch(
+                    "e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 2)
                 ):
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
@@ -1021,10 +1042,11 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                         watched_seconds=float(video.get("watched_seconds") or 0) + 1952,
                         expected_version=int(video.get("progress_version") or 0),
                     )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web.requests.post") as openai_post, patch(
-                    "e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 2)
+                with patch("e3_tracker.study.services.note_model_client.requests.post") as openai_post, patch(
+                    "e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 2)
                 ):
                     response = client.post(
                         "/admin/study-recall/assistant/ask",
@@ -1108,9 +1130,11 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     after_state=old_after,
                 ))
 
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+
+                client = csrf_client(app)
                 self.login_admin(app, client)
-                with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 3)):
+                with patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 3)):
                     page = client.get("/admin/study-home")
                 self.assertEqual(page.status_code, 200)
 
@@ -1126,7 +1150,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 self.assertEqual(target_activity["delta_seconds"], 33 * 60)
 
                 match = re.search(
-                    r'<script type="application/json" data-calendar-data>(.*?)</script>',
+                    r'<script[^>]* type="application/json" data-calendar-data>(.*?)</script>',
                     page.get_data(as_text=True),
                     re.DOTALL,
                 )
@@ -1171,7 +1195,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                     item for item in storage.list_study_plan_videos_with_records()
                     if item["subject"] == "離散數學" and item["sequence"] == 13
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 proposal = client.post(
                     "/admin/study-recall/assistant/ask",
@@ -1200,7 +1225,8 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
             app = self.build_app(temp_dir)
             storage = app.extensions["e3_storage"]
             try:
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 for path in (
                     "/admin/study-home",
@@ -1244,10 +1270,11 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                         }
                     ],
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 self.login_admin(app, client)
                 with patch(
-                    "e3_tracker.api.web.requests.post",
+                    "e3_tracker.study.services.note_model_client.requests.post",
                     return_value=self.openai_response(r"奇異值為 \\(\sigma_i=\sqrt{\lambda_i}\\)。"),
                 ) as openai_post:
                     response = client.post(

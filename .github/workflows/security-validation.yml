@@ -1,0 +1,29 @@
+name: Security validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Bootstrap audited build tools
+        run: python -m pip install -r requirements-build.txt
+      - name: Install audited deployment dependencies
+        run: python -m pip install -r requirements.txt 'pip-audit>=2.10.1,<3'
+      - name: Test security protections and migrations
+        run: python -m unittest discover -s backend/tests -t backend
+      - name: Audit actual installed runtime dependencies
+        run: python -m pip_audit

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from reprocess_study_notes import audit_relation_associations, prune_repeated_relation_associations
-from e3_tracker.shared.storage import PersistentStorage
+from e3_tracker.platform.storage import PersistentStorage
 
 
 class StudyRecallRelationTests(unittest.TestCase):

@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+{% include 'shared/components/security.html' %}
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>研究所備考進度｜公開學習紀錄</title>
+    <meta name="description" content="公開查看研究所備考影片學習進度、各科完成率與本週觀看軌跡。">
+    <meta property="og:title" content="研究所備考進度">
+    <meta property="og:description" content="公開查看目前影片學習進度、各科完成率與本週觀看軌跡。">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous">
+    <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.js" integrity="sha384-AtrdNsnxl/75rvBneBVH7DtOvCxSVahR2zWqle1coBKd8DEmLoviqNeJSx64gNAs" crossorigin="anonymous"></script>
+    <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" defer src="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
+    <style>{% include 'study/pages/public_study_progress/style-01.css.jinja' %}</style>
+</head>
+<body>
+    <main class="shell">
+        <header class="public-topbar" aria-label="公開學習紀錄">
+            <a class="public-brand" href="{{ url_for('public_study_progress') }}"><span class="public-mark">E3</span><span>研究所備考中心</span></a>
+            <span class="public-badge">PUBLIC STUDY LOG</span>
+        </header>
+        <section class="hero" aria-label="公開學習進度總覽">
+            <div class="hero-main">
+                <div class="hero-kicker">GRADUATE EXAM JOURNEY</div>
+                <h1>研究所備考進度</h1>
+                <div class="hero-meta">
+                    <span class="meta-pill">{{ plan_start }} → {{ plan_end }}</span>
+                    <span class="meta-pill">目前第 {{ current_week.number }} 週・{{ current_week.subject }}</span>
+                    <span class="meta-pill">最後更新：{{ last_updated_label }}</span>
+                </div>
+            </div>
+            <aside class="hero-side">
+                <div class="progress-orb">
+                    <div class="progress-core">
+                        <div class="progress-value">{{ summary.completion|round(1) }}%</div>
+                        <div class="progress-label">片長加權完成率</div>
+                    </div>
+                </div>
+            </aside>
+        </section>
+
+        <section class="stat-grid" aria-label="核心統計">
+            <article class="stat-card"><div class="stat-label">觀看時數</div><div class="stat-value">{{ (summary.total_watched / 60)|round(1) }}<small>/ {{ total_hours }} 小時</small></div></article>
+            <article class="stat-card"><div class="stat-label">已完成影片</div><div class="stat-value">{{ summary.completed_videos }}<small>/ {{ summary.total_videos }} 支</small></div></article>
+        </section>
+
+        {% if is_admin %}<section class="panel public-note-search" data-public-note-search data-search-url="{{ url_for('public_study_recall_search') }}" aria-labelledby="public-note-search-title">
+            <div class="public-note-search-head">
+                <h2 id="public-note-search-title">搜尋筆記庫</h2>
+                <span class="public-note-search-count" data-public-note-search-count></span>
+            </div>
+            <form class="public-note-search-form" data-public-note-search-form>
+                <div class="public-note-search-input-wrap"><input name="q" type="search" maxlength="160" autocomplete="off" placeholder="搜尋觀念、公式、例題或原文" aria-label="搜尋公開筆記庫" required></div>
+                <select name="subject" aria-label="搜尋科目">
+                    <option value="">全部科目</option>
+                    {% for subject in study_subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}
+                </select>
+                <select name="type" aria-label="內容類型">
+                    <option value="all">全部內容</option>
+                    <option value="source">原始筆記</option>
+                    <option value="formula">公式</option>
+                    <option value="example">例題與解法</option>
+                    <option value="concept">觀念卡</option>
+                </select>
+                <button class="public-note-search-submit" type="submit">搜尋</button>
+            </form>
+            <p class="public-note-search-status" data-public-note-search-status aria-live="polite"></p>
+            <div class="public-note-search-results" data-public-note-search-results role="list" hidden></div>
+        </section>
+
+        <div class="public-note-preview" data-public-note-preview hidden>
+            <section class="public-note-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="public-note-preview-title">
+                <header class="public-note-preview-head">
+                    <div><h2 class="public-note-preview-title" id="public-note-preview-title" data-public-note-preview-title></h2><div class="public-note-preview-meta" data-public-note-preview-meta></div></div>
+                    <button class="public-note-preview-close" type="button" data-public-note-preview-close aria-label="關閉筆記預覽">×</button>
+                </header>
+                <div class="public-note-preview-body"><div class="public-note-preview-image-wrap"><img class="public-note-preview-image" data-public-note-preview-image alt=""><span class="public-note-preview-highlight" data-public-note-preview-highlight hidden></span></div></div>
+            </section>
+        </div>
+
+        {% endif %}<section class="panel public-calendar" data-public-study-calendar aria-label="每月影片觀看熱度月曆">
+            <aside class="public-calendar-insight">
+                    <div class="public-calendar-kicker">WATCHING HEATMAP</div>
+                    <h2 class="public-calendar-title">學習月曆</h2>
+                    <div class="public-calendar-total"><strong data-public-calendar-total>0h</strong><span>這個月累積觀看進度</span></div>
+                <div class="public-calendar-stats">
+                    <div class="public-calendar-stat"><span>活躍天數</span><strong data-public-calendar-active>0 天</strong></div>
+                    <div class="public-calendar-stat"><span>活躍日平均</span><strong data-public-calendar-average>0 分</strong></div>
+                    <div class="public-calendar-stat"><span>最投入</span><strong data-public-calendar-best>尚無紀錄</strong></div>
+                </div>
+            </aside>
+            <div class="public-calendar-main">
+            <div class="public-calendar-toolbar">
+                <div class="public-calendar-month" data-public-calendar-heading></div>
+                <div class="public-calendar-nav" aria-label="切換月份">
+                    <button type="button" data-public-calendar-previous aria-label="上個月">‹</button>
+                    <button type="button" data-public-calendar-today>本月</button>
+                    <button type="button" data-public-calendar-next aria-label="下個月">›</button>
+                </div>
+            </div>
+            <div class="public-calendar-weekdays" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+            <div class="public-calendar-grid" data-public-calendar-grid role="grid" aria-label="每日影片觀看時數"></div>
+            </div>
+            <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" type="application/json" data-public-calendar-data>{{ study_calendar|tojson }}</script>
+        </section>
+        <div class="calendar-modal" data-public-calendar-modal hidden>
+            <section class="calendar-dialog" role="dialog" aria-modal="true" aria-labelledby="public-calendar-dialog-title">
+                <header class="calendar-dialog-head">
+                    <div><div class="calendar-dialog-kicker">DAILY ACTIVITY</div><h2 class="calendar-dialog-title" id="public-calendar-dialog-title" data-public-calendar-modal-title></h2><div class="calendar-dialog-summary" data-public-calendar-modal-summary></div></div>
+                    <button class="calendar-dialog-close" type="button" data-public-calendar-modal-close aria-label="關閉每日活動視窗">×</button>
+                </header>
+                <div class="calendar-dialog-body"><div class="calendar-activity-list" data-public-calendar-modal-list></div></div>
+            </section>
+        </div>
+
+        <section class="panel pace-panel {{ progress_race.state }}" style="--runner-position:{{ progress_race.runner_position }}%;--plan-position:{{ progress_race.plan_position }}%;--actual-progress:{{ progress_race.actual_percent }}%;--gap-start:{{ progress_race.gap_start }}%;--gap-width:{{ progress_race.gap_width }}%;" aria-label="目前已看時間與截至今天應看時間比較">
+            <div class="pace-layout">
+                <div>
+                    <div class="pace-topline">
+                        <div>
+                            <div class="pace-kicker">進度追趕賽・PACE DELTA</div>
+                            <div class="pace-headline">
+                                <span class="pace-number">{{ progress_race.headline_value }}</span>
+                                <span class="pace-unit">{{ progress_race.headline_unit }}</span>
+                            </div>
+                            <div class="pace-message">{{ progress_race.headline_message }}{{ pace_insight.action }}</div>
+                        </div>
+                    </div>
+                    <div class="race-course" role="img" aria-label="目前已看 {{ progress_race.watched_hours }} 小時，截至今天應看 {{ progress_race.target_hours }} 小時">
+                        <div class="race-lane">
+                            <div class="race-progress"></div>
+                            <div class="race-milestones" aria-hidden="true">
+                                <span style="--milestone:25%" data-label="25%"></span>
+                                <span style="--milestone:50%" data-label="50%"></span>
+                                <span style="--milestone:75%" data-label="75%"></span>
+                            </div>
+                            <div class="race-start-line" aria-hidden="true"></div>
+                            <div class="race-delta-segment"></div>
+                            <div class="race-plan-marker"></div>
+                            <div class="race-plan-label">今日目標 {{ progress_race.target_hours }}h</div>
+                            <div class="race-actual-marker"></div>
+                            <div class="race-actual-label">我的進度 {{ progress_race.watched_hours }}h</div>
+                            <div class="race-runner" aria-hidden="true"><span class="runner-person"><span>🏃</span></span><span class="runner-shadow"></span></div>
+                        </div>
+                        <div class="race-scale"><span>開始</span><span>完成</span></div>
+                    </div>
+                    {% if pace_history.rows %}
+                    <div class="pace-history" aria-labelledby="pace-history-title">
+                        <div class="pace-history-head">
+                            <h3 id="pace-history-title">每日領先／落後曲線</h3>
+                            <div class="pace-history-summary">
+                                <span class="pace-history-current {{ pace_history.latest_state }}"><span>目前差距</span><strong>{{ pace_history.latest_label }}</strong></span>
+                                <span class="pace-history-trend">{{ pace_history.trend_label }}</span>
+                                <span class="pace-history-range">{{ pace_history.range_label }}</span>
+                            </div>
+                        </div>
+                        <div class="pace-history-scroll">
+                            <svg class="pace-history-chart" viewBox="0 0 1000 174" role="img" aria-label="{{ pace_history.range_label }} 每日進度領先落後程度曲線">
+                                <line class="pace-history-grid" x1="64" y1="30" x2="980" y2="30"></line>
+                                <line class="pace-history-zero" x1="64" y1="78" x2="980" y2="78"></line>
+                                <line class="pace-history-grid" x1="64" y1="126" x2="980" y2="126"></line>
+                                <text class="pace-history-axis" x="4" y="34">+{{ pace_history.scale_label }}</text>
+                                <text class="pace-history-axis" x="39" y="82">0</text>
+                                <text class="pace-history-axis" x="4" y="130">-{{ pace_history.scale_label }}</text>
+                                {% for row in pace_history.rows %}
+                                <line class="pace-history-guide" x1="{{ row.x }}" y1="30" x2="{{ row.x }}" y2="126"></line>
+                                {% endfor %}
+                                {% if pace_history.rows|length > 1 %}<polygon class="pace-history-area" points="64,78 {{ pace_history.points }} 980,78"></polygon>{% endif %}
+                                {% if pace_history.rows|length > 1 %}<polyline class="pace-history-line" points="{{ pace_history.points }}"></polyline>{% endif %}
+                                {% for row in pace_history.rows %}
+                                <circle class="pace-history-point {{ row.state }}{% if row.is_today %} today{% endif %}" cx="{{ row.x }}" cy="{{ row.y }}" r="{% if row.is_today %}5.5{% else %}4{% endif %}"><title>{{ row.accessible_label }}</title></circle>
+                                <text class="pace-history-value {{ row.state }}" x="{{ row.x }}" y="{{ row.value_y }}" text-anchor="middle">{{ row.value_label }}</text>
+                                <text class="pace-history-date{% if row.is_today %} today{% endif %}" x="{{ row.x }}" y="166" text-anchor="middle">{{ row.short_date }}</text>
+                                {% endfor %}
+                            </svg>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <section class="panel today-log-panel" aria-label="今日學習紀錄">
+            <div class="panel-head" style="padding:0;">
+                <div>
+                    <h2 class="panel-title">今日學習紀錄</h2>
+                </div>
+            </div>
+            <div class="today-log-grid">
+                <div class="today-log-stat"><div class="today-log-label">今日進度變動</div><div class="today-log-value">{{ today_study.hours }}h</div></div>
+                <div class="today-log-stat"><div class="today-log-label">實際學習時間</div><div class="today-log-value">{{ today_study.learning_hours }}h</div></div>
+                <div class="today-log-stat"><div class="today-log-label">今日推進</div><div class="today-log-value">{{ today_study.progress_delta }}%</div></div>
+                <div class="today-log-stat"><div class="today-log-label">自動紀錄影片</div><div class="today-log-value">{{ today_study.videos|length }} 支</div></div>
+            </div>
+
+            <div class="daily-plan-head">
+                <h3 class="daily-plan-title">今天讀的進度</h3>
+            </div>
+            <div class="makeup-list">
+                    {% for item in today_study.progress_days %}
+                        <div class="makeup-item">
+                            <div>
+                                <div class="makeup-title">第 {{ item.week_number }} 週・{{ item.subject }}・{{ item.label }}</div>
+                                <div class="makeup-meta">{{ item.date }}・每日目標 {{ item.day_target_minutes }} 分</div>
+                            </div>
+                            <div class="makeup-minutes">+{{ item.minutes }} 分</div>
+                            <div class="makeup-track" style="--before:{{ item.before_completion }}%; --after:{{ item.after_completion }}%;" aria-label="{{ item.label }} 完成度由 {{ item.before_completion }}% 提升至 {{ item.after_completion }}%"></div>
+                            <div class="makeup-foot"><span>當日完成度 {{ item.before_completion }}% → <strong>{{ item.after_completion }}%</strong></span><span>本週 {{ item.week_before_completion }}% → {{ item.week_after_completion }}%</span></div>
+                        </div>
+                    {% else %}
+                        <div class="empty">今天尚未有可對應的讀書進度。</div>
+                    {% endfor %}
+            </div>
+
+            <div class="daily-plan-head">
+                <h3 class="daily-plan-title">今天看的影片</h3>
+            </div>
+            <div class="today-video-list">
+                {% if today_study.videos %}
+                    {% for video in today_study.videos %}
+                    <div class="today-video-item">
+                        <div class="today-video-title">{{ '%03d'|format(video.sequence) }}・{{ video.title }}</div>
+                        <div class="today-video-meta">{{ video.subject }}・{% if video.is_correction %}回退校正 {{ video.minutes }} 分{% else %}今天增加 {{ video.minutes }} 分{% endif %}・目前 {{ video.completion }}%</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty">今天尚未有影片進度變動紀錄。</div>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="panel week-progress-panel" aria-label="本週每日進度">
+            <div class="week-progress-top">
+                <h2 class="week-progress-title">本週進度</h2>
+                <div class="week-progress-value">{{ current_week.completion|round(1) }}%</div>
+            </div>
+            <div class="week-progress-track" aria-hidden="true">
+                <div class="week-progress-fill" style="--week-progress: {{ current_week.completion }}%"></div>
+            </div>
+            <div class="daily-plan-head">
+                <h3 class="daily-plan-title">本週每日看影片建議與完成度</h3>
+            </div>
+            <div class="daily-plan">
+                {% for day in current_week.daily_recommendations %}
+                <article class="day-chip {{ day.state }}" style="--day-progress: {{ day.completion }}%">
+                    <div class="day-topline">
+                        <span>
+                            <span class="day-label">{{ day.label }}</span>
+                            <span class="day-date">{{ day.short_date }}</span>
+                        </span>
+                        <span class="day-status">{{ day.state_label }}</span>
+                    </div>
+                    <span class="day-hours">{{ day.hours }}h</span>
+                    <span class="day-focus">{{ day.focus }}</span>
+                    <div class="day-completion"><span>完成度</span><strong>{{ day.completion|round(1) }}%</strong></div>
+                    <div class="day-progress" aria-hidden="true"><div class="day-progress-fill"></div></div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="layout">
+            <article class="panel">
+                <div class="panel-head">
+                    <div>
+                        <h2 class="panel-title">各科進度</h2>
+                    </div>
+                </div>
+                <div class="subject-list">
+                    {% for subject in subject_rows %}
+                    <div class="subject-row">
+                        <div class="subject-name">{{ subject.name }}</div>
+                        <div>
+                            <div class="track"><div class="fill" style="--value: {{ subject.completion }}%"></div></div>
+                            <div class="subject-meta">{{ subject.watched_hours }}h / {{ subject.target_hours }}h・{{ subject.completed_videos }} / {{ subject.total_videos }} 支</div>
+                        </div>
+                        <div class="subject-percent">{{ subject.completion }}%</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+
+            <div class="side-stack">
+                <article class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <h2 class="panel-title">本週軌跡</h2>
+                        </div>
+                    </div>
+                    <div class="week-chart-wrap">
+                        <svg class="week-chart" viewBox="0 0 360 170" role="img" aria-label="本週影片觀看進度曲線">
+                            {% for tick in week_chart['y_ticks'] %}
+                            <line x1="48" y1="{{ tick.y }}" x2="336" y2="{{ tick.y }}" stroke="{% if loop.first %}#d4e0ec{% else %}#e2eaf3{% endif %}" stroke-width="{% if loop.first %}1.4{% else %}1{% endif %}"/>
+                            <text x="10" y="{{ tick.label_y }}" font-size="10" font-weight="800" fill="#65758a">{{ tick.label }}</text>
+                            {% endfor %}
+                            <line x1="48" y1="28" x2="48" y2="132" stroke="#b9c8d7" stroke-width="1.4"/>
+                            <line x1="48" y1="132" x2="336" y2="132" stroke="#b9c8d7" stroke-width="1.4"/>
+                            {% for row in week_chart['rows'] %}
+                            <line x1="{{ row.x }}" y1="28" x2="{{ row.x }}" y2="132" stroke="#edf3f8" stroke-width="1"/>
+                            <text x="{{ row.x }}" y="154" text-anchor="middle" font-size="10" font-weight="800" fill="#65758a">{{ row.label }}</text>
+                            {% endfor %}
+                            <polyline points="{{ week_chart.target_points }}" fill="none" stroke="#9fafbf" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            {% if week_chart.actual_points %}
+                            <polyline points="{{ week_chart.actual_points }}" fill="none" stroke="#1463d9" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            {% endif %}
+                            {% for row in week_chart['rows'] %}
+                            <circle cx="{{ row.x }}" cy="{{ row.target_y }}" r="3.2" fill="#9fafbf" stroke="#fff" stroke-width="1.6"/>
+                            {% if row.actual_hours is not none %}
+                            <circle cx="{{ row.x }}" cy="{{ row.actual_y }}" r="4.5" fill="#1463d9" stroke="#fff" stroke-width="2"/>
+                            <text x="{{ row.x }}" y="{{ row.actual_label_y }}" text-anchor="middle" font-size="9" font-weight="800" fill="#102a43">{{ row.actual_hours|round(1) }}h</text>
+                            {% endif %}
+                            {% endfor %}
+                        </svg>
+                        <div class="chart-legend">
+                            <span class="chart-key"><span class="key-line"></span>本週實際 {{ week_chart.actual_total }}h</span>
+                            <span class="chart-key"><span class="key-line target"></span>目標 {{ week_chart.target_total }}h</span>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}">{% include 'study/pages/public_study_progress/script-01.js.jinja' %}</script>
+</body>
+</html>

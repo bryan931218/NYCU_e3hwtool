@@ -8,20 +8,10 @@ from unittest.mock import Mock, patch
 import requests
 from bs4 import BeautifulSoup
 
-from e3_tracker.api.web import create_app
-from e3_tracker.services.collector import (
-    CollectOptions,
-    annotate_result_semesters,
-    collect_assignments,
-    current_semester_key,
-    gather_my_courses,
-    merge_current_semester_cache,
-    normalize_semester_keys,
-    normalize_semester_selection,
-    parse_course_semester,
-)
-from e3_tracker.shared.constants import TAIPEI_TZ
-from e3_tracker.shared.storage import PersistentStorage
+from e3_tracker.platform.application import create_app
+from e3_tracker.assignments.services.collector import CollectOptions, annotate_result_semesters, collect_assignments, current_semester_key, gather_my_courses, merge_current_semester_cache, normalize_semester_keys, normalize_semester_selection, parse_course_semester
+from e3_tracker.platform.constants import TAIPEI_TZ
+from e3_tracker.platform.storage import PersistentStorage
 
 
 class AssignmentSemesterTests(unittest.TestCase):
@@ -238,8 +228,8 @@ class AssignmentSemesterTests(unittest.TestCase):
             {"id": 101, "title": "【115上】資料結構", "url": "https://e3/course/view.php?id=101"},
             {"id": 202, "title": "【114下】離散數學", "url": "https://e3/course/view.php?id=202"},
         ]
-        with patch("e3_tracker.services.collector.gather_my_courses", return_value=courses), patch(
-            "e3_tracker.services.collector.safe_request", return_value=response
+        with patch("e3_tracker.assignments.services.collector.gather_my_courses", return_value=courses), patch(
+            "e3_tracker.assignments.services.collector.safe_request", return_value=response
         ) as safe_request:
             result = collect_assignments(
                 CollectOptions(
@@ -268,9 +258,9 @@ class AssignmentSemesterTests(unittest.TestCase):
             return empty_response
 
         with patch(
-            "e3_tracker.services.collector.gather_my_courses",
+            "e3_tracker.assignments.services.collector.gather_my_courses",
             return_value=[{"id": 202, "title": "【114下】離散數學", "url": ""}],
-        ), patch("e3_tracker.services.collector.safe_request", side_effect=fake_request):
+        ), patch("e3_tracker.assignments.services.collector.safe_request", side_effect=fake_request):
             result = collect_assignments(
                 CollectOptions(
                     base_url="https://e3.nycu.edu.tw",
@@ -484,7 +474,7 @@ class AssignmentSemesterTests(unittest.TestCase):
                 return response(payload=timeline_payload)
             return response(text=dashboard_html if url.endswith("/my/") else "<html></html>")
 
-        with patch("e3_tracker.services.collector.safe_request", side_effect=fake_request) as request:
+        with patch("e3_tracker.assignments.services.collector.safe_request", side_effect=fake_request) as request:
             courses = gather_my_courses(
                 Mock(),
                 "https://e3.nycu.edu.tw",
@@ -535,7 +525,7 @@ class AssignmentSemesterTests(unittest.TestCase):
                 response.json.return_value = [{"error": False, "data": {"courses": []}}]
             return response
 
-        with patch("e3_tracker.services.collector.safe_request", side_effect=fake_request):
+        with patch("e3_tracker.assignments.services.collector.safe_request", side_effect=fake_request):
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=False)
 
         self.assertEqual([course["id"] for course in courses], [202])
@@ -555,7 +545,7 @@ class AssignmentSemesterTests(unittest.TestCase):
             item.text = dashboard_html if url.endswith("/my/") else "<html></html>"
             return item
 
-        with patch("e3_tracker.services.collector.safe_request", side_effect=fake_request):
+        with patch("e3_tracker.assignments.services.collector.safe_request", side_effect=fake_request):
             courses = gather_my_courses(
                 Mock(),
                 "https://e3.nycu.edu.tw",
@@ -564,21 +554,21 @@ class AssignmentSemesterTests(unittest.TestCase):
 
         self.assertEqual([course["id"] for course in courses], [202])
 
-    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    @patch("e3_tracker.assignments.services.collector.current_semester_key", return_value="115-1")
     def test_current_course_discovery_ignores_archived_embedded_courses(self, _current_key):
         page = Mock()
         page.text = """
             <div data-course-id="101" data-course-name="【115 Autumn】資料結構"></div>
             <div data-course-id="202" data-course-name="【114 Spring】離散數學"></div>
         """
-        with patch("e3_tracker.services.collector.safe_request", return_value=page) as request:
+        with patch("e3_tracker.assignments.services.collector.safe_request", return_value=page) as request:
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
 
         self.assertEqual([course["id"] for course in courses], [101])
         requested_urls = [str(call.args[2]) for call in request.call_args_list]
         self.assertTrue(all("/course/index.php" not in url for url in requested_urls))
 
-    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    @patch("e3_tracker.assignments.services.collector.current_semester_key", return_value="115-1")
     def test_current_course_discovery_rejects_unmarked_links_outside_current_course_titles(self, _current_key):
         page = Mock()
         page.text = """
@@ -586,24 +576,24 @@ class AssignmentSemesterTests(unittest.TestCase):
             <div data-course-id="202" data-course-name="作業系統"></div>
             <div data-course-id="303" data-course-name="【114 Spring】離散數學"></div>
         """
-        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+        with patch("e3_tracker.assignments.services.collector.safe_request", return_value=page):
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
 
         self.assertEqual(courses, [])
 
-    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    @patch("e3_tracker.assignments.services.collector.current_semester_key", return_value="115-1")
     def test_course_discovery_ignores_calendar_front_page_course(self, _current_key):
         page = Mock()
         page.text = """
             <a href="/course/view.php?id=1">09月 1日 星期二，沒有事件</a>
             <a href="/course/view.php?id=101">【115上】資料結構</a>
         """
-        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+        with patch("e3_tracker.assignments.services.collector.safe_request", return_value=page):
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
 
         self.assertEqual([course["id"] for course in courses], [101])
 
-    @patch("e3_tracker.services.collector.current_semester_key", return_value="115-1")
+    @patch("e3_tracker.assignments.services.collector.current_semester_key", return_value="115-1")
     def test_course_discovery_ignores_e3_shared_resource_courses(self, _current_key):
         page = Mock()
         page.text = """
@@ -612,7 +602,7 @@ class AssignmentSemesterTests(unittest.TestCase):
             <a href="/course/view.php?id=15573">學生社團補給站</a>
             <a href="/course/view.php?id=7536">資訊安全與個資保護教育訓練課程</a>
         """
-        with patch("e3_tracker.services.collector.safe_request", return_value=page):
+        with patch("e3_tracker.assignments.services.collector.safe_request", return_value=page):
             courses = gather_my_courses(Mock(), "https://e3.nycu.edu.tw", only_current_term=True)
 
         self.assertEqual([course["id"] for course in courses], [25089])
@@ -697,7 +687,8 @@ class AssignmentSemesterTests(unittest.TestCase):
                     },
                 )
                 storage.save_user_preferences("student", {"semester_filter": ["114-2"]})
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 with client.session_transaction() as browser_session:
                     browser_session["username"] = "student"
                     browser_session["session_token"] = token
@@ -719,8 +710,8 @@ class AssignmentSemesterTests(unittest.TestCase):
                 self.assertIn('class="card course-card" data-semester="115-1" data-assignment-count="0"', html)
                 self.assertIn('data-course-empty', html)
                 self.assertIn("這門課目前沒有符合篩選條件的作業。", html)
-                self.assertIn('/assets/js/workbench/index.js', html)
-                scripts = '\n'.join(client.get('/assets/js/workbench/' + name).get_data(as_text=True)
+                self.assertIn('/assets/assignments/js/workbench/index.js', html)
+                scripts = '\n'.join(client.get('/assets/assignments/js/workbench/' + name).get_data(as_text=True)
                                     for name in ('filter-state.js', 'interactions.js', 'cache.js', 'cache-events.js'))
                 self.assertIn("ctx.currentSemesterFilters = ctx.readCheckedSemesterFilters()", scripts)
                 self.assertIn("ctx.syncSemesterSelectorSummary(semesterInput, { collapse: true })", scripts)

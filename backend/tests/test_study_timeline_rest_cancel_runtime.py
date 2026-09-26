@@ -2,10 +2,7 @@ import unittest
 import re
 from types import SimpleNamespace
 
-from e3_tracker.shared.study_timeline_rest_cancel_runtime import (
-    decorate_timeline_rest_cancel,
-    install_timeline_rest_cancel,
-)
+from e3_tracker.study.domain.study_timeline_rest_cancel_runtime import decorate_timeline_rest_cancel, install_timeline_rest_cancel
 
 
 class StudyTimelineRestCancelRuntimeTests(unittest.TestCase):

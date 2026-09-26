@@ -1,12 +1,6 @@
 import unittest
 
-from e3_tracker.shared.study_math import (
-    is_pure_math_expression,
-    protect_markdown_code,
-    repair_math_delimiters,
-    restore_markdown_code,
-    wrap_bare_math_candidate,
-)
+from e3_tracker.study.domain.study_math import is_pure_math_expression, protect_markdown_code, repair_math_delimiters, restore_markdown_code, wrap_bare_math_candidate
 
 
 class StudyMathTests(unittest.TestCase):

@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from e3_tracker.shared.storage import PersistentStorage
-from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
+from e3_tracker.platform.storage import PersistentStorage
+from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyTimeTests(unittest.TestCase):

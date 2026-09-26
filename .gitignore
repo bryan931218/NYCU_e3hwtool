@@ -6,6 +6,9 @@
 
 # Local development
 .env
+.env.*
+!.env.example
+!.env.production.example
 .localdata/
 __pycache__/
 *.pyc

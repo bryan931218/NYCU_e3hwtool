@@ -6,11 +6,8 @@ from types import SimpleNamespace
 
 from sqlalchemy import text
 
-from e3_tracker.shared.deployment_runtime import DeploymentSafeStorage
-from e3_tracker.shared.study_calendar_runtime import (
-    _study_calendar_time_rows,
-    install_study_calendar_runtime,
-)
+from e3_tracker.platform.deployment_runtime import DeploymentSafeStorage
+from e3_tracker.study.domain.study_calendar_runtime import _study_calendar_time_rows, install_study_calendar_runtime
 
 
 class StudyCalendarRuntimeTests(unittest.TestCase):

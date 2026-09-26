@@ -2,29 +2,7 @@ import unittest
 
 from PIL import Image, ImageDraw, ImageFont
 
-from e3_tracker.shared.source_localization import (
-    SOURCE_BBOX_VERSION,
-    assign_transcription_to_source_sections,
-    build_source_page_geometry,
-    canonicalize_source_text,
-    collapse_source_refs_by_image,
-    detect_source_horizontal_separator_candidates,
-    estimated_source_line_count,
-    literal_source_evidence,
-    match_source_evidence_to_lines,
-    match_source_evidence_to_sections,
-    match_source_evidence_via_page_alignment,
-    resolve_source_evidence_page,
-    source_bbox_from_lines,
-    source_line_match_is_verified,
-    source_line_match_is_candidate,
-    source_page_alignment_match_is_candidate,
-    source_page_alignment_match_is_verified,
-    source_section_match_is_candidate,
-    source_section_match_is_verified,
-    source_bbox_span_is_plausible,
-    validated_source_bbox,
-)
+from e3_tracker.study.domain.source_localization import SOURCE_BBOX_VERSION, assign_transcription_to_source_sections, build_source_page_geometry, canonicalize_source_text, collapse_source_refs_by_image, detect_source_horizontal_separator_candidates, estimated_source_line_count, literal_source_evidence, match_source_evidence_to_lines, match_source_evidence_to_sections, match_source_evidence_via_page_alignment, resolve_source_evidence_page, source_bbox_from_lines, source_line_match_is_verified, source_line_match_is_candidate, source_page_alignment_match_is_candidate, source_page_alignment_match_is_verified, source_section_match_is_candidate, source_section_match_is_verified, source_bbox_span_is_plausible, validated_source_bbox
 
 
 class SourceLocalizationTests(unittest.TestCase):

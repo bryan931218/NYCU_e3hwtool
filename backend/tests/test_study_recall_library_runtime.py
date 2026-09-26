@@ -1,9 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from e3_tracker.shared.study_recall_library_runtime import (
-    install_study_recall_library_runtime,
-)
+from e3_tracker.study.domain.study_recall_library_runtime import install_study_recall_library_runtime
 
 
 class StudyRecallLibraryRuntimeTests(unittest.TestCase):

@@ -1,10 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from e3_tracker.shared.study_rest_day_toggle_runtime import (
-    decorate_rest_day_toggle_markup,
-    install_rest_day_toggle,
-)
+from e3_tracker.study.domain.study_rest_day_toggle_runtime import decorate_rest_day_toggle_markup, install_rest_day_toggle
 
 
 RESTORE_BUTTON = (

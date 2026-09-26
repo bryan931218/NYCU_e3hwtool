@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RECALL_TEMPLATE = PROJECT_ROOT / "frontend" / "templates" / "study_recall.html"
+RECALL_TEMPLATE = PROJECT_ROOT / "frontend" / "study" / "templates" / "study_recall.html"
 
 
 class StudySourceLocatorUiTests(unittest.TestCase):

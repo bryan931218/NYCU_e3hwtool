@@ -4,13 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from e3_tracker.api.web import create_app
-from e3_tracker.shared.storage import PersistentStorage
-from e3_tracker.shared.study_note_composer import StudyNoteToolAccumulator, StudyNoteToolError
-from e3_tracker.shared.study_note_quality import (
-    is_study_note_process_metadata_card,
-    is_study_note_process_metadata_text,
-)
+from e3_tracker.platform.application import create_app
+from e3_tracker.platform.storage import PersistentStorage
+from e3_tracker.study.domain.study_note_composer import StudyNoteToolAccumulator, StudyNoteToolError
+from e3_tracker.study.domain.study_note_quality import is_study_note_process_metadata_card, is_study_note_process_metadata_text
 
 
 BAD_TITLE = "來源保留說明"

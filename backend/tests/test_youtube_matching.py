@@ -1,7 +1,7 @@
 import unittest
 
-from e3_tracker.services.youtube_matching import match_playlist_entries
-from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
+from e3_tracker.study.services.youtube_matching import match_playlist_entries
+from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class YoutubeMatchingTests(unittest.TestCase):

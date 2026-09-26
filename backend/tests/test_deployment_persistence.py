@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from sqlalchemy import text
 
-from e3_tracker.shared.config import load_env_defaults
-from e3_tracker.shared.deployment_runtime import DeploymentSafeStorage
+from e3_tracker.platform.config import load_env_defaults
+from e3_tracker.platform.deployment_runtime import DeploymentSafeStorage
 
 
 class DeploymentPersistenceTests(unittest.TestCase):

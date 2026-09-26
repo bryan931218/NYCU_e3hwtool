@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from e3_tracker.api.web import create_app
+from e3_tracker.platform.application import create_app
 
 
 class StudyRecallGlossaryTests(unittest.TestCase):
@@ -21,8 +21,9 @@ class StudyRecallGlossaryTests(unittest.TestCase):
             self.app = create_app()
         self.storage = self.app.extensions["e3_storage"]
         token = "study-glossary-test-session"
-        self.storage.save_web_session(token, "test-admin")
-        self.client = self.app.test_client()
+        self.storage.save_web_session(token, "test-admin", is_admin=True)
+        from tests.security_helpers import csrf_client
+        self.client = csrf_client(self.app)
         with self.client.session_transaction() as browser_session:
             browser_session["username"] = "test-admin"
             browser_session["session_token"] = token

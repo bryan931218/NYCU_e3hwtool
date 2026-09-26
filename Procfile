@@ -1,1 +1,1 @@
-web: python backend/server.py
+web: gunicorn --chdir backend --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180 wsgi:app

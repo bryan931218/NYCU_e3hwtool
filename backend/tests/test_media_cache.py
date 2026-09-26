@@ -2,7 +2,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
-from e3_tracker.services.media_cache import MediaCache
+from e3_tracker.study.services.media_cache import MediaCache
 
 
 class MediaCacheTests(unittest.TestCase):

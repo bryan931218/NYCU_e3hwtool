@@ -6,12 +6,12 @@ on:
       - agent/fix-player-and-persistent-sync
   pull_request:
     paths:
-      - backend/e3_tracker/shared/player_control_runtime.py
+      - backend/e3_tracker/study/domain/player_control_runtime.py
       - backend/server.py
       - backend/wsgi.py
       - backend/tests/test_player_settings.py
-      - frontend/templates/_player_shortcut_compat.html
-      - frontend/templates/_player_control_dock.html
+      - frontend/study/templates/_player_shortcut_compat.html
+      - frontend/study/templates/_player_control_dock.html
 
 jobs:
   validate:
@@ -24,11 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install targeted dependencies
-        run: python -m pip install Flask SQLAlchemy fsrs Pillow python-dotenv
+      - name: Bootstrap audited build tools
+        run: python -m pip install -r requirements-build.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
       - name: Compile Python
         run: |
-          python -m py_compile backend/e3_tracker/shared/player_control_runtime.py
+          python -m py_compile backend/e3_tracker/study/domain/player_control_runtime.py
           python -m py_compile backend/server.py
           python -m py_compile backend/wsgi.py
           python -m py_compile backend/tests/test_player_settings.py
@@ -41,12 +43,12 @@ jobs:
           import re
           from pathlib import Path
           sources = [
-              Path('frontend/templates/_player_shortcut_compat.html'),
-              Path('frontend/templates/_player_control_dock.html'),
+              Path('frontend/study/templates/_player_shortcut_compat.html'),
+              Path('frontend/study/templates/_player_control_dock.html'),
           ]
           scripts = []
           for source in sources:
-              scripts.extend(re.findall(r'<script>(.*?)</script>', source.read_text(encoding='utf-8'), flags=re.S))
+              scripts.extend(re.findall(r'<script\b[^>]*>(.*?)</script>', source.read_text(encoding='utf-8'), flags=re.S))
           if not scripts:
               raise SystemExit('No player scripts found')
           Path('/tmp/player-controls.js').write_text('\n'.join(scripts), encoding='utf-8')

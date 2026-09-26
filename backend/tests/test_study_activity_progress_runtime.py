@@ -1,6 +1,6 @@
 import unittest
 
-from e3_tracker.shared.study_activity_progress_runtime import credit_only_new_video_progress
+from e3_tracker.study.domain.study_activity_progress_runtime import credit_only_new_video_progress
 
 
 class StudyActivityProgressRuntimeTests(unittest.TestCase):

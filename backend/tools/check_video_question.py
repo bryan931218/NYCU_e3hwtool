@@ -13,7 +13,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from e3_tracker.services.youtube_frames import fetch_youtube_audio_clip, fetch_youtube_cached_frame
+from e3_tracker.study.services.youtube_frames import fetch_youtube_audio_clip, fetch_youtube_cached_frame
 
 
 def main():

@@ -7,18 +7,10 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from e3_tracker.api.web import _offset_study_note_batch_analysis, create_app
-from e3_tracker.shared.study_note_composer import (
-    StudyNoteToolAccumulator,
-    StudyNoteToolError,
-    build_study_note_tools,
-)
-from e3_tracker.shared.visual_notes import (
-    merge_visual_regions,
-    normalize_visual_regions,
-    render_visual_region_svg,
-    visual_region_crop_box,
-)
+from e3_tracker.platform.application import create_app
+from e3_tracker.study.services.study_upload_batches import _offset_study_note_batch_analysis
+from e3_tracker.study.domain.study_note_composer import StudyNoteToolAccumulator, StudyNoteToolError, build_study_note_tools
+from e3_tracker.study.domain.visual_notes import merge_visual_regions, normalize_visual_regions, render_visual_region_svg, visual_region_crop_box
 
 
 def _tree_region():
@@ -309,11 +301,13 @@ class VisualNoteRouteTests(unittest.TestCase):
                 image.save(image_dir / "tree.png")
 
                 token = "visual-note-session"
-                storage.save_web_session(token, "test-admin")
-                anonymous_response = app.test_client().get(
+                storage.save_web_session(token, "test-admin", is_admin=True)
+                from tests.security_helpers import csrf_client
+                anonymous_response = csrf_client(app).get(
                     f"/admin/study-recall/{session_id}/visual/p1v1/crop"
                 )
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 with client.session_transaction() as browser_session:
                     browser_session["username"] = "test-admin"
                     browser_session["session_token"] = token

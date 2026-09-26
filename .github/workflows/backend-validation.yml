@@ -18,7 +18,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Bootstrap audited build tools
+        run: python -m pip install -r requirements-build.txt
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Run backend tests
         run: python -m unittest discover -s backend/tests -t backend
+      - name: Run frontend tests
+        run: npm --prefix frontend test

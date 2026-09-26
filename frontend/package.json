@@ -1,0 +1,8 @@
+{
+  "name": "e3-tracker-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/workbench.test.mjs"
+  }
+}

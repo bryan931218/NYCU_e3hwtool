@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from e3_tracker.api import web
-from e3_tracker.shared.storage import PersistentStorage
+from e3_tracker.study import application as web
+from e3_tracker.platform.storage import PersistentStorage
 
 
 class YoutubeStoryboardPersistenceTests(unittest.TestCase):

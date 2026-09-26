@@ -2,14 +2,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from e3_tracker.api.web import (
-    _load_study_note_batch_checkpoint,
-    _offset_study_note_batch_analysis,
-    _save_study_note_batch_checkpoint,
-    _study_note_batch_signature,
-    _study_upload_parallel_progress,
-    _study_upload_time_weighted_progress,
-)
+from e3_tracker.study.services.study_upload_batches import _load_study_note_batch_checkpoint, _offset_study_note_batch_analysis, _save_study_note_batch_checkpoint, _study_note_batch_signature, _study_upload_parallel_progress, _study_upload_time_weighted_progress
 
 
 class StudyUploadProgressTests(unittest.TestCase):

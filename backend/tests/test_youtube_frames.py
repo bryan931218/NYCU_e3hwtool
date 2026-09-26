@@ -6,15 +6,8 @@ from unittest.mock import Mock, patch
 import requests
 from PIL import Image, ImageDraw
 
-from e3_tracker.services import youtube_frames
-from e3_tracker.services.youtube_frames import (
-    YoutubeFrameError,
-    _fetch_youtube_storyboard_frame,
-    fetch_youtube_audio_clip,
-    fetch_youtube_cached_frame,
-    fetch_youtube_precise_frame,
-    fetch_youtube_storyboard_frame,
-)
+from e3_tracker.study.services import youtube_frames
+from e3_tracker.study.services.youtube_frames import YoutubeFrameError, _fetch_youtube_storyboard_frame, fetch_youtube_audio_clip, fetch_youtube_cached_frame, fetch_youtube_precise_frame, fetch_youtube_storyboard_frame
 
 
 class YoutubeStoryboardFrameTests(unittest.TestCase):

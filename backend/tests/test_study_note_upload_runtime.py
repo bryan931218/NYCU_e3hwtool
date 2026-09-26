@@ -1,10 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from e3_tracker.shared.study_note_upload_runtime import (
-    SAFE_STUDY_NOTE_AI_BATCH_SIZE,
-    install_study_note_upload_runtime,
-)
+from e3_tracker.study.domain.study_note_upload_runtime import SAFE_STUDY_NOTE_AI_BATCH_SIZE, install_study_note_upload_runtime
 
 
 class StudyNoteUploadRuntimeTests(unittest.TestCase):

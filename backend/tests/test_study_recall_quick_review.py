@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 
-from e3_tracker.api.web import create_app
+from e3_tracker.platform.application import create_app
 
 
 class StudyRecallQuickReviewTests(unittest.TestCase):
@@ -22,8 +22,9 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
             app = create_app()
         storage = app.extensions["e3_storage"]
         token = "quick-review-test-session"
-        storage.save_web_session(token, "test-admin")
-        client = app.test_client()
+        storage.save_web_session(token, "test-admin", is_admin=True)
+        from tests.security_helpers import csrf_client
+        client = csrf_client(app)
         with client.session_transaction() as browser_session:
             browser_session["username"] = "test-admin"
             browser_session["session_token"] = token

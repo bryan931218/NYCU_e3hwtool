@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from e3_tracker.shared.storage import PersistentStorage
+from e3_tracker.platform.storage import PersistentStorage
 
 
 class TrafficStorageTests(unittest.TestCase):

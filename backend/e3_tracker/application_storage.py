@@ -1,6 +1,6 @@
 """Production storage behavior composed through inheritance, not monkey patches."""
-from .shared.deployment_runtime import DeploymentSafeStorage
-from .shared.study_activity_progress_runtime import credit_only_new_video_progress
+from e3_tracker.platform.deployment_runtime import DeploymentSafeStorage
+from e3_tracker.study.domain.study_activity_progress_runtime import credit_only_new_video_progress
 
 
 class ApplicationStorage(DeploymentSafeStorage):

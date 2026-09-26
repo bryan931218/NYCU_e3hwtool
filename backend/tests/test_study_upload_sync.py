@@ -7,15 +7,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from e3_tracker.api.web import create_app
-from e3_tracker.shared.storage import PersistentStorage
+from e3_tracker.platform.application import create_app
+from e3_tracker.platform.storage import PersistentStorage
 
 
 class StudyUploadSyncTests(unittest.TestCase):
     @staticmethod
     def _sign_in(app, storage, username: str, token: str):
-        storage.save_web_session(token, username)
-        client = app.test_client()
+        storage.save_web_session(token, username, is_admin=True)
+        from tests.security_helpers import csrf_client
+        client = csrf_client(app)
         with client.session_transaction() as browser_session:
             browser_session["username"] = username
             browser_session["session_token"] = token
@@ -78,8 +79,8 @@ class StudyUploadSyncTests(unittest.TestCase):
 
     def test_tracker_discovers_server_job_and_uploads_with_bounded_workers(self):
         root = Path(__file__).resolve().parents[2]
-        tracker = read_source(root / "frontend" / "templates" / "_study_upload_tracker.html")
-        recall = read_source(root / "frontend" / "templates" / "study_recall.html")
+        tracker = read_source(root / "frontend" / "study" / "templates" / "_study_upload_tracker.html")
+        recall = read_source(root / "frontend" / "study" / "templates" / "study_recall.html")
 
         self.assertIn("/admin/study-recall/upload-jobs/current", tracker)
         self.assertIn("visibilitychange", tracker)

@@ -4,11 +4,13 @@ import unittest
 
 from bs4 import BeautifulSoup
 from flask import Flask, render_template
+from e3_tracker.platform.assets import configure_frontend
 
 
 class FrontendComponentTests(unittest.TestCase):
     def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False):
-        app = Flask(__name__, template_folder=str(Path(__file__).resolve().parents[2] / 'frontend/templates'))
+        app = Flask(__name__)
+        configure_frontend(app)
         app.secret_key = 'component-test'
         app.jinja_env.globals['url_for'] = lambda endpoint, **kwargs: '/' + endpoint
         item = {
@@ -24,7 +26,7 @@ class FrontendComponentTests(unittest.TestCase):
         result = {'courses': [{'id': 1, 'title': 'Course', 'semester_key': '115-1', 'assignments': [item]}, *extra_courses],
                   'all_assignments': [item], 'errors': [], 'available_semesters': [], 'selected_semesters': ['115-1']}
         with app.test_request_context('/'):
-            html = render_template('web.html', result=result, preferences=preferences,
+            html = render_template('assignments/web.html', result=result, preferences=preferences,
                                    user={'username': 'qa', 'surname': surname}, viewed_username='qa',
                                    guest_mode=guest_mode, is_admin_view=False, google_ready=False, now_ts=200,
                                    last_updated_label='2026-09-26 13:31', stats={'online': 3, 'total': 3286})

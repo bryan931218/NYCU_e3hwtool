@@ -7,23 +7,10 @@ import unittest
 from datetime import date, timedelta
 from unittest.mock import patch
 
-from e3_tracker.api.web import (
-    create_app,
-    _study_plan_pace_history,
-    _study_plan_today_progress_days,
-    _study_plan_progress_race,
-    _study_plan_progress_summary,
-    _study_plan_progress_week,
-    _study_plan_range_credited_seconds,
-    _study_plan_schedule_definitions,
-    _study_plan_interleave_video_queues,
-    _study_plan_subject_status,
-    _study_plan_task_video_queue,
-    _study_plan_credited_video_seconds,
-    _study_plan_video_completion,
-    _study_plan_business_date,
-)
-from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
+from e3_tracker.platform.application import create_app
+from e3_tracker.study.application import _study_plan_today_progress_days, _study_plan_schedule_definitions
+from e3_tracker.study.services.study_progress import _study_plan_pace_history, _study_plan_progress_race, _study_plan_progress_summary, _study_plan_progress_week, _study_plan_range_credited_seconds, _study_plan_interleave_video_queues, _study_plan_subject_status, _study_plan_task_video_queue, _study_plan_credited_video_seconds, _study_plan_video_completion, _study_plan_business_date
+from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
@@ -126,8 +113,9 @@ class StudyPlanProgressTests(unittest.TestCase):
                     remaining -= float(video["duration_seconds"])
 
             token = "ordered-plan-test-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
@@ -180,8 +168,9 @@ class StudyPlanProgressTests(unittest.TestCase):
             )
 
             token = "study-plan-last-watched-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
@@ -298,8 +287,9 @@ class StudyPlanProgressTests(unittest.TestCase):
                 )
 
             token = "subject-table-test-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
@@ -777,14 +767,15 @@ class StudyPlanProgressTests(unittest.TestCase):
                 subject_targets={"離散數學": 7 * 3600},
             )
             token = "rest-day-test-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
                 browser_session["is_admin"] = True
 
-            with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 4)):
+            with patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 4)):
                 response = client.post(
                     "/admin/study-plan/rest-day",
                     query_string={"subject": "離散數學", "study_date": "2026-09-03"},
@@ -882,14 +873,15 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertLessEqual(remaining_seconds, 0.001)
 
             token = "completed-rest-day-test-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
                 browser_session["is_admin"] = True
 
-            with patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 10)):
+            with patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 10)):
                 page = client.get("/admin/study-plan")
                 html = page.get_data(as_text=True)
                 self.assertNotIn("將 2026-09-07 設為休息日", html)
@@ -1027,15 +1019,16 @@ class StudyPlanProgressTests(unittest.TestCase):
                     "E3_SESSION_COOKIE_SECURE": "0",
                 },
             ), patch(
-                "e3_tracker.api.web._study_plan_business_date",
+                "e3_tracker.study.application._study_plan_business_date",
                 return_value=date(2026, 8, 3),
             ):
                 app = create_app()
             storage = app.extensions["e3_storage"]
             try:
                 token = "pace-history-test-session"
-                storage.save_web_session(token, "test-admin")
-                client = app.test_client()
+                storage.save_web_session(token, "test-admin", is_admin=True)
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 with client.session_transaction() as browser_session:
                     browser_session["username"] = "test-admin"
                     browser_session["session_token"] = token
@@ -1176,8 +1169,9 @@ class StudyPlanProgressTests(unittest.TestCase):
             storage = app.extensions["e3_storage"]
             first_video = storage.list_study_plan_videos_with_records()[0]
             token = "study-plan-test-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
@@ -1273,7 +1267,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("applyHeatColor", home_html)
             self.assertNotIn("學習旅程地圖", home_html)
             home_calendar_match = re.search(
-                r'<script type="application/json" data-calendar-data>(.*?)</script>',
+                r'<script[^>]* type="application/json" data-calendar-data>(.*?)</script>',
                 home_html,
                 re.DOTALL,
             )
@@ -1301,7 +1295,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("applyHeatColor", public_html)
             self.assertNotIn("目前已看的時間", public_html)
             public_calendar_match = re.search(
-                r'<script type="application/json" data-public-calendar-data>(.*?)</script>',
+                r'<script[^>]* type="application/json" data-public-calendar-data>(.*?)</script>',
                 public_html,
                 re.DOTALL,
             )
@@ -1313,7 +1307,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertEqual(public_today_entry["activities"][0]["title"], first_video["title"])
             storage._engine.dispose()
 
-    @patch("e3_tracker.api.web._study_plan_business_date", return_value=date(2026, 9, 3))
+    @patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 3))
     def test_progress_api_refreshes_all_subject_candidates_after_video_ends(self, _business_date):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(
@@ -1338,8 +1332,9 @@ class StudyPlanProgressTests(unittest.TestCase):
                 )
 
             token = "study-plan-refresh-candidates-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
@@ -1347,7 +1342,7 @@ class StudyPlanProgressTests(unittest.TestCase):
 
             page = client.get("/admin/study-plan")
             match = re.search(
-                r'<script type="application/json" id="today-task-videos-data">(.*?)</script>',
+                r'<script[^>]* type="application/json" id="today-task-videos-data">(.*?)</script>',
                 page.get_data(as_text=True),
                 re.DOTALL,
             )
@@ -1402,8 +1397,9 @@ class StudyPlanProgressTests(unittest.TestCase):
             storage = app.extensions["e3_storage"]
             first_video = storage.list_study_plan_videos_with_records()[0]
             token = "study-plan-feature-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
@@ -1455,7 +1451,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("saveProgress('ended', false).finally(showVideoEndScreen)", marker_html)
             self.assertIn("playTodayTaskVideo", marker_html)
             today_task_match = re.search(
-                r'<script type="application/json" id="today-task-videos-data">(.*?)</script>',
+                r'<script[^>]* type="application/json" id="today-task-videos-data">(.*?)</script>',
                 marker_html,
                 re.DOTALL,
             )
@@ -1491,7 +1487,7 @@ class StudyPlanProgressTests(unittest.TestCase):
                 f"/admin/study-plan?subject={first_video['subject']}&video_id={first_video['id']}"
             )
             refreshed_match = re.search(
-                r'<script type="application/json" id="today-task-videos-data">(.*?)</script>',
+                r'<script[^>]* type="application/json" id="today-task-videos-data">(.*?)</script>',
                 refreshed_page.get_data(as_text=True),
                 re.DOTALL,
             )
@@ -1502,7 +1498,7 @@ class StudyPlanProgressTests(unittest.TestCase):
                 {int(video["id"]) for video in refreshed_tasks},
             )
             marker_match = re.search(
-                r'<script type="application/json" id="video-markers-data">(.*?)</script>',
+                r'<script[^>]* type="application/json" id="video-markers-data">(.*?)</script>',
                 marker_html,
                 re.DOTALL,
             )

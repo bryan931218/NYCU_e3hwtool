@@ -6,9 +6,9 @@ from unittest.mock import Mock, patch
 import requests
 from sqlalchemy import inspect, text
 
-from e3_tracker.api.web import create_app
-from e3_tracker.services.profile import fetch_profile_surname, parse_profile_surname
-from e3_tracker.shared.persistence import migrations
+from e3_tracker.platform.application import create_app
+from e3_tracker.assignments.services.profile import fetch_profile_surname, parse_profile_surname
+from e3_tracker.platform.persistence import migrations
 
 
 class ProfileParsingTests(unittest.TestCase):
@@ -26,13 +26,13 @@ class ProfileParsingTests(unittest.TestCase):
     def test_only_follows_own_profile_link_and_does_not_capture_other_fields(self):
         menu = '<div class="usermenu"><a href="/user/profile.php?id=42">關於我</a></div>'
         profile = '<header id="page-header"><h1>資工系 / DCP 王小明</h1></header><dd>private@example.test</dd>'
-        with patch('e3_tracker.services.profile.safe_request', side_effect=[Mock(text=menu), Mock(text=profile)]) as request:
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[Mock(text=menu), Mock(text=profile)]) as request:
             self.assertEqual(fetch_profile_surname(Mock(), 'https://e3.example'), '王')
         self.assertEqual(request.call_args_list[1].args[2], 'https://e3.example/user/profile.php?id=42')
 
     def test_external_profile_link_is_not_followed(self):
         menu = '<div class="usermenu"><a href="https://other.example/user/profile.php">關於我</a></div>'
-        with patch('e3_tracker.services.profile.safe_request', return_value=Mock(text=menu)) as request:
+        with patch('e3_tracker.assignments.services.profile.safe_request', return_value=Mock(text=menu)) as request:
             self.assertEqual(fetch_profile_surname(Mock(), 'https://e3.example'), '')
             self.assertEqual(request.call_count, 1)
 
@@ -47,8 +47,9 @@ class UserProfileTests(unittest.TestCase):
         self.environment.start()
         self.app = create_app()
         self.storage = self.app.extensions['e3_storage']
-        self.client = self.app.test_client()
-        self.storage.save_web_session('profile-test', 'student')
+        from tests.security_helpers import csrf_client
+        self.client = csrf_client(self.app)
+        self.storage.save_web_session('profile-test', 'student', moodle_session='test-cookie')
         with self.client.session_transaction() as session:
             session.update(username='student', session_token='profile-test', moodle_session='test-cookie')
 
@@ -58,7 +59,7 @@ class UserProfileTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_profile_is_fetched_once_and_persisted_across_requests(self):
-        with patch('e3_tracker.api.routes.assignments.fetch_profile_surname', return_value='王') as fetch:
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname', return_value='王') as fetch:
             self.assertEqual(self.client.get('/api/profile').json, {'ok': True, 'surname': '王'})
             self.assertEqual(self.client.get('/api/profile').json['surname'], '王')
             self.assertEqual(fetch.call_count, 1)
@@ -69,14 +70,14 @@ class UserProfileTests(unittest.TestCase):
     def test_refresh_updates_name_without_affecting_other_accounts(self):
         self.storage.save_user_surname('student', '王')
         self.storage.save_user_surname('someone-else', '李')
-        with patch('e3_tracker.api.routes.assignments.fetch_profile_surname', return_value='歐陽'):
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname', return_value='歐陽'):
             self.assertEqual(self.client.get('/api/profile?refresh=1&username=someone-else').json['surname'], '歐陽')
         self.assertEqual(self.storage.load_user_surname('someone-else'), '李')
 
     def test_profile_failure_preserves_saved_surname(self):
         self.storage.save_user_surname('student', '王')
         for result in ('', requests.Timeout('unavailable')):
-            with self.subTest(result=result), patch('e3_tracker.api.routes.assignments.fetch_profile_surname') as fetch:
+            with self.subTest(result=result), patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname') as fetch:
                 if isinstance(result, Exception):
                     fetch.side_effect = result
                 else:
@@ -84,9 +85,8 @@ class UserProfileTests(unittest.TestCase):
                 self.assertEqual(self.client.get('/api/profile?refresh=1').json['surname'], '王')
 
     def test_guests_and_unauthenticated_requests_do_not_fetch_e3(self):
-        with patch('e3_tracker.api.routes.assignments.fetch_profile_surname') as fetch:
-            with self.client.session_transaction() as session:
-                session['is_guest'] = True
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname') as fetch:
+            self.storage.save_web_session('profile-test', 'student', is_guest=True)
             self.assertEqual(self.client.get('/api/profile').json['surname'], '')
             with self.client.session_transaction() as session:
                 session.clear()

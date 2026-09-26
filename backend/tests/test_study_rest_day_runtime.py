@@ -2,10 +2,7 @@ import unittest
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-from e3_tracker.shared.study_rest_day_runtime import (
-    install_study_rest_day_runtime,
-    redistribute_rest_day_allocations,
-)
+from e3_tracker.study.domain.study_rest_day_runtime import install_study_rest_day_runtime, redistribute_rest_day_allocations
 
 
 class StudyRestDayRuntimeTests(unittest.TestCase):

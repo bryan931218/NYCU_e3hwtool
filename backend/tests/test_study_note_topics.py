@@ -1,6 +1,6 @@
 import unittest
 
-from e3_tracker.services.note_topics import coarse_study_topic
+from e3_tracker.study.services.note_topics import coarse_study_topic
 
 
 class StudyNoteTopicTests(unittest.TestCase):

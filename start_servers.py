@@ -58,6 +58,8 @@ def build_local_env() -> Dict[str, str]:
     env.update(
         {
             "HOST": backend_host,
+            "E3_ENV": "development",
+            "E3_PROXY_HOPS": "1",
             "PORT": backend_port,
             "FRONTEND_HOST": frontend_host,
             "FRONTEND_PORT": frontend_port,

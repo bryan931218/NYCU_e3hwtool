@@ -6,8 +6,8 @@ import unittest
 import subprocess
 from unittest.mock import patch
 
-from e3_tracker.services.local_video_media import find_local_video, local_audio_clip, local_frame
-from e3_tracker.services.youtube_frames import YoutubeAudioError, YoutubeFrameError, _ffmpeg_executable
+from e3_tracker.study.services.local_video_media import find_local_video, local_audio_clip, local_frame
+from e3_tracker.study.services.youtube_frames import YoutubeAudioError, YoutubeFrameError, _ffmpeg_executable
 from PIL import Image, ImageStat
 
 
@@ -28,7 +28,7 @@ class LocalVideoMediaTests(unittest.TestCase):
             self.assertIsNone(find_local_video({'subject': 'subject', 'title': '001_Lesson'}))
 
     def test_decoder_failure_is_audio_failure(self):
-        with patch('e3_tracker.services.local_video_media._decode', side_effect=YoutubeFrameError('missing audio')):
+        with patch('e3_tracker.study.services.local_video_media._decode', side_effect=YoutubeFrameError('missing audio')):
             with self.assertRaises(YoutubeAudioError):
                 local_audio_clip(Path('missing.mp4'), 10, 30)
 

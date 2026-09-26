@@ -5,14 +5,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from e3_tracker.api.web import create_app
-from e3_tracker.services.youtube_playlists import (
-    _auto_sync_enabled,
-    _seconds_until_next_auto_sync,
-    sync_known_youtube_playlists,
-)
-from e3_tracker.shared.storage import PersistentStorage
-from e3_tracker.shared.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
+from e3_tracker.platform.application import create_app
+from e3_tracker.study.services.youtube_playlists import _auto_sync_enabled, _seconds_until_next_auto_sync, sync_known_youtube_playlists
+from e3_tracker.platform.storage import PersistentStorage
+from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class YoutubePlaylistSyncTests(unittest.TestCase):
@@ -146,7 +142,7 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
             ]
 
         storage = FakeStorage()
-        with patch("e3_tracker.services.youtube_playlists.fetch_youtube_playlist", side_effect=fake_fetch):
+        with patch("e3_tracker.study.services.youtube_playlists.fetch_youtube_playlist", side_effect=fake_fetch):
             result = sync_known_youtube_playlists(storage, sources)
 
         self.assertTrue(result["ok"])
@@ -171,8 +167,9 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
 
             storage = app.extensions["e3_storage"]
             token = "youtube-sync-test-session"
-            storage.save_web_session(token, "test-admin")
-            client = app.test_client()
+            storage.save_web_session(token, "test-admin", is_admin=True)
+            from tests.security_helpers import csrf_client
+            client = csrf_client(app)
             with client.session_transaction() as browser_session:
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
@@ -199,10 +196,10 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
                 "youtube_video_ids": ["9dXuhVJ-L5k"],
             }
             with patch(
-                "e3_tracker.api.routes.study_plan.sync_known_youtube_playlists",
+                "e3_tracker.study.routes.study_plan.sync_known_youtube_playlists",
                 return_value=fake_result,
             ), patch(
-                "e3_tracker.api.web._start_youtube_storyboard_index",
+                "e3_tracker.study.application._start_youtube_storyboard_index",
                 return_value=1,
             ) as start_index:
                 response = client.post(
@@ -220,7 +217,7 @@ class YoutubePlaylistSyncTests(unittest.TestCase):
 
             video = storage.list_study_plan_videos_with_records()[0]
             with patch(
-                "e3_tracker.api.web._start_youtube_storyboard_index",
+                "e3_tracker.study.application._start_youtube_storyboard_index",
                 return_value=1,
             ) as start_manual_index:
                 manual_response = client.post(

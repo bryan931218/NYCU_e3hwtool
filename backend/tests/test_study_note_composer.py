@@ -4,14 +4,8 @@ import os
 import tempfile
 from unittest.mock import Mock, patch
 
-from e3_tracker.api.web import create_app
-from e3_tracker.shared.study_note_composer import (
-    CONTENT_KINDS,
-    StudyNoteToolAccumulator,
-    StudyNoteToolError,
-    build_study_note_tools,
-    run_study_note_tool_conversation,
-)
+from e3_tracker.platform.application import create_app
+from e3_tracker.study.domain.study_note_composer import CONTENT_KINDS, StudyNoteToolAccumulator, StudyNoteToolError, build_study_note_tools, run_study_note_tool_conversation
 
 
 class StudyNoteComposerTests(unittest.TestCase):
@@ -297,7 +291,7 @@ class StudyNoteComposerTests(unittest.TestCase):
                 return response
 
             try:
-                with patch("e3_tracker.api.web.requests.post", side_effect=fake_post):
+                with patch("e3_tracker.study.services.note_model_client.requests.post", side_effect=fake_post):
                     payload = app.extensions["study_note_tool_composer"](
                         subject="計算機組織",
                         source_pages=[

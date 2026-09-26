@@ -1,6 +1,6 @@
 """Sync known YouTube playlists into the study-plan video inventory.
 
-The script updates backend/e3_tracker/shared/study_plan_videos.json.
+The script updates backend/e3_tracker/study/domain/study_plan_videos.json.
 It uses yt-dlp for public playlist extraction. If yt-dlp is not installed,
 it installs the package into the system temp directory so the application
 runtime does not gain a new project dependency.
@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterable, List
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = ROOT / "backend" / "e3_tracker" / "shared" / "study_plan_videos.json"
+INVENTORY_PATH = ROOT / "backend" / "e3_tracker" / "study" / "domain" / "study_plan_videos.json"
 PLAYLISTS = [
     {
         "subject": "線性代數",
@@ -84,7 +84,7 @@ def sync_inventory(dry_run: bool = False) -> Dict[str, int]:
     backend_root = str(ROOT / "backend")
     if backend_root not in sys.path:
         sys.path.insert(0, backend_root)
-    from e3_tracker.services.youtube_matching import match_playlist_entries
+    from e3_tracker.study.services.youtube_matching import match_playlist_entries
 
     inventory = load_inventory()
     by_key = {
@@ -130,8 +130,8 @@ def sync_database() -> None:
     backend_root = ROOT / "backend"
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    from e3_tracker.shared.config import load_env_defaults
-    from e3_tracker.shared.storage import PersistentStorage
+    from e3_tracker.platform.config import load_env_defaults
+    from e3_tracker.platform.storage import PersistentStorage
 
     env_defaults = load_env_defaults()
     configured_cache_dir = env_defaults.get("cache_dir")

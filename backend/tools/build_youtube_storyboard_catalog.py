@@ -16,16 +16,11 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from e3_tracker.services.youtube_frames import (  # noqa: E402
-    YoutubeMetadataError,
-    _initial_player_response,
-    _positive_float,
-    _watch_page_headers,
-)
+from e3_tracker.study.services.youtube_frames import YoutubeMetadataError, _initial_player_response, _positive_float, _watch_page_headers
 
 
-SOURCE_PATH = BACKEND_ROOT / "e3_tracker" / "shared" / "study_plan_videos.json"
-OUTPUT_PATH = BACKEND_ROOT / "e3_tracker" / "shared" / "youtube_storyboard_catalog.json"
+SOURCE_PATH = BACKEND_ROOT / "e3_tracker" / "study" / "domain" / "study_plan_videos.json"
+OUTPUT_PATH = BACKEND_ROOT / "e3_tracker" / "study" / "domain" / "youtube_storyboard_catalog.json"
 
 
 def _fetch_entry(video_id: str) -> tuple[str, dict[str, Any]]:

@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from e3_tracker.api.web import create_app
-from e3_tracker.shared.source_localization import SOURCE_PAGE_INDEX_VERSION
-from e3_tracker.shared.storage import PersistentStorage
+from e3_tracker.platform.application import create_app
+from e3_tracker.study.domain.source_localization import SOURCE_PAGE_INDEX_VERSION
+from e3_tracker.platform.storage import PersistentStorage
 
 
 class StudyRecallSearchTests(unittest.TestCase):
@@ -312,8 +312,9 @@ class StudyRecallSearchTests(unittest.TestCase):
                     ],
                 )
                 token = "study-search-test-session"
-                storage.save_web_session(token, "test-admin")
-                client = app.test_client()
+                storage.save_web_session(token, "test-admin", is_admin=True)
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
                 with client.session_transaction() as browser_session:
                     browser_session["username"] = "test-admin"
                     browser_session["session_token"] = token
@@ -342,7 +343,7 @@ class StudyRecallSearchTests(unittest.TestCase):
             finally:
                 storage._engine.dispose()
 
-    def test_public_search_is_anonymous_read_only_and_can_preview_source_page(self):
+    def test_note_search_and_previews_require_admin_even_on_legacy_public_urls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(
                 os.environ,
@@ -394,8 +395,15 @@ class StudyRecallSearchTests(unittest.TestCase):
                 image_dir.mkdir(parents=True)
                 image_bytes = b"public-note-image"
                 (image_dir / "dijkstra.png").write_bytes(image_bytes)
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
 
+                self.assertEqual(client.get("/study-progress/notes/search?q=Dijkstra").status_code, 302)
+                self.assertEqual(client.get(f"/study-progress/notes/{session_id}/image/dijkstra.png").status_code, 302)
+                self.assertNotIn('<h2 id="public-note-search-title">', client.get("/study-progress").get_data(as_text=True))
+                storage.save_web_session("private-note-test", "test-admin", is_admin=True)
+                with client.session_transaction() as cookie:
+                    cookie["session_token"] = "private-note-test"
                 response = client.get(
                     "/study-progress/notes/search",
                     query_string={"q": "Dijkstra", "subject": "資料結構"},
