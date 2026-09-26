@@ -177,7 +177,7 @@ html[data-theme="light"] th{color:#475569}
                     <select id="trafficViewUser" name="view_user">
                         {% for option in admin_view_options %}
                         <option value="{{ option.username }}" {% if option.username == selected_view_username %}selected{% endif %}>
-                            {{ option.username }}{% if option.is_admin %}（管理員）{% endif %} · {{ option.assignment_count }} 筆作業 · {{ option.fetched_label }}
+                            {{ option.username }} · {{ option.profile_name or '姓名尚未取得' }}{% if option.is_admin %}（管理員）{% endif %} · {{ option.assignment_count }} 筆作業 · {{ option.fetched_label }}
                         </option>
                         {% endfor %}
                     </select>
@@ -246,7 +246,7 @@ html[data-theme="light"] th{color:#475569}
                         {% for visitor in top_users %}
                         <li>
                             <span>
-                                <strong>{{ visitor.username }}</strong><br>
+                                <strong>{{ visitor.username }}{% if visitor.profile_name %} · {{ visitor.profile_name }}{% endif %}</strong><br>
                                 <small class="muted">最後在線：{{ visitor.last_seen }}</small>
                             </span>
                             <span class="tag">{{ visitor.count }} 次</span>
@@ -282,7 +282,8 @@ html[data-theme="light"] th{color:#475569}
             <table>
                 <thead>
                     <tr>
-                        <th>帳號</th>
+                        <th>學號／帳號</th>
+                        <th>姓名</th>
                         <th>狀態</th>
                         <th>總訪問次數</th>
                         <th>最後在線時間</th>
@@ -294,6 +295,7 @@ html[data-theme="light"] th{color:#475569}
                         {% for row in user_rows %}
                         <tr>
                             <td>{{ row.username }}</td>
+                            <td>{% if row.profile_name %}{{ row.profile_name }}{% else %}<span class="muted">尚未取得</span>{% endif %}</td>
                             <td>
                                 {% if row.online %}
                                 <span class="badge online">Online</span>
@@ -304,15 +306,17 @@ html[data-theme="light"] th{color:#475569}
                             <td>{{ row.count }}</td>
                             <td>{{ row.last_seen }}</td>
                             <td>
+                                {% if row.count or row.last_seen != '-' %}
                                 <form class="inline-form" method="post" action="{{ url_for('admin_traffic_reset_user') }}" data-confirm="確定要刪除 {{ row.username }} 的統計紀錄嗎？"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
                                     <input type="hidden" name="username" value="{{ row.username }}">
                                     <button type="submit" class="btn danger" style="padding:6px 10px;font-size:12px">刪除</button>
                                 </form>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
                     {% else %}
-                        <tr><td colspan="5" style="text-align:center;color:#94a3b8">目前尚無紀錄</td></tr>
+                        <tr><td colspan="6" style="text-align:center;color:#94a3b8">目前尚無紀錄</td></tr>
                     {% endif %}
                 </tbody>
             </table>

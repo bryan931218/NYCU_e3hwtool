@@ -67,11 +67,16 @@ def _security_schema(conn):
     security_limits_table.create(conn, checkfirst=True)
 
 
+def _user_profile_name_schema(conn):
+    _add_columns(conn, "users", {"profile_name": "VARCHAR(128)"})
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
     ("0003_user_profile", _user_profile_schema),
     ("0004_security", _security_schema),
+    ("0005_user_profile_name", _user_profile_name_schema),
 )
 
 

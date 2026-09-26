@@ -4,10 +4,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 import requests
+from bs4 import BeautifulSoup
 from sqlalchemy import inspect, text
 
 from e3_tracker.platform.application import create_app
-from e3_tracker.assignments.services.profile import fetch_profile_surname, parse_profile_surname
+from e3_tracker.assignments.services.profile import fetch_profile_surname, parse_profile_surname, parse_profile_name
 from e3_tracker.platform.persistence import migrations
 
 
@@ -36,6 +37,15 @@ class ProfileParsingTests(unittest.TestCase):
             self.assertEqual(fetch_profile_surname(Mock(), 'https://e3.example'), '')
             self.assertEqual(request.call_count, 1)
 
+    def test_full_name_excludes_department_and_other_private_fields(self):
+        html = '<header id="page-header"><h1>資工系 / DCP 歐陽小明</h1></header><dd>private@example.test</dd>'
+        self.assertEqual(parse_profile_name(html), '歐陽小明')
+
+    def test_login_and_error_pages_do_not_become_profile_names(self):
+        for title in ('登入', '關於我', '個人資料', '焦點綜覽', '錯誤訊息', '112550103'):
+            with self.subTest(title=title):
+                self.assertEqual(parse_profile_name(f'<header id="page-header"><h1>{title}</h1></header>'), '')
+
 
 class UserProfileTests(unittest.TestCase):
     def setUp(self):
@@ -59,39 +69,97 @@ class UserProfileTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_profile_is_fetched_once_and_persisted_across_requests(self):
-        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname', return_value='王') as fetch:
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_name', return_value='王小明') as fetch:
             self.assertEqual(self.client.get('/api/profile').json, {'ok': True, 'surname': '王'})
             self.assertEqual(self.client.get('/api/profile').json['surname'], '王')
             self.assertEqual(fetch.call_count, 1)
         self.assertEqual(self.storage.load_user_surname('student'), '王')
+        self.assertEqual(self.storage.load_user_profile('student')['name'], '王小明')
         self.assertEqual(self.storage.load_user_surname('someone-else'), '')
         self.assertIn('王', self.client.get('/').get_data(as_text=True))
 
     def test_refresh_updates_name_without_affecting_other_accounts(self):
         self.storage.save_user_surname('student', '王')
         self.storage.save_user_surname('someone-else', '李')
-        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname', return_value='歐陽'):
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_name', return_value='歐陽小明'):
             self.assertEqual(self.client.get('/api/profile?refresh=1&username=someone-else').json['surname'], '歐陽')
         self.assertEqual(self.storage.load_user_surname('someone-else'), '李')
+        self.assertEqual(self.storage.load_user_profile('student')['name'], '歐陽小明')
+        self.assertEqual(self.storage.load_user_profile('someone-else')['name'], '')
 
     def test_profile_failure_preserves_saved_surname(self):
-        self.storage.save_user_surname('student', '王')
+        self.storage.save_user_profile('student', '王小明', '王')
         for result in ('', requests.Timeout('unavailable')):
-            with self.subTest(result=result), patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname') as fetch:
+            with self.subTest(result=result), patch('e3_tracker.assignments.routes.assignments.fetch_profile_name') as fetch:
                 if isinstance(result, Exception):
                     fetch.side_effect = result
                 else:
                     fetch.return_value = result
                 self.assertEqual(self.client.get('/api/profile?refresh=1').json['surname'], '王')
+                self.assertEqual(self.storage.load_user_profile('student')['name'], '王小明')
 
     def test_guests_and_unauthenticated_requests_do_not_fetch_e3(self):
-        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_surname') as fetch:
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_name') as fetch:
             self.storage.save_web_session('profile-test', 'student', is_guest=True)
             self.assertEqual(self.client.get('/api/profile').json['surname'], '')
             with self.client.session_transaction() as session:
                 session.clear()
             self.assertEqual(self.client.get('/api/profile').status_code, 302)
             fetch.assert_not_called()
+
+    def test_existing_surname_is_backfilled_with_full_name(self):
+        self.storage.save_user_surname('student', '王')
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_name', return_value='王小明') as fetch:
+            response = self.client.get('/api/profile')
+            fetch.assert_called_once()
+        self.assertEqual(response.json, {'ok': True, 'surname': '王'})
+        self.assertEqual(self.storage.load_user_profile('student')['name'], '王小明')
+
+    def test_admin_sees_stored_name_mappings_even_without_traffic(self):
+        self.storage.save_user_profile('112550101', '王小明', '王')
+        self.storage.save_user_cache('112550101', {'result': {'courses': []}, 'ts': 1})
+        self.storage.save_user_profile('112550102', '<img src=x onerror=alert(1)>', '李')
+        self.storage.save_user_surname('112550104', '陳')
+        self.storage.save_web_session('profile-test', 'student', is_admin=True)
+        response = self.client.get('/admin/traffic')
+        self.assertEqual(response.status_code, 200)
+        soup = BeautifulSoup(response.get_data(as_text=True), 'html.parser')
+        table = soup.select_one('table')
+        self.assertIn('姓名', table.get_text())
+        rows = {row.select_one('td').get_text(): row for row in table.select('tbody tr')}
+        self.assertEqual(rows['112550101'].select('td')[1].get_text(), '王小明')
+        self.assertEqual(rows['112550104'].select('td')[1].get_text(), '尚未取得')
+        self.assertFalse(rows['112550102'].select('img'))
+        self.assertIn('<img src=x onerror=alert(1)>', rows['112550102'].get_text())
+        option = soup.select_one('#trafficViewUser option[value="112550101"]')
+        self.assertIn('王小明', option.get_text())
+
+    def test_other_users_names_are_not_available_to_regular_users_or_guests(self):
+        self.storage.save_user_profile('112550101', '王小明', '王')
+        self.assertEqual(self.client.get('/admin/traffic').status_code, 302)
+        self.assertNotIn('王小明', self.client.get('/').get_data(as_text=True))
+        self.assertNotIn('王小明', self.client.get('/api/cache').get_data(as_text=True))
+        self.storage.save_web_session('profile-test', 'student', is_guest=True)
+        self.assertEqual(self.client.get('/admin/traffic').status_code, 302)
+        with self.client.session_transaction() as session:
+            session.clear()
+        self.assertEqual(self.client.get('/admin/traffic').status_code, 302)
+
+    def test_full_name_upgrade_preserves_surname_and_sessions(self):
+        self.storage.save_user_surname('student', '王')
+        with self.storage._engine.begin() as conn:
+            conn.execute(text('ALTER TABLE users DROP COLUMN profile_name'))
+            conn.execute(text("DELETE FROM e3_schema_migrations WHERE version='0005_user_profile_name'"))
+        self.assertEqual(migrations.run_migrations(self.storage._engine), ['0005_user_profile_name'])
+        self.assertEqual(migrations.run_migrations(self.storage._engine), [])
+        self.assertEqual(self.storage.load_user_profile('student'), {'name': '', 'surname': '王'})
+        self.assertTrue(self.storage.is_valid_web_session('profile-test', 'student'))
+
+    def test_profile_write_is_atomic_and_invalid_values_do_not_erase_name(self):
+        self.storage.save_user_profile('student', '王小明', '王')
+        for name, surname in [('', '王'), ('x' * 129, '王'), ('李小明', ''), ('李小明', 'x' * 17)]:
+            self.storage.save_user_profile('student', name, surname)
+        self.assertEqual(self.storage.load_user_profile('student'), {'name': '王小明', 'surname': '王'})
 
     def test_additive_upgrade_preserves_existing_users_and_is_idempotent(self):
         with self.storage._engine.begin() as conn:

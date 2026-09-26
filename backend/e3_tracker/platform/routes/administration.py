@@ -41,6 +41,10 @@ def register_administration_routes(*,
             flash("僅限管理員瀏覽流量資訊。", "error")
             return redirect(url_for("index"))
         admin_view_options = list_admin_view_options()
+        profiles = storage.list_user_profiles()
+        names = {row["username"]: row["profile_name"] or "" for row in profiles}
+        for option in admin_view_options:
+            option["profile_name"] = names.get(option["username"], "")
         selected_view_username = user["username"]
         requested_view_username = (request.args.get("view_user") or "").strip()
         if requested_view_username:
@@ -76,6 +80,7 @@ def register_administration_routes(*,
         formatted_users = [
             {
                 "username": entry["username"],
+                "profile_name": names.get(entry["username"], ""),
                 "count": entry["count"],
                 "online": entry["online"],
                 "last_seen": _fmt_ts(entry.get("last_seen")),
@@ -230,11 +235,24 @@ def register_administration_routes(*,
         summary["online_ips"] = ip_overview["online"]
         summary["guest_total"] = guest_overview.get("total", 0)
         summary["guest_online"] = guest_overview.get("online", 0)
+        # Include stored accounts without traffic, without changing traffic metrics.
+        known_users = {row["username"] for row in formatted_users}
+        account_rows = formatted_users + [
+            {
+                "username": row["username"],
+                "profile_name": row["profile_name"] or "",
+                "count": 0,
+                "online": False,
+                "last_seen": "-",
+            }
+            for row in profiles
+            if row["username"] not in known_users
+        ]
         return render_template_string(
             TRAFFIC_TEMPLATE,
             stats=usage_stats(),
             stats_version=current_stats_version(),
-            user_rows=formatted_users,
+            user_rows=account_rows,
             events=formatted_events,
             generated_at=_fmt_ts(time.time()),
             admin_user=user,

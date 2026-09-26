@@ -1,4 +1,4 @@
-"""Read the signed-in user's surname from E3's own profile page."""
+"""Read the signed-in user's name from E3's own profile page."""
 import re
 from urllib.parse import urljoin, urlsplit
 
@@ -15,7 +15,7 @@ COMPOUND_SURNAMES = frozenset((
 ))
 
 
-def parse_profile_surname(html: str) -> str:
+def parse_profile_name(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     heading = soup.select_one("#page-header h1")
     if not heading:
@@ -26,10 +26,20 @@ def parse_profile_surname(html: str) -> str:
     if not match:
         return ""
     name = match.group(1)
+    if name in {"登入", "登出", "關於我", "個人資料", "使用者資料", "焦點綜覽", "錯誤", "錯誤訊息"}:
+        return ""
+    return name
+
+
+def profile_surname(name: str) -> str:
     return name[:2] if name[:2] in COMPOUND_SURNAMES else name[:1]
 
 
-def fetch_profile_surname(sess, base_url: str, *, timeout: int = 8) -> str:
+def parse_profile_surname(html: str) -> str:
+    return profile_surname(parse_profile_name(html))
+
+
+def fetch_profile_name(sess, base_url: str, *, timeout: int = 8) -> str:
     dashboard = safe_request(sess, "GET", f"{base_url.rstrip('/')}/my/",
                              headers=HEADERS, timeout=timeout)
     soup = BeautifulSoup(dashboard.text, "html.parser")
@@ -41,4 +51,8 @@ def fetch_profile_surname(sess, base_url: str, *, timeout: int = 8) -> str:
     if (target.scheme, target.netloc) != (base.scheme, base.netloc):
         return ""
     response = safe_request(sess, "GET", profile_url, headers=HEADERS, timeout=timeout)
-    return parse_profile_surname(response.text)
+    return parse_profile_name(response.text)
+
+
+def fetch_profile_surname(sess, base_url: str, *, timeout: int = 8) -> str:
+    return profile_surname(fetch_profile_name(sess, base_url, timeout=timeout))

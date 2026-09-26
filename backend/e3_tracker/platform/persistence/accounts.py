@@ -15,6 +15,45 @@ from e3_tracker.platform.persistence.core_schema import (
 
 
 class AccountsStorage:
+    def load_user_profile(self, username: str) -> dict:
+        with self._lock, self._engine.connect() as conn:
+            row = (
+                conn.execute(
+                    select(users_table.c.profile_name, users_table.c.profile_surname)
+                    .where(users_table.c.username == username)
+                ).mappings().first()
+            )
+        return {
+            "name": (row["profile_name"] or "") if row else "",
+            "surname": (row["profile_surname"] or "") if row else "",
+        }
+
+    def save_user_profile(self, username: str, name: str, surname: str) -> None:
+        name, surname = str(name or "").strip(), str(surname or "").strip()
+        if (
+            not username or not name or len(name) > 128
+            or not surname or len(surname) > 16
+        ):
+            return
+        with self._lock, self._engine.begin() as conn:
+            user_id = self._ensure_user(conn, username)
+            conn.execute(
+                update(users_table)
+                .where(users_table.c.id == user_id)
+                .values(profile_name=name, profile_surname=surname)
+            )
+
+    def list_user_profiles(self) -> list:
+        with self._lock, self._engine.connect() as conn:
+            rows = (
+                conn.execute(
+                    select(users_table.c.username, users_table.c.profile_name)
+                    .where(users_table.c.is_guest == 0)
+                    .order_by(users_table.c.username)
+                ).mappings().all()
+            )
+        return [dict(row) for row in rows]
+
     def load_user_surname(self, username: str) -> str:
         with self._lock, self._engine.connect() as conn:
             return (
