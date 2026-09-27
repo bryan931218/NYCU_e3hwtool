@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { createPushDiagnostics, testLocalNotification } from '../assignments/static/js/browser-notifications.js';
+import { createPushDiagnostics } from '../assignments/static/js/browser-notifications.js';
 
 const tag = `test:${'a'.repeat(32)}`;
 const scriptURL = 'https://example.test/assignment-notifications-sw.js';
@@ -54,7 +54,9 @@ test('accepted push without a device receipt times out instead of claiming deliv
     if (error) finish(message);
   }, 1);
   diagnostics.track(tag);
-  assert.match(await complete, /尚未收到此裝置/);
+  const message = await complete;
+  assert.match(message, /尚未收到此裝置/);
+  assert.doesNotMatch(message, /本機通知/);
   diagnostics.dispose();
 });
 
@@ -67,19 +69,6 @@ test('cancelled diagnostics do not leave a pending timeout', async () => {
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(reports.length, 1);
   diagnostics.dispose();
-});
-
-test('local notification test uses only the active browser worker and checks permission', async () => {
-  const calls = [];
-  const registration = { active: {}, showNotification: async (...args) => calls.push(args) };
-  await assert.rejects(testLocalNotification(registration, 'denied'), /允許通知/);
-  await assert.rejects(testLocalNotification(null, 'granted'), /啟用此裝置/);
-  assert.equal(calls.length, 0);
-  await testLocalNotification(registration, 'granted');
-  assert.equal(calls[0][0], 'E3 裝置通知測試');
-  assert.equal(calls[0][1].data.url, '/');
-  registration.showNotification = async () => { throw new Error('blocked'); };
-  await assert.rejects(testLocalNotification(registration, 'granted'), /blocked/);
 });
 
 function notificationWorker(showNotification, matchAll) {

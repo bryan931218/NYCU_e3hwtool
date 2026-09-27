@@ -410,6 +410,16 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(manifest.json["display"], "standalone")
         manifest.close()
 
+    def test_settings_page_keeps_push_test_without_local_test_button(self):
+        response = self.client.get("/settings/notifications")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('id="testBrowser"', html)
+        self.assertIn('id="testLine"', html)
+        self.assertIn('id="browserDiagnostic"', html)
+        self.assertNotIn('id="testLocalBrowser"', html)
+        self.assertNotIn("測試本機通知", html)
+
     def test_browser_transport_encrypts_payload_and_never_follows_redirects(self):
         private = ec.generate_private_key(ec.SECP256R1())
         self.service.vapid_private = (

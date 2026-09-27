@@ -38,19 +38,10 @@ export function createPushDiagnostics(worker, report, timeoutMs = 20000) {
       report("推播服務已接受，等待此裝置回報");
       timer = setTimeout(() => {
         cancel();
-        report("尚未收到此裝置的推播回報；請先測試本機通知，再檢查瀏覽器連線", true);
+        report("尚未收到此裝置的推播回報；請檢查瀏覽器連線與通知權限", true);
       }, timeoutMs);
       if (receipts.has(tag)) apply(receipts.get(tag));
     },
     dispose() { cancel(); worker.removeEventListener("message", onMessage); },
   };
-}
-
-export async function testLocalNotification(registration, permission) {
-  if (permission !== "granted") throw new Error("請先在瀏覽器網站設定允許通知");
-  if (!registration?.active) throw new Error("請先啟用此裝置，再測試本機通知");
-  await registration.showNotification("E3 裝置通知測試", {
-    body: "這是本機通知測試，不經過伺服器推播。",
-    tag: `e3-local-test:${Date.now()}`, data: { url: "/" },
-  });
 }

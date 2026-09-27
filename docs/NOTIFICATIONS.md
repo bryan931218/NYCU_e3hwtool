@@ -69,6 +69,6 @@ python -m unittest tests.test_assignment_notifications tests.test_schema_migrati
 
 測試用假的訂閱與模擬傳送，沒有寄出真實通知。正式設定完成後，可在通知設定點選 LINE「測試通知」或瀏覽器「測試推播」；只傳給本人的此裝置或已綁定 LINE，每帳號 10 分鐘最多 10 次（兩個通道共用），不修改作業或提醒條件。畫面顯示已交給服務不等於裝置已送達，仍須確認實際收到訊息。正式驗收亦須用本人帳號驗證新作業及即將到期作業。
 
-瀏覽器區分「測試推播」與「測試本機通知」。本機測試只呼叫本裝置的通知 API，不連線伺服器、不扣推播測試額度；若本機測試也沒有彈出，請查看 Windows 通知中心、Chrome 的系統通知開關與勿擾模式（[Microsoft 說明](https://support.microsoft.com/en-us/windows/experience/notifications-and-do-not-disturb-in-windows)）。
+若裝置回報已建立通知，卻沒有彈出通知橫幅，請查看 Windows 通知中心、Chrome 的系統通知開關與勿擾模式（[Microsoft 說明](https://support.microsoft.com/en-us/windows/experience/notifications-and-do-not-disturb-in-windows)）。
 
 推播測試會等待最多 20 秒的 service worker 裝置回報，區分服務接受、裝置接收與通知建立；回報只在同瀏覽器通知設定頁的記憶體傳遞，不寫入資料庫或送回伺服器，也不包含作業名稱、訂閱端點或帳號資訊。建立通知成功仍不代表作業系統顯示了橫幅。關閉設定頁時不會有頁面回報，背景推播本身仍可顯示通知。
