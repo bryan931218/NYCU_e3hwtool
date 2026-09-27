@@ -24,11 +24,17 @@
 .notification-page [hidden] { display: none !important; }
 .reminder-days { margin: 10px 0 0; padding: 0; border: 0; }
 .reminder-days legend { margin-bottom: 10px; font-size: 12px; color: var(--muted); }
-.day-input-row, #dayInputs, .day-input, .channel-actions, .code-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.day-input { gap: 5px; }
-.day-input input { width: 66px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--card); color: var(--fg); }
-.day-input span { color: var(--muted); font-size: 12px; }
-.day-input button { border: 0; background: transparent; color: var(--muted); padding: 5px; line-height: 1; }
+.day-input-row, .channel-actions, .code-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#dayInputs { display: contents; }
+.day-input { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 8px; height: 44px; padding: 4px 5px 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); transition: border-color .15s; }
+.day-input:focus-within { border-color: var(--primary); }
+.day-input input { width: 52px; min-width: 0; height: 32px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--fg); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day-input span { flex-shrink: 0; color: var(--muted); font-size: 13px; }
+.day-input button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; margin-left: 2px; padding: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0 3px 3px 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; }
+.day-input button:hover:not(:disabled) { color: var(--err-fg); background: var(--err-bg); }
+.day-input button:disabled { opacity: .3; }
+.notification-page #addDay { flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border-style: dashed; background: transparent; color: var(--primary); font-size: 22px; line-height: 1; }
+.reminder-days:disabled .day-input { background: var(--card-2); }
 .reminder-days > small { display: block; margin-top: 9px; }
 .outline-button, .text-button, .save-button { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 7px 13px; border: 1px solid var(--border); border-radius: 5px; background: var(--card); color: var(--fg); text-decoration: none; font-size: 13px; }
 .outline-button:hover { border-color: var(--primary); color: var(--primary); }
@@ -46,4 +52,4 @@
 .save-button { color: #fff; background: var(--primary-2); border-color: var(--primary-2); padding: 9px 20px; }
 #notificationMessage { margin: 0; color: var(--primary); font-size: 13px; }
 #notificationMessage[data-error="true"] { color: var(--err-fg); }
-@media (prefers-reduced-motion: reduce) { .setting-row input[role="switch"], .setting-row input[role="switch"]::before { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .setting-row input[role="switch"], .setting-row input[role="switch"]::before, .day-input { transition: none; } }

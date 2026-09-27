@@ -30,10 +30,14 @@ async function api(path, method = "GET", body) {
   return data;
 }
 
-function addDay(value = 1) {
+function addDay(value) {
   const container = byId("dayInputs");
   const count = container.children.length;
   if (count >= 5) return;
+  if (value === undefined) {
+    const used = new Set([...container.querySelectorAll("input")].map((input) => Number(input.value)));
+    value = Array.from({ length: 30 }, (_, index) => index + 1).find((day) => !used.has(day));
+  }
   const row = document.createElement("div");
   row.className = "day-input";
   const input = document.createElement("input");
@@ -55,6 +59,12 @@ function updateDayControls() {
   byId("addDay").disabled = !byId("notifyDue").checked || byId("dayInputs").children.length >= 5;
   byId("dayInputs").querySelectorAll("button").forEach((button) => {
     button.disabled = byId("dayInputs").children.length <= 1;
+  });
+  [...byId("dayInputs").children].forEach((row, index) => {
+    row.querySelector("input").setAttribute("aria-label", `第 ${index + 1} 個提醒的天數`);
+    const label = `移除第 ${index + 1} 個提醒`;
+    row.querySelector("button").setAttribute("aria-label", label);
+    row.querySelector("button").title = label;
   });
 }
 
