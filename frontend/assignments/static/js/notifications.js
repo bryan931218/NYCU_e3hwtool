@@ -1,3 +1,5 @@
+import { createPushDiagnostics, testLocalNotification } from "./browser-notifications.js";
+
 const config = JSON.parse(document.getElementById("notification-config").textContent);
 const form = document.getElementById("notificationForm");
 const byId = (id) => document.getElementById(id);
@@ -7,6 +9,13 @@ let subscriptionHash = "";
 let linePoll = null;
 let linkExpires = 0;
 const supported = window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+function browserMessage(text, error = false) {
+  const output = byId("browserDiagnostic");
+  output.hidden = false;
+  output.textContent = text;
+  output.dataset.error = String(error);
+}
+const pushDiagnostics = supported ? createPushDiagnostics(navigator.serviceWorker, browserMessage) : null;
 byId("notificationTheme").addEventListener("click", () => {
   const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = theme;
@@ -77,6 +86,7 @@ function renderChannels() {
   byId("disableBrowser").hidden = !ownDevice;
   byId("enableBrowser").hidden = !!ownDevice;
   byId("testBrowser").disabled = !state.browser_ready || !ownDevice;
+  byId("testLocalBrowser").disabled = !ownDevice;
   byId("browserStatus").textContent = !state.browser_ready ? "服務尚未啟用" : !supported ? "此瀏覽器不支援推播" :
     Notification.permission === "denied" ? "已封鎖，請在瀏覽器網站設定允許通知" : ownDevice ? "此裝置已啟用" : "此裝置尚未啟用";
   byId("lineStatus").textContent = !state.line_ready ? "服務尚未啟用" : state.line_linked ? "已綁定" : "尚未綁定";
@@ -178,10 +188,17 @@ byId("unlinkLine").addEventListener("click", () => action(byId("unlinkLine"), as
 }));
 for (const [id, channel] of [["testBrowser", "browser"], ["testLine", "line"]]) {
   byId(id).addEventListener("click", () => action(byId(id), async () => {
+    if (channel === "browser") pushDiagnostics?.cancel();
     const result = await api("test", "POST", { channel, ...(channel === "browser" ? { endpoint_hash: subscriptionHash } : {}) });
     message(result.message);
+    if (channel === "browser") pushDiagnostics?.track(result.test_tag);
   }));
 }
+byId("testLocalBrowser").addEventListener("click", () => action(byId("testLocalBrowser"), async () => {
+  pushDiagnostics?.cancel();
+  await testLocalNotification(await navigator.serviceWorker.getRegistration("/"), Notification.permission);
+  browserMessage("瀏覽器已建立本機測試通知；若沒有彈出，請查看系統通知中心、Chrome 通知與勿擾設定");
+}));
 byId("copyCode").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(byId("lineCode").value); message("綁定碼已複製"); }
   catch { byId("lineCode").select(); message("請複製選取的綁定碼"); }
@@ -190,6 +207,7 @@ byId("copyCode").addEventListener("click", async () => {
 applyPreferences(state.preferences); renderChannels();
 if (supported) {
   navigator.serviceWorker.getRegistration("/").then(async (registration) => {
+    registration?.update().catch(() => {});
     subscription = await registration?.pushManager.getSubscription(); await hashSubscription(); renderChannels();
   }).catch(() => {});
 }

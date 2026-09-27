@@ -474,6 +474,8 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(send.call_args.args[2], self.sub)
         self.assertEqual(send.call_args.args[1]["title"], "E3 通知測試")
+        self.assertRegex(response.json["test_tag"], r"^test:[0-9a-f]{32}$")
+        self.assertEqual(response.json["test_tag"], send.call_args.args[0]["event_key"])
         self.assertEqual(self.storage.notification_preferences("student"), before)
         self.assertEqual(self.job_rows(), [])
         other = subscription("other")
@@ -491,20 +493,19 @@ class NotificationTests(unittest.TestCase):
         target = "U" + "a" * 32
         self.assertTrue(self.storage.consume_line_link_code(code, target))
         with patch.object(self.service, "deliver") as send:
-            for _ in range(3):
-                self.assertEqual(
-                    self.client.post(
-                        "/api/notifications/test", json={"channel": "line"}
-                    ).status_code,
-                    200,
+            for _ in range(10):
+                response = self.client.post(
+                    "/api/notifications/test", json={"channel": "line"}
                 )
+                self.assertEqual(response.status_code, 200)
+                self.assertNotIn("test_tag", response.json)
             self.assertEqual(
                 self.client.post(
                     "/api/notifications/test", json={"channel": "line"}
                 ).status_code,
                 429,
             )
-        self.assertEqual(send.call_count, 3)
+        self.assertEqual(send.call_count, 10)
         self.assertEqual(send.call_args.args[2], target)
 
     def test_manual_test_rejects_invalid_requests_and_hides_provider_errors(self):
@@ -552,6 +553,36 @@ class NotificationTests(unittest.TestCase):
             ).status_code,
             403,
         )
+
+    def test_test_budget_is_shared_by_channels_and_resets_after_ten_minutes(self):
+        code = self.storage.create_line_link_code("student")
+        self.storage.consume_line_link_code(code, "U" + "a" * 32)
+        browser = {"channel": "browser", "endpoint_hash": digest(self.sub["endpoint"])}
+        with patch.object(self.service, "deliver") as send, patch(
+            "e3_tracker.platform.persistence.accounts.time.time", return_value=self.now
+        ):
+            for index in range(10):
+                body = browser if index % 2 else {"channel": "line"}
+                self.assertEqual(
+                    self.client.post("/api/notifications/test", json=body).status_code,
+                    200,
+                )
+            self.assertEqual(
+                self.client.post("/api/notifications/test", json=browser).status_code,
+                429,
+            )
+            self.assertEqual(send.call_count, 10)
+            self.assertTrue(
+                self.storage.consume_security_limit("notification-test:other", 10, 600)
+            )
+        with patch.object(self.service, "deliver") as send, patch(
+            "e3_tracker.platform.persistence.accounts.time.time", return_value=self.now + 601
+        ):
+            self.assertEqual(
+                self.client.post("/api/notifications/test", json=browser).status_code,
+                200,
+            )
+            send.assert_called_once()
 
     def test_unlink_revokes_pending_line_code_even_without_existing_binding(self):
         code = self.storage.create_line_link_code("student")

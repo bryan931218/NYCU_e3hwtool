@@ -142,6 +142,7 @@ class NotificationService:
             )
         except Exception:
             raise RuntimeError("notification_test_failed") from None
+        return f"test:{identifier}"
 
     def dispatch(self, *, now=None):
         now = time.time() if now is None else now

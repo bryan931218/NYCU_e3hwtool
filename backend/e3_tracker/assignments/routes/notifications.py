@@ -106,16 +106,20 @@ def register_notification_routes(app, storage, current_user, login_required, ser
             )
         ):
             return {"ok": False, "message": "請選擇有效的通知方式"}, 400
-        if not storage.consume_security_limit(f"notification-test:{username}", 3, 600):
+        if not storage.consume_security_limit(f"notification-test:{username}", 10, 600):
             return {"ok": False, "message": "測試次數已達上限，請 10 分鐘後再試"}, 429
         try:
-            service.send_test(username, channel, endpoint_hash)
+            test_tag = service.send_test(username, channel, endpoint_hash)
         except ValueError as exc:
             return {"ok": False, "message": str(exc)}, 400
         except Exception:
             app.logger.warning("Notification test delivery unavailable (%s)", channel)
             return {"ok": False, "message": "傳送失敗，請確認服務設定後再試"}, 503
-        return {"ok": True, "message": "測試通知已交給推播服務，請確認是否收到"}
+        return {
+            "ok": True,
+            "message": "測試通知已交給推播服務，請確認是否收到",
+            **({"test_tag": test_tag} if channel == "browser" else {}),
+        }
 
     @app.post("/api/notifications/line/link")
     @account_only
