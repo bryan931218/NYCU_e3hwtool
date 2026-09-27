@@ -2,6 +2,13 @@
   const button = document.getElementById('homeThemeToggle');
   if (!button) return;
   const root = document.documentElement;
+  const updateMotion = () => root.classList.toggle('motion-paused', document.hidden);
+  document.addEventListener('visibilitychange', updateMotion);
+  updateMotion();
+  try {
+    const saved = localStorage.getItem('e3_theme');
+    if (saved === 'light' || saved === 'dark') root.dataset.theme = saved;
+  } catch (_) { /* The default theme also works without storage. */ }
   const updateLabel = () => {
     const dark = root.dataset.theme === 'dark';
     button.setAttribute('aria-label', dark ? '切換淺色模式' : '切換深色模式');
