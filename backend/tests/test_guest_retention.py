@@ -114,6 +114,26 @@ class GuestStorageTests(unittest.TestCase):
         self.assertIsNone(self.storage.load_web_session("guest-token"))
         self.assert_no_guest_data()
 
+    def test_first_cleanup_on_recent_boot_runs_and_later_requests_are_throttled(self):
+        self.populate_guest()
+        with self.storage._engine.begin() as conn:
+            conn.execute(update(web_sessions_table).values(expires_at=0))
+        self.storage._guest_cleanup_at = 0
+        module = "e3_tracker.platform.persistence.accounts"
+        with patch(f"{module}.time.monotonic", return_value=5):
+            self.storage.purge_expired_guest_data()
+        self.assert_no_guest_data()
+        with patch(f"{module}.time.monotonic", return_value=6), patch(
+            f"{module}.purge_inactive_guests"
+        ) as cleanup:
+            self.storage.purge_expired_guest_data()
+        cleanup.assert_not_called()
+        with patch(f"{module}.time.monotonic", return_value=65), patch(
+            f"{module}.purge_inactive_guests"
+        ) as cleanup:
+            self.storage.purge_expired_guest_data()
+        cleanup.assert_called_once()
+
     def test_startup_removes_abandoned_cache_even_without_session(self):
         self.populate_guest(active=False)
         other = PersistentStorage(self.path)
@@ -350,6 +370,9 @@ class GuestFlowTests(unittest.TestCase):
         with self.storage._engine.begin() as conn:
             conn.execute(update(web_sessions_table).values(expires_at=0))
         self.storage._guest_cleanup_at = 0
-        self.assertEqual(csrf_client(self.app).get("/login").status_code, 200)
+        with patch(
+            "e3_tracker.platform.persistence.accounts.time.monotonic", return_value=5
+        ):
+            self.assertEqual(csrf_client(self.app).get("/login").status_code, 200)
         self.assertIsNone(self.storage.load_user_cache(name))
         self.assertIsNone(self.storage.load_web_session(token))

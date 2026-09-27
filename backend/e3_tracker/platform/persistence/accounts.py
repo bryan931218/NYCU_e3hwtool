@@ -185,7 +185,8 @@ class AccountsStorage:
     def purge_expired_guest_data(self, *, force=False) -> None:
         with self._lock:
             now = time.monotonic()
-            if not force and now - getattr(self, "_guest_cleanup_at", 0) < 60:
+            previous = getattr(self, "_guest_cleanup_at", 0)
+            if not force and previous and now - previous < 60:
                 return
             with self._engine.begin() as conn:
                 purge_inactive_guests(conn)
