@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+{% include 'shared/components/security.html' %}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="/assignment.webmanifest">
+<title>通知設定 | E3作業追蹤系統</title>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/notifications.css') }}">
+<script nonce="{{ csp_nonce() }}" type="application/json" id="notification-config">{{ notification_config|tojson }}</script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/notifications.js') }}"></script>
+</head>
+<body class="notification-page">
+<main class="notification-shell">
+    <header class="notification-header">
+        <a class="back-link" href="{{ url_for('index') }}"><span aria-hidden="true">←</span> 作業追蹤</a>
+        <button type="button" class="text-button" id="notificationTheme" aria-label="切換主題" title="切換主題"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20.9 13a9 9 0 1 1-9.9-9.9A7 7 0 0 0 20.9 13Z"/></svg></button>
+    </header>
+    <h1>通知設定</h1>
+    <form id="notificationForm">
+        <section aria-labelledby="triggerHeading">
+            <h2 id="triggerHeading">提醒條件</h2>
+            <label class="setting-row"><span><strong>新作業出現時</strong><small>當期課程新增作業時通知</small></span><input type="checkbox" role="switch" id="notifyNew" name="new_assignment"></label>
+            <label class="setting-row"><span><strong>到期前提醒</strong><small>已完成、已評分與忽略的作業不會提醒</small></span><input type="checkbox" role="switch" id="notifyDue" name="due_reminder"></label>
+            <fieldset class="reminder-days" id="reminderDays">
+                <legend>到期前幾天</legend>
+                <div class="day-input-row"><div id="dayInputs"></div><button class="outline-button" id="addDay" type="button" aria-label="新增提醒時間" title="新增提醒時間"><span aria-hidden="true">＋</span></button></div>
+                <small>1–30 天，最多 5 個提醒時間</small>
+            </fieldset>
+        </section>
+        <section aria-labelledby="channelHeading">
+            <h2 id="channelHeading">通知方式</h2>
+            <div class="channel-row">
+                <label class="setting-row"><span><strong>瀏覽器通知</strong><small id="browserStatus">讀取中…</small></span><input type="checkbox" role="switch" id="notifyBrowser" name="browser_enabled"></label>
+                <div class="channel-actions"><button class="outline-button" id="enableBrowser" type="button">啟用此裝置</button><button class="outline-button" id="testBrowser" type="button" disabled>測試通知</button><button class="text-button" id="disableBrowser" type="button" hidden>移除此裝置</button></div>
+            </div>
+            <div class="channel-row">
+                <label class="setting-row"><span><strong>LINE</strong><small id="lineStatus">讀取中…</small></span><input type="checkbox" role="switch" id="notifyLine" name="line_enabled"></label>
+                <div class="channel-actions"><button class="outline-button" id="linkLine" type="button">綁定 LINE</button><button class="outline-button" id="testLine" type="button" disabled>測試通知</button><button class="text-button" id="unlinkLine" type="button" hidden>解除綁定</button></div>
+                <div id="lineLinkPanel" class="line-link-panel" hidden>
+                    <a class="outline-button" id="lineFriend" href="#" target="_blank" rel="noopener noreferrer">加入官方帳號</a>
+                    <label for="lineCode">傳送以下綁定碼給官方帳號（10 分鐘內有效）</label>
+                    <div class="code-row"><input id="lineCode" readonly><button class="outline-button" type="button" id="copyCode">複製</button></div>
+                </div>
+            </div>
+        </section>
+        <p class="sync-note" id="syncNote">提醒以 E3 當期作業的截止時間為準。E3 登入失效時，請重新登入以繼續同步。</p>
+        <footer class="settings-footer"><button class="save-button" type="submit" id="saveNotifications">儲存設定</button><p id="notificationMessage" role="status" aria-live="polite"></p></footer>
+    </form>
+</main>
+</body>
+</html>

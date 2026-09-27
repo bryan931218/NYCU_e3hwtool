@@ -15,6 +15,7 @@ from sqlalchemy.engine import Engine
 
 
 from e3_tracker.assignments.persistence.assignments import AssignmentsStorage
+from e3_tracker.assignments.persistence.notifications import NotificationStorage
 from e3_tracker.study.persistence.videos import VideosStorage
 from e3_tracker.study.persistence.study_time import StudyTimeStorage
 from e3_tracker.study.persistence.recall import RecallStorage
@@ -28,6 +29,7 @@ from e3_tracker.platform.security import CredentialCipher
 
 
 class PersistentStorage(
+    NotificationStorage,
     AssignmentsStorage,
     VideosStorage,
     StudyTimeStorage,

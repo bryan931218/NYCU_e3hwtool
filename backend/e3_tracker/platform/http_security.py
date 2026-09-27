@@ -138,7 +138,7 @@ def configure_http_security(app, storage):
                 "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; "
                 "connect-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; "
                 "frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
-                "media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+                "worker-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
             ),
         )
         response.headers["X-Content-Type-Options"] = "nosniff"

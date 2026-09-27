@@ -1,5 +1,7 @@
 from e3_tracker.assignments.routes.assignments import register_assignments_routes
 from e3_tracker.assignments.routes.dashboard import register_dashboard_routes
+from e3_tracker.assignments.routes.notifications import register_notification_routes
+from e3_tracker.assignments.services.notifications import NotificationService
 import base64
 import json
 import secrets
@@ -84,6 +86,8 @@ def register_assignment_site(
     google_redirect_uri = env_defaults.get("google_redirect_uri")
 
     google_calendar_id = env_defaults.get("google_calendar_id") or "primary"
+    notification_service = NotificationService(storage, app_home_url=app_home_url)
+    app.extensions["e3_notifications"] = notification_service
 
     DEFAULT_PREFERENCES = {
         "view_mode": "due",
@@ -456,6 +460,11 @@ def register_assignment_site(
         if stored_prefs:
             payload["preferences"] = stored_prefs
         save_cache_to_disk(username, payload)
+        if not result.get("errors"):
+            try:
+                notification_service.observe(username, slim)
+            except Exception:
+                app.logger.warning("Notification observation will retry on the next worker tick")
 
     def set_assign_cache(result: Dict[str, Any], excel_data: Optional[str]) -> None:
         user = current_user()
@@ -820,4 +829,6 @@ def register_assignment_site(
         app_home_url=app_home_url,
         support_email=support_email,
     )
+    register_notification_routes(app, storage, current_user, login_required, notification_service)
+    notification_service.start(app, fetch_assignments_for, set_assign_cache_for_user)
     return list_admin_view_options

@@ -78,6 +78,12 @@ def _guest_retention_cleanup(conn):
     remove_legacy_guest_traffic(conn, guests)
 
 
+def _assignment_notifications(conn):
+    from e3_tracker.assignments.persistence.notification_schema import NOTIFICATION_TABLES
+    for table in NOTIFICATION_TABLES:
+        table.create(conn, checkfirst=True)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -85,6 +91,7 @@ MIGRATIONS = (
     ("0004_security", _security_schema),
     ("0005_user_profile_name", _user_profile_name_schema),
     ("0006_guest_retention", _guest_retention_cleanup),
+    ("0007_assignment_notifications", _assignment_notifications),
 )
 
 

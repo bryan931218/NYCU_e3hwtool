@@ -4,6 +4,7 @@
 {% include 'shared/components/security.html' %}
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="manifest" href="/assignment.webmanifest">
 {% set site_description = "E3作業追蹤系統可以幫助交大學生統整 E3 平台上的所有作業。系統會列出所有課程作業、狀態、截止日期，也能導出 Excel 或同步到 Google 日曆。" %}
 <meta name="description" content="{{ site_description }}" />
 <meta property="og:title" content="E3作業追蹤系統" />
@@ -72,6 +73,11 @@
             <span class="dot"></span>
             {% endif %}
         </button>
+        {% if user and not guest_mode and not is_admin_view %}
+        <a class="icon-button" href="{{ url_for('notification_settings_page') }}" title="通知設定" aria-label="通知設定">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-3M14 20H3M14 2v4M8 10v4M18 18v4"/></svg>
+        </a>
+        {% endif %}
         <button type="button" class="icon-button" id="themeToggle" title="切換主題">
             <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-9H21m-17 0H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
             <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" /></svg>

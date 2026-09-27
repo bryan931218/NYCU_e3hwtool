@@ -1,6 +1,8 @@
 """Transactional removal of assignment data owned by temporary accounts."""
 
 from sqlalchemy import delete, select
+from sqlalchemy import inspect
+from .notification_schema import NOTIFICATION_TABLES
 
 from .schema import (
     assignments_table,
@@ -27,3 +29,6 @@ def delete_assignment_account_data(conn, user_ids):
         user_preferences_table,
     ):
         conn.execute(delete(table).where(table.c.user_id.in_(user_ids)))
+    for table in NOTIFICATION_TABLES:
+        if inspect(conn).has_table(table.name):
+            conn.execute(delete(table).where(table.c.user_id.in_(user_ids)))

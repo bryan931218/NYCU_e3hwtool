@@ -1,0 +1,11 @@
+{
+  "id": "/",
+  "name": "E3作業追蹤系統",
+  "short_name": "E3作業",
+  "lang": "zh-Hant",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#151a1e",
+  "theme_color": "#08786b"
+}

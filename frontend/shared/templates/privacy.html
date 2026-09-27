@@ -39,6 +39,7 @@ footer a{color:#c3dafe;text-decoration:none}
             <li><strong>Google OAuth 憑證：</strong>僅在使用者選擇日曆同步時，透過授權範圍 <code>{{ google_scope }}</code> 取得存取權杖與更新權杖。</li>
             <li><strong>操作紀錄與流量資訊：</strong>包含 IP、請求時間、功能使用狀態、匿名統計數據，用於偵錯與濫用偵測。</li>
             <li><strong>偏好設定：</strong>顯示模式、篩選條件與 Google 同步選項等個人化設定。</li>
+            <li><strong>通知資料：</strong>僅在您啟用通知時，保存提醒條件、瀏覽器推播訂閱或綁定的 LINE 識別碼，以寄送您選擇的作業提醒。</li>
         </ul>
     </section>
 
@@ -48,6 +49,7 @@ footer a{color:#c3dafe;text-decoration:none}
         <ul>
             <li>登入 E3 並統整作業資料，以呈現個人化儀表板。</li>
             <li>在您允許的情況下，使用 Google API 將作業匯入指定日曆。</li>
+            <li>在您啟用通知時，定期檢查 E3 作業，將課程名稱、作業名稱與截止時間送往您選擇的瀏覽器推播服務或 LINE 官方帳號。</li>
             <li>偵測異常流量、維護系統安全與品質，以及提供必要的客服協助。</li>
         </ul>
     </section>
@@ -69,8 +71,9 @@ footer a{color:#c3dafe;text-decoration:none}
         <ul>
             <li>國立陽明交通大學 E3 平台：作業資料來源。</li>
             <li>Google Calendar API：在授權範圍 <code>{{ google_scope }}</code> 內建立行事曆事件。</li>
+            <li>瀏覽器推播服務與 LINE Messaging API：僅在您啟用對應通知時寄送作業提醒；訂閱與 LINE 識別碼在後端加密保存，您可在通知設定中移除。</li>
         </ul>
-        <p>我們不會販售或分享個資給其他第三方。</p>
+        <p>我們不會販售個資；僅為提供您選擇的功能，向對應服務傳送必要資料。</p>
     </section>
 
     <section>
