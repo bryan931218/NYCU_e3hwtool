@@ -1,11 +1,12 @@
 """Administration routes and their feature helpers."""
 
 from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS, is_assignment_event
+from e3_tracker.platform.services.traffic_trends import build_traffic_trend
 import json
 import time
 from collections import Counter
 from datetime import datetime
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from flask import flash, redirect, render_template_string, request, url_for
 from e3_tracker.platform.constants import TAIPEI_TZ
 
@@ -125,86 +126,10 @@ def register_administration_routes(*,
                     "details": "；".join(detail_parts),
                 }
             )
-        trend_window = request.args.get("trend", "hour")
-        if trend_window not in {"hour", "day"}:
-            trend_window = "hour"
-        hourly_series = traffic_tracker.hourly_series()
-        if trend_window == "day":
-            daily_map: Dict[int, Set[str]] = {}
-            for ts, members in traffic_tracker.hourly_buckets().items():
-                day_dt = datetime.fromtimestamp(ts, tz=TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-                day_ts = int(day_dt.timestamp())
-                day_set = daily_map.setdefault(day_ts, set())
-                day_set.update(members)
-
-            if daily_map:
-                sorted_days_keys = sorted(daily_map.keys())
-                min_day_ts = sorted_days_keys[0]
-                max_day_ts = sorted_days_keys[-1]
-
-                full_daily_series = []
-                current_ts = min_day_ts
-                while current_ts <= max_day_ts:
-                    full_daily_series.append({
-                        "ts": current_ts,
-                        "count": len(daily_map.get(current_ts, []))
-                    })
-                    current_ts += 86400
-
-                chart_labels = [datetime.fromtimestamp(item["ts"], tz=TAIPEI_TZ).strftime("%Y-%m-%d") for item in full_daily_series]
-                chart_values = [item["count"] for item in full_daily_series]
-            else:
-                chart_labels = []
-                chart_values = []
-        else:
-            if hourly_series:
-                full_series = []
-                series_dict = {item["ts"]: item["count"] for item in hourly_series}
-                min_ts = hourly_series[0]["ts"]
-                max_ts = hourly_series[-1]["ts"]
-
-                current_ts = min_ts
-                while current_ts <= max_ts:
-                    full_series.append({
-                        "ts": current_ts,
-                        "count": series_dict.get(current_ts, 0)
-                    })
-                    current_ts += 3600
-
-                hourly_series = full_series
-
-            chart_labels = [datetime.fromtimestamp(item["ts"], tz=TAIPEI_TZ).strftime("%m-%d %H:00") for item in hourly_series]
-            chart_values = [item["count"] for item in hourly_series]
-        if not chart_labels or not chart_values:
-            # fallback to on-the-fly aggregation of filtered events to avoid空白圖
-            buckets: Dict[datetime, Set[str]] = {}
-            for ev in filtered_events:
-                ts = ev.get("ts")
-                if not ts:
-                    continue
-                meta = ev.get("meta") or {}
-                username = meta.get("username")
-                if not username or meta.get("is_guest"):
-                    continue
-                try:
-                    dt = datetime.fromtimestamp(float(ts), tz=TAIPEI_TZ)
-                except Exception:
-                    continue
-                action = (ev.get("action") or "").lower()
-                if action in PASSIVE_TRAFFIC_ACTIONS:
-                    continue
-                if trend_window == "day":
-                    bucket = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-                else:
-                    bucket = dt.replace(minute=0, second=0, microsecond=0)
-                bucket_set = buckets.setdefault(bucket, set())
-                bucket_set.add(str(username))
-            sorted_keys = sorted(buckets.keys())
-            chart_labels = [
-                key.strftime("%Y-%m-%d") if trend_window == "day" else key.strftime("%m-%d %H:00")
-                for key in sorted_keys
-            ]
-            chart_values = [len(buckets[key]) for key in sorted_keys]
+        trend = build_traffic_trend(
+            traffic_tracker.hourly_series(), traffic_tracker.hourly_buckets(),
+            filtered_events, request.args,
+        )
         action_counter: Counter = Counter()
         for ev in filtered_events:
             action_counter[ev.get("action") or "-"] += 1
@@ -257,13 +182,10 @@ def register_administration_routes(*,
             events=formatted_events,
             generated_at=_fmt_ts(time.time()),
             admin_user=user,
-            chart_labels=chart_labels,
-            chart_values=chart_values,
+            trend=trend,
             top_actions=top_actions,
             top_users=formatted_users[:5],
             summary=summary,
-            trend_window=trend_window,
-            trend_label="每小時" if trend_window == "hour" else "每天",
             ip_summary=ip_overview,
             admin_view_options=admin_view_options,
             selected_view_username=selected_view_username,
