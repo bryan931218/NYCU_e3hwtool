@@ -1,4 +1,4 @@
-"""Guest identities must not become durable account or traffic history."""
+"""Guest identities stay temporary; login history is anonymous."""
 
 from copy import deepcopy
 
@@ -14,8 +14,31 @@ def is_guest_event(event):
     return bool(
         meta.get("is_guest")
         or is_guest_identity(meta.get("username"))
-        or str(event.get("action") or "").lower().startswith("guest_")
+        or str(event.get("action") or "").strip().lower().startswith("guest_")
     )
+
+
+def sanitize_traffic_event(event):
+    """Retain only anonymous guest logins, never their identifiers or IPs."""
+    if not isinstance(event, dict):
+        return None
+    action = str(event.get("action") or "").strip().lower()
+    if action == "guest_login":
+        meta = event.get("meta") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        status = event.get("status") or "info"
+        return {
+            "ts": event.get("ts"),
+            "ip": None,
+            "action": "guest_login",
+            "status": status if status in ("success", "error", "info", "start") else "info",
+            "meta": {
+                "is_guest": True,
+                "site": "study" if meta.get("site") == "study" else "assignments",
+            },
+        }
+    return None if is_guest_event(event) else dict(event)
 
 
 def without_guest_traffic(payload, guest_names=()):

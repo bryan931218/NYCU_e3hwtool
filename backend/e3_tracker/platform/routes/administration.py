@@ -120,7 +120,7 @@ def register_administration_routes(*,
                     "ip": ev.get("ip") or "-",
                     "action": ev.get("action") or "-",
                     "status": ev.get("status") or "info",
-                    "username": meta.get("username") or "-",
+                    "username": meta.get("username") or ("訪客" if meta.get("is_guest") else "-"),
                     "description": _action_description(ev.get("action") or "-"),
                     "details": "；".join(detail_parts),
                 }

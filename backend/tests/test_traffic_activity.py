@@ -162,6 +162,49 @@ class TrafficActivityTests(unittest.TestCase):
         self.record("study_plan_replanned")
         self.assertIn("尚無操作紀錄", self.activity_text())
 
+    def test_guest_login_remains_visible_after_logout_and_reload_without_identity(self):
+        guest = csrf_client(self.app)
+        self.assertEqual(guest.post("/guest-login").status_code, 302)
+        with guest.session_transaction() as cookie:
+            token = cookie["session_token"]
+        name = self.storage.load_web_session(token)["username"]
+        guest.post("/logout")
+        text = self.activity_text()
+        self.assertIn("訪客登入", text)
+        self.assertNotIn(name, text)
+        events = self.storage.recent_traffic_events(500)
+        self.assertEqual([event["action"] for event in events], ["guest_login"])
+        self.assertIsNone(events[0]["ip"])
+        self.assertEqual(events[0]["meta"], {"is_guest": True, "site": "assignments"})
+        reloaded_app = create_app()
+        try:
+            client = csrf_client(reloaded_app)
+            with client.session_transaction() as session:
+                session["session_token"] = "activity-test"
+            response = client.get("/admin/traffic")
+            activity = BeautifulSoup(response.get_data(as_text=True), "html.parser").select_one(".events")
+            self.assertIn("訪客登入", activity.get_text())
+            self.assertNotIn(name, activity.get_text())
+        finally:
+            reloaded_app.extensions["e3_storage"]._engine.dispose()
+
+    def test_study_guest_login_is_still_excluded_after_reload(self):
+        self.storage.append_traffic_event({
+            "ts": 1, "action": "guest_login", "ip": "guest-ip",
+            "meta": {"is_guest": True, "site": "study"},
+        }, max_events=500)
+        reloaded_app = create_app()
+        try:
+            client = csrf_client(reloaded_app)
+            with client.session_transaction() as session:
+                session["session_token"] = "activity-test"
+            response = client.get("/admin/traffic")
+            text = BeautifulSoup(response.get_data(as_text=True), "html.parser").select_one(".events").get_text()
+            self.assertNotIn("訪客登入", text)
+            self.assertIn("尚無操作紀錄", text)
+        finally:
+            reloaded_app.extensions["e3_storage"]._engine.dispose()
+
 
 if __name__ == "__main__":
     unittest.main()

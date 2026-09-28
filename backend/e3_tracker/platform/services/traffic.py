@@ -7,7 +7,12 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from e3_tracker.platform.constants import TAIPEI_TZ
-from e3_tracker.platform.guest_privacy import is_guest_event, is_guest_identity, without_guest_traffic
+from e3_tracker.platform.guest_privacy import (
+    is_guest_event,
+    is_guest_identity,
+    sanitize_traffic_event,
+    without_guest_traffic,
+)
 
 PASSIVE_TRAFFIC_ACTIONS = {"heartbeat", "refresh_assignments"}
 
@@ -87,7 +92,8 @@ class TrafficTracker:
                 self._recent_events = []
         elif self._log_path:
             self._load_recent_events()
-        self._recent_events = [event for event in self._recent_events if not is_guest_event(event)]
+        sanitized = [sanitize_traffic_event(event) for event in self._recent_events]
+        self._recent_events = [event for event in sanitized if event is not None]
 
     def _purge_expired(self, now: float) -> bool:
         expired_ips = [ip for ip, ts in self._active_ips.items() if now - ts > self._activity_window]
@@ -156,7 +162,20 @@ class TrafficTracker:
         status: str = "success",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        if not action or is_guest_event({"action": action, "meta": metadata}):
+        if not action:
+            return
+        event = sanitize_traffic_event(
+            {
+                "ts": time.time(), "ip": ip, "action": action, "status": status,
+                "meta": metadata or {},
+            }
+        )
+        if event is None:
+            return
+        if is_guest_event(event):
+            with self._lock:
+                self._append_event(event)
+                self._version += 1
             return
         action_lc = str(action).lower()
         now = time.time()

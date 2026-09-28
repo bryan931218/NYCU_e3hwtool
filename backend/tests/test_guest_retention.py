@@ -12,14 +12,69 @@ from unittest.mock import patch
 from sqlalchemy import delete, select, text, update
 
 from e3_tracker.platform.application import create_app
-from e3_tracker.platform.guest_privacy import without_guest_traffic
+from e3_tracker.platform.guest_privacy import sanitize_traffic_event, without_guest_traffic
 from e3_tracker.platform.persistence import migrations
-from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
+from e3_tracker.platform.persistence.core_schema import (
+    traffic_events_table,
+    users_table,
+    web_sessions_table,
+)
 from e3_tracker.platform.services.traffic import TrafficTracker
 from e3_tracker.platform.storage import PersistentStorage
 from tests.security_helpers import csrf_client
 
 GUEST = "\u8a2a\u5ba2_abcdef"
+
+
+class GuestEventPrivacyTests(unittest.TestCase):
+    def test_login_allowlist_is_anonymous_and_idempotent(self):
+        event = {
+            "ts": 123,
+            "ip": "guest-ip",
+            "action": " GUEST_LOGIN ",
+            "status": "success",
+            "username": GUEST,
+            "meta": {
+                "username": GUEST, "is_guest": True, "is_admin": True,
+                "site": "assignments", "token": "secret", "course": "private",
+                "info": "private import", "message": "private message",
+            },
+        }
+        original = json.dumps(event)
+        cleaned = sanitize_traffic_event(event)
+        self.assertEqual(cleaned, {
+            "ts": 123, "ip": None, "action": "guest_login", "status": "success",
+            "meta": {"is_guest": True, "site": "assignments"},
+        })
+        self.assertEqual(sanitize_traffic_event(cleaned), cleaned)
+        self.assertEqual(json.dumps(event), original)
+
+    def test_only_guest_login_is_retained(self):
+        for event in (
+            {"action": "guest_import", "meta": {}},
+            {"action": "logout", "meta": {"username": GUEST}},
+            {"action": "page_view", "meta": {"is_guest": True}},
+            {"action": "heartbeat", "meta": {"username": GUEST, "is_guest": False}},
+            None,
+        ):
+            with self.subTest(event=event):
+                self.assertIsNone(sanitize_traffic_event(event))
+        student = {"action": "login_success", "meta": {"username": "112550103"}}
+        self.assertEqual(sanitize_traffic_event(student), student)
+
+    def test_study_tag_is_preserved_but_unknown_status_and_metadata_are_not(self):
+        cleaned = sanitize_traffic_event({
+            "action": "guest_login", "status": GUEST,
+            "meta": {"site": "study", "username": GUEST},
+        })
+        self.assertEqual(cleaned["meta"], {"is_guest": True, "site": "study"})
+        self.assertEqual(cleaned["status"], "info")
+        for meta in (None, [], "private"):
+            with self.subTest(meta=meta):
+                self.assertEqual(
+                    sanitize_traffic_event({"action": "guest_login", "meta": meta})["meta"],
+                    {"is_guest": True, "site": "assignments"},
+                )
 
 
 def cache_payload():
@@ -209,6 +264,15 @@ class GuestStorageTests(unittest.TestCase):
                     "INSERT INTO traffic_events (username, is_guest, action, meta) VALUES ('112550103', 0, 'login_success', '{}')"
                 )
             )
+            conn.execute(traffic_events_table.insert().values(
+                ts=123, ip="guest-ip", username=GUEST, is_guest=0,
+                action="guest_login", status="success",
+                meta=json.dumps({"username": GUEST, "token": "private-token"}),
+            ))
+            conn.execute(traffic_events_table.insert().values(
+                ip="guest-ip", username="legacy-guest", is_guest=1,
+                action="page_view", meta=json.dumps({"info": "private-view"}),
+            ))
             conn.execute(
                 delete(migrations.history).where(
                     migrations.history.c.version == "0006_guest_retention"
@@ -225,10 +289,18 @@ class GuestStorageTests(unittest.TestCase):
         self.assertNotIn(GUEST, json.dumps(state, ensure_ascii=False))
         self.assertEqual(
             [event["action"] for event in self.storage.recent_traffic_events(500)],
-            ["login_success"],
+            ["login_success", "guest_login"],
         )
+        with self.storage._engine.connect() as conn:
+            rows = conn.execute(select(traffic_events_table)).mappings().all()
+        self.assertEqual(len(rows), 2)
+        self.assertIsNone(rows[1]["ip"])
+        self.assertIsNone(rows[1]["username"])
+        self.assertEqual(json.loads(rows[1]["meta"]), {
+            "is_guest": True, "site": "assignments",
+        })
 
-    def test_guest_traffic_never_reaches_event_or_state_storage(self):
+    def test_only_anonymous_guest_login_reaches_event_storage_not_account_stats(self):
         tracker = TrafficTracker(
             state_saver=self.storage.save_traffic_state,
             event_writer=lambda event: self.storage.append_traffic_event(event, 500),
@@ -249,13 +321,48 @@ class GuestStorageTests(unittest.TestCase):
         self.storage.append_traffic_event(
             {"action": "page_view", "meta": {"username": GUEST}}, 500
         )
-        self.assertEqual(self.storage.recent_traffic_events(500), [])
+        events = self.storage.recent_traffic_events(500)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["action"], "guest_login")
+        self.assertIsNone(events[0]["ip"])
+        self.assertEqual(events[0]["meta"], {"is_guest": True, "site": "assignments"})
+        self.assertEqual(tracker.user_breakdown(), [])
+        self.assertEqual(tracker.ip_breakdown(), [])
+        self.assertEqual(tracker.snapshot()["total_users"], 0)
+        self.assertEqual(self.storage.list_user_profiles(), [])
         self.assertIsNone(self.storage.load_traffic_state())
+        with self.storage._engine.connect() as conn:
+            row = conn.execute(select(traffic_events_table)).mappings().one()
+        self.assertIsNone(row["username"])
+        self.assertIsNone(row["ip"])
+        self.assertNotIn(GUEST, json.dumps(dict(row), ensure_ascii=False))
+        reloaded = TrafficTracker(event_loader=self.storage.recent_traffic_events)
+        self.assertEqual(reloaded.recent_events(), events)
         tracker.record_visit(
             "student-ip", action="login_success", metadata={"username": "112550103"}
         )
-        self.assertEqual(len(self.storage.recent_traffic_events(500)), 1)
+        self.assertEqual(len(self.storage.recent_traffic_events(500)), 2)
         self.assertNotIn("guest-ip", json.dumps(self.storage.load_traffic_state()))
+
+    def test_file_log_and_backend_reload_never_expose_guest_identifiers(self):
+        path = Path(self.directory.name) / "traffic.jsonl"
+        tracker = TrafficTracker(log_path=path)
+        tracker.record_visit("guest-ip", action="guest_login", metadata={"username": GUEST})
+        tracker.record_visit("guest-ip", action="guest_import", metadata={"username": GUEST})
+        logged = path.read_text(encoding="utf-8")
+        self.assertNotIn(GUEST, logged)
+        self.assertNotIn("guest-ip", logged)
+        self.assertEqual(TrafficTracker(log_path=path).recent_events(), tracker.recent_events())
+        legacy = [
+            {"action": "guest_login", "ip": "guest-ip", "meta": {"username": GUEST}},
+            {"action": "guest_import", "meta": {"username": GUEST}},
+        ]
+        reloaded = TrafficTracker(event_loader=lambda limit: legacy)
+        self.assertEqual(len(reloaded.recent_events()), 1)
+        self.assertEqual(reloaded.recent_events()[0]["meta"], {
+            "is_guest": True, "site": "assignments",
+        })
+        self.assertIsNone(reloaded.recent_events()[0]["ip"])
 
     def test_state_filter_removes_flagged_guests_and_hourly_members(self):
         state = {
@@ -334,7 +441,11 @@ class GuestFlowTests(unittest.TestCase):
         self.assertIsNone(self.storage.load_user_cache(name))
         self.assertIsNone(self.storage.load_web_session(token))
         self.assertEqual(self.storage.list_user_profiles(), [])
-        self.assertEqual(self.storage.recent_traffic_events(500), [])
+        events = self.storage.recent_traffic_events(500)
+        self.assertEqual([event["action"] for event in events], ["guest_login"])
+        self.assertEqual(events[0]["meta"], {"is_guest": True, "site": "assignments"})
+        self.assertIsNone(events[0]["ip"])
+        self.assertNotIn(name, json.dumps(events, ensure_ascii=False))
 
     def test_admin_account_table_excludes_even_active_legacy_guest_rows(self):
         self.import_guest()
@@ -358,6 +469,7 @@ class GuestFlowTests(unittest.TestCase):
         self.assertIn("Test Name", html)
         self.assertNotIn("\u8a2a\u5ba2_", html)
         self.assertNotIn("\u7e3d\u8a2a\u5ba2\u4eba\u6578", html)
+        self.assertIn("\u8a2a\u5ba2\u767b\u5165", html)
 
     def test_switching_to_a_new_guest_session_cleans_old_import(self):
         token, name = self.import_guest()

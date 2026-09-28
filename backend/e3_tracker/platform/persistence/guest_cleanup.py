@@ -9,6 +9,7 @@ from e3_tracker.assignments.persistence.cleanup import delete_assignment_account
 from e3_tracker.platform.guest_privacy import (
     is_guest_event,
     is_guest_identity,
+    sanitize_traffic_event,
     without_guest_traffic,
 )
 from .core_schema import (
@@ -99,7 +100,10 @@ def remove_legacy_guest_traffic(conn, guest_names):
             meta = json.loads(row["meta"] or "{}")
         except (TypeError, ValueError):
             meta = {}
-        event = {"action": row["action"], "meta": meta}
+        event = {
+            "ts": row["ts"], "ip": row["ip"], "action": row["action"],
+            "status": row["status"], "meta": meta,
+        }
         if (
             row["is_guest"]
             or row["username"] in guest_names
@@ -107,11 +111,27 @@ def remove_legacy_guest_traffic(conn, guest_names):
             or is_guest_event(event)
             or (isinstance(meta, dict) and meta.get("username") in guest_names)
         ):
-            conn.execute(
-                delete(traffic_events_table).where(
-                    traffic_events_table.c.id == row["id"]
-                )
+            cleaned = (
+                sanitize_traffic_event(event)
+                if str(row["action"] or "").strip().lower() == "guest_login"
+                else None
             )
+            if cleaned is not None:
+                conn.execute(
+                    update(traffic_events_table)
+                    .where(traffic_events_table.c.id == row["id"])
+                    .values(
+                        ip=None, username=None, is_guest=1, is_admin=0,
+                        action=cleaned["action"], status=cleaned["status"],
+                        meta=json.dumps(cleaned["meta"], ensure_ascii=False),
+                    )
+                )
+            else:
+                conn.execute(
+                    delete(traffic_events_table).where(
+                        traffic_events_table.c.id == row["id"]
+                    )
+                )
     for row in conn.execute(select(traffic_state_table)).mappings():
         try:
             payload = json.loads(row["payload"])

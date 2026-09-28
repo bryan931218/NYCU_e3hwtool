@@ -1,6 +1,6 @@
 """Persistence operations for community."""
 
-from e3_tracker.platform.guest_privacy import is_guest_event, without_guest_traffic
+from e3_tracker.platform.guest_privacy import sanitize_traffic_event, without_guest_traffic
 
 import json
 from typing import Any, Dict, List, Optional
@@ -236,9 +236,9 @@ class CommunityStorage:
                 )
 
     def append_traffic_event(self, event: Dict[str, Any], max_events: int) -> None:
-        if is_guest_event(event):
+        record = sanitize_traffic_event(event)
+        if record is None:
             return
-        record = dict(event)
         meta = record.get("meta") or {}
         meta_json = json.dumps(meta, ensure_ascii=False)
         username = meta.get("username") if isinstance(meta, dict) else None
@@ -296,7 +296,7 @@ class CommunityStorage:
                 meta = json.loads(meta_raw) if meta_raw else {}
             except Exception:
                 meta = {}
-            events.append(
+            event = sanitize_traffic_event(
                 {
                     "ts": row.ts,
                     "ip": row.ip,
@@ -305,6 +305,8 @@ class CommunityStorage:
                     "meta": meta,
                 }
             )
+            if event is not None:
+                events.append(event)
         return events
 
     def clear_traffic_events(self) -> None:
