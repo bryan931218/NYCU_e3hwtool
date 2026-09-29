@@ -235,6 +235,7 @@
                 <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
             </summary>
             <div class="more-panel tc-center">
+            <a class="btn" href="{{ url_for('e3_navigation_extension') }}" target="_blank" rel="noopener">E3 自動跳轉套件</a>
             {% if result and excel_data %}<a class="btn excel-btn" data-log-action="download_excel" download="待繳作業.xlsx" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}">匯出 Excel</a>{% endif %}
             {% if is_admin_view %}<span class="btn disabled">唯讀檢視</span>
             {% elif google_ready %}{% if google_linked %}
@@ -468,21 +469,6 @@
 </div>
 
 </div>
-
-{% if user %}
-<aside id="e3NavigationRecovery" class="e3-navigation-recovery" aria-label="返回 E3 作業" hidden>
-    <div class="e3-navigation-copy" role="status" aria-live="polite">
-        <strong>已保留前往 E3 的作業</strong>
-        <div id="e3NavigationTarget" class="e3-navigation-target"></div>
-        <p>E3 要求重新登入時，請先完成登入，再按「返回原作業」。</p>
-    </div>
-    <button type="button" id="e3NavigationDismiss" class="e3-navigation-dismiss" aria-label="關閉返回作業提示" title="關閉提示">×</button>
-    <div class="e3-navigation-actions">
-        <a id="e3NavigationResume" class="btn accent" target="_blank" rel="noopener">返回原作業 ↗</a>
-        <a id="e3NavigationLogin" class="btn" target="_blank" rel="noopener">登入 E3 ↗</a>
-    </div>
-</aside>
-{% endif %}
 
 <footer class="site-footer">
     <div>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>E3 自動跳轉套件</title>
+    <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
+</head>
+<body>
+<main class="container">
+    <h1>E3 登入後，自動開啟原作業</h1>
+    <p>安裝一次後，在追蹤系統點「前往 E3」即可。已登入時直接開啟作業；需要登入時，自動開啟校園單一入口，完成登入後自動回到原作業。</p>
+    <p><a class="btn accent" href="{{ url_for('e3_navigation_extension_download') }}">下載自動跳轉套件</a></p>
+    <h2>一次安裝，之後不用再點返回</h2>
+    <ol>
+        <li>下載並解壓縮 ZIP，保留解壓縮後的 <strong>e3-auto-navigation</strong> 資料夾。</li>
+        <li>桌機 Chrome 開啟 <code>chrome://extensions</code>；Edge 開啟 <code>edge://extensions</code>。</li>
+        <li>開啟「開發人員模式」，按「載入未封裝項目」，選取包含 <strong>manifest.json</strong> 的 e3-auto-navigation 資料夾。</li>
+        <li>重新整理 E3 作業追蹤系統，即可使用。</li>
+    </ol>
+    <h2>登入與隱私</h2>
+    <p>登入與二階段驗證仍在學校的頁面完成。套件只在本工具與 E3 執行，不收集或儲存密碼、Cookie 或驗證碼，也不將 E3 登入憑證傳回本工具。</p>
+    <p>只保留正在開啟的作業網址，完成跳轉或關閉該分頁時清除；超過 30 分鐘不再自動跳轉。沒有從本工具開啟作業時，套件不會介入 E3 瀏覽。</p>
+    <p>支援桌機 Chrome／Edge。手機 Chrome 不支援這種擴充套件；未安裝的瀏覽器仍會直接開啟原 E3 連結。</p>
+    <p>目前適用 <strong>www.e3hwtool.space</strong>、<strong>e3hwtool.space</strong> 與 <strong>e3p.nycu.edu.tw</strong>。移除套件可隨時停用自動跳轉。</p>
+    <p><a href="{{ url_for('index') }}">返回作業追蹤系統</a></p>
+</main>
+</body>
+</html>

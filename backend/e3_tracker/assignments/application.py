@@ -675,7 +675,6 @@ def register_assignment_site(
             "result": result,
             "excel_data": excel_data,
             "user": user,
-            "e3_base_url": base_url,
             "google_ready": _google_ready(),
             "google_linked": google_linked,
             "guest_mode": guest_mode,

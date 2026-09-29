@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "E3 作業自動跳轉",
+  "version": "1.0.0",
+  "description": "從 E3 作業追蹤系統開啟作業，登入完成後自動返回指定作業。",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage"],
+  "host_permissions": ["https://e3p.nycu.edu.tw/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "content_scripts": [
+    {
+      "matches": ["https://www.e3hwtool.space/*", "https://e3hwtool.space/*"],
+      "js": ["tracker.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://e3p.nycu.edu.tw/*"],
+      "js": ["probe.js", "e3-page.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
