@@ -6,6 +6,8 @@
     'eventUrl': url_for('ui_event'),
     'assignmentsUrl': url_for('api_assignments'),
     'guest': guest_mode|default(false),
+    'e3BaseUrl': e3_base_url|default('https://e3p.nycu.edu.tw', true),
+    'navigationOwner': [user.username, viewed_username|default(user.username, true)],
     'announcementVersion': announcement_version|default('', true),
     'statsVersion': stats_version|default(0),
     'statsUrl': url_for('traffic_stats')

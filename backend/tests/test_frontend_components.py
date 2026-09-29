@@ -8,7 +8,7 @@ from e3_tracker.platform.assets import configure_frontend
 
 
 class FrontendComponentTests(unittest.TestCase):
-    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False):
+    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, e3_base_url='https://e3p.nycu.edu.tw'):
         app = Flask(__name__)
         configure_frontend(app)
         app.secret_key = 'component-test'
@@ -28,9 +28,23 @@ class FrontendComponentTests(unittest.TestCase):
         with app.test_request_context('/'):
             html = render_template('assignments/web.html', result=result, preferences=preferences,
                                    user={'username': 'qa', 'surname': surname}, viewed_username='qa',
+                                   e3_base_url=e3_base_url,
                                    guest_mode=guest_mode, is_admin_view=False, google_ready=False, now_ts=200,
                                    last_updated_label='2026-09-26 13:31', stats={'online': 3, 'total': 3286})
         return BeautifulSoup(html, 'html.parser'), uid
+
+    def test_e3_return_entry_keeps_native_links_and_escapes_assignment_metadata(self):
+        document, _uid = self.render(e3_base_url='https://e3.example.test/moodle')
+        for link in document.select('.assignment-link a'):
+            self.assertTrue(link.has_attr('data-e3-assignment'))
+            self.assertEqual(link['href'], 'https://example.test/task')
+            self.assertEqual(link['target'], '_blank')
+            self.assertIn('noopener', link['rel'])
+            self.assertEqual(link.find_parent('tr')['data-title'], '<img src=x onerror=alert(1)>')
+        self.assertTrue(document.select_one('#e3NavigationRecovery').has_attr('hidden'))
+        config = json.loads(document.select_one('#workbench-config').string)
+        self.assertEqual(config['e3BaseUrl'], 'https://e3.example.test/moodle')
+        self.assertEqual(config['navigationOwner'], ['qa', 'qa'])
 
     def test_both_views_share_escaped_content_and_ignored_state(self):
         document, uid = self.render()

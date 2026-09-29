@@ -179,6 +179,6 @@
         {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}
         {% if primary_status == 'pending' %}<span class="badge nodue">未完成</span>{% endif %}
     </div>{% if primary_status == 'overdue' and not is_admin_view %}<button type="button" class="row-ignore-btn" data-ignore-overdue="{{ item_uid }}">忽略</button>{% endif %}</div></td>
-    <td class="assignment-center assignment-link"><a class="btn" href="{{ item.url|safe_link }}" target="_blank" rel="noopener"><span>{{ '前往 E3' if due_view else '開啟' }}</span><span aria-hidden="true">↗</span></a></td>
+    <td class="assignment-center assignment-link"><a class="btn" data-e3-assignment href="{{ item.url|safe_link }}" target="_blank" rel="noopener"><span>{{ '前往 E3' if due_view else '開啟' }}</span><span aria-hidden="true">↗</span></a></td>
 </tr>
 {%- endmacro %}

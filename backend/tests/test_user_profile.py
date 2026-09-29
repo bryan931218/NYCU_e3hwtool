@@ -124,7 +124,7 @@ class UserProfileTests(unittest.TestCase):
         response = self.client.get('/admin/traffic')
         self.assertEqual(response.status_code, 200)
         soup = BeautifulSoup(response.get_data(as_text=True), 'html.parser')
-        table = soup.select_one('table')
+        table = soup.find('th', string='學號／帳號').find_parent('table')
         self.assertIn('姓名', table.get_text())
         rows = {row.select_one('td').get_text(): row for row in table.select('tbody tr')}
         self.assertEqual(rows['112550101'].select('td')[1].get_text(), '王小明')

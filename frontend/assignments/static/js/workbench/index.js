@@ -12,6 +12,7 @@ import * as startup from "./startup.js";
 import * as announcements from "./announcements.js";
 import * as traffic from "./traffic.js";
 import * as profile from "./profile.js";
+import * as e3Navigation from "./e3-navigation.js";
 
 const config = JSON.parse(
   document.getElementById("workbench-config").textContent,
@@ -32,6 +33,7 @@ const features = [
   announcements,
   traffic,
   profile,
+  e3Navigation,
 ];
 
 // Register callbacks before initializing state and wiring DOM listeners.
