@@ -2,9 +2,10 @@
 
 from typing import Optional
 import hashlib
+import re
 import time
 from cryptography.fernet import InvalidToken
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from e3_tracker.platform.guest_privacy import is_guest_identity
 from .guest_cleanup import (
@@ -21,6 +22,81 @@ from e3_tracker.platform.persistence.core_schema import (
 
 
 class AccountsStorage:
+    def load_student_number(self, username: str) -> str:
+        with self._lock, self._engine.connect() as conn:
+            return conn.execute(
+                select(users_table.c.student_number)
+                .where(users_table.c.username == username)
+            ).scalar() or ""
+
+    def save_student_number(self, username: str, student_number: str) -> bool:
+        if not username.startswith("Session-") or not re.fullmatch(r"[0-9]{9}", student_number):
+            return False
+        with self._lock, self._engine.begin() as conn:
+            uid = self._ensure_user(conn, username)
+            # A later response must not silently replace an established identity.
+            return bool(conn.execute(
+                update(users_table).where(
+                    users_table.c.id == uid,
+                    or_(users_table.c.student_number.is_(None),
+                        users_table.c.student_number == "",
+                        users_table.c.student_number == student_number),
+                ).values(student_number=student_number)
+            ).rowcount)
+
+    def claim_student_number_sync(self, username: str, now: float, *, force=False) -> bool:
+        if not username.startswith("Session-"):
+            return False
+        with self._lock, self._engine.begin() as conn:
+            uid = self._ensure_user(conn, username)
+            claim = update(users_table).where(
+                users_table.c.id == uid,
+                users_table.c.is_guest == 0,
+                or_(users_table.c.student_number.is_(None), users_table.c.student_number == ""),
+            )
+            if not force:
+                claim = claim.where(users_table.c.student_number_sync_after <= now)
+            return bool(conn.execute(
+                claim.values(student_number_sync_after=now + 3600)
+            ).rowcount)
+
+    def list_session_identity_users(self, now: float, limit=10) -> list:
+        with self._lock, self._engine.connect() as conn:
+            return list(conn.execute(
+                select(web_sessions_table.c.username).distinct()
+                .outerjoin(users_table, users_table.c.username == web_sessions_table.c.username)
+                .where(
+                    web_sessions_table.c.username.like("Session-%"),
+                    web_sessions_table.c.is_guest == 0,
+                    web_sessions_table.c.expires_at > now,
+                    web_sessions_table.c.moodle_credential.is_not(None),
+                    or_(users_table.c.student_number.is_(None), users_table.c.student_number == ""),
+                    func.coalesce(users_table.c.student_number_sync_after, 0) <= now,
+                ).order_by(web_sessions_table.c.username).limit(limit)
+            ).scalars())
+
+    def load_session_identity_user(self, username: str, now: float):
+        if not username.startswith("Session-"):
+            return None
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(
+                select(web_sessions_table).where(
+                    web_sessions_table.c.username == username,
+                    web_sessions_table.c.is_guest == 0,
+                    web_sessions_table.c.expires_at > now,
+                    web_sessions_table.c.moodle_credential.is_not(None),
+                ).order_by(web_sessions_table.c.updated_at.desc()).limit(1)
+            ).mappings().first()
+        if not row:
+            return None
+        try:
+            credential = self._credential_cipher.decrypt(
+                row["moodle_credential"], f"moodle:{username}"
+            )
+        except (ValueError, InvalidToken):
+            return None
+        return {"username": username, "moodle_session": credential} if credential else None
+
     def load_user_profile(self, username: str) -> dict:
         with self._lock, self._engine.connect() as conn:
             row = (
@@ -53,7 +129,7 @@ class AccountsStorage:
         with self._lock, self._engine.connect() as conn:
             rows = (
                 conn.execute(
-                    select(users_table.c.username, users_table.c.profile_name)
+                    select(users_table.c.username, users_table.c.profile_name, users_table.c.student_number)
                     .where(~guest_account_condition())
                     .order_by(users_table.c.username)
                 ).mappings().all()

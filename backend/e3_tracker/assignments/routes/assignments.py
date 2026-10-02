@@ -14,6 +14,7 @@ from e3_tracker.assignments.services.collector import normalize_semester_selecti
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
 from e3_tracker.assignments.services.http import apply_cookie, login_with_password
 from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
+from e3_tracker.platform.services.account_labels import account_label
 
 
 ASSIGNMENT_REFRESH_BROADCAST_VERSION = "2026-09-12-course-scope-v1"
@@ -69,6 +70,7 @@ def register_assignments_routes(*,
     support_email,
     update_user_preferences,
     usage_stats,
+    session_identity_sync,
 ):
 
 
@@ -102,6 +104,9 @@ def register_assignments_routes(*,
                             permanent=True,
                         )
                         record_ui_event("login_success", meta={"username": session_label})
+                        session_identity_sync.refresh_user(
+                            {"username": session_label, "moodle_session": raw_session}, force=True
+                        )
                         if existing_cache:
                             flash("已載入先前的課程資料，系統將在背景自動更新最新內容。", "info")
                         else:
@@ -185,6 +190,7 @@ def register_assignments_routes(*,
         user = current_user()
         if user.get("is_guest"):
             return {"ok": True, "surname": ""}
+        session_identity_sync.refresh_user(user)
         profile = storage.load_user_profile(user["username"])
         surname = profile["surname"]
         if (
@@ -201,7 +207,12 @@ def register_assignments_routes(*,
                     storage.save_user_profile(user["username"], latest, surname)
             except (requests.RequestException, RuntimeError):
                 app.logger.warning("E3 profile unavailable; keeping the existing avatar")
-        return {"ok": True, "surname": surname}
+        payload = {"ok": True, "surname": surname}
+        if user["username"].startswith("Session-"):
+            payload["account_label"] = account_label(
+                user["username"], storage.load_student_number(user["username"])
+            )
+        return payload
 
     @app.get("/api/cache")
     @login_required

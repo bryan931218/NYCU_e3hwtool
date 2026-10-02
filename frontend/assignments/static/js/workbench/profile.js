@@ -8,9 +8,15 @@ export function register(ctx) {
       const response = await fetch(url, { credentials: "same-origin" });
       if (!response.ok) return;
       const profile = await response.json();
-      if (!profile.ok || !profile.surname) return;
-      avatar.textContent = profile.surname;
-      avatar.dataset.avatarLength = String([...profile.surname].length);
+      if (!profile.ok) return;
+      if (typeof profile.account_label === "string") {
+        const label = document.getElementById("userAccountLabel");
+        if (label) label.textContent = profile.account_label;
+      }
+      if (profile.surname) {
+        avatar.textContent = profile.surname;
+        avatar.dataset.avatarLength = String([...profile.surname].length);
+      }
     } catch {
       // Profile lookup must not interrupt the assignment workspace.
     }

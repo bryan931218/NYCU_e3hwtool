@@ -2,6 +2,7 @@ from e3_tracker.assignments.routes.assignments import register_assignments_route
 from e3_tracker.assignments.routes.dashboard import register_dashboard_routes
 from e3_tracker.assignments.routes.notifications import register_notification_routes
 from e3_tracker.assignments.services.notifications import NotificationService
+from e3_tracker.assignments.services.session_identity import SessionIdentitySync
 import base64
 import json
 import secrets
@@ -88,6 +89,8 @@ def register_assignment_site(
     google_calendar_id = env_defaults.get("google_calendar_id") or "primary"
     notification_service = NotificationService(storage, app_home_url=app_home_url)
     app.extensions["e3_notifications"] = notification_service
+    session_identity_sync = SessionIdentitySync(storage, base_url, default_timeout)
+    app.extensions["e3_session_identity"] = session_identity_sync
 
     DEFAULT_PREFERENCES = {
         "view_mode": "due",
@@ -597,7 +600,8 @@ def register_assignment_site(
         return "\r\n".join(lines)
 
     def _build_dashboard_context(user: Dict[str, Any]) -> Dict[str, Any]:
-        user = dict(user, surname=storage.load_user_surname(user["username"]))
+        user = dict(user, surname=storage.load_user_surname(user["username"]),
+                    student_number=storage.load_student_number(user["username"]))
         admin_view_options: List[Dict[str, Any]] = []
         viewed_username = user["username"]
         if user.get("is_admin"):
@@ -690,6 +694,7 @@ def register_assignment_site(
                 announcements_list[0]["id"] if announcements_list else None
             ),
             "viewed_username": viewed_username,
+            "viewed_student_number": storage.load_student_number(viewed_username),
             "is_admin_view": is_admin_view,
             "admin_view_options": admin_view_options,
         }
@@ -816,6 +821,7 @@ def register_assignment_site(
         support_email=support_email,
         update_user_preferences=update_user_preferences,
         usage_stats=usage_stats,
+        session_identity_sync=session_identity_sync,
     )
 
     register_dashboard_routes(
@@ -831,4 +837,5 @@ def register_assignment_site(
     )
     register_notification_routes(app, storage, current_user, login_required, notification_service)
     notification_service.start(app, fetch_assignments_for, set_assign_cache_for_user)
+    session_identity_sync.start(app)
     return list_admin_view_options

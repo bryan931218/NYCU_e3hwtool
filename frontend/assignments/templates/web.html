@@ -64,7 +64,7 @@
             <span id="userAvatar" class="user-avatar" aria-hidden="true" data-avatar-length="{{ user.surname|length if user.surname else 0 }}"{% if not guest_mode %} data-profile-url="{{ url_for('user_profile') }}"{% endif %}>
                 {% if guest_mode %}訪{% elif user.surname %}{{ user.surname }}{% else %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{% endif %}
             </span>
-            <strong>{{ user.username }}</strong>{% if user.is_admin %}<span class="admin-badge">管理員</span>{% endif %}
+            <strong id="userAccountLabel">{{ user.username|account_label(user.student_number) }}</strong>{% if user.is_admin %}<span class="admin-badge">管理員</span>{% endif %}
         </span>
         {% endif %}
         <button type="button" class="icon-button" id="announcementToggle" title="查看公告">
@@ -117,7 +117,7 @@
     {% if is_admin_view %}
     <section class="card panel readonly-banner">
         <h3>唯讀代看模式</h3>
-        <p>目前正顯示 <strong>{{ viewed_username }}</strong> 在資料庫中的既有快取，介面與一般使用者相同，但不會替該帳號執行更新、Google 同步、公告投票或偏好設定寫入。</p>
+        <p>目前正顯示 <strong>{{ viewed_username|account_label(viewed_student_number) }}</strong> 在資料庫中的既有快取，介面與一般使用者相同，但不會替該帳號執行更新、Google 同步、公告投票或偏好設定寫入。</p>
     </section>
     {% endif %}
 

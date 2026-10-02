@@ -84,6 +84,13 @@ def _assignment_notifications(conn):
         table.create(conn, checkfirst=True)
 
 
+def _session_student_number(conn):
+    _add_columns(conn, "users", {
+        "student_number": "VARCHAR(9)",
+        "student_number_sync_after": "DOUBLE PRECISION NOT NULL DEFAULT 0",
+    })
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -92,6 +99,7 @@ MIGRATIONS = (
     ("0005_user_profile_name", _user_profile_name_schema),
     ("0006_guest_retention", _guest_retention_cleanup),
     ("0007_assignment_notifications", _assignment_notifications),
+    ("0008_session_student_number", _session_student_number),
 )
 
 

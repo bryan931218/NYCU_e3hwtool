@@ -4,10 +4,12 @@ from flask import abort, send_from_directory
 from jinja2 import FileSystemLoader, PrefixLoader
 from .paths import FRONTEND_ROOT, FRONTEND_OWNERS
 from .input_security import safe_link
+from .services.account_labels import account_label
 
 
 def configure_frontend(app):
     app.jinja_env.filters["safe_link"] = safe_link
+    app.jinja_env.filters["account_label"] = account_label
     app.jinja_loader = PrefixLoader(
         {
             owner: FileSystemLoader(FRONTEND_ROOT / owner / "templates")

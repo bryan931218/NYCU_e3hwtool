@@ -44,8 +44,10 @@ def register_administration_routes(*,
         admin_view_options = list_admin_view_options()
         profiles = storage.list_user_profiles()
         names = {row["username"]: row["profile_name"] or "" for row in profiles}
+        student_numbers = {row["username"]: row["student_number"] or "" for row in profiles}
         for option in admin_view_options:
             option["profile_name"] = names.get(option["username"], "")
+            option["student_number"] = student_numbers.get(option["username"], "")
         selected_view_username = user["username"]
         requested_view_username = (request.args.get("view_user") or "").strip()
         if requested_view_username:
@@ -82,6 +84,7 @@ def register_administration_routes(*,
             {
                 "username": entry["username"],
                 "profile_name": names.get(entry["username"], ""),
+                "student_number": student_numbers.get(entry["username"], ""),
                 "count": entry["count"],
                 "online": entry["online"],
                 "last_seen": _fmt_ts(entry.get("last_seen")),
@@ -122,6 +125,7 @@ def register_administration_routes(*,
                     "action": ev.get("action") or "-",
                     "status": ev.get("status") or "info",
                     "username": meta.get("username") or ("訪客" if meta.get("is_guest") else "-"),
+                    "student_number": student_numbers.get(meta.get("username"), ""),
                     "description": _action_description(ev.get("action") or "-"),
                     "details": "；".join(detail_parts),
                 }
@@ -167,6 +171,7 @@ def register_administration_routes(*,
             {
                 "username": row["username"],
                 "profile_name": row["profile_name"] or "",
+                "student_number": row["student_number"] or "",
                 "count": 0,
                 "online": False,
                 "last_seen": "-",

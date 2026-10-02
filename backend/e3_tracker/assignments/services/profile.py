@@ -1,6 +1,6 @@
 """Read the signed-in user's name from E3's own profile page."""
 import re
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -56,3 +56,55 @@ def fetch_profile_name(sess, base_url: str, *, timeout: int = 8) -> str:
 
 def fetch_profile_surname(sess, base_url: str, *, timeout: int = 8) -> str:
     return profile_surname(fetch_profile_name(sess, base_url, timeout=timeout))
+
+
+def parse_student_number(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    field = soup.select_one('input#id_idnumber[name="idnumber"]')
+    if not field or not field.has_attr("disabled") or not field.has_attr("readonly"):
+        return ""
+    value = str(field.get("value") or "").strip()
+    return value if re.fullmatch(r"[0-9]{9}", value) else ""
+
+
+def _own_profile_url(base_url: str, href: str, path: str, user_id=None) -> str:
+    url = urljoin(base_url.rstrip("/") + "/", href)
+    base, target = urlsplit(base_url), urlsplit(url)
+    ids = parse_qs(target.query).get("id", [])
+    if (
+        (target.scheme, target.netloc) != (base.scheme, base.netloc)
+        or target.username or target.password or target.path != path
+        or len(ids) != 1 or not re.fullmatch(r"[0-9]+", ids[0])
+        or (user_id is not None and ids[0] != user_id)
+    ):
+        return ""
+    return url
+
+
+def fetch_session_identity(sess, base_url: str, *, timeout: int = 8) -> dict:
+    """Follow only the authenticated menu's own profile and its locked idnumber."""
+    empty = {"name": "", "student_number": ""}
+
+    def read(url):
+        response = safe_request(sess, "GET", url, headers=HEADERS,
+                                timeout=timeout, allow_redirects=False)
+        return BeautifulSoup(response.text, "html.parser") if response.status_code == 200 else None
+
+    dashboard = read(base_url.rstrip("/") + "/my/")
+    link = dashboard.select_one('.usermenu a[href*="/user/profile.php"]') if dashboard else None
+    profile_url = _own_profile_url(base_url, link.get("href", ""), "/user/profile.php") if link else ""
+    if not profile_url:
+        return empty
+    user_id = parse_qs(urlsplit(profile_url).query)["id"][0]
+    profile = read(profile_url)
+    if profile is None:
+        return empty
+    name = parse_profile_name(str(profile))
+    # Never construct an edit URL from a caller-provided Moodle id.
+    for edit in profile.select('a[href*="/user/edit.php"]'):
+        edit_url = _own_profile_url(base_url, edit.get("href", ""), "/user/edit.php", user_id)
+        if edit_url:
+            form = read(edit_url)
+            number = parse_student_number(str(form)) if form is not None else ""
+            return {"name": name, "student_number": number}
+    return {"name": name, "student_number": ""}

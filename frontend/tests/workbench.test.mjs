@@ -5,6 +5,33 @@ import vm from 'node:vm';
 import { semesterCourseTitles, register as registerCourses } from '../assignments/static/js/workbench/course-filter.js';
 import { register as registerFilters, initialize as initializeFilters } from '../assignments/static/js/workbench/filter-state.js';
 import { register as registerAssignments } from '../assignments/static/js/workbench/local-assignments.js';
+import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
+
+test('Session labels update safely after enrichment even without a surname', async () => {
+  const previous = { document: globalThis.document, window: globalThis.window, fetch: globalThis.fetch };
+  const avatar = { dataset: { profileUrl: '/api/profile' }, textContent: 'S' };
+  const label = { textContent: 'Session-demo' };
+  try {
+    globalThis.document = { getElementById: id => ({ userAvatar: avatar, userAccountLabel: label })[id] };
+    globalThis.window = { location: { href: 'https://e3.example/' } };
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true, surname: '', account_label: '112550101（session登入）' }) });
+    const ctx = {};
+    registerProfile(ctx);
+    await ctx.refreshUserAvatar();
+    assert.equal(label.textContent, '112550101（session登入）');
+    assert.equal(label.innerHTML, undefined);
+    assert.equal(avatar.textContent, 'S');
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true, surname: '王' }) });
+    await ctx.refreshUserAvatar();
+    assert.equal(label.textContent, '112550101（session登入）');
+    assert.equal(avatar.textContent, '王');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[key];
+      else globalThis[key] = value;
+    }
+  }
+});
 
 function withDocument(document, callback) {
   const previous = globalThis.document;
