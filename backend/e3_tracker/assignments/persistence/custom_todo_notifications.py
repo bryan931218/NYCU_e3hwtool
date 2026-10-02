@@ -2,6 +2,8 @@
 
 import json
 import time
+from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import insert, select, update
 
@@ -12,6 +14,7 @@ from e3_tracker.assignments.persistence.notification_schema import (
     notification_settings as settings,
     push_subscriptions as subscriptions,
 )
+from e3_tracker.platform.constants import TAIPEI_TZ
 
 
 class CustomTodoNotificationStorage:
@@ -42,7 +45,7 @@ class CustomTodoNotificationStorage:
         username: str,
         item: dict,
         *,
-        now: float | None = None,
+        now: Optional[float] = None,
     ) -> int:
         now = time.time() if now is None else float(now)
         uid_value = str(item.get("uid") or "").strip()
@@ -123,10 +126,11 @@ class CustomTodoNotificationStorage:
 
             created = 0
             expires_at = float(due_ts)
+            due_text = datetime.fromtimestamp(due_ts, TAIPEI_TZ).strftime("%m/%d %H:%M")
             for day, trigger_at in scheduled_thresholds:
                 payload = {
                     "title": f"自訂待辦到期提醒 · {day} 天前",
-                    "body": f"{course[:160]}\n{title[:160]}\n截止：{time.strftime('%m/%d %H:%M', time.localtime(due_ts))}",
+                    "body": f"{course[:160]}\n{title[:160]}\n截止：{due_text}",
                     "url": "/",
                     "kind": "due",
                     "custom_todo": True,
@@ -149,9 +153,7 @@ class CustomTodoNotificationStorage:
                         "error": None,
                     }
                     if existing:
-                        if existing["state"] == "sent":
-                            continue
-                        if existing["state"] == "sending":
+                        if existing["state"] in {"sent", "sending"}:
                             continue
                         conn.execute(
                             update(jobs)
