@@ -1,4 +1,4 @@
-"""Custom todo reminders reuse the durable assignment notification queue."""
+"""Account-synced custom todos reuse the durable assignment notification queue."""
 
 import json
 import os
@@ -86,8 +86,26 @@ class CustomTodoNotificationTests(unittest.TestCase):
             "due_ts": self.now + due_days * 86400,
         }
 
+    def persist_and_schedule(self, item):
+        saved = self.storage.upsert_custom_todo("student", item)
+        self.storage.schedule_custom_todo_notifications("student", saved, now=self.now)
+        return saved
+
+    def test_custom_todo_is_account_persistent_for_other_devices(self):
+        item = self.storage.upsert_custom_todo("student", self.todo())
+        self.assertEqual(self.storage.list_custom_todos("student"), [item])
+        self.assertEqual(self.storage.get_custom_todo("student", item["uid"]), item)
+
+        updated = {**item, "title": "跨裝置更新後的待辦", "due_ts": item["due_ts"] + 3600}
+        self.storage.upsert_custom_todo("student", updated)
+        self.assertEqual(self.storage.list_custom_todos("student"), [updated])
+
+        self.assertTrue(self.storage.delete_custom_todo("student", item["uid"]))
+        self.assertEqual(self.storage.list_custom_todos("student"), [])
+
     def test_schedule_creates_future_thresholds_and_is_idempotent(self):
         item = self.todo(due_days=5)
+        self.storage.upsert_custom_todo("student", item)
         self.assertEqual(
             self.storage.schedule_custom_todo_notifications(
                 "student", item, now=self.now
@@ -99,6 +117,7 @@ class CustomTodoNotificationTests(unittest.TestCase):
         payloads = [json.loads(row["payload"]) for row in first]
         self.assertEqual([payload["days"] for payload in payloads], [3, 1])
         self.assertTrue(all(payload["custom_todo"] for payload in payloads))
+        self.assertTrue(all(payload["custom_uid"] == item["uid"] for payload in payloads))
         self.assertEqual(
             [int(row["retry_at"]) for row in first],
             [item["due_ts"] - 3 * 86400, item["due_ts"] - 86400],
@@ -110,8 +129,9 @@ class CustomTodoNotificationTests(unittest.TestCase):
 
     def test_due_change_cancels_old_schedule_and_builds_new_one(self):
         old = self.todo(due_days=5)
-        self.storage.schedule_custom_todo_notifications("student", old, now=self.now)
+        self.persist_and_schedule(old)
         updated = {**old, "due_ts": self.now + 8 * 86400}
+        self.storage.upsert_custom_todo("student", updated)
         self.storage.schedule_custom_todo_notifications(
             "student", updated, now=self.now
         )
@@ -121,13 +141,22 @@ class CustomTodoNotificationTests(unittest.TestCase):
 
     def test_custom_due_job_delivers_without_e3_cache_membership(self):
         item = self.todo(due_days=1)
-        self.storage.schedule_custom_todo_notifications("student", item, now=self.now)
+        self.persist_and_schedule(item)
         with patch.object(self.service, "deliver") as send:
             self.service.dispatch(now=self.now)
         send.assert_called_once()
         row = self.rows()[0]
         self.assertEqual(row["state"], "sent")
         self.assertTrue(json.loads(row["payload"])["custom_todo"])
+
+    def test_deleted_todo_is_cancelled_before_delivery(self):
+        item = self.todo(due_days=1)
+        self.persist_and_schedule(item)
+        self.storage.delete_custom_todo("student", item["uid"])
+        with patch.object(self.service, "deliver") as send:
+            self.service.dispatch(now=self.now)
+        send.assert_not_called()
+        self.assertEqual(self.rows()[0]["state"], "cancelled")
 
 
 if __name__ == "__main__":
