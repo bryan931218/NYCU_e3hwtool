@@ -302,7 +302,7 @@ def register_assignment_site(
             username = str(raw.get("username") or "").strip()
             if not username:
                 continue
-            if username.startswith(guest_prefix) or username.startswith("Session-"):
+            if username.startswith(guest_prefix):
                 continue
             fetched_ts = raw.get("fetched_ts")
             fetched_label = "尚未更新"

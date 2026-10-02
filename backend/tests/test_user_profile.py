@@ -189,6 +189,45 @@ class UserProfileTests(unittest.TestCase):
         session_client.post('/ui-event', json={'action': 'login_success'})
         self.assertIn(username, account_names(self.client))
 
+    def test_admin_can_select_and_read_session_account_cache(self):
+        username = 'Session-673ffeaeac'
+        self.storage.save_user_profile(username, '王小明', '王')
+        self.storage.save_user_cache(username, {
+            'ts': 1, 'result': {'courses': [
+                {'id': 101, 'title': '【115上】Session Course', 'assignments': []},
+            ], 'all_assignments': []},
+        })
+        self.storage.save_web_session('profile-test', 'student', is_admin=True)
+        response = self.client.get('/admin/traffic')
+        page = BeautifulSoup(response.get_data(as_text=True), 'html.parser')
+        option = page.select_one(f'#trafficViewUser option[value="{username}"]')
+        self.assertIsNotNone(option)
+        self.assertIn('王小明', option.get_text())
+
+        response = self.client.get('/', query_string={'view_user': username})
+        self.assertEqual(response.status_code, 200)
+        page = BeautifulSoup(response.get_data(as_text=True), 'html.parser')
+        self.assertIn(username, page.select_one('.readonly-banner').get_text())
+        response = self.client.get('/api/cache', query_string={'view_user': username, 'include_cache': '1'})
+        self.assertTrue(response.json['readonly_view'])
+        self.assertEqual(response.json['cache']['result']['courses'][0]['title'], '【115上】Session Course')
+        self.assertEqual(self.client.post('/preferences', query_string={'view_user': username}, json={'view_mode': 'course'}).status_code, 403)
+        self.assertEqual(self.client.post('/api/assignments', query_string={'view_user': username}, json={}).status_code, 403)
+
+    def test_regular_user_cannot_read_other_session_account_cache(self):
+        username = 'Session-673ffeaeac'
+        self.storage.save_user_cache(username, {
+            'ts': 1, 'result': {'courses': [
+                {'id': 101, 'title': 'Private Session Course', 'assignments': []},
+            ], 'all_assignments': []},
+        })
+        response = self.client.get('/', query_string={'view_user': username})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('Private Session Course', response.get_data(as_text=True))
+        response = self.client.get('/api/cache', query_string={'view_user': username, 'include_cache': '1'})
+        self.assertFalse(response.json['readonly_view'])
+        self.assertNotIn('Private Session Course', response.get_data(as_text=True))
+
     def test_full_name_upgrade_preserves_surname_and_sessions(self):
         self.storage.save_user_surname('student', '王')
         with self.storage._engine.begin() as conn:
