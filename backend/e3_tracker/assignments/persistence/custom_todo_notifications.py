@@ -26,13 +26,13 @@ class CustomTodoNotificationStorage:
     def cancel_custom_todo_notifications(self, username: str, uid: str) -> int:
         prefix = self._custom_todo_event_prefix(uid)
         with self._lock, self._engine.begin() as conn:
-            user_id = self._notification_user(conn, username)
-            if user_id is None:
+            user_ids = self.custom_todo_account_user_ids(conn, username)
+            if not user_ids:
                 return 0
             result = conn.execute(
                 update(jobs)
                 .where(
-                    jobs.c.user_id == user_id,
+                    jobs.c.user_id.in_(user_ids),
                     jobs.c.event_key.like(prefix + "%"),
                     jobs.c.state == "pending",
                 )
@@ -56,121 +56,137 @@ class CustomTodoNotificationStorage:
         prefix = self._custom_todo_event_prefix(uid_value)
 
         with self._lock, self._engine.begin() as conn:
-            user_id = self._notification_user(conn, username)
-            if user_id is None:
+            user_ids = self.custom_todo_account_user_ids(conn, username)
+            if not user_ids:
                 return 0
 
             conn.execute(
                 update(jobs)
                 .where(
-                    jobs.c.user_id == user_id,
+                    jobs.c.user_id.in_(user_ids),
                     jobs.c.event_key.like(prefix + "%"),
                     jobs.c.state == "pending",
                 )
                 .values(state="cancelled")
             )
-
-            raw_preferences = conn.execute(
-                select(settings.c.preferences).where(settings.c.user_id == user_id)
-            ).scalar()
-            if not raw_preferences or due_ts <= now:
+            if due_ts <= now:
                 return 0
 
-            try:
-                preferences = json.loads(raw_preferences)
-            except (TypeError, ValueError):
-                preferences = {}
-
-            raw_days = preferences.get("days_before", [1])
-            days = sorted(
-                {
-                    int(day)
-                    for day in raw_days
-                    if type(day) is int and 1 <= int(day) <= 30
-                },
-                reverse=True,
-            ) or [1]
-
-            targets = []
-            targets.extend(
-                ("browser", endpoint_hash)
-                for endpoint_hash in conn.execute(
-                    select(subscriptions.c.endpoint_hash).where(
-                        subscriptions.c.user_id == user_id
-                    )
-                ).scalars()
-            )
-            targets.extend(
-                ("line", target_hash)
-                for target_hash in conn.execute(
-                    select(bindings.c.target_hash).where(bindings.c.user_id == user_id)
-                ).scalars()
-            )
-            if not targets:
-                return 0
-
-            scheduled_thresholds = []
-            crossed = []
-            for day in days:
-                trigger_at = due_ts - day * 86400
-                if trigger_at <= now:
-                    crossed.append(day)
-                else:
-                    scheduled_thresholds.append((day, float(trigger_at)))
-            if crossed:
-                scheduled_thresholds.append((min(crossed), now))
-
-            created = 0
-            expires_at = float(due_ts)
             due_text = datetime.fromtimestamp(due_ts, TAIPEI_TZ).strftime("%m/%d %H:%M")
-            for day, trigger_at in scheduled_thresholds:
-                payload = {
-                    "title": f"自訂待辦到期提醒 · {day} 天前",
-                    "body": f"{course[:160]}\n{title[:160]}\n截止：{due_text}",
-                    "url": "/",
-                    "kind": "due",
-                    "custom_todo": True,
-                    "custom_uid": uid_value,
-                    "uid_hash": uid_hash,
-                    "due_ts": due_ts,
-                    "days": day,
-                }
-                event_key = f"{prefix}{due_ts}:{day}"
-                for channel, target_hash in targets:
-                    job_id = digest(f"{user_id}:{event_key}:{channel}:{target_hash}")
-                    existing = (
-                        conn.execute(select(jobs).where(jobs.c.id == job_id))
-                        .mappings()
-                        .first()
-                    )
-                    values = {
-                        "payload": json.dumps(payload, ensure_ascii=False),
-                        "retry_at": trigger_at,
-                        "expires_at": expires_at,
-                        "error": None,
-                    }
-                    if existing:
-                        if existing["state"] in {"sent", "sending"}:
-                            continue
-                        conn.execute(
-                            update(jobs)
-                            .where(jobs.c.id == job_id)
-                            .values(state="pending", attempts=0, lease=None, **values)
-                        )
-                    else:
-                        conn.execute(
-                            insert(jobs).values(
-                                id=job_id,
-                                user_id=user_id,
-                                event_key=event_key,
-                                channel=channel,
-                                target_hash=target_hash,
-                                state="pending",
-                                attempts=0,
-                                created_at=now,
-                                lease=None,
-                                **values,
+            expires_at = float(due_ts)
+            created = 0
+
+            for user_id in user_ids:
+                raw_preferences = conn.execute(
+                    select(settings.c.preferences).where(settings.c.user_id == user_id)
+                ).scalar()
+                if not raw_preferences:
+                    continue
+                try:
+                    preferences = json.loads(raw_preferences)
+                except (TypeError, ValueError):
+                    continue
+                if not preferences.get("due_reminder"):
+                    continue
+
+                raw_days = preferences.get("days_before", [1])
+                days = sorted(
+                    {
+                        int(day)
+                        for day in raw_days
+                        if type(day) is int and 1 <= int(day) <= 30
+                    },
+                    reverse=True,
+                ) or [1]
+
+                targets = []
+                if preferences.get("browser_enabled"):
+                    targets.extend(
+                        ("browser", endpoint_hash)
+                        for endpoint_hash in conn.execute(
+                            select(subscriptions.c.endpoint_hash).where(
+                                subscriptions.c.user_id == user_id
                             )
+                        ).scalars()
+                    )
+                if preferences.get("line_enabled"):
+                    targets.extend(
+                        ("line", target_hash)
+                        for target_hash in conn.execute(
+                            select(bindings.c.target_hash).where(
+                                bindings.c.user_id == user_id
+                            )
+                        ).scalars()
+                    )
+                if not targets:
+                    continue
+
+                scheduled_thresholds = []
+                crossed = []
+                for day in days:
+                    trigger_at = due_ts - day * 86400
+                    if trigger_at <= now:
+                        crossed.append(day)
+                    else:
+                        scheduled_thresholds.append((day, float(trigger_at)))
+                if crossed:
+                    scheduled_thresholds.append((min(crossed), now))
+
+                for day, trigger_at in scheduled_thresholds:
+                    payload = {
+                        "title": f"自訂待辦到期提醒 · {day} 天前",
+                        "body": f"{course[:160]}\n{title[:160]}\n截止：{due_text}",
+                        "url": "/",
+                        "kind": "due",
+                        "custom_todo": True,
+                        "custom_uid": uid_value,
+                        "uid_hash": uid_hash,
+                        "due_ts": due_ts,
+                        "days": day,
+                    }
+                    event_key = f"{prefix}{due_ts}:{day}"
+                    for channel, target_hash in targets:
+                        job_id = digest(
+                            f"{user_id}:{event_key}:{channel}:{target_hash}"
                         )
-                    created += 1
+                        existing = (
+                            conn.execute(select(jobs).where(jobs.c.id == job_id))
+                            .mappings()
+                            .first()
+                        )
+                        values = {
+                            "payload": json.dumps(payload, ensure_ascii=False),
+                            "retry_at": trigger_at,
+                            "expires_at": expires_at,
+                            "error": None,
+                        }
+                        if existing:
+                            if existing["state"] in {"sent", "sending"}:
+                                continue
+                            conn.execute(
+                                update(jobs)
+                                .where(jobs.c.id == job_id)
+                                .values(
+                                    state="pending",
+                                    attempts=0,
+                                    lease=None,
+                                    **values,
+                                )
+                            )
+                        else:
+                            conn.execute(
+                                insert(jobs).values(
+                                    id=job_id,
+                                    user_id=user_id,
+                                    event_key=event_key,
+                                    channel=channel,
+                                    target_hash=target_hash,
+                                    state="pending",
+                                    attempts=0,
+                                    created_at=now,
+                                    lease=None,
+                                    **values,
+                                )
+                            )
+                        created += 1
             return created
