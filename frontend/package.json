@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/workbench.test.mjs tests/notifications.test.mjs tests/e3-navigation-extension.test.mjs"
+    "test": "node --test tests/workbench.test.mjs tests/notifications.test.mjs tests/e3-navigation-extension.test.mjs tests/login-session-guide.test.mjs"
   }
 }

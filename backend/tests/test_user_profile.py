@@ -145,6 +145,50 @@ class UserProfileTests(unittest.TestCase):
             session.clear()
         self.assertEqual(self.client.get('/admin/traffic').status_code, 302)
 
+    def test_deleted_session_stats_are_not_restored_from_saved_profiles(self):
+        username = 'Session-673ffeaeac'
+        self.storage.save_user_profile(username, '王小明', '王')
+        self.storage.save_user_cache(username, {'result': {'courses': []}, 'ts': 1})
+        self.storage.save_user_profile('112550101', '李小明', '李')
+        self.storage.save_user_surname('Session-95ae68897b', '游')
+        self.storage.save_web_session('profile-test', 'student', is_admin=True)
+        self.storage.save_web_session('session-test', username)
+        from tests.security_helpers import csrf_client
+        session_client = csrf_client(self.app)
+        with session_client.session_transaction() as session:
+            session['session_token'] = 'session-test'
+        response = session_client.post('/ui-event', json={'action': 'login_success'})
+        self.assertEqual(response.status_code, 200)
+
+        def account_names(client):
+            response = client.get('/admin/traffic')
+            self.assertEqual(response.status_code, 200)
+            page = BeautifulSoup(response.get_data(as_text=True), 'html.parser')
+            table = page.find('th', string='學號／帳號').find_parent('table')
+            return {row.select_one('td').get_text() for row in table.select('tbody tr')}
+
+        self.assertIn(username, account_names(self.client))
+        self.assertNotIn('Session-95ae68897b', account_names(self.client))
+        response = self.client.post('/admin/traffic/reset-user', data={'username': username})
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn(username, account_names(self.client))
+        self.assertIn('112550101', account_names(self.client))
+        self.assertEqual(self.storage.load_user_profile(username)['name'], '王小明')
+        self.assertIsNotNone(self.storage.load_user_cache(username))
+        self.assertTrue(self.storage.is_valid_web_session('session-test', username))
+
+        reloaded = create_app()
+        try:
+            client = csrf_client(reloaded)
+            with client.session_transaction() as session:
+                session['session_token'] = 'profile-test'
+            self.assertNotIn(username, account_names(client))
+        finally:
+            reloaded.extensions['e3_storage']._engine.dispose()
+
+        session_client.post('/ui-event', json={'action': 'login_success'})
+        self.assertIn(username, account_names(self.client))
+
     def test_full_name_upgrade_preserves_surname_and_sessions(self):
         self.storage.save_user_surname('student', '王')
         with self.storage._engine.begin() as conn:

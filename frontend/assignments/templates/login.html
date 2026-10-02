@@ -11,6 +11,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23102a43'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='700' fill='white'%3EE3%3C/text%3E%3C/svg%3E">
 <meta name="theme-color" content="#3730a3" />
 <title>登入 E3 帳號</title>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/login-session-guide.css') }}">
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}">
 (function(){
     try{
@@ -60,12 +61,6 @@ textarea{min-height:90px;resize:vertical}
 .toggle-session-option .help-btn:focus{outline:2px solid #4338ca}
 .mode-section{display:none;flex-direction:column;gap:4px}
 .mode-section.active{display:flex}
-.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.5);opacity:0;pointer-events:none;transition:opacity .2s ease}
-.modal.active{opacity:1;pointer-events:auto}
-.modal-content{background:#fff;border-radius:18px;padding:28px;max-width:420px;width:92vw;box-shadow:0 20px 80px rgba(15,23,42,.2);display:flex;flex-direction:column;gap:14px;line-height:1.5}
-.modal-content h3{margin:0;font-size:20px}
-.modal-content ul{padding-left:18px;margin:0;display:flex;flex-direction:column;gap:8px;font-size:14px;color:#475569}
-.modal-content button{align-self:flex-end}
 .icon-button{width:38px;height:38px;border-radius:50%;border:1px solid #c7d2fe;background:#f0f2ff;color:#4338ca;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s ease;position:relative}
 .icon-button svg{width:18px;height:18px}
 .icon-button:hover{background:#e3e6ff}
@@ -84,9 +79,6 @@ html[data-theme="dark"] .toggle-btn{color:#c2c8ff}
 html[data-theme="dark"] .toggle-btn.active{background:#5f67f0;color:#fff}
 html[data-theme="dark"] .toggle-session-option .help-btn{border-color:#414b76;background:#1d2442;color:#dfe4ff}
 html[data-theme="dark"] .toggle-session-option .help-btn:hover{background:#262f53}
-html[data-theme="dark"] .modal{background:rgba(1,4,12,.85)}
-html[data-theme="dark"] .modal-content{background:#131a2f;border:1px solid #2d3658;box-shadow:0 25px 80px rgba(0,0,0,.6)}
-html[data-theme="dark"] .modal-content ul{color:#c7cff8}
 html[data-theme="dark"] .toast{background:#141b30;border-color:#2d3658;box-shadow:0 16px 40px rgba(0,0,0,.55)}
 html[data-theme="dark"] .toast-content{color:#f4f6ff}
 html[data-theme="dark"] .toast-close{color:#9aa0c8}
@@ -158,7 +150,7 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
             <button type="button" class="toggle-btn active" data-mode="password">帳號 / 密碼</button>
             <div class="toggle-session-option">
                 <button type="button" class="toggle-btn" data-mode="session">MoodleSession</button>
-                <button type="button" class="help-btn" id="sessionHelpButton" aria-label="了解 MoodleSession">?</button>
+                <button type="button" class="help-btn" id="sessionHelpButton" aria-label="了解 MoodleSession" title="查看 Session 登入教學">?</button>
             </div>
         </div>
     </div>
@@ -177,8 +169,9 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
             </div>
         </div>
         <div class="mode-section" data-mode-section="session">
+            <p class="session-use-hint" id="sessionUseHint">適合已啟用雙重驗證（2FA），或不想直接輸入帳號密碼的用戶。請先在同一個瀏覽器登入 E3，再取得 MoodleSession。</p>
             <label for="moodle_session">MoodleSession Cookie</label>
-            <textarea id="moodle_session" name="moodle_session" placeholder="貼上值，例如：6h1abcdefgxyz..."></textarea>
+            <textarea id="moodle_session" name="moodle_session" aria-describedby="sessionUseHint" placeholder="貼上值，例如：6h1abcdefgxyz..."></textarea>
         </div>
         <button class="btn primary" type="submit" id="submitButton">登入</button>
     </form>
@@ -189,20 +182,74 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
         <p class="muted" style="margin:0">訪客模式不會連線至 E3，請先使用匯出工具產生 JSON，再回到訪客頁匯入即可瀏覽作業。</p>
     </div>
 </div>
-<div class="modal" id="sessionHelpModal" aria-hidden="true">
-    <div class="modal-content">
-        <h3>什麼是 MoodleSession？</h3>
-        <p class="muted">MoodleSession 是 E3 系統核發的登入 Cookie。貼上該值即可讓本工具以相同身份抓取作業，無需輸入密碼。</p>
-        <p class="muted"><strong>為什麼要用？</strong>：如果帳號啟用雙重驗證或不想透露密碼時，可直接複製瀏覽器中的 Session。</p>
-        <p class="muted"><strong>取得方式</strong>：</p>
-        <ul>
-            <li>在瀏覽器登入 <code>https://e3p.nycu.edu.tw</code>。</li>
-            <li>開啟開發者工具 → Application/Storage → Cookies，找到 <code>MoodleSession</code>。</li>
-            <li>複製 Value 欄位貼回此頁，即可使用 Session 登入。</li>
-        </ul>
-        <button type="button" class="btn primary" data-modal-close>了解了</button>
+{% if password_login_failed %}
+<dialog class="session-guide login-failure-prompt" id="passwordLoginFailure" aria-labelledby="passwordFailureTitle" aria-describedby="passwordFailureDescription">
+    <div class="guide-heading">
+        <h2 id="passwordFailureTitle">帳密登入未成功</h2>
+        <button type="button" class="guide-close" id="passwordFailureClose" aria-label="關閉提示" title="關閉提示">&times;</button>
     </div>
-</div>
+    <div class="login-failure-body">
+        <p id="passwordFailureDescription">若帳號啟用雙重驗證（2FA），請使用 Session 登入。</p>
+        <p class="login-failure-note">登入失敗也可能是帳密錯誤或 E3 連線異常。</p>
+        <div class="login-failure-actions">
+            <button type="button" class="guide-prev" id="passwordFailureRetry">重試帳密登入</button>
+            <button type="button" class="guide-next" id="passwordFailureSession">改用 Session 登入</button>
+        </div>
+    </div>
+</dialog>
+{% endif %}
+<dialog class="session-guide" id="sessionHelpModal" aria-labelledby="sessionGuideTitle">
+    <div class="guide-heading">
+        <h2 id="sessionGuideTitle">如何找到MoodleSession</h2>
+        <button type="button" class="guide-close" id="sessionGuideClose" aria-label="關閉教學" title="關閉教學">&times;</button>
+    </div>
+    <div class="guide-body">
+        <div class="guide-instructions">
+            <div class="guide-progress" aria-live="polite"><span id="sessionGuideCount">01 / 03</span><span class="guide-progress-track"><span id="sessionGuideProgress"></span></span></div>
+            <div class="guide-step" data-guide-step="0">
+                <span class="guide-step-number">01</span>
+                <h3>先登入 E3</h3>
+                <p>在同一個瀏覽器開啟 E3，完成學校登入，停留在 E3 頁面。</p>
+                <a href="https://e3p.nycu.edu.tw/my/" target="_blank" rel="noopener noreferrer" class="guide-link">開啟 E3 <span aria-hidden="true">↗</span></a>
+            </div>
+            <div class="guide-step" data-guide-step="1" hidden>
+                <span class="guide-step-number">02</span>
+                <h3>開啟 Cookie 清單</h3>
+                <p>在 E3 頁按 <kbd>F12</kbd>，選 <strong>Application</strong> → <strong>Cookies</strong> → <strong>https://e3p.nycu.edu.tw</strong>。</p>
+                <p class="guide-aside">Firefox 請選 Storage → Cookies。若找不到 Application，可點開發者工具頂部的 »。</p>
+            </div>
+            <div class="guide-step" data-guide-step="2" hidden>
+                <span class="guide-step-number">03</span>
+                <h3>只複製 Value</h3>
+                <p>找到 <strong>MoodleSession</strong> 這一列，只複製 <strong>Value</strong> 欄的內容，回到本站貼入下方欄位。</p>
+                <p class="guide-aside">不要複製 Cookie 名稱，也不要貼進網址列。</p>
+            </div>
+            <div class="guide-actions">
+                <button type="button" class="guide-prev" id="sessionGuidePrev" hidden>上一步</button>
+                <button type="button" class="guide-next" id="sessionGuideNext"><span id="sessionGuideNextLabel">下一步</span><span aria-hidden="true">→</span></button>
+            </div>
+        </div>
+        <div class="guide-visual" aria-label="操作位置示意畫面">
+            <span class="guide-visual-label">位置示意 · 不顯示真實憑證</span>
+            <div class="guide-scene" data-guide-scene="0">
+                <div class="guide-browser-bar"><span class="guide-browser-dots" aria-hidden="true">● ● ●</span><span>e3p.nycu.edu.tw/my/</span></div>
+                <div class="guide-e3-mock"><div class="guide-e3-brand">E3</div><div><strong>數位教學平台</strong><small>已登入 · 焦點綜覽</small></div><span class="guide-target guide-ok">已登入</span></div>
+                <div class="guide-mock-note">登入後停留在這個 E3 分頁</div>
+            </div>
+            <div class="guide-scene" data-guide-scene="1" hidden>
+                <div class="guide-browser-bar"><span class="guide-browser-dots" aria-hidden="true">● ● ●</span><span>e3p.nycu.edu.tw/my/</span></div>
+                <div class="guide-devtools-tabs"><span>Elements</span><span>Console</span><strong class="guide-target">Application</strong><span>»</span></div>
+                <div class="guide-devtools-path"><span>Storage</span><span>▾ Cookies</span><strong class="guide-target">https://e3p.nycu.edu.tw</strong></div>
+            </div>
+            <div class="guide-scene" data-guide-scene="2" hidden>
+                <div class="guide-browser-bar"><span class="guide-browser-dots" aria-hidden="true">● ● ●</span><span>Cookies · e3p.nycu.edu.tw</span></div>
+                <div class="guide-cookie-table"><div><span>Name</span><span>Value</span></div><div class="guide-target"><strong>MoodleSession</strong><span>•••••••••••• <b>複製這欄</b></span></div></div>
+                <div class="guide-paste-hint"><span aria-hidden="true">↓</span> 回到本站，貼入 MoodleSession 欄位</div>
+            </div>
+        </div>
+    </div>
+    <p class="guide-security">MoodleSession 等同登入憑證。請勿傳給他人，也不要拍下或分享含有 Value 的畫面。</p>
+</dialog>
 <div class="legal-footer">
     <div>
         <a href="{{ app_home_url }}">回到首頁</a> ｜ 
@@ -299,7 +346,8 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
     const loginTypeInput = document.getElementById('loginTypeInput');
     const toggleButtons = document.querySelectorAll('.toggle-btn');
     const modeSections = document.querySelectorAll('[data-mode-section]');
-    const saved = localStorage.getItem('e3_remember');
+    let saved = null;
+    try { saved = localStorage.getItem('e3_remember'); } catch (err) {}
 
     if (saved) {
         try {
@@ -361,36 +409,19 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
         }
         const usingPassword = loginTypeInput?.value === 'password';
         if (usingPassword) {
-            if (rememberCheckbox?.checked) {
-                localStorage.setItem(
-                    'e3_remember',
-                    JSON.stringify({
-                        username: usernameInput?.value || '',
-                    })
-                );
-            } else {
-                localStorage.removeItem('e3_remember');
-            }
+            try {
+                if (rememberCheckbox?.checked) {
+                    localStorage.setItem(
+                        'e3_remember',
+                        JSON.stringify({ username: usernameInput?.value || '' })
+                    );
+                } else {
+                    localStorage.removeItem('e3_remember');
+                }
+            } catch (err) {}
         }
     });
 
-    const modal = document.getElementById('sessionHelpModal');
-    const modalClose = modal?.querySelector('[data-modal-close]');
-    const helpBtn = document.getElementById('sessionHelpButton');
-
-    function toggleModal(show) {
-        if (!modal) return;
-        modal.classList.toggle('active', show);
-        modal.setAttribute('aria-hidden', show ? 'false' : 'true');
-    }
-
-    helpBtn?.addEventListener('click', () => toggleModal(true));
-    modalClose?.addEventListener('click', () => toggleModal(false));
-    modal?.addEventListener('click', (evt) => {
-        if (evt.target === modal) {
-            toggleModal(false);
-        }
-    });
 })();
 
 (function () {
@@ -414,5 +445,6 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
     setInterval(poll, 45000);
 })();
 </script>
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='assignments/js/login-session-guide.js') }}" defer></script>
 </body>
 </html>

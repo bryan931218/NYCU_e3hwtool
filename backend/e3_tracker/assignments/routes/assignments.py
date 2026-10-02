@@ -76,6 +76,7 @@ def register_assignments_routes(*,
     def login():
         if current_user():
             return redirect(url_for("index"))
+        password_login_failed = False
         if request.method == "POST":
             login_type = request.form.get("login_type", "password")
             if login_type == "session":
@@ -123,12 +124,14 @@ def register_assignments_routes(*,
                 if not raw_username or not raw_password:
                     flash("請輸入帳號與密碼。", "error")
                 else:
+                    authenticated = False
                     try:
                         sess = requests.Session()
                         login_with_password(sess, base_url, raw_username, raw_password, timeout=default_timeout)
                         cookie_val = sess.cookies.get("MoodleSession")
                         if not cookie_val:
                             raise RuntimeError("登入成功但未取得 MoodleSession。")
+                        authenticated = True
                         _start_web_session(
                             raw_username,
                             moodle_session=cookie_val,
@@ -155,11 +158,13 @@ def register_assignments_routes(*,
                         response.headers["Expires"] = "0"
                         return response
                     except Exception as exc:
+                        password_login_failed = not authenticated
                         app.logger.warning("E3 login failed (%s)", type(exc).__name__)
                         flash("登入失敗，請確認帳密、雙重驗證與 E3 連線狀態。", "error")
         announcements_list = load_announcements()
         return render_template_string(
             LOGIN_TEMPLATE,
+            password_login_failed=password_login_failed,
             stats=usage_stats(),
             stats_version=current_stats_version(),
             announcements=announcements_list,

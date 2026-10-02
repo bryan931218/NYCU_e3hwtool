@@ -161,7 +161,7 @@ def register_administration_routes(*,
         summary["online_ips"] = ip_overview["online"]
         summary["guest_total"] = guest_overview.get("total", 0)
         summary["guest_online"] = guest_overview.get("online", 0)
-        # Include stored accounts without traffic, without changing traffic metrics.
+        # Keep student name mappings; Session identities require traffic records.
         known_users = {row["username"] for row in formatted_users}
         account_rows = formatted_users + [
             {
@@ -173,6 +173,7 @@ def register_administration_routes(*,
             }
             for row in profiles
             if row["username"] not in known_users
+            and not row["username"].startswith("Session-")
         ]
         return render_template_string(
             TRAFFIC_TEMPLATE,
