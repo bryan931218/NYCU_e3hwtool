@@ -71,6 +71,23 @@ Index("ix_assignments_course_id", assignments_table.c.course_id)
 
 Index("ix_assignments_due_ts", assignments_table.c.due_ts)
 
+custom_todos_table = Table(
+    "custom_todos",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, nullable=False),
+    Column("uid", String(255), nullable=False),
+    Column("course", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("due_ts", Integer, nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+    UniqueConstraint("user_id", "uid", name="uq_custom_todos_user_uid"),
+)
+
+Index("ix_custom_todos_user_id", custom_todos_table.c.user_id)
+Index("ix_custom_todos_due_ts", custom_todos_table.c.due_ts)
+
 assignment_views_table = Table(
     "assignment_views",
     metadata,
