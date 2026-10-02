@@ -13,6 +13,9 @@ from e3_tracker.assignments.domain.notifications import (
     validate_subscription,
     digest,
 )
+from e3_tracker.assignments.routes.custom_todo_notifications import (
+    register_custom_todo_notification_routes,
+)
 
 
 def register_notification_routes(app, storage, current_user, login_required, service):
@@ -33,6 +36,8 @@ def register_notification_routes(app, storage, current_user, login_required, ser
             **storage.notification_preferences(username),
             **service.capabilities(),
         }
+
+    register_custom_todo_notification_routes(app, storage, account_only)
 
     @app.get("/settings/notifications")
     @account_only
