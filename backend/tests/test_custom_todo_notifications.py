@@ -103,6 +103,24 @@ class CustomTodoNotificationTests(unittest.TestCase):
         self.assertTrue(self.storage.delete_custom_todo("student", item["uid"]))
         self.assertEqual(self.storage.list_custom_todos("student"), [])
 
+    def test_session_logins_with_same_student_number_share_todos(self):
+        first = "Session-first-device"
+        second = "Session-second-device"
+        self.storage.save_web_session("session-a", first, moodle_session="moodle-a")
+        self.storage.save_web_session("session-b", second, moodle_session="moodle-b")
+        self.assertTrue(self.storage.save_student_number(first, "113550001"))
+        self.assertTrue(self.storage.save_student_number(second, "113550001"))
+
+        item = self.storage.upsert_custom_todo(first, self.todo())
+        self.assertEqual(self.storage.list_custom_todos(second), [item])
+
+        updated = {**item, "title": "手機修改後"}
+        self.storage.upsert_custom_todo(second, updated)
+        self.assertEqual(self.storage.get_custom_todo(first, item["uid"]), updated)
+
+        self.assertTrue(self.storage.delete_custom_todo(second, item["uid"]))
+        self.assertEqual(self.storage.list_custom_todos(first), [])
+
     def test_schedule_creates_future_thresholds_and_is_idempotent(self):
         item = self.todo(due_days=5)
         self.storage.upsert_custom_todo("student", item)
