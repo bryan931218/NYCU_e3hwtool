@@ -1,4 +1,4 @@
-"""Durable notification scheduling for browser-local custom todo items."""
+"""Durable notification scheduling for account-synced custom todo items."""
 
 import json
 import time
@@ -60,8 +60,6 @@ class CustomTodoNotificationStorage:
             if user_id is None:
                 return 0
 
-            # Replace only still-pending schedules for this todo. Sent rows remain as
-            # idempotency records so revisiting the page never re-sends a threshold.
             conn.execute(
                 update(jobs)
                 .where(
@@ -120,8 +118,6 @@ class CustomTodoNotificationStorage:
                 else:
                     scheduled_thresholds.append((day, float(trigger_at)))
             if crossed:
-                # Match the E3 assignment behavior: when created/synced late, catch up
-                # only the nearest already-crossed threshold instead of spamming all of them.
                 scheduled_thresholds.append((min(crossed), now))
 
             created = 0
@@ -134,6 +130,7 @@ class CustomTodoNotificationStorage:
                     "url": "/",
                     "kind": "due",
                     "custom_todo": True,
+                    "custom_uid": uid_value,
                     "uid_hash": uid_hash,
                     "due_ts": due_ts,
                     "days": day,
