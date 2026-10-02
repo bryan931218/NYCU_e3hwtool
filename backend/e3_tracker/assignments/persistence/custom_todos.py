@@ -6,6 +6,17 @@ from e3_tracker.assignments.persistence.schema import custom_todos_table
 from e3_tracker.platform.persistence.core_schema import users_table
 
 
+def _todo_payload(row):
+    if not row:
+        return None
+    return {
+        "uid": row["uid"],
+        "course": row["course"],
+        "title": row["title"],
+        "due_ts": int(row["due_ts"]),
+    }
+
+
 class CustomTodosStorage:
     def list_custom_todos(self, username):
         with self._lock, self._engine.connect() as conn:
@@ -23,15 +34,26 @@ class CustomTodosStorage:
                 .mappings()
                 .all()
             )
-        return [
-            {
-                "uid": row["uid"],
-                "course": row["course"],
-                "title": row["title"],
-                "due_ts": int(row["due_ts"]),
-            }
-            for row in rows
-        ]
+        return [_todo_payload(row) for row in rows]
+
+    def get_custom_todo(self, username, uid):
+        with self._lock, self._engine.connect() as conn:
+            user_id = conn.execute(
+                select(users_table.c.id).where(users_table.c.username == username)
+            ).scalar()
+            if user_id is None:
+                return None
+            row = (
+                conn.execute(
+                    select(custom_todos_table).where(
+                        custom_todos_table.c.user_id == user_id,
+                        custom_todos_table.c.uid == str(uid),
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        return _todo_payload(row)
 
     def upsert_custom_todo(self, username, item):
         uid = str(item["uid"])
