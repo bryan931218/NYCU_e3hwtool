@@ -142,7 +142,7 @@ class NotificationStorage:
     def remove_push_subscription(self, username, endpoint_hash):
         with self._lock, self._engine.begin() as conn:
             uid = self._notification_user(conn, username)
-            conn.execute(
+            removed = conn.execute(
                 delete(subscriptions).where(
                     subscriptions.c.user_id == uid,
                     subscriptions.c.endpoint_hash == endpoint_hash,
@@ -157,6 +157,7 @@ class NotificationStorage:
                 )
                 .values(state="cancelled")
             )
+        return bool(removed.rowcount)
 
     def create_line_link_code(self, username):
         code = secrets.token_urlsafe(18)
@@ -174,7 +175,7 @@ class NotificationStorage:
             )
         return code
 
-    def consume_line_link_code(self, code, target):
+    def consume_line_link_code(self, code, target, *, return_username=False):
         target_hash = digest(target)
         with self._lock, self._engine.begin() as conn:
             # The delete is the atomic claim, including across web workers.
@@ -189,6 +190,11 @@ class NotificationStorage:
                 .first()
             )
             if not row:
+                return False
+            username = conn.execute(select(users_table.c.username).where(
+                users_table.c.id == row["user_id"], users_table.c.is_guest == 0,
+            )).scalar()
+            if not username or is_guest_identity(username):
                 return False
             owner = conn.execute(
                 select(bindings.c.user_id).where(bindings.c.target_hash == target_hash)
@@ -217,7 +223,7 @@ class NotificationStorage:
                     )
             except IntegrityError:
                 return False
-        return True
+        return username if return_username else True
 
     def unlink_line(self, username=None, target_hash=None):
         with self._lock, self._engine.begin() as conn:
@@ -231,7 +237,10 @@ class NotificationStorage:
                 if username
                 else conn.execute(select(bindings.c.user_id).where(condition)).scalar()
             )
-            conn.execute(delete(bindings).where(condition))
+            owner = conn.execute(select(users_table.c.username).join(
+                bindings, bindings.c.user_id == users_table.c.id,
+            ).where(condition)).scalar()
+            removed = conn.execute(delete(bindings).where(condition))
             if uid is not None:
                 conn.execute(delete(codes).where(codes.c.user_id == uid))
                 conn.execute(
@@ -243,6 +252,7 @@ class NotificationStorage:
                     )
                     .values(state="cancelled")
                 )
+        return owner if removed.rowcount else None
 
     def observe_notification_assignments(
         self, username, result, semester_key, *, now=None, baseline=False

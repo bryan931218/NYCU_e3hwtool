@@ -622,6 +622,120 @@ class NotificationTests(unittest.TestCase):
         self.storage.unlink_line(username="student")
         self.assertFalse(self.storage.consume_line_link_code(code, "U" + "a" * 32))
 
+    def activities(self, action=None):
+        return [event for event in self.storage.recent_traffic_events(500)
+                if event["action"].startswith("notification_")
+                and (action is None or event["action"] == action)]
+
+    def test_settings_activity_records_changed_switches_and_reminder_days_only(self):
+        self.assertEqual(self.client.post("/api/notifications/settings", json=self.prefs).status_code, 200)
+        events = self.activities("notification_settings_updated")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["meta"]["username"], "student")
+        self.assertIn("瀏覽器通知：啟用", events[0]["meta"]["action_detail"])
+        self.assertIn("新作業通知：啟用", events[0]["meta"]["action_detail"])
+        self.assertIn("到期前 3、1 天提醒", events[0]["meta"]["action_detail"])
+        self.client.get("/api/notifications/settings")
+        self.client.post("/api/notifications/settings", json=self.prefs)
+        self.client.post("/api/notifications/settings", json={**self.prefs, "days_before": [99]})
+        self.client.post("/api/notifications/settings", json={**self.prefs, "line_enabled": True})
+        self.assertEqual(len(self.activities()), 1)
+        self.client.post("/api/notifications/settings", json={**self.prefs, "browser_enabled": False})
+        self.assertEqual(self.activities()[-1]["meta"]["action_detail"], "瀏覽器通知：關閉")
+
+    def test_browser_activity_logs_new_device_and_real_removal_not_repeat_or_other_owner(self):
+        sub = subscription("activity")
+        self.assertEqual(self.client.post("/api/notifications/browser", json=sub).status_code, 200)
+        self.client.post("/api/notifications/browser", json=sub)
+        self.assertEqual(len(self.activities("notification_browser_enabled")), 1)
+        other = subscription("other-activity")
+        self.storage.store_push_subscription("other", other)
+        self.client.delete("/api/notifications/browser", json={"endpoint": other["endpoint"]})
+        self.assertEqual(len(self.activities()), 1)
+        self.assertEqual(self.storage.notification_preferences("other")["browser_devices"], 1)
+        self.client.delete("/api/notifications/browser", json={"endpoint": sub["endpoint"]})
+        self.client.delete("/api/notifications/browser", json={"endpoint": sub["endpoint"]})
+        self.assertEqual(len(self.activities("notification_browser_disabled")), 1)
+        serialized = json.dumps(self.activities())
+        for private in (sub["endpoint"], *sub["keys"].values(), digest(sub["endpoint"])):
+            self.assertNotIn(private, serialized)
+
+    def test_line_activity_is_signed_owned_one_time_and_does_not_store_credentials(self):
+        code = self.client.post("/api/notifications/line/link").json["code"]
+        self.assertEqual(len(self.activities("notification_line_link_started")), 1)
+        event = self.line_event(code)
+        self.webhook([event], signature=False)
+        self.assertEqual(len(self.activities()), 1)
+        with patch.object(self.service, "reply_linked"):
+            self.webhook([event])
+            self.webhook([event])
+        linked = self.activities("notification_line_linked")
+        self.assertEqual(len(linked), 1)
+        self.assertEqual(linked[0]["meta"]["username"], "student")
+        self.assertIsNone(linked[0]["ip"])
+        self.client.delete("/api/notifications/line/link")
+        self.client.delete("/api/notifications/line/link")
+        self.assertEqual(len(self.activities("notification_line_unlinked")), 1)
+        serialized = json.dumps(self.activities())
+        for private in (code, digest(code), "U" + "a" * 32, digest("U" + "a" * 32), "test-reply", self.service.line_token, self.service.line_secret):
+            self.assertNotIn(private, serialized)
+
+    def test_line_unfollow_activity_records_actual_binding_owner_not_webhook_session(self):
+        self.storage.save_user_profile("Session-owner", "示範", "示")
+        self.storage.save_student_number("Session-owner", "113550092")
+        code = self.storage.create_line_link_code("Session-owner")
+        self.storage.consume_line_link_code(code, "U" + "a" * 32)
+        raw = json.dumps({"events": [{"type": "unfollow", "source": {"type": "user", "userId": "U" + "a" * 32}}]}).encode()
+        signature = base64.b64encode(hmac.new(self.service.line_secret.encode(), raw, hashlib.sha256).digest()).decode()
+        for _ in range(2):
+            self.client.post("/api/notifications/line/webhook", data=raw, content_type="application/json", headers={"X-Line-Signature": signature})
+        events = self.activities("notification_line_unlinked")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["meta"]["username"], "Session-owner")
+        self.assertEqual(events[0]["meta"]["action_detail"], "透過 LINE 取消追蹤")
+
+    def test_test_activity_distinguishes_provider_acceptance_from_failure_without_error_secrets(self):
+        raw = {"channel": "browser", "endpoint_hash": digest(self.sub["endpoint"])}
+        with patch.object(self.service, "send_test", return_value="private-test-tag"):
+            self.assertEqual(self.client.post("/api/notifications/test", json=raw).status_code, 200)
+        self.assertIn("非裝置收件確認", self.activities()[-1]["meta"]["action_detail"])
+        with patch.object(self.service, "send_test", side_effect=RuntimeError("private-error-token")):
+            self.assertEqual(self.client.post("/api/notifications/test", json=raw).status_code, 503)
+        self.assertEqual(self.activities()[-1]["status"], "error")
+        self.assertNotIn("private-error-token", json.dumps(self.activities()))
+        self.assertNotIn("private-test-tag", json.dumps(self.activities()))
+
+    def test_guests_cannot_create_notification_activity_or_forge_server_actions(self):
+        self.assertEqual(self.client.post("/ui-event", json={"action": "notification_line_linked"}).status_code, 400)
+        self.storage.save_web_session("notifications-test", "student", is_guest=True)
+        for method, url, body in [("post", "/api/notifications/settings", self.prefs),
+                                  ("post", "/api/notifications/browser", self.sub),
+                                  ("post", "/api/notifications/line/link", {}),
+                                  ("delete", "/api/notifications/line/link", {})]:
+            self.assertEqual(getattr(self.client, method)(url, json=body).status_code, 403)
+        self.assertEqual(self.activities(), [])
+
+    def test_notification_activity_is_rendered_in_chinese_after_restart(self):
+        from tests.security_helpers import csrf_client
+        self.client.post("/api/notifications/settings", json=self.prefs)
+        self.storage.save_web_session("activity-admin", "admin", is_admin=True)
+        reloaded = create_app()
+        try:
+            client = csrf_client(reloaded)
+            with client.session_transaction() as session:
+                session["session_token"] = "activity-admin"
+            response = client.get("/admin/traffic")
+            from bs4 import BeautifulSoup
+            activity = BeautifulSoup(response.get_data(as_text=True), "html.parser").select_one(".events").get_text()
+            self.assertIn("更新通知設定", activity)
+            self.assertIn("瀏覽器通知：啟用", activity)
+            self.assertIn("成功", activity)
+            self.assertNotIn("activity_only", activity)
+            self.assertNotIn("action_detail", activity)
+        finally:
+            reloaded.extensions["e3_notifications"].stop.set()
+            reloaded.extensions["e3_storage"]._engine.dispose()
+
 
 if __name__ == "__main__":
     unittest.main()

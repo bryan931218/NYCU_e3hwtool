@@ -65,6 +65,7 @@ def register_assignment_site(
     load_announcements,
     login_required,
     record_ui_event,
+    record_activity,
     set_announcement_vote,
     storage,
     support_email,
@@ -840,7 +841,7 @@ def register_assignment_site(
         app_home_url=app_home_url,
         support_email=support_email,
     )
-    register_notification_routes(app, storage, current_user, login_required, notification_service)
+    register_notification_routes(app, storage, current_user, login_required, notification_service, record_activity)
     notification_service.start(app, fetch_assignments_for, set_assign_cache_for_user)
     session_identity_sync.start(app)
     return list_admin_view_options

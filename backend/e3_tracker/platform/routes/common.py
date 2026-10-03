@@ -111,6 +111,8 @@ def register_platform_routes(
             meta = None
         if not action:
             return {"ok": False, "error": "action required"}, 400
+        if action.lower().startswith("notification_"):
+            return {"ok": False, "error": "server-confirmed action required"}, 400
         record_ui_event(action, status, meta)
         return {"ok": True}
 

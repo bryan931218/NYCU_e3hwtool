@@ -123,16 +123,26 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#a5b4fc}
 .badge.online{background:#16a34a;color:#dcfce7}
 .badge.offline{background:#52525b;color:#e2e8f0}
 .events{max-height:360px;overflow:auto;border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:0;margin:0;list-style:none;background:rgba(15,23,42,.55)}
-.events li{display:flex;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+.events li{display:grid;grid-template-columns:160px minmax(120px,1fr) minmax(0,3fr) auto;align-items:start;gap:12px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
 .events li:last-child{border-bottom:0}
 .events .time{min-width:150px;color:#a5b4fc;font-family:"SFMono-Regular",Consolas,monospace}
 .events .path{color:#fef3c7}
+.events .event-content{min-width:0;overflow-wrap:anywhere}
+.events .event-content strong{display:block;font-weight:600}
+.events .event-detail{display:block;margin-top:4px;font-size:12px;color:var(--chart-axis);line-height:1.6}
+.events .event-account{overflow-wrap:anywhere;min-width:0}
+.events .status-badge{justify-self:end}
 .trend-toggle{display:inline-flex;border:1px solid rgba(148,163,184,.35);border-radius:999px;overflow:hidden;background:rgba(15,23,42,.5)}
 .trend-toggle a{padding:8px 16px;text-decoration:none;font-weight:600;color:#cbd5f5;transition:all .2s ease;border-right:1px solid rgba(148,163,184,.2)}
 .trend-toggle a:last-child{border-right:0}
 .trend-toggle a.active{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;box-shadow:0 8px 20px rgba(79,70,229,.35)}
 .trend-toggle a:hover:not(.active){background:rgba(99,102,241,.15)}
 @media (max-width:700px){
+    .events li{grid-template-columns:minmax(0,1fr) auto;gap:6px 10px}
+    .events .time{grid-column:1;min-width:0;font-size:11px}
+    .events .event-account{grid-column:1}
+    .events .event-content{grid-column:1/-1;grid-row:3}
+    .events .status-badge{grid-column:2;grid-row:1/3;align-self:center}
     body{padding:16px}
     .top-row{flex-direction:column;align-items:flex-start}
     .actions{width:100%}
@@ -192,6 +202,7 @@ html[data-theme="light"] .badge.offline{background:#cbd5f5;color:#312e81}
 html[data-theme="light"] th,html[data-theme="light"] td{border-bottom:1px solid #e2e8f0}
 html[data-theme="light"] th{color:#475569}
 </style>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/admin-assignment-analytics.css') }}">
 </head>
 <body>
     <div class="card">
@@ -257,6 +268,8 @@ html[data-theme="light"] th{color:#475569}
             </div>
         </div>
     </div>
+
+    {% include 'shared/components/admin_assignment_analytics.html' %}
 
     <section class="card trend-controls" id="visit-trend" aria-labelledby="trend-title">
         <div class="trend-header">
@@ -415,16 +428,15 @@ html[data-theme="light"] th{color:#475569}
 
     <div class="card">
         <h2 style="margin:0 0 8px;font-size:18px">近期動態</h2>
-        <p class="muted">紀錄最近的登入、登出、資料存取等行為，方便掌握使用情況。</p>
+        <p class="muted">作業操作、通知設定與 LINE 綁定紀錄</p>
         <ul class="events">
             {% if events %}
                 {% for item in events %}
                 <li>
                     <span class="time">{{ item.ts }}</span>
-                    <span class="path">{{ item.username|account_label(item.student_number) }}</span>
-                    <span class="path">{{ item.description }}</span>
-                    <span class="status-badge {{ item.status }}">{{ item.status|upper }}</span>
-                    <span class="muted">{{ item.details or item.ip }}</span>
+                    <span class="path event-account">{{ item.username|account_label(item.student_number) }}</span>
+                    <div class="event-content"><strong>{{ item.description }}</strong>{% if item.details or item.ip != '-' %}<span class="event-detail">{{ item.details or item.ip }}</span>{% endif %}</div>
+                    <span class="status-badge {{ item.status }}">{{ item.status_label }}</span>
                 </li>
                 {% endfor %}
             {% else %}

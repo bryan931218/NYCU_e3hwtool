@@ -8,6 +8,11 @@ import re
 from functools import wraps
 from flask import request, render_template, send_from_directory
 from e3_tracker.platform.paths import FRONTEND_ROOT
+from e3_tracker.platform.guest_privacy import is_guest_identity
+from e3_tracker.assignments.domain.notification_activity import (
+    NOTIFICATION_ACTION_LABELS,
+    notification_setting_changes,
+)
 from e3_tracker.assignments.domain.notifications import (
     validate_preferences,
     validate_subscription,
@@ -18,7 +23,17 @@ from e3_tracker.assignments.routes.custom_todo_notifications import (
 )
 
 
-def register_notification_routes(app, storage, current_user, login_required, service):
+def register_notification_routes(app, storage, current_user, login_required, service, record_activity):
+    def activity(username, action, detail="", status="success"):
+        if not username or is_guest_identity(username) or action not in NOTIFICATION_ACTION_LABELS:
+            return
+        try:
+            record_activity(action, status=status, metadata={
+                "username": username, "site": "assignments", "action_detail": detail,
+            })
+        except Exception:
+            app.logger.warning("Notification activity unavailable")
+
     def account_only(fn):
         @login_required
         @wraps(fn)
@@ -41,6 +56,10 @@ def register_notification_routes(app, storage, current_user, login_required, ser
     @app.get("/settings/notifications")
     @account_only
     def notification_settings_page(username):
+        try:
+            storage.record_assignment_usage(username, "usage_notification_settings")
+        except Exception:
+            app.logger.warning("Assignment usage aggregate unavailable")
         return render_template("assignments/settings/notifications.html", notification_config=status(username))
 
     @app.route("/api/notifications/settings", methods=["GET", "POST"])
@@ -49,15 +68,19 @@ def register_notification_routes(app, storage, current_user, login_required, ser
         if request.method == "POST":
             try:
                 prefs = validate_preferences(request.get_json(silent=True))
+                previous = storage.notification_preferences(username)
                 if prefs["browser_enabled"] and not service.browser_ready:
                     raise ValueError("瀏覽器推播服務尚未啟用")
-                if prefs["browser_enabled"] and not storage.notification_preferences(username)["browser_devices"]:
+                if prefs["browser_enabled"] and not previous["browser_devices"]:
                     raise ValueError("請先啟用至少一個瀏覽器裝置")
                 if prefs["line_enabled"] and (
-                    not service.line_ready or not storage.notification_preferences(username)["line_linked"]
+                    not service.line_ready or not previous["line_linked"]
                 ):
                     raise ValueError("請先綁定 LINE")
                 storage.save_notification_preferences(username, prefs)
+                changes = notification_setting_changes(previous["preferences"], prefs)
+                if changes:
+                    activity(username, "notification_settings_updated", changes)
                 cache = storage.load_user_cache(username) or {}
                 if cache.get("result"):
                     service.observe(username, cache["result"], baseline=True)
@@ -74,14 +97,18 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                 if not service.browser_ready:
                     return {"ok": False, "message": "瀏覽器推播服務尚未啟用"}, 503
                 subscription = validate_subscription(request.get_json(silent=True))
+                existing = storage.notification_preferences(username)["browser_endpoint_hashes"]
                 storage.store_push_subscription(username, subscription)
+                if digest(subscription["endpoint"]) not in existing:
+                    activity(username, "notification_browser_enabled")
                 reschedule_custom_todos(username)
             else:
                 raw = request.get_json(silent=True) or {}
                 endpoint = raw.get("endpoint", "")
                 if not isinstance(endpoint, str):
                     raise ValueError("訂閱格式不正確")
-                storage.remove_push_subscription(username, digest(endpoint))
+                if storage.remove_push_subscription(username, digest(endpoint)):
+                    activity(username, "notification_browser_disabled")
         except ValueError as exc:
             return {"ok": False, "message": str(exc)}, 400
         return status(username)
@@ -106,7 +133,9 @@ def register_notification_routes(app, storage, current_user, login_required, ser
             return {"ok": False, "message": str(exc)}, 400
         except Exception:
             app.logger.warning("Notification test delivery unavailable (%s)", channel)
+            activity(username, "notification_test_failed", "瀏覽器推播" if channel == "browser" else "LINE", "error")
             return {"ok": False, "message": "傳送失敗，請確認服務設定後再試"}, 503
+        activity(username, "notification_test_sent", ("瀏覽器推播" if channel == "browser" else "LINE") + "：已交給推播服務，非裝置收件確認")
         return {"ok": True, "message": "測試通知已交給推播服務，請確認是否收到", **({"test_tag": test_tag} if channel == "browser" else {})}
 
     @app.post("/api/notifications/line/link")
@@ -116,12 +145,15 @@ def register_notification_routes(app, storage, current_user, login_required, ser
             return {"ok": False, "message": "LINE 通知服務尚未啟用"}, 503
         if not storage.consume_security_limit(f"line-link:{username}", 10, 600):
             return {"ok": False, "message": "請稍後再產生綁定碼"}, 429
-        return {"ok": True, "code": storage.create_line_link_code(username), "expires_in": 600, "friend_url": service.capabilities()["line_friend_url"]}
+        code = storage.create_line_link_code(username)
+        activity(username, "notification_line_link_started")
+        return {"ok": True, "code": code, "expires_in": 600, "friend_url": service.capabilities()["line_friend_url"]}
 
     @app.delete("/api/notifications/line/link")
     @account_only
     def notification_line_unlink(username):
-        storage.unlink_line(username=username)
+        if storage.unlink_line(username=username):
+            activity(username, "notification_line_unlinked", "透過網站解除綁定")
         return status(username)
 
     @app.get("/assignment-notifications-sw.js")
@@ -157,12 +189,16 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                 if source.get("type") != "user" or not re.fullmatch(r"U[0-9a-f]{32}", target):
                     continue
                 if event.get("type") == "unfollow":
-                    storage.unlink_line(target_hash=digest(target))
+                    owner = storage.unlink_line(target_hash=digest(target))
+                    if owner:
+                        activity(owner, "notification_line_unlinked", "透過 LINE 取消追蹤")
                 message = event.get("message") or {}
                 if event.get("type") != "message" or message.get("type") != "text":
                     continue
                 match = re.fullmatch(r"E3\s+([A-Za-z0-9_-]{24})", str(message.get("text", "")).strip())
-                if match and storage.consume_line_link_code(match[1], target):
+                owner = storage.consume_line_link_code(match[1], target, return_username=True) if match else None
+                if owner:
+                    activity(owner, "notification_line_linked")
                     if event.get("replyToken"):
                         try:
                             service.reply_linked(event["replyToken"])

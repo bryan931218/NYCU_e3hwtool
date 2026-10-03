@@ -13,6 +13,31 @@ import { register as registerWorkspaceFilters } from '../assignments/static/js/w
 import { initialize as initializeAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { initialize as initializeSearch, isBrowserAutofilled } from '../assignments/static/js/workbench/search.js';
 import { courseColorKey, createCourseColorRegistry, register as registerCourseColors } from '../assignments/static/js/workbench/course-colors.js';
+import { initialize as initializeUsageEvents } from '../assignments/static/js/workbench/usage-events.js';
+
+test('feature telemetry records view and controls without sending search text or assignment details', () => {
+  const handlers = {};
+  const calls = [];
+  const ctx = { currentViewMode: 'calendar', logUiEvent: (...args) => calls.push(args) };
+  withDocument({ addEventListener: (type, handler) => { handlers[type] = handler; } }, () => initializeUsageEvents(ctx));
+  assert.deepEqual(calls, [['usage_calendar']]);
+  handlers.click({ target: { closest: selector => selector.includes('[data-e3-assignment]') } });
+  handlers.click({ target: { closest: selector => selector.includes('[data-restore-assignment]') } });
+  handlers.input({ target: { matches: selector => selector === '#assignmentSearch', value: 'PRIVATE_QUERY' } });
+  handlers.input({ target: { matches: selector => selector === '#assignmentSearch', value: 'PRIVATE_QUERY_NEXT_LETTER' } });
+  handlers.input({ target: { matches: selector => selector === '#assignmentSearch', value: ' ' } });
+  handlers.submit({ target: { id: 'customAssignmentForm' } });
+  assert.deepEqual(calls.slice(1), [['usage_open_e3'], ['usage_ignore'], ['usage_search'], ['usage_custom_todo']]);
+  assert.ok(!JSON.stringify(calls).includes('PRIVATE_QUERY'));
+});
+
+test('guests and admin readonly inspection do not create feature-use records', () => {
+  for (const flags of [{ IS_GUEST: true }, { IS_READONLY_VIEW: true }]) {
+    withDocument({ addEventListener: () => assert.fail('unexpected listener') }, () => {
+      initializeUsageEvents({ ...flags, logUiEvent: () => assert.fail('unexpected telemetry') });
+    });
+  }
+});
 
 test('course colors stay unique beyond the base palette and deterministic across catalog order', () => {
   const keys = Array.from({ length: 80 }, (_, index) => `e3:${index + 1}`);

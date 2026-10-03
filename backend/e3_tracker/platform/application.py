@@ -416,6 +416,11 @@ def create_app(
         traffic_tracker.record_visit(
             _client_ip(), action=action, status=status, metadata=details
         )
+        if user and not user.get("is_guest") and details["site"] == "assignments":
+            try:
+                storage.record_assignment_usage(user["username"], action, status, details)
+            except Exception:
+                app.logger.warning("Assignment usage aggregate unavailable")
 
     def usage_stats() -> Dict[str, int]:
         return traffic_tracker.snapshot()
@@ -462,6 +467,7 @@ def create_app(
         load_announcements=load_announcements,
         login_required=login_required,
         record_ui_event=record_ui_event,
+        record_activity=traffic_tracker.record_event,
         set_announcement_vote=set_announcement_vote,
         storage=storage,
         support_email=support_email,

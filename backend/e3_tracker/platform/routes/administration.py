@@ -2,6 +2,9 @@
 
 from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS, is_assignment_event
 from e3_tracker.platform.services.traffic_trends import build_traffic_trend
+from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics
+from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
+from e3_tracker.assignments.domain.usage import FEATURE_LABELS
 import json
 import time
 from collections import Counter
@@ -65,11 +68,16 @@ def register_administration_routes(*,
             return dt.strftime("%Y-%m-%d %H:%M:%S")
 
         ACTION_LABELS = {
+            **NOTIFICATION_ACTION_LABELS,
+            **{f"usage_{key}": label for key, label in FEATURE_LABELS.items()},
             "login_success": "登入成功",
             "logout": "登出",
             "guest_login": "訪客登入",
             "guest_import": "匯入訪客資料",
             "refresh_assignments": "更新作業資料",
+            "download_excel": "匯出 Excel",
+            "export_calendar": "匯出日曆",
+            "google_sync": "同步 Google 日曆",
             "ui-event": "操作事件",
         }
 
@@ -106,12 +114,13 @@ def register_administration_routes(*,
             for key in ("info", "course", "message", "target", "action_detail"):
                 val = meta.get(key)
                 if val:
-                    detail_parts.append(f"{key}: {val}")
+                    label = {"course": "課程：", "target": "對象："}.get(key, "")
+                    detail_parts.append(f"{label}{val}")
             extra = {
                 key: value
                 for key, value in meta.items()
                 if key
-                not in {"username", "is_guest", "is_admin", "site", "info", "course", "message", "target", "action_detail"}
+                not in {"username", "is_guest", "is_admin", "site", "activity_only", "info", "course", "message", "target", "action_detail"}
             }
             if extra:
                 try:
@@ -124,6 +133,7 @@ def register_administration_routes(*,
                     "ip": ev.get("ip") or "-",
                     "action": ev.get("action") or "-",
                     "status": ev.get("status") or "info",
+                    "status_label": {"success": "成功", "error": "失敗", "info": "操作", "start": "處理中"}.get(ev.get("status"), "操作"),
                     "username": meta.get("username") or ("訪客" if meta.get("is_guest") else "-"),
                     "student_number": student_numbers.get(meta.get("username"), ""),
                     "description": _action_description(ev.get("action") or "-"),
@@ -137,7 +147,7 @@ def register_administration_routes(*,
         action_counter: Counter = Counter()
         for ev in filtered_events:
             action_counter[ev.get("action") or "-"] += 1
-        top_actions = [{"action": action, "count": count} for action, count in action_counter.most_common(5)]
+        top_actions = [{"action": _action_description(action), "count": count} for action, count in action_counter.most_common(5)]
         recent_unique_keys = set()
         for ev in raw_events:
             meta = ev.get("meta") or {}
@@ -151,7 +161,7 @@ def register_administration_routes(*,
             "online_users": sum(1 for entry in formatted_users if entry["online"]),
             "recent_unique_users": len(recent_unique_keys),
             "last_event": _fmt_ts(filtered_events[-1].get("ts")) if filtered_events else "-",
-            "last_action": (filtered_events[-1].get("action") or "-") if filtered_events else "-",
+            "last_action": _action_description(filtered_events[-1].get("action")) if filtered_events else "-",
             "event_samples": len(filtered_events),
         }
         if formatted_users:
@@ -180,6 +190,10 @@ def register_administration_routes(*,
             if row["username"] not in known_users
             and not row["username"].startswith("Session-")
         ]
+        window = analytics_window(request.args)
+        analytics = build_assignment_analytics(
+            storage.assignment_usage_snapshot(window["start"], window["end"]), window,
+        )
         return render_template_string(
             TRAFFIC_TEMPLATE,
             stats=usage_stats(),
@@ -192,6 +206,7 @@ def register_administration_routes(*,
             top_actions=top_actions,
             top_users=formatted_users[:5],
             summary=summary,
+            assignment_analytics=analytics,
             ip_summary=ip_overview,
             admin_view_options=admin_view_options,
             selected_view_username=selected_view_username,
@@ -205,6 +220,7 @@ def register_administration_routes(*,
             flash("僅限管理員操作。", "error")
             return redirect(url_for("index"))
         traffic_tracker.reset()
+        storage.clear_assignment_usage()
         flash("已清除所有流量統計與累積訪問次數。", "success")
         record_ui_event("reset_traffic", "success")
         return redirect(url_for("admin_traffic"))
@@ -222,7 +238,8 @@ def register_administration_routes(*,
             return redirect(url_for("admin_traffic"))
         removed = traffic_tracker.remove_user_stats(target)
         deleted_events = storage.delete_traffic_events_for_user(target)
-        if removed or deleted_events:
+        deleted_usage = storage.clear_assignment_usage(target)
+        if removed or deleted_events or deleted_usage:
             flash(f"已清除 {target} 的統計與事件紀錄（移除 {deleted_events} 筆事件）。", "success")
             record_ui_event("reset_traffic_user", meta={"target": target, "events_removed": deleted_events})
         else:

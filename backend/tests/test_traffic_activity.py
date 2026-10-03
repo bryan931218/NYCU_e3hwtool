@@ -152,7 +152,7 @@ class TrafficActivityTests(unittest.TestCase):
                 .select_one(".events")
                 .get_text()
             )
-            self.assertIn("export calendar", text)
+            self.assertIn("匯出日曆", text)
             self.assertNotIn("study recall", text)
             self.assertEqual(len(self.storage.recent_traffic_events(500)), 3)
         finally:

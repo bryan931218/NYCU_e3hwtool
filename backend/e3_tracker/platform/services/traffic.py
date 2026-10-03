@@ -154,6 +154,25 @@ class TrafficTracker:
         normalized = str(username)
         return is_guest_identity(normalized) or bool(self._user_flags.get(normalized))
 
+    def record_event(
+        self,
+        action: str,
+        *,
+        status: str = "success",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Persist server-confirmed activity without counting it as a website visit."""
+        if not action:
+            return
+        event = sanitize_traffic_event({
+            "ts": time.time(), "ip": None, "action": action,
+            "status": status, "meta": {**(metadata or {}), "activity_only": True},
+        })
+        if event is not None:
+            with self._lock:
+                self._append_event(event)
+                self._version += 1
+
     def record_visit(
         self,
         ip: Optional[str],
@@ -248,6 +267,8 @@ class TrafficTracker:
                 if not ts or ts < cutoff:
                     continue
                 meta = ev.get("meta") or {}
+                if meta.get("activity_only"):
+                    continue
                 username = meta.get("username")
                 if username and not meta.get("is_guest"):
                     daily_users.add(str(username))

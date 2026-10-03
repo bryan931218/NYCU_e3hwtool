@@ -99,6 +99,11 @@ def _custom_todos(conn):
         index.create(conn, checkfirst=True)
 
 
+def _assignment_usage(conn):
+    from e3_tracker.assignments.persistence.usage import migrate_usage
+    migrate_usage(conn)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -109,6 +114,7 @@ MIGRATIONS = (
     ("0007_assignment_notifications", _assignment_notifications),
     ("0008_session_student_number", _session_student_number),
     ("0009_custom_todos", _custom_todos),
+    ("0010_assignment_usage", _assignment_usage),
 )
 
 
