@@ -44,16 +44,16 @@ class AssignmentsStorage:
             ).fetchone()
         if not row:
             return {}
-        ignored_overdue_uids: List[str] = []
+        ignored_assignment_uids: List[str] = []
         if row.ignored_overdue_uids:
             try:
                 parsed = json.loads(row.ignored_overdue_uids)
                 if isinstance(parsed, list):
-                    ignored_overdue_uids = [
+                    ignored_assignment_uids = [
                         str(item).strip() for item in parsed if str(item).strip()
                     ]
             except Exception:
-                ignored_overdue_uids = []
+                ignored_assignment_uids = []
         semester_filter: List[str] = []
         if row.semester_filter:
             try:
@@ -72,7 +72,9 @@ class AssignmentsStorage:
             "show_overdue": bool(row.show_overdue),
             "show_completed": bool(row.show_completed),
             "show_graded": bool(row.show_graded),
-            "ignored_overdue_uids": ignored_overdue_uids,
+            "ignored_assignment_uids": ignored_assignment_uids,
+            # Retain the legacy API alias for already-open clients.
+            "ignored_overdue_uids": ignored_assignment_uids,
         }
 
     def save_user_preferences(self, username: str, prefs: Dict[str, Any]) -> None:
@@ -99,11 +101,13 @@ class AssignmentsStorage:
         show_overdue = self._coerce_bool_int(prefs.get("show_overdue"))
         show_completed = self._coerce_bool_int(prefs.get("show_completed"))
         show_graded = self._coerce_bool_int(prefs.get("show_graded"))
-        ignored_overdue_uids = prefs.get("ignored_overdue_uids")
-        if not isinstance(ignored_overdue_uids, list):
-            ignored_overdue_uids = []
-        ignored_overdue_uids = [
-            str(item).strip() for item in ignored_overdue_uids if str(item).strip()
+        ignored_assignment_uids = prefs.get(
+            "ignored_assignment_uids", prefs.get("ignored_overdue_uids")
+        )
+        if not isinstance(ignored_assignment_uids, list):
+            ignored_assignment_uids = []
+        ignored_assignment_uids = [
+            str(item).strip() for item in ignored_assignment_uids if str(item).strip()
         ]
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
@@ -123,8 +127,9 @@ class AssignmentsStorage:
                     show_overdue=show_overdue,
                     show_completed=show_completed,
                     show_graded=show_graded,
+                    # Keep the physical column to preserve existing records and rollbacks.
                     ignored_overdue_uids=json.dumps(
-                        ignored_overdue_uids, ensure_ascii=False
+                        ignored_assignment_uids, ensure_ascii=False
                     ),
                     updated_at=now,
                 )

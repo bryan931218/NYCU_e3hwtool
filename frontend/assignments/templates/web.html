@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/workbench.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/deadline-calendar.css') }}">
 </head>
 <body data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}" data-readonly-view="{{ 1 if is_admin_view else 0 }}" data-view-user="{{ viewed_username or '' }}">
 {% set server_now_ts = now_ts if now_ts is defined else none %}
@@ -41,7 +42,7 @@
     {% set selected_semesters = [] %}
 {% endif %}
 {% set selected_semester = selected_semesters|first if selected_semesters else '' %}
-{% set ignored_overdue_uids = preferences.ignored_overdue_uids if preferences.ignored_overdue_uids is defined else [] %}
+{% set ignored_assignment_uids = preferences.ignored_assignment_uids if preferences.ignored_assignment_uids is defined else (preferences.ignored_overdue_uids if preferences.ignored_overdue_uids is defined else []) %}
 {% from 'assignments/components/assignments.html' import render_assignment_row with context %}
 <div class="loader-wrap" id="loader">
     <div class="loader-content">
@@ -202,10 +203,10 @@
 
     <section class="toolbar-compact">
         <div class="tc-left"><div class="toolbar-stack">
-            <label class="assignment-search">
+            <form id="assignmentSearchForm" class="assignment-search" role="search" method="post" autocomplete="off" aria-label="搜尋作業或課程">
                 <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
-                <input id="assignmentSearch" type="search" placeholder="搜尋作業或課程" autocomplete="off">
-            </label>
+                <input id="assignmentSearch" name="assignment_query" type="search" placeholder="搜尋作業或課程" aria-label="搜尋作業或課程" autocomplete="off" data-1p-ignore data-lpignore="true">
+            </form>
             <select class="course-filter" id="courseFilter" aria-label="篩選課程">
                 <option value="">全部課程</option>
                 {% if result %}{% for course in result.courses %}{% if (course.semester_key or 'other') == selected_semester %}<option value="{{ course.title }}">{{ course.title }}</option>{% endif %}{% endfor %}{% endif %}
@@ -225,10 +226,10 @@
                         <button type="button" class="status-filter-btn{% if 'overdue' in selected_status_filters %} active{% endif %}" data-status-filter="overdue">逾期未交</button>
                         <button type="button" class="status-filter-btn{% if selected_status_filters|length >= status_filter_labels|length %} active{% endif %}" data-status-filter="all" style="grid-column:1 / -1">全部</button>
                     </div>
-                    <div class="filter-subsection"><p class="filter-panel-title" style="margin-bottom:6px">已忽略逾期作業</p><div class="muted" style="font-size:12px">這裡可以復原你先前排除的逾期作業。</div><button type="button" class="ignored-restore-all" id="restoreIgnoredOverdueAll" hidden>全部復原</button><div class="ignored-list" id="ignoredOverdueList"></div></div>
+                    <div class="filter-subsection"><p class="filter-panel-title" style="margin-bottom:6px">已忽略作業</p><button type="button" class="ignored-restore-all" id="restoreIgnoredAssignmentsAll" hidden>全部復原</button><div class="ignored-list" id="ignoredAssignmentsList"></div></div>
                 </div>
             </details>
-            <div class="seg"><button id="viewDueBtn" class="seg-btn" data-view="due">到期日</button><button id="viewCourseBtn" class="seg-btn" data-view="course">依課程</button></div>
+            <div class="seg" role="group" aria-label="作業檢視"><button type="button" id="viewDueBtn" class="seg-btn" data-view="due">到期日</button><button type="button" id="viewCourseBtn" class="seg-btn" data-view="course">依課程</button><button type="button" id="viewCalendarBtn" class="seg-btn" data-view="calendar"><span class="calendar-icon" data-icon="calendar-days" aria-hidden="true"></span>日曆</button></div>
         </div></div>
         <details class="more-menu">
             <summary class="icon-button more-trigger" title="更多操作" aria-label="更多操作">
@@ -246,7 +247,7 @@
             </div>
         </details>
         {% if google_ready and google_linked %}<form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"><input type="hidden" name="selected_uids" id="googleSyncInput"></form>{% endif %}
-        <div class="tc-right toolbar-counts"><span>顯示 <strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong> 筆</span><span class="ignored-count">忽略 <strong id="ignoredCount">{{ (preferences.ignored_overdue_uids|length) if preferences.ignored_overdue_uids is defined else 0 }}</strong></span></div>
+        <div class="tc-right toolbar-counts"><span>顯示 <strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong> 筆</span><span class="ignored-count">忽略 <strong id="ignoredCount">{{ ignored_assignment_uids|length }}</strong></span></div>
     </section>
 
     {% if result and result.errors %}
@@ -260,6 +261,8 @@
         </div>
         </section>
     {% endif %}
+
+        {% include 'assignments/components/deadline-calendar.html' %}
 
         <section id="viewDue" class="assignment-workspace hidden">
         <div class="table-shell">
@@ -479,6 +482,7 @@
 </footer>
 
 {% include 'assignments/pages/web/config.html' %}
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='assignments/vendor/fullcalendar-6.1.21.min.js') }}"></script>
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/workbench/index.js') }}"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@ from e3_tracker.platform.assets import configure_frontend
 
 
 class FrontendComponentTests(unittest.TestCase):
-    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False):
+    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, overdue=True, completed=False, readonly=False):
         app = Flask(__name__)
         configure_frontend(app)
         app.secret_key = 'component-test'
@@ -16,8 +16,8 @@ class FrontendComponentTests(unittest.TestCase):
         item = {
             'course_id': 1, 'course_title': 'Course', 'semester_key': '115-1',
             'title': '<img src=x onerror=alert(1)>', 'url': 'https://example.test/task',
-            'due_at': '2026-09-25 12:00', 'due_ts': 100, 'overdue': True,
-            'completed': False, 'raw_status_text': '', 'grade_text': grade_text,
+            'due_at': '2026-09-25 12:00', 'due_ts': 100, 'overdue': overdue,
+            'completed': completed, 'raw_status_text': '', 'grade_text': grade_text,
             'submitted_count': submitted_count, 'participant_count': participant_count,
         }
         uid = '1|' + item['title'] + '|' + item['url']
@@ -28,7 +28,7 @@ class FrontendComponentTests(unittest.TestCase):
         with app.test_request_context('/'):
             html = render_template('assignments/web.html', result=result, preferences=preferences,
                                    user={'username': 'qa', 'surname': surname}, viewed_username='qa',
-                                   guest_mode=guest_mode, is_admin_view=False, google_ready=False, now_ts=200,
+                                   guest_mode=guest_mode, is_admin_view=readonly, google_ready=False, now_ts=200,
                                    last_updated_label='2026-09-26 13:31', stats={'online': 3, 'total': 3286})
         return BeautifulSoup(html, 'html.parser'), uid
 
@@ -63,6 +63,17 @@ class FrontendComponentTests(unittest.TestCase):
             self.assertEqual(row['data-primary-status'], 'graded')
             self.assertEqual(row.select_one('.badge.graded').get_text(), '已評分')
             self.assertIsNone(row.select_one('.badge.overdue'))
+
+    def test_ignore_available_for_pending_and_overdue_but_not_completed_or_readonly(self):
+        for extra, expected in [({'overdue': False}, 2), ({}, 2),
+                                ({'completed': True}, 0), ({'grade_text': '95'}, 0),
+                                ({'overdue': False, 'readonly': True}, 0)]:
+            with self.subTest(extra=extra):
+                document, _uid = self.render(**extra)
+                self.assertEqual(len(document.select('[data-ignore-assignment]')), expected)
+                self.assertIsNone(document.select_one('[data-ignore-overdue]'))
+                self.assertIn('已忽略作業', document.get_text())
+                self.assertNotIn('已忽略逾期作業', document.get_text())
 
     def test_course_options_only_contain_selected_semester_even_without_assignments(self):
         document, _uid = self.render(extra_courses=[
@@ -116,6 +127,23 @@ class FrontendComponentTests(unittest.TestCase):
             self.assertEqual(row.select_one('.submission-label').get_text(), '已繳交／總人數')
             self.assertEqual(row.select_one('.submission-pill-count').get_text(), '5')
             self.assertEqual(row.select_one('.submission-pill-total').get_text(), '10')
+
+    def test_search_has_its_own_non_login_form_and_password_manager_opt_out(self):
+        document, _uid = self.render()
+        field = document.select_one('#assignmentSearch')
+        form = field.find_parent('form')
+        self.assertEqual(form['id'], 'assignmentSearchForm')
+        self.assertEqual(form['role'], 'search')
+        self.assertEqual(form['method'], 'post')
+        self.assertEqual(form['autocomplete'], 'off')
+        self.assertEqual(field['type'], 'search')
+        self.assertEqual(field['name'], 'assignment_query')
+        self.assertEqual(field['aria-label'], '搜尋作業或課程')
+        self.assertEqual(field['autocomplete'], 'off')
+        self.assertTrue(field.has_attr('data-1p-ignore'))
+        self.assertEqual(field['data-lpignore'], 'true')
+        self.assertFalse(field.has_attr('readonly'))
+        self.assertIsNone(form.select_one('input[type="password"]'))
 
 
 if __name__ == '__main__':

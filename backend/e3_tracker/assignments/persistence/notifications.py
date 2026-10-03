@@ -248,7 +248,7 @@ class NotificationStorage:
         self, username, result, semester_key, *, now=None, baseline=False
     ):
         now = time.time() if now is None else now
-        ignored = self.load_user_preferences(username).get("ignored_overdue_uids", [])
+        ignored = self.load_user_preferences(username).get("ignored_assignment_uids", [])
         items = active_assignments(result, semester_key, self.assignment_uid, ignored)
         with self._lock, self._engine.begin() as conn:
             uid = self._notification_user(conn, username)

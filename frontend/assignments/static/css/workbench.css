@@ -1573,6 +1573,14 @@ html[data-theme="dark"] #flatTable .assignment-new-badge {
   font: inherit;
   font-size: 13px;
 }
+/* Detect native autofill without changing the search field's appearance. */
+#assignmentSearch:is(:autofill, :-webkit-autofill) {
+  animation: assignment-search-autofill 1ms;
+}
+@keyframes assignment-search-autofill {
+  from { opacity: 1; }
+  to { opacity: 1; }
+}
 .course-filter {
   max-width: 190px;
   padding: 0 32px 0 11px;

@@ -154,10 +154,9 @@ export function initialize(ctx) {
 
   ctx.DEFAULT_STATUS_FILTERS = ["pending"];
 
-  ctx.currentViewMode =
-    ctx.USER_PREFERENCES && ctx.USER_PREFERENCES.view_mode === "course"
-      ? "course"
-      : "due";
+  ctx.currentViewMode = ["due", "course", "calendar"].includes(
+    ctx.USER_PREFERENCES?.view_mode,
+  ) ? ctx.USER_PREFERENCES.view_mode : "due";
 
   ctx.currentStatusFilters = ctx.normalizeStatusFilters(
     ctx.USER_PREFERENCES && ctx.USER_PREFERENCES.status_filter,

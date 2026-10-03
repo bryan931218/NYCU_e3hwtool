@@ -1,0 +1,31 @@
+<section id="viewCalendar" class="deadline-calendar hidden" aria-label="作業日曆">
+    <div class="calendar-main">
+        <div class="calendar-toolbar">
+            <div class="calendar-period">
+                <h2 id="calendarMonthLabel" aria-live="polite"></h2>
+                <span id="calendarMonthCount" class="calendar-period-count"></span>
+            </div>
+            <div class="calendar-navigation">
+                <button type="button" class="calendar-today" id="calendarToday">今天</button>
+                <div class="calendar-arrows">
+                    <button type="button" class="calendar-icon-button" id="calendarPrevious" title="上個月" aria-label="上個月"><span class="calendar-icon" data-icon="chevron-left" aria-hidden="true"></span></button>
+                    <button type="button" class="calendar-icon-button" id="calendarNext" title="下個月" aria-label="下個月"><span class="calendar-icon" data-icon="chevron-right" aria-hidden="true"></span></button>
+                </div>
+            </div>
+        </div>
+        <div id="assignmentCalendar"></div>
+        <div class="calendar-footer">
+            <span class="calendar-timezone">台北時間</span>
+            <button type="button" id="calendarUndated" class="calendar-undated" hidden>無截止日期 <span id="calendarUndatedCount">0</span></button>
+        </div>
+        <p id="calendarUnavailable" class="calendar-empty" hidden>日曆載入失敗，請重新整理或切換到作業列表。</p>
+    </div>
+    <aside class="calendar-agenda" aria-labelledby="calendarDayLabel">
+        <div class="calendar-agenda-head">
+            <div><span class="calendar-agenda-kicker" id="calendarDayWeekday"></span><h3 id="calendarDayLabel"></h3></div>
+            {% if not is_admin_view %}<button type="button" class="calendar-icon-button" id="calendarAddTask" title="新增當日代辦" aria-label="新增當日代辦"><span class="calendar-icon" data-icon="plus" aria-hidden="true"></span></button>{% endif %}
+        </div>
+        <div class="calendar-day-summary" id="calendarDaySummary" aria-live="polite"></div>
+        <div id="calendarDayList" class="calendar-day-list"></div>
+    </aside>
+</section>

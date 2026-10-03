@@ -1,27 +1,27 @@
 export function register(ctx) {
-  ctx.getIgnoredOverdueUidSet = function getIgnoredOverdueUidSet() {
+  ctx.getIgnoredAssignmentUidSet = function getIgnoredAssignmentUidSet() {
     return new Set(
-      (ctx.USER_PREFERENCES.ignored_overdue_uids || [])
+      (ctx.USER_PREFERENCES.ignored_assignment_uids || [])
         .map((item) => String(item || "").trim())
         .filter(Boolean),
     );
   };
 
-  ctx.setIgnoredOverdueUids = function setIgnoredOverdueUids(nextUids) {
-    ctx.USER_PREFERENCES.ignored_overdue_uids = Array.from(
+  ctx.setIgnoredAssignmentUids = function setIgnoredAssignmentUids(nextUids) {
+    ctx.USER_PREFERENCES.ignored_assignment_uids = Array.from(
       new Set(
-        (nextUids || [])
+        (Array.isArray(nextUids) ? nextUids : [])
           .map((item) => String(item || "").trim())
           .filter(Boolean),
       ),
     );
   };
 
-  ctx.renderIgnoredOverdueList = function renderIgnoredOverdueList() {
-    if (!ctx.ignoredOverdueList) return;
-    const ignoredSet = ctx.getIgnoredOverdueUidSet();
+  ctx.renderIgnoredAssignmentsList = function renderIgnoredAssignmentsList() {
+    if (!ctx.ignoredAssignmentsList) return;
+    const ignoredSet = ctx.getIgnoredAssignmentUidSet();
     const rows = Array.from(
-      document.querySelectorAll('tr[data-uid][data-primary-status="overdue"]'),
+      document.querySelectorAll('tr[data-uid]'),
     );
     const items = [];
     const seen = new Set();
@@ -38,13 +38,13 @@ export function register(ctx) {
           ),
       });
     });
-    ctx.ignoredOverdueList.innerHTML = "";
-    if (ctx.restoreIgnoredOverdueAll) {
-      ctx.restoreIgnoredOverdueAll.hidden = items.length === 0;
+    ctx.ignoredAssignmentsList.innerHTML = "";
+    if (ctx.restoreIgnoredAssignmentsAll) {
+      ctx.restoreIgnoredAssignmentsAll.hidden = items.length === 0;
     }
     if (!items.length) {
-      ctx.ignoredOverdueList.innerHTML =
-        '<div class="muted" style="font-size:12px">目前沒有已忽略的逾期作業。</div>';
+      ctx.ignoredAssignmentsList.innerHTML =
+        '<div class="muted" style="font-size:12px">目前沒有已忽略的作業。</div>';
       return;
     }
     items.forEach((item) => {
@@ -52,9 +52,9 @@ export function register(ctx) {
       chip.className = "ignored-chip";
       chip.innerHTML = `
             <span class="ignored-chip-label" title="${ctx.escapeHtml(item.label)}">${ctx.escapeHtml(item.label)}</span>
-            <button type="button" class="ignored-chip-btn" data-restore-overdue="${ctx.escapeHtml(item.uid)}">復原</button>
+            <button type="button" class="ignored-chip-btn" data-restore-assignment="${ctx.escapeHtml(item.uid)}">復原</button>
         `;
-      ctx.ignoredOverdueList.appendChild(chip);
+      ctx.ignoredAssignmentsList.appendChild(chip);
     });
   };
 
@@ -96,7 +96,7 @@ export function register(ctx) {
   };
 
   ctx.updateDashboardOverview = function updateDashboardOverview() {
-    const ignoredSet = ctx.getIgnoredOverdueUidSet();
+    const ignoredSet = ctx.getIgnoredAssignmentUidSet();
     const selectedSemesters = new Set(ctx.currentSemesterFilters);
     const allRows = Array.from(
       document.querySelectorAll("#flatTable tbody tr[data-uid]"),
@@ -111,15 +111,10 @@ export function register(ctx) {
       const semesterVisible =
         row.dataset.semester === "custom" ||
         selectedSemesters.has(row.dataset.semester || "other");
-      if (!semesterVisible) return;
+      if (!semesterVisible || ignoredSet.has(row.dataset.uid || "")) return;
       const status = row.dataset.primaryStatus || "pending";
-      if (status === "overdue" && !ignoredSet.has(row.dataset.uid || ""))
-        overdue += 1;
-      if (
-        status === "pending" ||
-        (status === "overdue" && !ignoredSet.has(row.dataset.uid || ""))
-      )
-        pending += 1;
+      if (status === "overdue") overdue += 1;
+      if (status === "pending" || status === "overdue") pending += 1;
     });
     if (ctx.pendingSummaryCount)
       ctx.pendingSummaryCount.textContent = String(pending);
@@ -131,17 +126,17 @@ export function register(ctx) {
     );
     document
       .getElementById("workspaceEmpty")
-      ?.classList.toggle("hidden", visibleRows.length > 0);
+      ?.classList.toggle("hidden", visibleRows.length > 0 || ctx.currentViewMode === "calendar");
   };
 
   ctx.updateCounts = function updateCounts() {
     const currentView =
-      ctx.currentViewMode === "due" ? ctx.viewDue : ctx.viewCourse;
+      ctx.currentViewMode === "course" ? ctx.viewCourse : ctx.viewDue;
     if (!currentView) {
       if (ctx.totalCountEl) ctx.totalCountEl.textContent = "0";
       if (ctx.ignoredCountEl)
         ctx.ignoredCountEl.textContent = String(
-          ctx.getIgnoredOverdueUidSet().size,
+          ctx.getIgnoredAssignmentUidSet().size,
         );
       return;
     }
@@ -153,21 +148,20 @@ export function register(ctx) {
     if (ctx.totalCountEl) ctx.totalCountEl.textContent = totalVisible;
     if (ctx.ignoredCountEl)
       ctx.ignoredCountEl.textContent = String(
-        ctx.getIgnoredOverdueUidSet().size,
+        ctx.getIgnoredAssignmentUidSet().size,
       );
     ctx.updateDashboardOverview();
   };
 
   ctx.applyFilters = function applyFilters() {
     ctx.syncCourseFilter?.();
-    const ignoredSet = ctx.getIgnoredOverdueUidSet();
+    const ignoredSet = ctx.getIgnoredAssignmentUidSet();
     const selectedStatuses = new Set(ctx.currentStatusFilters);
     const selectedSemesters = new Set(ctx.currentSemesterFilters);
 
     document.querySelectorAll("#flatTable tbody tr[data-uid]").forEach((tr) => {
       const primaryStatus = tr.dataset.primaryStatus || "pending";
-      const ignored =
-        primaryStatus === "overdue" && ignoredSet.has(tr.dataset.uid || "");
+      const ignored = ignoredSet.has(tr.dataset.uid || "");
       tr.dataset.ignored = ignored ? "1" : "0";
       const semesterVisible =
         tr.dataset.semester === "custom" ||
@@ -176,7 +170,7 @@ export function register(ctx) {
         semesterVisible &&
         selectedStatuses.has(primaryStatus) &&
         ctx.rowMatchesWorkspaceQuery(tr);
-      if (primaryStatus === "overdue" && ignored) visible = false;
+      if (ignored) visible = false;
       tr.classList.toggle("hidden", !visible);
     });
 
@@ -184,8 +178,7 @@ export function register(ctx) {
       .querySelectorAll(".courseTable tbody tr[data-uid]")
       .forEach((tr) => {
         const primaryStatus = tr.dataset.primaryStatus || "pending";
-        const ignored =
-          primaryStatus === "overdue" && ignoredSet.has(tr.dataset.uid || "");
+        const ignored = ignoredSet.has(tr.dataset.uid || "");
         tr.dataset.ignored = ignored ? "1" : "0";
         const semesterVisible =
           tr.dataset.semester === "custom" ||
@@ -194,7 +187,7 @@ export function register(ctx) {
           semesterVisible &&
           selectedStatuses.has(primaryStatus) &&
           ctx.rowMatchesWorkspaceQuery(tr);
-        if (primaryStatus === "overdue" && ignored) visible = false;
+        if (ignored) visible = false;
         tr.classList.toggle("hidden", !visible);
       });
 
@@ -230,7 +223,8 @@ export function register(ctx) {
     });
 
     ctx.updateCounts();
-    ctx.renderIgnoredOverdueList();
+    ctx.renderIgnoredAssignmentsList();
+    ctx.syncDeadlineCalendar?.();
   };
 
   ctx.persistPreferences = function persistPreferences(partial = {}) {
@@ -238,7 +232,8 @@ export function register(ctx) {
     if (!ctx.PREFERENCES_ENDPOINT) return;
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(partial, "viewMode")) {
-      const mode = partial.viewMode === "due" ? "due" : "course";
+      const mode = ["due", "course", "calendar"].includes(partial.viewMode)
+        ? partial.viewMode : "due";
       ctx.USER_PREFERENCES.view_mode = mode;
       payload.viewMode = mode;
     }
@@ -270,10 +265,10 @@ export function register(ctx) {
         payload.semesterFilters = nextSemesters.slice();
       }
     }
-    if (Object.prototype.hasOwnProperty.call(partial, "ignoredOverdueUids")) {
-      ctx.setIgnoredOverdueUids(partial.ignoredOverdueUids);
-      payload.ignoredOverdueUids =
-        ctx.USER_PREFERENCES.ignored_overdue_uids.slice();
+    if (Object.prototype.hasOwnProperty.call(partial, "ignoredAssignmentUids")) {
+      ctx.setIgnoredAssignmentUids(partial.ignoredAssignmentUids);
+      payload.ignoredAssignmentUids =
+        ctx.USER_PREFERENCES.ignored_assignment_uids.slice();
     }
     if (!Object.keys(payload).length) return;
     fetch(ctx.PREFERENCES_ENDPOINT, {
@@ -288,7 +283,8 @@ export function register(ctx) {
   ) {
     if (!nextPrefs || typeof nextPrefs !== "object") return;
     const incoming = {
-      view_mode: nextPrefs.view_mode === "due" ? "due" : "course",
+      view_mode: ["due", "course", "calendar"].includes(nextPrefs.view_mode)
+        ? nextPrefs.view_mode : "due",
       status_filter: ctx.normalizeStatusFilters(
         nextPrefs.status_filter ?? nextPrefs.statusFilters,
       ),
@@ -296,9 +292,8 @@ export function register(ctx) {
         nextPrefs.semester_filter ?? nextPrefs.semesterFilters,
       ),
       include_ignored_overdue: !!nextPrefs.include_ignored_overdue,
-      ignored_overdue_uids: Array.isArray(nextPrefs.ignored_overdue_uids)
-        ? nextPrefs.ignored_overdue_uids
-        : [],
+      ignored_assignment_uids: nextPrefs.ignored_assignment_uids
+        ?? nextPrefs.ignored_overdue_uids ?? [],
     };
     if (incoming.view_mode && incoming.view_mode !== ctx.currentViewMode) {
       ctx.setView(incoming.view_mode, { skipPersist: true });
@@ -316,34 +311,34 @@ export function register(ctx) {
         document.querySelector("[data-semester-filter]:checked"),
       );
     }
-    ctx.setIgnoredOverdueUids(incoming.ignored_overdue_uids);
+    ctx.setIgnoredAssignmentUids(incoming.ignored_assignment_uids);
     ctx.syncStatusFilterButtons();
     ctx.updateFilterSummary();
     ctx.applyFilters();
   };
 
-  ctx.ignoreOverdueAssignment = function ignoreOverdueAssignment(uid) {
+  ctx.ignoreAssignment = function ignoreAssignment(uid) {
     if (!uid || ctx.IS_READONLY_VIEW) return;
-    const next = ctx.USER_PREFERENCES.ignored_overdue_uids.slice();
+    const next = ctx.USER_PREFERENCES.ignored_assignment_uids.slice();
     next.push(uid);
-    ctx.persistPreferences({ ignoredOverdueUids: next });
+    ctx.persistPreferences({ ignoredAssignmentUids: next });
     ctx.applyFilters();
   };
 
-  ctx.restoreIgnoredOverdueAssignment =
-    function restoreIgnoredOverdueAssignment(uid) {
+  ctx.restoreIgnoredAssignment =
+    function restoreIgnoredAssignment(uid) {
       if (!uid || ctx.IS_READONLY_VIEW) return;
-      const next = ctx.USER_PREFERENCES.ignored_overdue_uids.filter(
+      const next = ctx.USER_PREFERENCES.ignored_assignment_uids.filter(
         (item) => item !== uid,
       );
-      ctx.persistPreferences({ ignoredOverdueUids: next });
+      ctx.persistPreferences({ ignoredAssignmentUids: next });
       ctx.applyFilters();
     };
 
-  ctx.restoreAllIgnoredOverdueAssignments =
-    function restoreAllIgnoredOverdueAssignments() {
+  ctx.restoreAllIgnoredAssignments =
+    function restoreAllIgnoredAssignments() {
       if (ctx.IS_READONLY_VIEW) return;
-      ctx.persistPreferences({ ignoredOverdueUids: [] });
+      ctx.persistPreferences({ ignoredAssignmentUids: [] });
       ctx.applyFilters();
     };
 }

@@ -1,6 +1,6 @@
 export function register(ctx) {
   ctx.collectVisibleAssignments = function collectVisibleAssignments() {
-    const mode = ctx.currentViewMode === "due" ? "due" : "course";
+    const mode = ctx.currentViewMode === "course" ? "course" : "due";
     const selector =
       mode === "due" ? "#flatTable tbody tr" : ".courseTable tbody tr";
     const rows = document.querySelectorAll(selector);
@@ -10,7 +10,7 @@ export function register(ctx) {
           row.dataset.uid &&
           row.dataset.hasDue === "1" &&
           !row.classList.contains("hidden") &&
-          row.offsetParent !== null,
+          (ctx.currentViewMode === "calendar" || row.offsetParent !== null),
       )
       .map((row) => ({
         uid: row.dataset.uid,

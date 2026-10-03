@@ -100,7 +100,7 @@ def register_assignment_site(
         "show_overdue": False,
         "show_completed": False,
         "show_graded": False,
-        "ignored_overdue_uids": [],
+        "ignored_assignment_uids": [],
     }
 
     NEW_ASSIGNMENT_WINDOW_SECONDS = 5 * 60
@@ -182,7 +182,7 @@ def register_assignment_site(
             view_mode = raw.get("viewMode")
         if isinstance(view_mode, str):
             lowered = view_mode.strip().lower()
-            if lowered in {"course", "due"}:
+            if lowered in {"course", "due", "calendar"}:
                 clean["view_mode"] = lowered
         valid_status_filters = ("pending", "completed", "graded", "overdue")
 
@@ -258,13 +258,16 @@ def register_assignment_site(
             coerced = _coerce_bool(value)
             if coerced is not None:
                 clean[key] = coerced
-        ignored_overdue_uids = raw.get("ignored_overdue_uids")
-        if ignored_overdue_uids is None:
-            ignored_overdue_uids = raw.get("ignoredOverdueUids")
-        if isinstance(ignored_overdue_uids, list):
-            clean["ignored_overdue_uids"] = [
-                str(item).strip() for item in ignored_overdue_uids if str(item).strip()
-            ][:500]
+        ignored_assignment_uids = next(
+            (raw[key] for key in (
+                "ignored_assignment_uids", "ignoredAssignmentUids",
+                "ignored_overdue_uids", "ignoredOverdueUids",
+            ) if key in raw), None
+        )
+        if isinstance(ignored_assignment_uids, list):
+            clean["ignored_assignment_uids"] = list(dict.fromkeys(
+                str(item).strip() for item in ignored_assignment_uids if str(item).strip()
+            ))[:500]
         return clean
 
     def _selected_view_username(
@@ -343,6 +346,7 @@ def register_assignment_site(
             return prefs
         stored = storage.load_user_preferences(resolved_username)
         prefs.update(_sanitize_preferences(stored))
+        prefs["ignored_overdue_uids"] = prefs["ignored_assignment_uids"]
         return prefs
 
     def update_user_preferences(
@@ -351,6 +355,7 @@ def register_assignment_site(
         prefs = get_user_preferences(username)
         sanitized = _sanitize_preferences(partial)
         prefs.update(sanitized)
+        prefs["ignored_overdue_uids"] = prefs["ignored_assignment_uids"]
         resolved_username = _selected_view_username(username)
         if not resolved_username:
             return prefs

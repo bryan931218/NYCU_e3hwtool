@@ -1,18 +1,17 @@
 export function register(ctx) {
   ctx.setView = function setView(mode, options = {}) {
-    const nextMode = mode === "due" ? "due" : "course";
+    const nextMode = ["due", "course", "calendar"].includes(mode) ? mode : "due";
     ctx.currentViewMode = nextMode;
-    if (nextMode === "due") {
-      ctx.viewDue?.classList.remove("hidden");
-      ctx.viewCourse?.classList.add("hidden");
-      ctx.viewDueBtn.classList.add("active");
-      ctx.viewCourseBtn.classList.remove("active");
-    } else {
-      ctx.viewCourse?.classList.remove("hidden");
-      ctx.viewDue?.classList.add("hidden");
-      ctx.viewCourseBtn.classList.add("active");
-      ctx.viewDueBtn.classList.remove("active");
-    }
+    const views = {
+      due: [ctx.viewDue, ctx.viewDueBtn],
+      course: [ctx.viewCourse, ctx.viewCourseBtn],
+      calendar: [document.getElementById("viewCalendar"), document.getElementById("viewCalendarBtn")],
+    };
+    Object.entries(views).forEach(([key, [view, button]]) => {
+      view?.classList.toggle("hidden", key !== nextMode);
+      button?.classList.toggle("active", key === nextMode);
+      button?.setAttribute("aria-pressed", String(key === nextMode));
+    });
     if (!options.skipPersist) {
       ctx.persistPreferences({ viewMode: nextMode });
     }
@@ -56,15 +55,6 @@ export function initialize(ctx) {
       });
   }
 
-  if (ctx.assignmentSearch) {
-    ctx.assignmentSearch.addEventListener("input", () => {
-      ctx.currentAssignmentQuery = ctx.assignmentSearch.value
-        .trim()
-        .toLocaleLowerCase("zh-Hant");
-      ctx.applyFilters();
-    });
-  }
-
   if (ctx.courseFilter) {
     ctx.courseFilter.addEventListener("change", () => {
       ctx.currentCourseFilter = ctx.courseFilter.value;
@@ -97,6 +87,10 @@ export function initialize(ctx) {
     ctx.viewDueBtn.addEventListener("click", () => ctx.setView("due"));
   }
 
+  document.getElementById("viewCalendarBtn")?.addEventListener("click", () =>
+    ctx.setView("calendar"),
+  );
+
   ctx.applyFilters();
 
   ctx.updateFilterSummary();
@@ -121,26 +115,26 @@ export function initialize(ctx) {
       ctx.showToast("已刪除自訂代辦。", "success");
       return;
     }
-    const ignoreBtn = evt.target.closest("[data-ignore-overdue]");
+    const ignoreBtn = evt.target.closest("[data-ignore-assignment]");
     if (ignoreBtn) {
       evt.preventDefault();
-      ctx.ignoreOverdueAssignment(
-        ignoreBtn.getAttribute("data-ignore-overdue"),
+      ctx.ignoreAssignment(
+        ignoreBtn.getAttribute("data-ignore-assignment"),
       );
       return;
     }
-    const restoreBtn = evt.target.closest("[data-restore-overdue]");
+    const restoreBtn = evt.target.closest("[data-restore-assignment]");
     if (restoreBtn) {
       evt.preventDefault();
-      ctx.restoreIgnoredOverdueAssignment(
-        restoreBtn.getAttribute("data-restore-overdue"),
+      ctx.restoreIgnoredAssignment(
+        restoreBtn.getAttribute("data-restore-assignment"),
       );
     }
   });
 
-  if (ctx.restoreIgnoredOverdueAll) {
-    ctx.restoreIgnoredOverdueAll.addEventListener("click", () => {
-      ctx.restoreAllIgnoredOverdueAssignments();
+  if (ctx.restoreIgnoredAssignmentsAll) {
+    ctx.restoreIgnoredAssignmentsAll.addEventListener("click", () => {
+      ctx.restoreAllIgnoredAssignments();
     });
   }
 

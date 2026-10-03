@@ -172,7 +172,7 @@ class NotificationService:
                     current_semester_key(),
                     self.storage.assignment_uid,
                     self.storage.load_user_preferences(username).get(
-                        "ignored_overdue_uids", []
+                        "ignored_assignment_uids", []
                     ),
                 )
                 item = items.get(payload["uid_hash"])

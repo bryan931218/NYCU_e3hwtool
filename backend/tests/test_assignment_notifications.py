@@ -198,6 +198,29 @@ class NotificationTests(unittest.TestCase):
         send.assert_not_called()
         self.assertEqual(self.job_rows()[0]["state"], "cancelled")
 
+    def test_pending_ignored_assignment_suppresses_new_and_due_jobs(self):
+        self.enable()
+        self.observe(self.result())
+        item = self.item("future ignored", days=1)
+        uid = self.storage.assignment_uid(item["course_id"], item["title"], item["url"])
+        self.storage.save_user_preferences("student", {"ignored_assignment_uids": [uid]})
+        self.observe(self.result(item))
+        self.assertEqual(self.job_rows(), [])
+
+    def test_ignoring_pending_assignment_cancels_already_queued_notification(self):
+        self.enable()
+        result = self.result(self.item("future queued", days=1))
+        self.save(result)
+        self.observe(result)
+        self.assertEqual(len(self.job_rows()), 1)
+        item = result["all_assignments"][0]
+        uid = self.storage.assignment_uid(item["course_id"], item["title"], item["url"])
+        self.storage.save_user_preferences("student", {"ignored_assignment_uids": [uid]})
+        with patch.object(self.service, "deliver") as send:
+            self.service.dispatch(now=self.now)
+        send.assert_not_called()
+        self.assertEqual(self.job_rows()[0]["state"], "cancelled")
+
     def test_successful_delivery_is_not_repeated(self):
         self.enable()
         self.observe(self.result())

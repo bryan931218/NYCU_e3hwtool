@@ -129,10 +129,10 @@ export function initialize(ctx) {
 
   ctx.statusFilterGroup = document.getElementById("statusFilterGroup");
 
-  ctx.ignoredOverdueList = document.getElementById("ignoredOverdueList");
+  ctx.ignoredAssignmentsList = document.getElementById("ignoredAssignmentsList");
 
-  ctx.restoreIgnoredOverdueAll = document.getElementById(
-    "restoreIgnoredOverdueAll",
+  ctx.restoreIgnoredAssignmentsAll = document.getElementById(
+    "restoreIgnoredAssignmentsAll",
   );
 
   ctx.filterMenu = document.getElementById("filterMenu");

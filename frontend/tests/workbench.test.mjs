@@ -6,6 +6,114 @@ import { semesterCourseTitles, register as registerCourses } from '../assignment
 import { register as registerFilters, initialize as initializeFilters } from '../assignments/static/js/workbench/filter-state.js';
 import { register as registerAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
+import { calendarAssignments, taipeiDeadline, safeCalendarUrl } from '../assignments/static/js/workbench/deadline-calendar.js';
+import { register as registerGoogleCalendar } from '../assignments/static/js/workbench/calendar.js';
+import { register as registerInteractions } from '../assignments/static/js/workbench/interactions.js';
+import { register as registerWorkspaceFilters } from '../assignments/static/js/workbench/filters.js';
+import { initialize as initializeAssignments } from '../assignments/static/js/workbench/local-assignments.js';
+import { initialize as initializeSearch, isBrowserAutofilled } from '../assignments/static/js/workbench/search.js';
+
+test('search discards native autofill but preserves typing, paste and Enter without submitting', () => {
+  const previousWindow = globalThis.window;
+  const events = new Map();
+  const windowEvents = new Map();
+  const formEvents = new Map();
+  let autofilled = true;
+  const input = { value: '112550101', matches: () => autofilled,
+    addEventListener: (name, fn) => events.set(name, fn),
+    form: { addEventListener: (name, fn) => formEvents.set(name, fn) } };
+  const queries = [];
+  const ctx = { assignmentSearch: input, applyFilters: () => queries.push(ctx.currentAssignmentQuery) };
+  globalThis.window = { addEventListener: (name, fn) => windowEvents.set(name, fn) };
+  try {
+    initializeSearch(ctx);
+    assert.equal(input.value, '');
+    assert.equal(ctx.currentAssignmentQuery, '');
+    autofilled = false;
+    input.value = ' Homework ABC ';
+    events.get('input')();
+    assert.equal(ctx.currentAssignmentQuery, 'homework abc');
+    input.value = '貼上的作業名稱';
+    events.get('input')();
+    let prevented = false;
+    formEvents.get('submit')({ preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.equal(input.value, '貼上的作業名稱');
+    windowEvents.get('pageshow')();
+    assert.equal(input.value, '貼上的作業名稱');
+    autofilled = true;
+    input.value = '112550101';
+    events.get('animationstart')({ animationName: 'assignment-search-autofill' });
+    assert.equal(input.value, '');
+    assert.ok(!queries.includes('112550101'));
+    autofilled = false;
+    input.value = '112550101';
+    events.get('input')();
+    assert.equal(input.value, '112550101', 'a deliberately typed number is a valid search');
+    assert.equal(ctx.currentAssignmentQuery, '112550101');
+  } finally { globalThis.window = previousWindow; }
+});
+
+test('autofill detection tolerates unsupported selectors and an absent search field', () => {
+  assert.equal(isBrowserAutofilled({ matches: selector => {
+    if (selector === ':autofill') throw new SyntaxError('Unsupported selector');
+    return true;
+  } }), true);
+  assert.equal(isBrowserAutofilled({ matches() { throw new SyntaxError('Unsupported'); } }), false);
+  initializeSearch({});
+});
+
+test('pending ignore applies to both lists, survives becoming overdue and can be restored', () => {
+  const makeRow = (uid, primaryStatus) => {
+    const classes = new Set();
+    return { dataset: { uid, primaryStatus, semester: '115-1' }, style: { setProperty() {} },
+      classList: { toggle: (key, on) => on ? classes.add(key) : classes.delete(key), contains: key => classes.has(key) } };
+  };
+  const flat = [makeRow('future', 'pending'), makeRow('past', 'overdue')];
+  const course = [makeRow('future', 'pending'), makeRow('past', 'overdue')];
+  const ctx = { USER_PREFERENCES: { ignored_assignment_uids: [] }, PREFERENCES_ENDPOINT: '/preferences',
+    currentStatusFilters: ['pending', 'overdue'], currentSemesterFilters: ['115-1'],
+    sortAssignmentTable() {}, pendingSummaryCount: {}, overdueSummaryCount: {} };
+  registerWorkspaceFilters(ctx);
+  ctx.updateCounts = () => ctx.updateDashboardOverview();
+  ctx.renderIgnoredAssignmentsList = () => {};
+  const payloads = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => { payloads.push(JSON.parse(options.body)); };
+  try {
+    withDocument({
+      querySelectorAll: selector => selector === '#flatTable tbody tr[data-uid]' ? flat
+        : selector === '.courseTable tbody tr[data-uid]' ? course : [],
+      querySelector: () => null, getElementById: () => null,
+    }, () => {
+      ctx.ignoreAssignment('future');
+      for (const row of [flat[0], course[0]]) assert.equal(row.classList.contains('hidden'), true);
+      assert.equal(ctx.pendingSummaryCount.textContent, '1');
+      assert.equal(ctx.overdueSummaryCount.textContent, '1');
+      assert.deepEqual(payloads[0], { ignoredAssignmentUids: ['future'] });
+      flat[0].dataset.primaryStatus = course[0].dataset.primaryStatus = 'overdue';
+      ctx.applyFilters();
+      for (const row of [flat[0], course[0]]) assert.equal(row.classList.contains('hidden'), true);
+      ctx.restoreIgnoredAssignment('future');
+      for (const row of [flat[0], course[0]]) assert.equal(row.classList.contains('hidden'), false);
+      ctx.ignoreAssignment('past');
+      ctx.restoreAllIgnoredAssignments();
+      assert.deepEqual(ctx.USER_PREFERENCES.ignored_assignment_uids, []);
+      ctx.IS_READONLY_VIEW = true;
+      ctx.ignoreAssignment('future');
+      assert.deepEqual(ctx.USER_PREFERENCES.ignored_assignment_uids, []);
+    });
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test('legacy ignored preferences initialize under the generalized name without losing records', () => {
+  const ctx = { USER_PREFERENCES: { ignored_overdue_uids: ['legacy'] }, loadJsonMap: () => ({}), loadJsonArray: () => [] };
+  withDocument({ body: { dataset: {} } }, () => initializeAssignments(ctx));
+  assert.deepEqual(ctx.USER_PREFERENCES.ignored_assignment_uids, ['legacy']);
+  ctx.USER_PREFERENCES.ignored_assignment_uids = [];
+  withDocument({ body: { dataset: {} } }, () => initializeAssignments(ctx));
+  assert.deepEqual(ctx.USER_PREFERENCES.ignored_assignment_uids, []);
+});
 
 test('Session labels update safely after enrichment even without a surname', async () => {
   const previous = { document: globalThis.document, window: globalThis.window, fetch: globalThis.fetch };
@@ -86,6 +194,72 @@ test('semester preferences accept one valid semester and reject malformed values
   assert.deepEqual(ctx.currentSemesterFilters, ['115-1']);
   assert.deepEqual(ctx.normalizeSemesterFilters(['bad', '114-SUMMER', 'other']), ['114-summer']);
   assert.deepEqual(ctx.normalizeSemesterFilters(null), []);
+});
+
+test('calendar preference survives initialization and view switching without exposing both lists', () => {
+  assert.equal(filterContext({ view_mode: 'calendar' }).currentViewMode, 'calendar');
+  const visible = new Set();
+  const pressed = new Map();
+  const view = key => ({ classList: { toggle: (_cls, hidden) => hidden ? visible.delete(key) : visible.add(key) } });
+  const button = key => ({ classList: { toggle() {} }, setAttribute: (_key, value) => pressed.set(key, value) });
+  let persisted;
+  let filtered = 0;
+  const ctx = {
+    viewDue: view('due'), viewDueBtn: button('due'), viewCourse: view('course'), viewCourseBtn: button('course'),
+    persistPreferences: value => { persisted = value; }, applyFilters: () => { filtered += 1; },
+  };
+  registerInteractions(ctx);
+  withDocument({ getElementById: id => ({ viewCalendar: view('calendar'), viewCalendarBtn: button('calendar') })[id] }, () => {
+    ctx.setView('calendar');
+    assert.deepEqual([...visible], ['calendar']);
+    assert.equal(pressed.get('calendar'), 'true');
+    assert.equal(pressed.get('due'), 'false');
+    assert.deepEqual(persisted, { viewMode: 'calendar' });
+    ctx.setView('due', { skipPersist: true });
+    assert.deepEqual([...visible], ['due']);
+    assert.equal(filtered, 2);
+  });
+});
+
+test('calendar deadlines consistently use Taipei including UTC day boundaries', () => {
+  const seconds = Date.parse('2026-10-02T16:30:00Z') / 1000;
+  assert.deepEqual(taipeiDeadline(seconds), { day: '2026-10-03', time: '00:30', iso: '2026-10-03T00:30:00+08:00' });
+  assert.equal(taipeiDeadline(9999999999), null);
+  assert.equal(taipeiDeadline('invalid'), null);
+  assert.equal(taipeiDeadline(0), null);
+});
+
+test('calendar uses filtered rows once, preserves undated items and changed deadlines', () => {
+  const row = (uid, dueTs, hidden = false, extra = {}) => ({
+    dataset: { uid, dueTs, hasDue: '1', title: '<img onerror=alert(1)>', course: 'Course', ...extra },
+    classList: { contains: () => hidden },
+    querySelector: () => ({ getAttribute: () => 'https://e3p.nycu.edu.tw/mod/assign/view.php?id=1' }),
+  });
+  const later = Date.parse('2026-10-04T23:59:00+08:00') / 1000;
+  const earlier = Date.parse('2026-10-03T23:59:00+08:00') / 1000;
+  const rows = [row('later', later), row('earlier', earlier), row('later', later), row('hidden', earlier, true), row('undated', 9999999999, false, { hasDue: '0' })];
+  const items = calendarAssignments(rows);
+  assert.deepEqual(items.map(item => item.uid), ['earlier', 'later', 'undated']);
+  assert.equal(items[0].deadline.day, '2026-10-03');
+  assert.equal(items[2].deadline, null);
+  assert.equal(items[0].title, '<img onerror=alert(1)>');
+  rows[0].dataset.dueTs = String(earlier);
+  assert.equal(calendarAssignments(rows).find(item => item.uid === 'later').deadline.day, '2026-10-03');
+});
+
+test('calendar links reject script/data protocols and incomplete destinations', () => {
+  const base = 'https://tracker.example/';
+  for (const value of ['javascript:alert(1)', 'data:text/html,test', '#', '', 'https://[']) {
+    assert.equal(safeCalendarUrl(value, base), '');
+  }
+  assert.equal(safeCalendarUrl('/assignments/1', base), 'https://tracker.example/assignments/1');
+});
+
+test('Google sync remains available when filtered table rows are hidden behind calendar', () => {
+  const ctx = { currentViewMode: 'calendar', STATUS_FILTER_LABELS: { pending: '待處理' } };
+  registerGoogleCalendar(ctx);
+  const rows = [{ dataset: { uid: 'task', hasDue: '1', title: 'Task', due: '2026-10-03', primaryStatus: 'pending' }, classList: { contains: () => false }, offsetParent: null }];
+  withDocument({ querySelectorAll: () => rows }, () => assert.equal(ctx.collectVisibleAssignments().length, 1));
 });
 
 test('status preferences handle defaults, old JSON values, and all-status selection', () => {

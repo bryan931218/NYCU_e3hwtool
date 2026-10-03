@@ -259,7 +259,7 @@ def _mock_context() -> dict:
         "preferences": {
             "view_mode": "due",
             "status_filter": ["pending"],
-            "ignored_overdue_uids": [],
+            "ignored_assignment_uids": [],
             "include_ignored_overdue": False,
         },
         "status_filter_labels": {

@@ -150,18 +150,18 @@ export function register(ctx) {
       wrap.innerHTML = '<span class="badge nodue">未完成</span>';
     }
     const stack = row.querySelector(".row-status-stack");
-    const existingIgnore = row.querySelector("[data-ignore-overdue]");
+    const existingIgnore = row.querySelector("[data-ignore-assignment]");
     if (existingIgnore) existingIgnore.remove();
     if (
       stack &&
-      status === "overdue" &&
+      ["pending", "overdue"].includes(status) &&
       !ctx.IS_READONLY_VIEW &&
       !(row.dataset.uid || "").startsWith("custom|")
     ) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "row-ignore-btn";
-      button.dataset.ignoreOverdue = row.dataset.uid || "";
+      button.dataset.ignoreAssignment = row.dataset.uid || "";
       button.textContent = "忽略";
       stack.appendChild(button);
     }
@@ -481,9 +481,9 @@ export function register(ctx) {
 }
 
 export function initialize(ctx) {
-  if (!Array.isArray(ctx.USER_PREFERENCES.ignored_overdue_uids)) {
-    ctx.USER_PREFERENCES.ignored_overdue_uids = [];
-  }
+  const ignored = ctx.USER_PREFERENCES.ignored_assignment_uids
+    ?? ctx.USER_PREFERENCES.ignored_overdue_uids;
+  ctx.USER_PREFERENCES.ignored_assignment_uids = Array.isArray(ignored) ? ignored : [];
 
   ctx.STORAGE_USER_KEY =
     (document.body.dataset.viewUser || "guest").replace(/[^\w.-]/g, "_") ||
