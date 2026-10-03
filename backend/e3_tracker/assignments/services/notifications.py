@@ -164,23 +164,36 @@ class NotificationService:
                         job, "pending", "not_configured", now=now
                     )
                     continue
-                cache = self.storage.load_user_cache(username) or {}
-                result = cache.get("result") or {}
-                annotate_result_semesters(result)
-                items = active_assignments(
-                    result,
-                    current_semester_key(),
-                    self.storage.assignment_uid,
-                    self.storage.load_user_preferences(username).get(
-                        "ignored_assignment_uids", []
-                    ),
-                )
-                item = items.get(payload["uid_hash"])
-                if not item or (
-                    payload["kind"] == "due" and item.get("due_ts") != payload["due_ts"]
-                ):
-                    self.storage.finish_notification_job(job, "cancelled", now=now)
-                    continue
+
+                if payload.get("custom_todo"):
+                    item = self.storage.get_custom_todo(
+                        username, payload.get("custom_uid", "")
+                    )
+                    if not item or int(item.get("due_ts") or 0) != int(
+                        payload.get("due_ts") or 0
+                    ):
+                        self.storage.finish_notification_job(job, "cancelled", now=now)
+                        continue
+                else:
+                    cache = self.storage.load_user_cache(username) or {}
+                    result = cache.get("result") or {}
+                    annotate_result_semesters(result)
+                    items = active_assignments(
+                        result,
+                        current_semester_key(),
+                        self.storage.assignment_uid,
+                        self.storage.load_user_preferences(username).get(
+                            "ignored_assignment_uids", []
+                        ),
+                    )
+                    item = items.get(payload["uid_hash"])
+                    if not item or (
+                        payload["kind"] == "due"
+                        and item.get("due_ts") != payload["due_ts"]
+                    ):
+                        self.storage.finish_notification_job(job, "cancelled", now=now)
+                        continue
+
                 self.deliver(job, payload, target)
                 self.storage.finish_notification_job(job, "sent", now=now)
             except Exception as exc:
@@ -202,7 +215,6 @@ class NotificationService:
                     self.storage.finish_notification_job(
                         job, "pending", "delivery_failed", now=now
                     )
-                # Provider exceptions may embed tokens/endpoints; never log their text.
                 logger.warning(
                     "Assignment notification delivery failed (%s)", job["channel"]
                 )
@@ -213,7 +225,6 @@ class NotificationService:
                 user = self.storage.notification_sync_user(username, time.time())
                 if user:
                     result, excel = fetch_assignments_for(user)
-                    # Partial collections cannot authoritatively remove pending reminders.
                     if result.get("errors"):
                         self.storage.notification_sync_error(username)
                     else:
@@ -252,7 +263,6 @@ class NotificationService:
                 except Exception:
                     logger.warning("Assignment notification worker will retry")
 
-        # E3 collection can be slow; do not block cached due reminders behind it.
         for name, callback in (
             ("assignment-notifications", self.scan_once),
             (

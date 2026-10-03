@@ -63,21 +63,6 @@
    - 後端網址：`http://127.0.0.1:8000`
    - `start_servers.py` 會自動切成本機設定，不需要推到 GitHub 才能看畫面。
    - 本機模式會自動關閉 `Secure` cookie、停用 canonical host redirect，並使用專案內的 `.localdata/e3_tracker.sqlite3` 當測試資料庫，避免碰到正式環境資料。
-
-3. 執行自動測試（專案根目錄）
-   ```bash
-   python -m unittest discover -s backend/tests -t backend
-   ```
-   - 涵蓋作業學期、進度計算、筆記流程、播放器及資料儲存；AI 與影音服務主要使用模擬回應。
-   - GitHub 的 Backend validation 會在推送 `main` 或提交 PR 時執行相同測試。
-
-### Session 學號對應
-
-- Session 登入及本人資料請求會向 E3 讀取「其他項目」中唯讀的九位數學號，取得後顯示為「學號（session登入）」；不接受前端自行填入學號。
-- 正式環境預設啟用背景補齊，每分鐘處理最多 10 個尚未取得學號的 Session 帳號；失敗後最多每小時重試一次。`E3_SESSION_PROFILE_WORKER=0` 可停用背景處理，本機預設停用，可設為 `1` 測試。
-- 只能補齊仍保有有效 E3 Session 的帳號；Session 過期、已登出或 E3 未提供唯讀學號時，需重新登入後再嘗試。不會從 Session 值猜測學號。
-- `0008_session_student_number` 為啟動時自動執行的新增欄位遷移，不合併帳號、不搬移作業或通知設定，也不依此對應自動授予管理員權限。
-
 ---
 
 ## 介面截圖
