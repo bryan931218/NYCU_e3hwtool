@@ -6,12 +6,56 @@ import { semesterCourseTitles, register as registerCourses } from '../assignment
 import { register as registerFilters, initialize as initializeFilters } from '../assignments/static/js/workbench/filter-state.js';
 import { register as registerAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
-import { calendarAssignments, taipeiDeadline, safeCalendarUrl } from '../assignments/static/js/workbench/deadline-calendar.js';
+import { calendarAssignments, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay } from '../assignments/static/js/workbench/deadline-calendar.js';
 import { register as registerGoogleCalendar } from '../assignments/static/js/workbench/calendar.js';
 import { register as registerInteractions } from '../assignments/static/js/workbench/interactions.js';
 import { register as registerWorkspaceFilters } from '../assignments/static/js/workbench/filters.js';
 import { initialize as initializeAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { initialize as initializeSearch, isBrowserAutofilled } from '../assignments/static/js/workbench/search.js';
+import { courseColorKey, createCourseColorRegistry, register as registerCourseColors } from '../assignments/static/js/workbench/course-colors.js';
+
+test('course colors stay unique beyond the base palette and deterministic across catalog order', () => {
+  const keys = Array.from({ length: 80 }, (_, index) => `e3:${index + 1}`);
+  const first = createCourseColorRegistry();
+  const second = createCourseColorRegistry();
+  first.ensure([...keys, ...keys]);
+  second.ensure([...keys].reverse());
+  const colors = keys.map(first.colorFor);
+  assert.equal(new Set(colors).size, keys.length);
+  assert.deepEqual(keys.map(second.colorFor), colors);
+  first.ensure(['e3:new', ...keys.slice(10)]);
+  assert.deepEqual(keys.map(first.colorFor), colors, 'a refresh or added course cannot recolor existing courses');
+  assert.ok(!colors.includes(first.colorFor('e3:new')));
+});
+
+test('course IDs distinguish same-titled courses and custom labels use a separate namespace', () => {
+  const row = { courseId: '1', course: 'Same course', uid: '1|Task|url', semester: '115-1' };
+  assert.equal(courseColorKey(row), courseColorKey({ courseId: '1', courseTitle: 'Same course', semester: '115-1' }));
+  assert.notEqual(courseColorKey(row), courseColorKey({ ...row, courseId: '2' }));
+  assert.notEqual(courseColorKey(row), courseColorKey({ ...row, semester: 'custom', uid: 'custom|todo' }));
+  assert.equal(courseColorKey({ ...row, courseId: undefined }), courseColorKey(row));
+});
+
+test('both assignment copies and empty courses are colored from the full catalog before filtering', () => {
+  const entry = (courseId, course) => ({ dataset: { courseId, course },
+    style: { value: '', setProperty(_name, value) { this.value = value; } } });
+  const flat = entry('1', 'One');
+  const grouped = entry('1', 'One');
+  const other = entry('2', 'Two');
+  const empty = entry('3', 'Empty');
+  let elements = [flat, grouped, other, empty];
+  const ctx = {};
+  registerCourseColors(ctx);
+  withDocument({ querySelectorAll: () => elements }, () => {
+    ctx.syncCourseColors();
+    assert.equal(flat.style.value, grouped.style.value);
+    assert.equal(new Set([flat, other, empty].map(el => el.style.value)).size, 3);
+    const initial = [flat, other, empty].map(el => el.style.value);
+    elements = [other, empty, grouped, flat];
+    ctx.syncCourseColors();
+    assert.deepEqual([flat, other, empty].map(el => el.style.value), initial);
+  });
+});
 
 test('search discards native autofill but preserves typing, paste and Enter without submitting', () => {
   const previousWindow = globalThis.window;
@@ -243,6 +287,7 @@ test('calendar uses filtered rows once, preserves undated items and changed dead
   assert.equal(items[0].deadline.day, '2026-10-03');
   assert.equal(items[2].deadline, null);
   assert.equal(items[0].title, '<img onerror=alert(1)>');
+  assert.equal(items[0].courseKey, courseColorKey(rows[1].dataset));
   rows[0].dataset.dueTs = String(earlier);
   assert.equal(calendarAssignments(rows).find(item => item.uid === 'later').deadline.day, '2026-10-03');
 });
@@ -253,6 +298,23 @@ test('calendar links reject script/data protocols and incomplete destinations', 
     assert.equal(safeCalendarUrl(value, base), '');
   }
   assert.equal(safeCalendarUrl('/assignments/1', base), 'https://tracker.example/assignments/1');
+});
+
+test('next deadline skips expired, completed, graded and undated tasks without reordering the source', () => {
+  const item = (uid, dueTs, status = 'pending', deadline = { day: '2026-10-04' }) => ({ uid, dueTs, status, deadline, title: uid });
+  const items = [item('later', 300), item('expired', 99), item('completed', 101, 'completed'),
+    item('graded', 102, 'graded'), item('overdue', 103, 'overdue'), item('undated', Infinity, 'pending', null), item('next', 100)];
+  assert.equal(nextActionableAssignment(items, 100).uid, 'next');
+  assert.equal(items[0].uid, 'later');
+  assert.equal(nextActionableAssignment(items, 301), null);
+  assert.equal(nextActionableAssignment([], 100), null);
+});
+
+test('calendar keyboard navigation crosses month, year and leap-day boundaries', () => {
+  assert.equal(adjacentCalendarDay('2026-10-01', -1), '2026-09-30');
+  assert.equal(adjacentCalendarDay('2026-12-31', 1), '2027-01-01');
+  assert.equal(adjacentCalendarDay('2028-03-01', -1), '2028-02-29');
+  assert.equal(adjacentCalendarDay('2026-10-04', 7), '2026-10-11');
 });
 
 test('Google sync remains available when filtered table rows are hidden behind calendar', () => {

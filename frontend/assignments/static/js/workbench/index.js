@@ -2,6 +2,7 @@ import * as feedback from "./feedback.js";
 import * as cache from "./cache.js";
 import * as filterState from "./filter-state.js";
 import * as courseFilter from "./course-filter.js";
+import * as courseColors from "./course-colors.js";
 import * as search from "./search.js";
 import * as localAssignments from "./local-assignments.js";
 import * as customTodoNotifications from "./custom-todo-notifications.js";
@@ -25,6 +26,7 @@ const features = [
   cache,
   filterState,
   courseFilter,
+  courseColors,
   localAssignments,
   customTodoNotifications,
   filters,

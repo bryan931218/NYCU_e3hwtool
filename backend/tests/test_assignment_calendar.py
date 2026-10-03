@@ -64,7 +64,7 @@ class AssignmentCalendarTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
-        for identifier in ("viewCalendarBtn", "viewCalendar", "assignmentCalendar", "calendarDayList", "calendarAddTask"):
+        for identifier in ("viewCalendarBtn", "viewCalendar", "assignmentCalendar", "calendarDayList", "calendarAddTask", "calendarCourseLegend", "calendarMonthPicker", "calendarNextDeadline"):
             self.assertIsNotNone(page.select_one(f"#{identifier}"))
         script = page.select_one("script[src*='fullcalendar-6.1.21.min.js']")
         self.assertTrue(script.get("nonce"))

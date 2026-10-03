@@ -78,23 +78,6 @@ export function register(ctx) {
     return searchable.includes(ctx.currentAssignmentQuery);
   };
 
-  ctx.courseAccent = function courseAccent(course) {
-    const palette = [
-      "#438df2",
-      "#35b878",
-      "#d05c70",
-      "#9a6ad8",
-      "#df9837",
-      "#2ea6b7",
-    ];
-    const text = String(course || "E3");
-    let hash = 0;
-    for (let index = 0; index < text.length; index += 1) {
-      hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
-    }
-    return palette[Math.abs(hash) % palette.length];
-  };
-
   ctx.updateDashboardOverview = function updateDashboardOverview() {
     const ignoredSet = ctx.getIgnoredAssignmentUidSet();
     const selectedSemesters = new Set(ctx.currentSemesterFilters);
@@ -104,10 +87,6 @@ export function register(ctx) {
     let pending = 0;
     let overdue = 0;
     allRows.forEach((row) => {
-      row.style.setProperty(
-        "--course-accent",
-        ctx.courseAccent(row.dataset.course),
-      );
       const semesterVisible =
         row.dataset.semester === "custom" ||
         selectedSemesters.has(row.dataset.semester || "other");
@@ -154,6 +133,7 @@ export function register(ctx) {
   };
 
   ctx.applyFilters = function applyFilters() {
+    ctx.syncCourseColors?.();
     ctx.syncCourseFilter?.();
     const ignoredSet = ctx.getIgnoredAssignmentUidSet();
     const selectedStatuses = new Set(ctx.currentStatusFilters);

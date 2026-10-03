@@ -49,6 +49,7 @@ class FrontendComponentTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         for row in rows:
             self.assertEqual(row['data-uid'], uid)
+            self.assertEqual(row['data-course-id'], '1')
             self.assertEqual(row['data-ignored'], '1')
             self.assertEqual(row['data-primary-status'], 'overdue')
             self.assertEqual(row.select_one('.assignment-title').get_text(), '<img src=x onerror=alert(1)>')
@@ -83,6 +84,7 @@ class FrontendComponentTests(unittest.TestCase):
         self.assertEqual([option['value'] for option in document.select('#courseFilter option')],
                          ['', 'Course', 'Empty current course', 'custom'])
         self.assertEqual(len(document.select('#viewCourse .course-card')), 3)
+        self.assertEqual([card['data-course-id'] for card in document.select('#viewCourse .course-card')], ['1', '2', '3'])
         link = document.select_one('#flatTable .assignment-link a')
         self.assertEqual(link.select_one('span[aria-hidden=true]').get_text(), '↗')
 

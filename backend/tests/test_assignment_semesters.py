@@ -707,7 +707,9 @@ class AssignmentSemesterTests(unittest.TestCase):
                     {item.get("value"): item.has_attr("checked") for item in semester_inputs},
                     {"115-1": False, "114-2": True},
                 )
-                self.assertIn('class="card course-card" data-semester="115-1" data-assignment-count="0"', html)
+                self.assertIsNotNone(BeautifulSoup(html, "html.parser").select_one(
+                    '.card.course-card[data-semester="115-1"][data-assignment-count="0"]'
+                ))
                 self.assertIn('data-course-empty', html)
                 self.assertIn("這門課目前沒有符合篩選條件的作業。", html)
                 self.assertIn('/assets/assignments/js/workbench/index.js', html)

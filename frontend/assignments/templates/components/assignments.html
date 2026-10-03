@@ -148,6 +148,7 @@
     data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
     data-original-due="{{ item.due_at or '' }}"
     data-course="{{ course_title }}"
+    data-course-id="{{ item.course_id }}"
     data-semester="{{ semester_key or 'other' }}"
     data-title="{{ item.title }}"
     data-due="{{ item.due_at or '無截止' }}"

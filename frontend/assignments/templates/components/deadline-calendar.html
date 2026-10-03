@@ -6,6 +6,7 @@
                 <span id="calendarMonthCount" class="calendar-period-count"></span>
             </div>
             <div class="calendar-navigation">
+                <label class="calendar-month-picker" title="跳至月份"><span class="calendar-icon" data-icon="calendar-days" aria-hidden="true"></span><input type="month" id="calendarMonthPicker" aria-label="跳至月份" min="1900-01" max="2100-12"></label>
                 <button type="button" class="calendar-today" id="calendarToday">今天</button>
                 <div class="calendar-arrows">
                     <button type="button" class="calendar-icon-button" id="calendarPrevious" title="上個月" aria-label="上個月"><span class="calendar-icon" data-icon="chevron-left" aria-hidden="true"></span></button>
@@ -13,6 +14,7 @@
                 </div>
             </div>
         </div>
+        <div id="calendarCourseLegend" class="calendar-course-legend" aria-label="課程顏色"></div>
         <div id="assignmentCalendar"></div>
         <div class="calendar-footer">
             <span class="calendar-timezone">台北時間</span>
@@ -25,6 +27,7 @@
             <div><span class="calendar-agenda-kicker" id="calendarDayWeekday"></span><h3 id="calendarDayLabel"></h3></div>
             {% if not is_admin_view %}<button type="button" class="calendar-icon-button" id="calendarAddTask" title="新增當日代辦" aria-label="新增當日代辦"><span class="calendar-icon" data-icon="plus" aria-hidden="true"></span></button>{% endif %}
         </div>
+        <button type="button" id="calendarNextDeadline" class="calendar-next-deadline" hidden><span class="calendar-icon" data-icon="arrow-up-right" aria-hidden="true"></span><span>下一筆到期</span><time id="calendarNextDeadlineDate"></time></button>
         <div class="calendar-day-summary" id="calendarDaySummary" aria-live="polite"></div>
         <div id="calendarDayList" class="calendar-day-list"></div>
     </aside>
