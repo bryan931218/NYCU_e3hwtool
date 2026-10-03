@@ -3,6 +3,7 @@ import * as cache from "./cache.js";
 import * as filterState from "./filter-state.js";
 import * as courseFilter from "./course-filter.js";
 import * as localAssignments from "./local-assignments.js";
+import * as customTodoNotifications from "./custom-todo-notifications.js";
 import * as filters from "./filters.js";
 import * as calendar from "./calendar.js";
 import * as interactions from "./interactions.js";
@@ -23,6 +24,7 @@ const features = [
   filterState,
   courseFilter,
   localAssignments,
+  customTodoNotifications,
   filters,
   calendar,
   interactions,

@@ -91,6 +91,14 @@ def _session_student_number(conn):
     })
 
 
+def _custom_todos(conn):
+    from e3_tracker.assignments.persistence.schema import custom_todos_table
+
+    custom_todos_table.create(conn, checkfirst=True)
+    for index in custom_todos_table.indexes:
+        index.create(conn, checkfirst=True)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -100,6 +108,7 @@ MIGRATIONS = (
     ("0006_guest_retention", _guest_retention_cleanup),
     ("0007_assignment_notifications", _assignment_notifications),
     ("0008_session_student_number", _session_student_number),
+    ("0009_custom_todos", _custom_todos),
 )
 
 
