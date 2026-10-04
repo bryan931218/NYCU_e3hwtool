@@ -1,6 +1,7 @@
 import { initialize as initializeCoursePicker } from './workbench/course-filter.js';
 import { createCourseColorRegistry } from './workbench/course-colors.js';
 import { createUnreadUpdater, updateUnreadIndicator } from './course-message-unread.js';
+import { animateContentChange } from './content-motion.js';
 
 export function filterAnnouncements(items, { course = '', query = '', unread = false } = {}) {
   const text = query.trim().toLocaleLowerCase('zh-Hant');
@@ -112,6 +113,7 @@ function initialize(config) {
     renderList();
     const target = [...list.children].find(node => node.dataset.key === key) || list.firstElementChild;
     target?.focus({preventScroll: !mobile.matches});
+    if (mobile.matches) animateContentChange(byId('newsList'));
   };
   const renderReader = () => {
     const item = activeItem();
@@ -231,8 +233,10 @@ function initialize(config) {
   const openItem = async (key, retry = false) => {
     const item = state.items.find(item => item.key === key);
     if (!item) return;
+    const changed = state.active !== key || workspace.dataset.reading !== 'true';
     state.active = key; workspace.dataset.reading = 'true';
     renderList(); renderReader();
+    if (changed) animateContentChange(reader);
     if (mobile.matches) byId('newsReaderTitle')?.focus({preventScroll: false});
     const pendingKey = requestKey(key);
     if (state.pending.has(pendingKey) || (!retry && (state.errors.has(key) || (item.read_at && item.content !== undefined)))) return;

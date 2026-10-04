@@ -1,6 +1,9 @@
+import { animateContentChange } from '../content-motion.js';
+
 export function register(ctx) {
   ctx.setView = function setView(mode, options = {}) {
     const nextMode = ["due", "course", "calendar"].includes(mode) ? mode : "due";
+    const previousMode = ctx.currentViewMode;
     ctx.currentViewMode = nextMode;
     const views = {
       due: [ctx.viewDue, ctx.viewDueBtn],
@@ -16,6 +19,7 @@ export function register(ctx) {
       ctx.persistPreferences({ viewMode: nextMode });
     }
     if (!options.skipApply) ctx.applyFilters();
+    if (previousMode && previousMode !== nextMode) animateContentChange(views[nextMode][0]);
   };
 }
 
