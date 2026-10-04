@@ -82,7 +82,7 @@ class CourseAnnouncementStorage:
                 fetched_at=time.time() if successful_courses else row['fetched_at'], status='partial' if error and successful_courses else 'error' if error else 'success', error=error[:300]))
             return True
 
-    def update_course_announcement(self, username, semester, key, *, content=None, read=None):
+    def update_course_announcement(self, username, semester, key, *, content=None, read=None, expected_version=None):
         with self._lock, self._engine.begin() as conn:
             user_id = self._announcement_user(conn, username, write=True)
             condition = (course_announcement_cache.c.user_id == user_id, course_announcement_cache.c.semester_key == semester)
@@ -92,6 +92,8 @@ class CourseAnnouncementStorage:
             items = json.loads(row.payload)
             item = next((item for item in items if item['key'] == key), None)
             if not item:
+                return None
+            if expected_version is not None and (item.get('title'), item.get('updated_ts')) != expected_version:
                 return None
             if content is not None:
                 item.update(content)

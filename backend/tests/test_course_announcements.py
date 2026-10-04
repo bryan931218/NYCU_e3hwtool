@@ -66,6 +66,33 @@ class NewsParsingTests(unittest.TestCase):
         with self.assertRaises(AnnouncementSessionExpired):
             collect_course_announcements(client, [COURSE])
 
+    def test_moodle_311_and_405_body_attachment_and_author_markers(self):
+        html = '''<article data-region="post" aria-describedby="post-content-501"><div class="forumpost firstpost">
+        <header><h3 data-region-content="forum-post-core-subject">課程異動</h3><a href="/user/view.php?id=10">課程教師</a></header>
+        <div class="content-alignment-container"><div id="post-content-501" class="post-content-container"><p>第一段 <strong>重點</strong> 與 <a href="https://example.test/guide">說明</a>。</p><p>第二段<br>下一行</p></div>
+        <div><a href="/pluginfile.php/42/slides.pdf">課程投影片.pdf</a></div><div class="attachedimages"><img src="/pluginfile.php/42/map.png" alt="教室位置"></div>
+        <div class="post-actions"><a href="/mod/forum/post.php?reply=501&amp;sesskey=secret">回覆</a></div></div></div>
+        <div data-region="replies-container"><article data-region="post"><div class="forumpost"><div class="post-content-container">同學回覆</div></div></article></div></article>'''
+        result = discussion_content(html, BASE)
+        self.assertEqual(result['content'], '第一段 重點 與 說明。\n\n第二段\n下一行')
+        self.assertEqual(result['author'], '課程教師')
+        self.assertEqual([link['title'] for link in result['links']], ['說明', '課程投影片.pdf', '教室位置'])
+        self.assertNotIn('同學回覆', result['content'])
+
+    def test_missing_root_body_never_falls_back_to_reply_content(self):
+        html = '<article data-region="post"><div class="forumpost">已刪除</div><div data-region="replies-container"><article data-region="post"><div class="forumpost"><div class="post-content-container">回覆不是公告</div></div></article></div></article>'
+        with self.assertRaises(ValueError): discussion_content(html, BASE)
+
+    def test_inline_modern_news_has_subject_author_and_timestamp(self):
+        html = '<article data-region="post"><div class="forumpost"><header><h3 data-region-content="forum-post-core-subject">停課通知</h3><a href="/user/view.php?id=10">老師</a><time data-timestamp="1791079200">日期</time></header><a href="discuss.php?d=7">閱讀更多</a></div></article>'
+        item = discussion_summaries(html, BASE)[0]
+        self.assertEqual((item['title'], item['author'], item['updated_ts']), ('停課通知', '老師', 1791079200))
+
+    def test_malformed_links_do_not_hide_the_entire_announcement(self):
+        html = '<div class="forumpost"><div class="post-content-container"><p>公告</p><a href="https://[bad">無效連結</a><a href="https://example.test/?token=">token</a><a href="/pluginfile.php/42/file.pdf">附件</a></div></div>'
+        self.assertEqual(discussion_content(html, BASE)['links'], [{'url':BASE+'/pluginfile.php/42/file.pdf', 'title':'附件'}])
+        self.assertIsNone(moodle_url('https://[bad', BASE, '/mod/forum/discuss.php', 'd'))
+
     def test_http_client_never_sends_cookie_to_untrusted_redirects(self):
         client = MoodleNewsClient(BASE, 'synthetic-test-cookie')
         response = Mock(status_code=302, headers={'Location': 'https://evil.test/login'})
@@ -164,6 +191,44 @@ class NewsAccountTests(unittest.TestCase):
         raw = self.app.test_client()
         with raw.session_transaction() as session: session['session_token'] = 'test-112550103'
         self.assertEqual(raw.post('/api/course-announcements/refresh', json={'semester':'115-1'}).status_code, 400)
+
+    def test_manual_read_marker_does_not_require_remote_content(self):
+        self.seed()
+        with patch.object(self.service, 'content', side_effect=ValueError('unavailable')) as fetch:
+            failed = self.client.post('/api/course-announcements/item', json={'semester':'115-1', 'key':'42:7', 'read':True})
+            self.assertEqual(failed.status_code, 502)
+            self.assertEqual(self.storage.load_course_announcements('112550103','115-1')['items'][0].get('read_at', 0), 0)
+            response = self.client.post('/api/course-announcements/item', json={'semester':'115-1', 'key':'42:7', 'read':True, 'load_content':False})
+            self.assertEqual(response.status_code, 200)
+            self.assertGreater(response.get_json()['item']['read_at'], 0)
+            self.assertEqual(fetch.call_count, 1)
+            self.assertEqual(self.client.post('/api/course-announcements/item', json={'semester':[], 'key':'42:7', 'read':True}).status_code, 404)
+            self.assertEqual(self.client.post('/api/course-announcements/item', json={'semester':'115-1', 'key':'42:7', 'read':True, 'load_content':'no'}).status_code, 400)
+
+    def test_content_endpoint_uses_the_modern_parser_not_a_preparsed_stub(self):
+        self.seed()
+        html = '<article data-region="post"><div class="forumpost firstpost"><div class="content-alignment-container"><div class="post-content-container"><p>公告內文</p><p>下一段</p></div><a href="/pluginfile.php/42/file.pdf">附件.pdf</a></div></div></article>'
+        with patch.object(MoodleNewsClient, 'get', return_value=html) as get:
+            response = self.client.post('/api/course-announcements/item', json={'semester':'115-1','key':'42:7','read':True})
+        self.assertEqual(response.status_code, 200)
+        item = response.get_json()['item']
+        self.assertEqual(item['content'], '公告內文\n\n下一段')
+        self.assertEqual(item['links'][0]['title'], '附件.pdf')
+        self.assertGreater(item['read_at'], 0)
+        self.assertEqual(get.call_args.args[0], NEWS['url'])
+
+    def test_late_content_cannot_overwrite_an_announcement_updated_during_read(self):
+        self.seed()
+        def newer_content(*_args):
+            attempt = self.storage.claim_course_announcement_refresh('112550103','115-1')
+            self.storage.finish_course_announcement_refresh('112550103','115-1',attempt,[{**NEWS,'updated_ts':NEWS['updated_ts']+10}],[42])
+            return {'content':'stale body', 'links':[]}
+        with patch.object(self.service, 'content', side_effect=newer_content):
+            response = self.client.post('/api/course-announcements/item', json={'semester':'115-1','key':'42:7','read':True})
+        self.assertEqual(response.status_code, 409)
+        item = self.storage.load_course_announcements('112550103','115-1')['items'][0]
+        self.assertNotIn('content', item)
+        self.assertEqual(item.get('read_at', 0), 0)
 
     def test_refresh_cooldown_atomic_claims_and_deleted_accounts_are_not_recreated(self):
         now = time.time()

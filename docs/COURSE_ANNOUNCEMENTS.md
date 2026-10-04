@@ -14,6 +14,15 @@ background. Manual updates have a one-minute cooldown. Two operations per
 application process may access E3 concurrently. Synchronization has a one-minute
 budget; failed courses retain their previous cache. Content is fetched only when
 opening an announcement, then cached as plain text with safe HTTPS links.
+The parser supports legacy Moodle posts and Moodle 3.11/4.x post-content
+containers, first-post scoping, modern file/image attachments, and author/date
+markers. Image-only announcements expose image links rather than loading remote
+images automatically.
+
+The desktop UI uses an inbox and reading pane; mobile opens the reading pane
+with a return-to-list action. Successfully opening content marks it as read.
+Manual read/unread changes do not depend on a successful remote content fetch.
+Failed reads keep the unread state and expose an explicit retry action.
 
 Migration `0012_course_announcements` creates the account/semester cache table.
 Read status is local to this tracker, not Moodle's read-tracking state. Deleting

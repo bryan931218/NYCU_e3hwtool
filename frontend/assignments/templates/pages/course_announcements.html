@@ -27,11 +27,13 @@
         <select id="newsSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>
         <div class="course-picker"><select class="course-filter" id="courseFilter" aria-label="篩選課程"><option value="">全部課程</option></select><button type="button" class="course-filter course-picker-toggle" id="courseFilterToggle" role="combobox" aria-label="篩選課程" aria-haspopup="listbox" aria-expanded="false" aria-controls="courseFilterOptions" hidden><span id="courseFilterLabel">全部課程</span><span class="course-picker-chevron" aria-hidden="true"></span></button><div class="course-options" id="courseFilterOptions" role="listbox" aria-label="課程" popover="auto" hidden></div></div>
         <form role="search" id="newsSearchForm" autocomplete="off"><input type="search" id="newsSearch" name="course_notice_query" placeholder="搜尋公告" aria-label="搜尋公告" autocomplete="off" data-lpignore="true" data-1p-ignore></form>
-        <label class="news-unread"><input type="checkbox" id="newsUnread">僅未讀 <span id="newsUnreadCount">0</span></label>
+        <label class="news-unread"><input type="checkbox" id="newsUnread">只看未讀 <span id="newsUnreadCount">0</span></label>
     </section>
     <p id="newsMessage" class="news-message" role="status" aria-live="polite" hidden></p>
-    <section id="newsList" class="news-list" aria-label="課程公告列表"></section>
-    <p id="newsEmpty" class="news-empty" hidden>目前沒有課程公告</p>
+    <div class="news-workspace" id="newsWorkspace">
+        <section class="news-inbox" aria-label="課程公告列表"><div class="news-list-heading">公告列表 <span id="newsListCount">0</span></div><div id="newsList" class="news-list"></div><p id="newsEmpty" class="news-empty" hidden>目前沒有課程公告</p></section>
+        <section id="newsReader" class="news-reader" aria-label="公告內文" aria-live="polite"><p class="news-reader-empty">選擇公告</p></section>
+    </div>
 </main>
 </body>
 </html>

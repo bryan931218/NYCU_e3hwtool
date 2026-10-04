@@ -16,6 +16,8 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
         return result
 
     def selected_courses(user, requested):
+        if requested is not None and (not isinstance(requested, str) or len(requested) > 16):
+            return None, []
         result = catalog(user)
         semesters = normalize_semester_selection([requested]) if requested else result.get('selected_semesters') or []
         semester = semesters[0] if semesters else ''
@@ -85,7 +87,7 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
         payload = request.get_json(silent=True)
         if (not isinstance(payload, dict) or not isinstance(payload.get('key'), str)
             or not re.fullmatch(r'[1-9][0-9]{0,9}:[1-9][0-9]{0,9}', payload['key'])
-            or type(payload.get('read')) is not bool):
+            or type(payload.get('read')) is not bool or type(payload.get('load_content', True)) is not bool):
             return {'ok': False, 'error': '公告資料無效。'}, 400
         semester, courses = selected_courses(user, payload.get('semester'))
         if not semester:
@@ -96,7 +98,7 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
         if not item:
             return {'ok': False, 'error': '公告不存在。'}, 404
         content = None
-        if payload['read'] and 'content' not in item:
+        if payload['read'] and payload.get('load_content', True) and 'content' not in item:
             if not storage.consume_security_limit(f"course-announcement-read:{user['username']}", 60, 600):
                 return {'ok': False, 'error': '讀取過於頻繁，請稍後再試。'}, 429
             try:
@@ -105,10 +107,11 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
                 return {'ok': False, 'error': 'E3 登入已失效，請重新登入。'}, 409
             except BlockingIOError:
                 return {'ok': False, 'error': '公告讀取中，請稍後再試。'}, 429
-            except Exception:
-                app.logger.warning('Course announcement content unavailable')
-                return {'ok': False, 'error': '無法讀取內容，請使用 E3 原文連結。'}, 502
-        updated = storage.update_course_announcement(user['username'], semester, item['key'], content=content, read=payload['read'])
+            except Exception as error:
+                app.logger.warning('Course announcement content unavailable (%s)', type(error).__name__)
+                return {'ok': False, 'error': '內文暫時無法讀取，請重新讀取或前往 E3。'}, 502
+        updated = storage.update_course_announcement(user['username'], semester, item['key'], content=content, read=payload['read'],
+            expected_version=(item.get('title'), item.get('updated_ts')) if content is not None else None)
         if not updated:
             return {'ok': False, 'error': '公告已更新，請重新整理列表。'}, 409
         return {'ok': True, 'item': updated}
