@@ -6,7 +6,7 @@ import { semesterCourseTitles, register as registerCourses, initialize as initia
 import { register as registerFilters, initialize as initializeFilters } from '../assignments/static/js/workbench/filter-state.js';
 import { register as registerAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
-import { calendarAssignments, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay } from '../assignments/static/js/workbench/deadline-calendar.js';
+import { calendarAssignments, calendarEventsInRange, register as registerDeadlineCalendar, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay } from '../assignments/static/js/workbench/deadline-calendar.js';
 import { register as registerGoogleCalendar } from '../assignments/static/js/workbench/calendar.js';
 import { register as registerInteractions } from '../assignments/static/js/workbench/interactions.js';
 import { register as registerWorkspaceFilters } from '../assignments/static/js/workbench/filters.js';
@@ -15,6 +15,86 @@ import { initialize as initializeSearch, isBrowserAutofilled } from '../assignme
 import { courseColorKey, createCourseColorRegistry, register as registerCourseColors } from '../assignments/static/js/workbench/course-colors.js';
 import { initialize as initializeUsageEvents } from '../assignments/static/js/workbench/usage-events.js';
 import { initialize as initializeCacheEvents } from '../assignments/static/js/workbench/cache-events.js';
+import { register as registerCustomTodos } from '../assignments/static/js/workbench/custom-todo-notifications.js';
+
+test('calendar event source processes only visible days, including adjacent month cells, with an exclusive end', () => {
+  const items = ['2025-10-01','2026-09-28','2026-10-05','2026-11-01','2026-11-02'].map((day,index) => ({
+    uid:String(index), title:'task', course:'course', courseKey:'e3:1', status:'pending', dueTs:100,
+    deadline:{day,time:'23:59'},
+  }));
+  items.push({uid:'undated',deadline:null});
+  const events = calendarEventsInRange(items,'2026-09-28','2026-11-02');
+  assert.deepEqual(events.map(event=>event.id),['1','2','3']);
+  assert.equal(events.every(event=>event.allDay),true);
+});
+
+test('unchanged calendar data never rebuilds its event source and replaced table rows stay current', () => {
+  const previousWindow = globalThis.window;
+  let rows = [{dataset:{uid:'1|task|url',courseId:'1',title:'task',course:'course',primaryStatus:'pending',hasDue:'1',dueTs:'1791160200'},
+    classList:{contains:()=>false},querySelector:()=>null}];
+  let renders=0, refetches=0;
+  let options;
+  globalThis.window = {innerWidth:1440,FullCalendar:{Calendar:class {
+    constructor(root,config){options=config;}
+    render(){renders++;}
+    refetchEvents(){refetches++;}
+  }}};
+  const nodes={assignmentCalendar:{clientWidth:800},calendarUndated:{},calendarUndatedCount:{}};
+  try {
+    withDocument({getElementById:id=>nodes[id],querySelectorAll:()=>rows},()=>{
+      const ctx={currentViewMode:'calendar'};
+      registerDeadlineCalendar(ctx);
+      ctx.renderCalendarAgenda=ctx.renderCalendarMonthSummary=ctx.paintCalendarDays=()=>{};
+      ctx.syncDeadlineCalendar();
+      ctx.syncDeadlineCalendar();
+      assert.equal(renders,1);assert.equal(refetches,0);
+      const replacement={...rows[0],dataset:{...rows[0].dataset}};
+      rows=[replacement];ctx.syncDeadlineCalendar();
+      assert.equal(ctx.deadlineAssignments[0].row,replacement);
+      assert.equal(refetches,0);
+      replacement.dataset.title='changed';ctx.syncDeadlineCalendar();
+      assert.equal(refetches,1);
+      options.events({startStr:'2026-10-01',endStr:'2026-11-01'},events=>assert.equal(events[0].title,'changed'));
+    });
+  } finally { if(previousWindow===undefined)delete globalThis.window;else globalThis.window=previousWindow; }
+});
+
+test('hydration defers filtering to the caller but the minute refresh still applies updated statuses', () => {
+  const ctx={};registerAssignments(ctx);
+  let filters=0;
+  ctx.renderCustomAssignments=ctx.applyDueOverrides=()=>{};
+  ctx.applyFilters=()=>filters++;
+  withDocument({querySelectorAll:()=>[]},()=>{
+    ctx.hydrateLocalAssignments();assert.equal(filters,0);
+    ctx.refreshRemainingTimes();assert.equal(filters,1);
+  });
+});
+
+test('server-rendered badges stay untouched until a real status change', () => {
+  const ctx={};registerAssignments(ctx);
+  const wrap={dataset:{renderedStatus:'pending'}};
+  let writes=0;
+  Object.defineProperty(wrap,'innerHTML',{set:()=>writes++});
+  const row={dataset:{primaryStatus:'pending'},querySelector:selector=>selector==='.row-status-badges'?wrap:null};
+  ctx.renderStatusBadges(row);assert.equal(writes,0);
+  row.dataset.primaryStatus='completed';ctx.renderStatusBadges(row);assert.equal(writes,2);
+  ctx.renderStatusBadges(row);assert.equal(writes,2);
+});
+
+test('identical remote custom todos do not rebuild rows or trigger another calendar sync', async () => {
+  const previousFetch=globalThis.fetch;
+  let items=[];let renders=0;
+  globalThis.fetch=async()=>({ok:true,json:async()=>({ok:true,items})});
+  try {
+    const ctx={customAssignments:[],renderCustomAssignments:()=>renders++,applyFilters:()=>renders++};
+    registerCustomTodos(ctx);
+    await ctx.loadRemoteCustomTodos();assert.equal(renders,0);
+    items=[{uid:'custom|one',course:'todo',title:'task',due_ts:100}];
+    await ctx.loadRemoteCustomTodos();assert.equal(renders,2);
+    await ctx.loadRemoteCustomTodos();assert.equal(renders,2);
+    items=[];await ctx.loadRemoteCustomTodos();assert.equal(renders,4);
+  } finally { globalThis.fetch=previousFetch; }
+});
 
 test('identical server preferences do not rebuild the calendar or disturb a local search', () => {
   const ctx = filterContext({ view_mode: 'calendar', status_filter: ['pending'], semester_filter: ['115-1'], ignored_assignment_uids: ['task'] });

@@ -36,6 +36,7 @@
 {% else %}
     {% set selected_status_filters = ['pending'] %}
 {% endif %}
+{% if 'all' in selected_status_filters %}{% set selected_status_filters = ['pending', 'completed', 'graded', 'overdue'] %}{% endif %}
 {% set available_semesters = result.available_semesters if result and result.available_semesters is defined else [] %}
 {% if result and result.selected_semesters is defined and result.selected_semesters %}
     {% set selected_semesters = result.selected_semesters %}
@@ -308,7 +309,7 @@
 
         <section id="viewCourse"{% if initial_view != 'course' %} class="hidden"{% endif %}>
         {% for course in result.courses %}
-            <section class="card course-card" data-course-id="{{ course.id }}" data-semester="{{ course.semester_key or 'other' }}" data-assignment-count="{{ course.assignments|length }}" data-course-title="{{ course.title }}">
+            <section class="card course-card{% if (course.semester_key or 'other') != selected_semester %} hidden{% endif %}" data-course-id="{{ course.id }}" data-semester="{{ course.semester_key or 'other' }}" data-assignment-count="{{ course.assignments|length }}" data-course-title="{{ course.title }}">
             <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
                 <h2>{{ course.title }} <span style="color:var(--muted);font-size:14px">#{{ course.id }}</span></h2>

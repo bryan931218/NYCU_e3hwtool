@@ -1,6 +1,7 @@
 import { courseColorKey } from "./course-colors.js";
 
 const TAIPEI = "Asia/Taipei";
+const titleCollator = new Intl.Collator('zh-Hant');
 const partsFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: TAIPEI, year: "numeric", month: "2-digit", day: "2-digit",
   hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
@@ -60,7 +61,15 @@ export function calendarAssignments(rows) {
       url: row.querySelector("[data-e3-assignment]")?.getAttribute("href") || "",
       row,
     };
-  }).sort((a, b) => a.dueTs - b.dueTs || a.title.localeCompare(b.title, "zh-Hant"));
+  }).sort((a, b) => a.dueTs - b.dueTs || titleCollator.compare(a.title, b.title));
+}
+
+export function calendarEventsInRange(items, start, end) {
+  return items.filter(item => item.deadline && item.deadline.day >= start && item.deadline.day < end).map(item => ({
+    id: item.uid, title: item.title, start: item.deadline.day, allDay: true,
+    classNames: [`calendar-event-${item.status}`],
+    extendedProps: { course: item.course, courseKey: item.courseKey, day: item.deadline.day, time: item.deadline.time, status: item.status, deadlineTs: item.dueTs },
+  }));
 }
 
 export function safeCalendarUrl(value, base) {
@@ -111,6 +120,12 @@ export function register(ctx) {
   ctx.deadlineAssignments = [];
   ctx.calendarShowUndated = false;
   ctx.calendarHeight = () => window.innerWidth <= 600 ? 350 : Math.min(660, Math.max(520, (document.getElementById("assignmentCalendar")?.clientWidth || 800) * .72));
+  ctx.resizeDeadlineCalendar = () => {
+    if (!ctx.deadlineCalendar || ctx.currentViewMode !== 'calendar') return;
+    const height = ctx.calendarHeight();
+    if (ctx.deadlineCalendar.getOption('height') !== height) ctx.deadlineCalendar.setOption('height', height);
+    else ctx.deadlineCalendar.updateSize();
+  };
 
   ctx.paintCalendarDays = function paintCalendarDays() {
     const counts = new Map();
@@ -281,15 +296,16 @@ export function register(ctx) {
       return;
     }
     ctx.deadlineAssignments = calendarAssignments(document.querySelectorAll("#flatTable tbody tr[data-uid]"));
-    const events = ctx.deadlineAssignments.filter((item) => item.deadline).map((item) => ({
-      // A deadline is a point, not an hour-long event spilling into tomorrow.
-      id: item.uid, title: item.title, start: item.deadline.day, allDay: true,
-      classNames: [`calendar-event-${item.status}`],
-      extendedProps: { course: item.course, courseKey: item.courseKey, day: item.deadline.day, time: item.deadline.time, status: item.status, deadlineTs: item.dueTs },
-    }));
+    const signature = JSON.stringify(ctx.deadlineAssignments.map(({row, ...item}) => item));
+    if (ctx.deadlineCalendar && signature === ctx.calendarDataSignature) {
+      ctx.renderCalendarAgenda();
+      return;
+    }
+    ctx.calendarDataSignature = signature;
     if (!ctx.deadlineCalendar) {
       ctx.deadlineCalendar = new window.FullCalendar.Calendar(root, {
-        events,
+        // Let the library request only the visible date range, not years of history.
+        events: (range, success) => success(calendarEventsInRange(ctx.deadlineAssignments, range.startStr.slice(0, 10), range.endStr.slice(0, 10))),
         initialView: "dayGridMonth",
         initialDate: ctx.calendarSelectedDay,
         now: () => taipeiDeadline(Date.now() / 1000).iso,
@@ -370,12 +386,9 @@ export function register(ctx) {
       });
       ctx.deadlineCalendar.render();
     } else {
-      ctx.deadlineCalendar.batchRendering(() => {
-        ctx.deadlineCalendar.getEventSources().forEach((source) => source.remove());
-        ctx.deadlineCalendar.addEventSource(events);
-      });
+      ctx.deadlineCalendar.refetchEvents();
     }
-    const undatedCount = ctx.deadlineAssignments.length - events.length;
+    const undatedCount = ctx.deadlineAssignments.filter(item => !item.deadline).length;
     document.getElementById("calendarUndated").hidden = undatedCount === 0;
     document.getElementById("calendarUndatedCount").textContent = String(undatedCount);
     ctx.renderCalendarMonthSummary();
@@ -416,9 +429,6 @@ export function initialize(ctx) {
     ctx.customTitleInput?.focus();
   });
   window.addEventListener("resize", () => {
-    if (ctx.currentViewMode === "calendar") {
-      ctx.deadlineCalendar?.setOption("height", ctx.calendarHeight());
-      ctx.deadlineCalendar?.updateSize();
-    }
+    ctx.resizeDeadlineCalendar();
   });
 }

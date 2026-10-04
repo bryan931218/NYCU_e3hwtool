@@ -130,8 +130,8 @@ export function register(ctx) {
       }
     }
     remainingEls.forEach((el) => {
-      el.className = `remaining-text ${cls}`;
-      el.textContent = label;
+      if (el.className !== `remaining-text ${cls}`) el.className = `remaining-text ${cls}`;
+      if (el.textContent !== label) el.textContent = label;
     });
   };
 
@@ -139,6 +139,8 @@ export function register(ctx) {
     const wrap = row.querySelector(".row-status-badges");
     if (!wrap) return;
     const status = row.dataset.primaryStatus || "pending";
+    if (wrap.dataset.renderedStatus === status) return;
+    wrap.dataset.renderedStatus = status;
     wrap.innerHTML = "";
     if (status === "completed") {
       wrap.innerHTML = '<span class="badge done">已完成</span>';
@@ -207,21 +209,11 @@ export function register(ctx) {
           override.due_at || ctx.formatDueDisplayFromTs(override.due_ts),
           "已手動修改期限",
         );
-      } else if (!(row.dataset.uid || "").startsWith("custom|")) {
-        const originalTs = row.dataset.originalDueTs
-          ? Number(row.dataset.originalDueTs)
-          : null;
-        ctx.setRowDue(
-          row,
-          originalTs,
-          row.dataset.originalDue || "",
-          row.dataset.originalDue ? "E3 同步期限" : "截止資訊同步中",
-        );
       }
     });
   };
 
-  ctx.refreshRemainingTimes = function refreshRemainingTimes() {
+  ctx.refreshRemainingTimes = function refreshRemainingTimes({ skipApply = false } = {}) {
     document.querySelectorAll("tr[data-uid]").forEach((row) => {
       const dueTs = Number(row.dataset.dueTs || "0");
       if (row.dataset.completed !== "1" && row.dataset.graded !== "1") {
@@ -237,7 +229,7 @@ export function register(ctx) {
       }
       ctx.updateRemainingForRow(row);
     });
-    ctx.applyFilters();
+    if (!skipApply) ctx.applyFilters();
   };
 
   ctx.openModalRoot = function openModalRoot(modal) {
@@ -476,7 +468,7 @@ export function register(ctx) {
   ctx.hydrateLocalAssignments = function hydrateLocalAssignments() {
     ctx.renderCustomAssignments();
     ctx.applyDueOverrides();
-    ctx.refreshRemainingTimes();
+    ctx.refreshRemainingTimes({ skipApply: true });
   };
 }
 

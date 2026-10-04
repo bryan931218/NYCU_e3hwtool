@@ -138,6 +138,7 @@
 {% set is_graded = item.grade_text or ('已評分' in raw_status_text) or ('graded' in (raw_status_text|lower)) %}
 {% set primary_status = 'graded' if is_graded else ('completed' if item.completed else ('overdue' if item.overdue else 'pending')) %}
 <tr
+    {% if primary_status not in selected_status_filters or (semester_key or 'other') != selected_semester or item_uid in ignored_assignment_uids %}class="hidden"{% endif %}
     data-due-ts="{{ item.due_ts if item.due_ts is not none else 9999999999 }}"
     data-overdue="{{ 1 if item.overdue else 0 }}"
     data-completed="{{ 1 if item.completed else 0 }}"
@@ -174,7 +175,7 @@
         </div>
     </td>
     <td class="assignment-center"><span class="submission-label">已繳交／總人數</span>{{ render_submission_pill(item) }}</td>
-    <td class="assignment-center"><span class="assignment-field-label">狀態</span><div class="row-status-stack"><div class="row-status-badges">
+    <td class="assignment-center"><span class="assignment-field-label">狀態</span><div class="row-status-stack"><div class="row-status-badges" data-rendered-status="{{ primary_status }}">
         {% if primary_status == 'completed' %}<span class="badge done">已完成</span>{% endif %}
         {% if primary_status == 'overdue' %}<span class="badge overdue">逾期</span>{% endif %}
         {% if is_graded %}<span class="badge graded">已評分</span>{% endif %}

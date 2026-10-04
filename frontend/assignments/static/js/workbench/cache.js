@@ -82,7 +82,6 @@ export function register(ctx) {
     }
 
     ctx.hydrateLocalAssignments();
-    ctx.sortFlatTableAsc();
     ctx.applyFilters();
     void ctx.refreshUserAvatar?.(true);
   };

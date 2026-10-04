@@ -19,6 +19,7 @@ export function register(ctx) {
       ctx.persistPreferences({ viewMode: nextMode });
     }
     if (!options.skipApply) ctx.applyFilters();
+    if (nextMode === 'calendar' && previousMode !== nextMode) ctx.resizeDeadlineCalendar?.();
     if (previousMode && previousMode !== nextMode) animateContentChange(views[nextMode][0]);
   };
 }
@@ -26,9 +27,7 @@ export function register(ctx) {
 export function initialize(ctx) {
   ctx.hydrateLocalAssignments();
 
-  ctx.sortFlatTableAsc();
-
-  ctx.setView(ctx.currentViewMode, { skipPersist: true });
+  ctx.setView(ctx.currentViewMode, { skipPersist: true, skipApply: true });
 
   if (ctx.statusFilterGroup) {
     ctx.statusFilterGroup

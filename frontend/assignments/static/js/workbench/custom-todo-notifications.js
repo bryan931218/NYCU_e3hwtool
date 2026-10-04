@@ -56,9 +56,10 @@ export function register(ctx) {
   ctx.loadRemoteCustomTodos = async function loadRemoteCustomTodos() {
     if (ctx.IS_GUEST || ctx.IS_READONLY_VIEW) return;
     const data = await api("GET");
-    ctx.customAssignments = Array.isArray(data.items) ? data.items : [];
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (JSON.stringify(items) === JSON.stringify(ctx.customAssignments)) return;
+    ctx.customAssignments = items;
     ctx.renderCustomAssignments();
-    ctx.sortFlatTableAsc?.();
     ctx.applyFilters?.();
   };
 

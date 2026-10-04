@@ -85,6 +85,25 @@ class AssignmentCalendarTests(unittest.TestCase):
                 for identifier in ("viewDue", "viewCourse", "viewCalendar"):
                     self.assertEqual("hidden" not in page.select_one(f"#{identifier}").get("class", []), identifier == visible_id)
 
+    def test_initial_rows_already_respect_status_semester_and_ignored_filters(self):
+        items = [{'course_id':1,'course_title':'【115上】Test','title':title,'url':'https://example.test/'+title,
+                  'due_ts':1799999999,'due_at':'2027-01-15 23:59','completed':False,'overdue':False,
+                  'semester_key':'115-1','grade_text':'90' if title=='graded' else None}
+                 for title in ['pending','graded','ignored']]
+        old = {**items[0],'course_id':2,'course_title':'【114下】Old','title':'old','semester_key':'114-2'}
+        self.storage.save_user_cache('calendar-user',{'ts':1,'result':{'courses':[
+            {'id':1,'title':'【115上】Test','semester_key':'115-1','assignments':items},
+            {'id':2,'title':'【114下】Old','semester_key':'114-2','assignments':[old]}],
+            'all_assignments':items+[old],'errors':[]}})
+        uid=self.storage.assignment_uid(1,'ignored','https://example.test/ignored')
+        self.storage.save_user_preferences('calendar-user',{'status_filter':['pending'],'semester_filter':['115-1'],
+            'ignored_assignment_uids':[uid]})
+        page=BeautifulSoup(self.client.get('/').get_data(as_text=True),'html.parser')
+        rows=page.select('#flatTable tr[data-uid]')
+        self.assertEqual([row['data-title'] for row in rows if 'hidden' not in row.get('class',[])],['pending'])
+        self.assertIn('hidden',page.select_one('[data-course-id="2"].course-card')['class'])
+        self.assertEqual(page.select_one('.row-status-badges')['data-rendered-status'],'pending')
+
     def test_calendar_does_not_remove_csrf_or_anonymous_preference_checks(self):
         self.assertEqual(self.app.test_client().post("/preferences", json={"viewMode": "calendar"}).status_code, 400)
         anonymous = csrf_client(self.app)
