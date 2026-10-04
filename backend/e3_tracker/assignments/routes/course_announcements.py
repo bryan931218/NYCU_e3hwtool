@@ -9,7 +9,13 @@ from e3_tracker.assignments.services.collector import annotate_result_semesters,
 from e3_tracker.assignments.services.course_announcements import AnnouncementSessionExpired
 
 
-def register_course_announcement_routes(app, storage, current_user, login_required, load_cache, get_preferences, service, record_activity):
+def register_course_announcement_routes(app, storage, current_user, login_required, load_cache, get_preferences, service, record_activity, *, kind='announcements'):
+    is_mail = kind == 'mail'
+    noun = '信件' if is_mail else '公告'
+    prefix = 'course_mail' if is_mail else 'course_announcements'
+    item_endpoint = 'course_mail_item' if is_mail else 'course_announcement_item'
+    api_path = '/api/course-mail' if is_mail else '/api/course-announcements'
+    cache_storage = service.storage
     def catalog(user):
         result = (load_cache(user['username']) or {}).get('result') or {}
         annotate_result_semesters(result, selected_keys=get_preferences(user['username']).get('semester_filter'))
@@ -26,26 +32,26 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
             return None, []
         return semester, courses
 
-    @app.get('/courses/announcements')
+    @app.get('/courses/mail' if is_mail else '/courses/announcements', endpoint=f'{prefix}_page')
     @login_required
     def course_announcements_page():
         user = current_user()
         result = catalog(user)
-        return render_template('assignments/pages/course_announcements.html', user=user,
+        return render_template('assignments/pages/course_announcements.html', user=user, message_noun=noun, message_kind=kind,
             semesters=result.get('available_semesters') or [], selected_semester=(result.get('selected_semesters') or [''])[0],
-            announcement_config={'dataUrl': url_for('course_announcements_data'), 'refreshUrl': url_for('course_announcements_refresh'),
-                'itemUrl': url_for('course_announcement_item'), 'guest': bool(user.get('is_guest'))})
+            announcement_config={'dataUrl': url_for(f'{prefix}_data'), 'refreshUrl': url_for(f'{prefix}_refresh'),
+                'itemUrl': url_for(item_endpoint), 'kind': kind, 'noun': noun, 'autoOpen': not is_mail, 'guest': bool(user.get('is_guest'))})
 
-    @app.get('/api/course-announcements')
+    @app.get(api_path, endpoint=f'{prefix}_data')
     @login_required
     def course_announcements_data():
         user = current_user()
         if user.get('is_guest'):
-            return {'ok': False, 'error': '訪客模式無法連線至 E3 公告。'}, 403
+            return {'ok': False, 'error': f'訪客模式無法連線至 E3 {noun}。'}, 403
         semester, courses = selected_courses(user, request.args.get('semester'))
         if not semester:
             return {'ok': False, 'error': '請先更新作業以取得課程。'}, 400
-        cache = storage.load_course_announcements(user['username'], semester)
+        cache = cache_storage.load_course_announcements(user['username'], semester)
         valid_ids = {int(course['id']) for course in courses}
         items = [item for item in cache['items'] if item['course_id'] in valid_ids]
         running = cache['status'] == 'running' and time.time() - cache['attempt'] < 90
@@ -54,64 +60,64 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
             'error': cache['error'] or ('更新逾時，請重試。' if cache['status'] == 'running' and not running else ''),
             'stale': time.time() - cache['fetched_at'] > 600}
 
-    @app.post('/api/course-announcements/refresh')
+    @app.post(api_path + '/refresh', endpoint=f'{prefix}_refresh')
     @login_required
     def course_announcements_refresh():
         user = current_user()
         if user.get('is_guest'):
-            return {'ok': False, 'error': '訪客模式無法連線至 E3 公告。'}, 403
+            return {'ok': False, 'error': f'訪客模式無法連線至 E3 {noun}。'}, 403
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return {'ok': False, 'error': '請選擇學期。'}, 400
         semester, courses = selected_courses(user, payload.get('semester'))
         if not semester:
             return {'ok': False, 'error': '找不到該學期課程，請先更新作業。'}, 400
-        if not storage.consume_security_limit(f"course-announcement-refresh:{user['username']}", 12, 600):
+        if not storage.consume_security_limit(f"{prefix}-refresh:{user['username']}", 12, 600):
             return {'ok': False, 'error': '更新過於頻繁，請稍後再試。'}, 429
         result = service.start(app, user, semester, courses)
         if result in {'busy', 'session_expired'}:
             return {'ok': False, 'error': '更新人數較多，請稍後再試。' if result == 'busy' else '請重新登入 E3。'}, 429 if result == 'busy' else 409
         if result == 'running':
             try:
-                record_activity('course_announcements_refresh', status='success', metadata={'username': user['username'], 'site': 'assignments'})
+                record_activity(f'{prefix}_refresh', status='success', metadata={'username': user['username'], 'site': 'assignments'})
             except Exception:
-                app.logger.warning('Course announcement activity unavailable')
+                app.logger.warning('Course %s activity unavailable', kind)
         return {'ok': True, 'status': result}, 202 if result == 'running' else 200
 
-    @app.post('/api/course-announcements/item')
+    @app.post(api_path + '/item', endpoint=item_endpoint)
     @login_required
     def course_announcement_item():
         user = current_user()
         if user.get('is_guest'):
-            return {'ok': False, 'error': '訪客模式無法讀取課程公告。'}, 403
+            return {'ok': False, 'error': f'訪客模式無法讀取課程{noun}。'}, 403
         payload = request.get_json(silent=True)
         if (not isinstance(payload, dict) or not isinstance(payload.get('key'), str)
             or not re.fullmatch(r'[1-9][0-9]{0,9}:[1-9][0-9]{0,9}', payload['key'])
             or type(payload.get('read')) is not bool or type(payload.get('load_content', True)) is not bool):
-            return {'ok': False, 'error': '公告資料無效。'}, 400
+            return {'ok': False, 'error': f'{noun}資料無效。'}, 400
         semester, courses = selected_courses(user, payload.get('semester'))
         if not semester:
-            return {'ok': False, 'error': '公告不存在。'}, 404
+            return {'ok': False, 'error': f'{noun}不存在。'}, 404
         valid_ids = {int(course['id']) for course in courses}
-        item = next((item for item in storage.load_course_announcements(user['username'], semester)['items']
+        item = next((item for item in cache_storage.load_course_announcements(user['username'], semester)['items']
                      if item['key'] == payload['key'] and item['course_id'] in valid_ids), None)
         if not item:
-            return {'ok': False, 'error': '公告不存在。'}, 404
+            return {'ok': False, 'error': f'{noun}不存在。'}, 404
         content = None
         if payload['read'] and payload.get('load_content', True) and 'content' not in item:
-            if not storage.consume_security_limit(f"course-announcement-read:{user['username']}", 60, 600):
+            if not storage.consume_security_limit(f"{prefix}-read:{user['username']}", 60, 600):
                 return {'ok': False, 'error': '讀取過於頻繁，請稍後再試。'}, 429
             try:
                 content = service.content(user, item)
             except AnnouncementSessionExpired:
                 return {'ok': False, 'error': 'E3 登入已失效，請重新登入。'}, 409
             except BlockingIOError:
-                return {'ok': False, 'error': '公告讀取中，請稍後再試。'}, 429
+                return {'ok': False, 'error': f'{noun}讀取中，請稍後再試。'}, 429
             except Exception as error:
-                app.logger.warning('Course announcement content unavailable (%s)', type(error).__name__)
+                app.logger.warning('Course %s content unavailable (%s)', kind, type(error).__name__)
                 return {'ok': False, 'error': '內文暫時無法讀取，請重新讀取或前往 E3。'}, 502
-        updated = storage.update_course_announcement(user['username'], semester, item['key'], content=content, read=payload['read'],
+        updated = cache_storage.update_course_announcement(user['username'], semester, item['key'], content=content, read=payload['read'],
             expected_version=(item.get('title'), item.get('updated_ts')) if content is not None else None)
         if not updated:
-            return {'ok': False, 'error': '公告已更新，請重新整理列表。'}, 409
+            return {'ok': False, 'error': f'{noun}已更新，請重新整理列表。'}, 409
         return {'ok': True, 'item': updated}

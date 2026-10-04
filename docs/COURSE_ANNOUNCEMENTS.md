@@ -1,5 +1,33 @@
 # Course Announcements
 
+## Separate Course Mail
+
+`/courses/mail` reads E3's dcpcmail course inbox; `/courses/announcements` continues
+to read Moodle news forums. Navigation, API endpoints, cache tables, and local
+read markers remain separate even when message IDs overlap. The two readers
+share the same presentation and combined two-operation concurrency limit.
+
+Mail synchronization uses `/local/dcpcmail/view.php?c=COURSE&t=inbox` and reads the
+first inbox page, up to 30 messages per course. It only uses the signed-in
+account's current course catalog and session. Unrecognized inbox/body markup
+is an error, not an empty inbox; failures preserve previous data. No send,
+reply, or delete operations are implemented. Older mail remains available in E3.
+
+Migration `0013_course_mail` adds a separate cache. Subjects, senders, message
+content, and read markers are encrypted with the existing data-encryption key,
+bound to the account and semester. Account deletion removes the mail cache.
+No additional credentials or environment variables are required.
+
+Unlike announcements, desktop mail does not automatically open the first item.
+The user must click a message to retrieve its content. Opening a mail detail
+may mark it read in E3 itself. Tracker read/unread controls change only the
+tracker's state; initial state is taken from the E3 inbox.
+
+Protocol/DOM reference: the original implementation of E3 dcpcmail integration
+in [NYCU portal_e3_helper](https://github.com/NYCU-Chung/portal_e3_helper/blob/main/content.js).
+Live authenticated E3 verification is still required for customized mailbox
+markup. Additional tests are in `backend/tests/test_course_mail.py`.
+
 The assignment site's `/courses/announcements` page uses the current account's
 existing Moodle session. It does not access another account through `view_user`
 or accept arbitrary remote URLs from the browser. Guest accounts cannot sync.

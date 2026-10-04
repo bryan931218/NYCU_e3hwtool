@@ -82,9 +82,20 @@ def collect_course_announcements(client, courses):
 
 
 class CourseAnnouncementService:
+    message_name = '公告'
+
     def __init__(self, storage, base_url, timeout=8):
         self.storage, self.base_url, self.timeout = storage, base_url.rstrip('/'), min(timeout, 8)
         self.slots = threading.BoundedSemaphore(2)
+
+    def collect(self, client, courses):
+        return collect_course_announcements(client, courses)
+
+    def item_url(self, item):
+        return moodle_url(item['url'], self.base_url, '/mod/forum/discuss.php', 'd')
+
+    def parse_content(self, html):
+        return discussion_content(html, self.base_url)
 
     def start(self, app, user, semester, courses):
         if not user.get('moodle_session'):
@@ -106,20 +117,20 @@ class CourseAnnouncementService:
     def _refresh(self, app, user, semester, courses, attempt):
         client = MoodleNewsClient(self.base_url, user['moodle_session'], timeout=self.timeout)
         try:
-            items, successful, failed = collect_course_announcements(client, courses)
-            message = '部分課程更新失敗，已保留先前公告。' if failed else ''
+            items, successful, failed = self.collect(client, courses)
+            message = f'部分課程更新失敗，已保留先前{self.message_name}。' if failed else ''
             self.storage.finish_course_announcement_refresh(user['username'], semester, attempt, items, successful, message)
         except AnnouncementSessionExpired:
             self.storage.finish_course_announcement_refresh(user['username'], semester, attempt, [], [], 'E3 登入已失效，請重新登入。')
         except Exception:
-            app.logger.warning('Course announcement synchronization failed')
-            self.storage.finish_course_announcement_refresh(user['username'], semester, attempt, [], [], '公告更新失敗，請稍後再試。')
+            app.logger.warning('Course %s synchronization failed', self.message_name)
+            self.storage.finish_course_announcement_refresh(user['username'], semester, attempt, [], [], f'{self.message_name}更新失敗，請稍後再試。')
         finally:
             client.close()
             self.slots.release()
 
     def content(self, user, item):
-        url = moodle_url(item['url'], self.base_url, '/mod/forum/discuss.php', 'd')
+        url = self.item_url(item)
         if not url:
             raise ValueError('Invalid cached announcement URL')
         if not user.get('moodle_session'):
@@ -128,7 +139,7 @@ class CourseAnnouncementService:
             raise BlockingIOError()
         client = MoodleNewsClient(self.base_url, user['moodle_session'], timeout=self.timeout, deadline=time.monotonic() + 12)
         try:
-            return discussion_content(client.get(url), self.base_url)
+            return self.parse_content(client.get(url))
         finally:
             client.close()
             self.slots.release()

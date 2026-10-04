@@ -4,7 +4,7 @@
 {% include 'shared/components/security.html' %}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>課程公告 | E3作業追蹤系統</title>
+<title>課程{{ message_noun }} | E3作業追蹤系統</title>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
@@ -19,20 +19,24 @@
         <a class="news-brand" href="{{ url_for('index') }}">E3作業追蹤系統</a>
         <div class="news-header-actions"><a class="btn" href="{{ url_for('index') }}"><span class="news-icon news-back" aria-hidden="true"></span> 作業列表</a><button class="icon-button" type="button" id="newsTheme" title="切換主題" aria-label="切換主題"><span class="news-icon news-theme" aria-hidden="true"></span></button></div>
     </header>
+    <nav class="news-tabs" aria-label="課程資訊">
+        <a href="{{ url_for('course_announcements_page') }}"{% if message_kind == 'announcements' %} aria-current="page"{% endif %}>課程公告</a>
+        <a href="{{ url_for('course_mail_page') }}"{% if message_kind == 'mail' %} aria-current="page"{% endif %}>課程信件</a>
+    </nav>
     <section class="news-heading" aria-labelledby="newsTitle">
-        <div><h1 id="newsTitle">課程公告 <span class="news-count" id="newsCount">0</span></h1><p id="newsUpdated" class="news-updated"></p></div>
-        <button class="btn" type="button" id="newsRefresh"><span class="news-icon news-refresh-icon" aria-hidden="true"></span>更新公告</button>
+        <div><h1 id="newsTitle">課程{{ message_noun }} <span class="news-count" id="newsCount">0</span></h1><p id="newsUpdated" class="news-updated"></p></div>
+        <button class="btn" type="button" id="newsRefresh"><span class="news-icon news-refresh-icon" aria-hidden="true"></span>更新{{ message_noun }}</button>
     </section>
-    <section class="news-toolbar" aria-label="公告篩選">
+    <section class="news-toolbar" aria-label="{{ message_noun }}篩選">
         <select id="newsSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>
         <div class="course-picker"><select class="course-filter" id="courseFilter" aria-label="篩選課程"><option value="">全部課程</option></select><button type="button" class="course-filter course-picker-toggle" id="courseFilterToggle" role="combobox" aria-label="篩選課程" aria-haspopup="listbox" aria-expanded="false" aria-controls="courseFilterOptions" hidden><span id="courseFilterLabel">全部課程</span><span class="course-picker-chevron" aria-hidden="true"></span></button><div class="course-options" id="courseFilterOptions" role="listbox" aria-label="課程" popover="auto" hidden></div></div>
-        <form role="search" id="newsSearchForm" autocomplete="off"><input type="search" id="newsSearch" name="course_notice_query" placeholder="搜尋公告" aria-label="搜尋公告" autocomplete="off" data-lpignore="true" data-1p-ignore></form>
+        <form role="search" id="newsSearchForm" autocomplete="off"><input type="search" id="newsSearch" name="course_message_query" placeholder="搜尋{{ message_noun }}" aria-label="搜尋{{ message_noun }}" autocomplete="off" data-lpignore="true" data-1p-ignore></form>
         <label class="news-unread"><input type="checkbox" id="newsUnread">只看未讀 <span id="newsUnreadCount">0</span></label>
     </section>
     <p id="newsMessage" class="news-message" role="status" aria-live="polite" hidden></p>
     <div class="news-workspace" id="newsWorkspace">
-        <section class="news-inbox" aria-label="課程公告列表"><div class="news-list-heading">公告列表 <span id="newsListCount">0</span></div><div id="newsList" class="news-list"></div><p id="newsEmpty" class="news-empty" hidden>目前沒有課程公告</p></section>
-        <section id="newsReader" class="news-reader" aria-label="公告內文" aria-live="polite"><p class="news-reader-empty">選擇公告</p></section>
+        <section class="news-inbox" aria-label="課程{{ message_noun }}列表"><div class="news-list-heading">{{ message_noun }}列表 <span id="newsListCount">0</span></div><div id="newsList" class="news-list"></div><p id="newsEmpty" class="news-empty" hidden>目前沒有課程{{ message_noun }}</p></section>
+        <section id="newsReader" class="news-reader" aria-label="{{ message_noun }}內文" aria-live="polite"><p class="news-reader-empty">選擇{{ message_noun }}</p></section>
     </div>
 </main>
 </body>

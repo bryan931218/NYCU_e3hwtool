@@ -31,6 +31,7 @@ export function announcementDate(timestamp) {
 }
 
 function initialize(config) {
+  const noun = config.noun || '公告';
   const byId = id => document.getElementById(id);
   const semester = byId('newsSemester');
   const course = byId('courseFilter');
@@ -88,7 +89,7 @@ function initialize(config) {
     if (response.redirected) throw Error('登入已失效，請重新登入。');
     let result;
     try { result = await response.json(); } catch { throw Error('無法連線，請稍後再試。'); }
-    if (!response.ok || !result.ok) throw Error(result.error || '公告更新失敗，請稍後再試。');
+    if (!response.ok || !result.ok) throw Error(result.error || `${noun}更新失敗，請稍後再試。`);
     return result;
   };
   const post = (url, payload) => fetchJson(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
@@ -112,11 +113,11 @@ function initialize(config) {
     reader.replaceChildren();
     reader.setAttribute('aria-busy', String(item && state.pending.has(requestKey(item.key))));
     if (!item) {
-      reader.append(element('p', 'news-reader-empty', '選擇公告'));
+      reader.append(element('p', 'news-reader-empty', `選擇${noun}`));
       return;
     }
     reader.style.setProperty('--course-accent', colors.colorFor(`e3:${item.course_id}`));
-    const back = button('公告列表', returnToList, 'btn news-mobile-back');
+    const back = button(`${noun}列表`, returnToList, 'btn news-mobile-back');
     back.id = 'newsReaderBack';
     back.prepend(icon('news-back'));
     const heading = element('header', 'news-reader-heading');
@@ -149,7 +150,7 @@ function initialize(config) {
       actions.append(retry);
     }
     heading.append(actions);
-    const body = element('p', 'news-content', item.content !== undefined ? item.content || '此公告沒有文字內文。' : error ?? '讀取內文中…');
+    const body = element('p', 'news-content', item.content !== undefined ? item.content || `此${noun}沒有文字內文。` : error ?? '讀取內文中…');
     body.dataset.error = String(!!error && item.content === undefined);
     if (item.content === undefined && !error) body.classList.add('news-loading');
     reader.append(back, heading, body);
@@ -186,7 +187,8 @@ function initialize(config) {
       node.append(element('span', 'news-course', item.course_title), element('span', 'news-subject', item.title));
       if (item.content) node.append(element('span', 'news-preview', item.content.replace(/\s+/g, ' ').slice(0, 140)));
       const bottom = element('span', 'news-item-bottom');
-      bottom.append(element('span', '', announcementDate(item.updated_ts)));
+      const date = announcementDate(item.updated_ts);
+      bottom.append(element('span', '', config.kind === 'mail' && item.author ? `${item.author} · ${date}` : date));
       if (!item.read_at) bottom.append(element('span', 'news-unread-badge', '未讀'));
       node.append(bottom);
       fragment.append(node);
@@ -195,7 +197,7 @@ function initialize(config) {
     if (focused) [...list.children].find(node => node.dataset.key === focused)?.focus({preventScroll: true});
     byId('newsListCount').textContent = visible.length;
     byId('newsEmpty').hidden = visible.length > 0 || loading || state.running;
-    byId('newsEmpty').textContent = state.items.length ? '沒有符合篩選的公告' : '目前沒有課程公告';
+    byId('newsEmpty').textContent = state.items.length ? `沒有符合篩選的${noun}` : `目前沒有課程${noun}`;
     counters();
   };
   const setRead = async item => {
@@ -250,7 +252,7 @@ function initialize(config) {
       state.active = ''; workspace.dataset.reading = 'false';
     }
     renderList(); renderReader();
-    if (autoSelect && !mobile.matches && !state.active && visible.length) void openItem(visible[0].key);
+    if (autoSelect && config.autoOpen !== false && !mobile.matches && !state.active && visible.length) void openItem(visible[0].key);
   };
   list.addEventListener('keydown', event => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -291,7 +293,7 @@ function initialize(config) {
       state.running = data.running || (refreshing && state.running);
       syncCourses();
       byId('newsUpdated').textContent = data.fetched_at ? `上次更新 ${announcementDate(data.fetched_at)}` : '';
-      message(data.error || (state.running ? '公告更新中…' : ''), !!data.error);
+      message(data.error || (state.running ? `${noun}更新中…` : ''), !!data.error);
       loading = false;
       if (changed || !list.children.length) render(true); else counters();
       schedule();
@@ -316,7 +318,7 @@ function initialize(config) {
       const result = await post(config.refreshUrl, {semester: semester.value});
       if (generation !== state.generation) return;
       state.running = result.status === 'running';
-      message(state.running ? '公告更新中…' : '請稍候再更新。');
+      message(state.running ? `${noun}更新中…` : '請稍候再更新。');
       await load(false);
     } catch (error) { if (generation === state.generation) message(error.message, true); }
     finally {
@@ -343,8 +345,8 @@ function initialize(config) {
   });
   if (config.guest || !semester.value) {
     refreshButton.disabled = true;
-    message(config.guest ? '訪客模式無法連線至 E3 公告。' : '請先更新作業以取得課程。');
-  } else { message('讀取公告中…'); void load(); }
+    message(config.guest ? `訪客模式無法連線至 E3 ${noun}。` : '請先更新作業以取得課程。');
+  } else { message(`讀取${noun}中…`); void load(); }
 }
 
 if (typeof document !== 'undefined') {

@@ -102,14 +102,21 @@ def discussion_content(html, base_url):
     content = post.select_one('[data-region="post-content"], .post-content-container, [id^="post-content-"], .posting, .post-content, .content .no-overflow')
     if not content:
         raise ValueError('Announcement content unavailable')
+    attachments = post.select('.attachments a[href], [data-region="attachments"] a[href], .content-alignment-container a[href*="/pluginfile.php/"], .attachedimages img[src]')
+    result = safe_message_content(content, base_url.rstrip('/') + '/mod/forum/discuss.php', attachments)
+    author = post.select_one('[data-region="author-name"], .author a, header a[href*="/user/view.php"], header a[href*="/user/profile.php"]')
+    return {**result, 'author': author.get_text(' ', strip=True)[:120] if author else ''}
+
+
+def safe_message_content(content, page_url, attachments=()):
+    """Convert remote message markup to bounded plain text and safe outbound links."""
     for node in content.select('script, style, iframe, form, input, button, object, embed'):
         node.decompose()
     links = []
-    attachments = post.select('.attachments a[href], [data-region="attachments"] a[href], .content-alignment-container a[href*="/pluginfile.php/"], .attachedimages img[src]')
     for link in [*content.select('a[href], img[src]'), *attachments]:
         value = link.get('href') or link.get('src')
         try:
-            target = urlsplit(urljoin(base_url.rstrip('/') + '/mod/forum/discuss.php', value))
+            target = urlsplit(urljoin(page_url, value))
         except ValueError:
             continue
         if target.scheme != 'https' or not target.netloc or target.username or target.password:
@@ -126,8 +133,4 @@ def discussion_content(html, base_url):
         node.insert_before('\n')
         node.insert_after('\n')
     text = re.sub(r'\n[ \t]*\n(?:[ \t]*\n)+', '\n\n', content.get_text()).strip()
-    author = post.select_one('[data-region="author-name"], .author a, header a[href*="/user/view.php"], header a[href*="/user/profile.php"]')
-    return {
-        'content': text[:20000], 'links': links[:20],
-        'author': author.get_text(' ', strip=True)[:120] if author else '',
-    }
+    return {'content': text[:20000], 'links': links[:20]}
