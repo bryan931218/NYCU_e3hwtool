@@ -1,6 +1,6 @@
 """Administration routes and their feature helpers."""
 
-from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS, is_assignment_event
+from e3_tracker.platform.services.traffic import is_recent_activity_event
 from e3_tracker.platform.services.traffic_trends import build_traffic_trend
 from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics
 from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
@@ -103,11 +103,10 @@ def register_administration_routes(*,
         filtered_events = [
             ev
             for ev in raw_events
-            if (ev.get("action") or "").lower() not in PASSIVE_TRAFFIC_ACTIONS
+            if is_recent_activity_event(ev)
         ]
         formatted_events = []
-        assignment_events = [ev for ev in filtered_events if is_assignment_event(ev)]
-        for ev in reversed(assignment_events[-200:]):
+        for ev in reversed(filtered_events[-200:]):
             meta = ev.get("meta") or {}
             role = "訪客" if meta.get("is_guest") else ("管理員" if meta.get("is_admin") else "一般使用者")
             detail_parts: List[str] = []
@@ -194,6 +193,13 @@ def register_administration_routes(*,
         analytics = build_assignment_analytics(
             storage.assignment_usage_snapshot(window["start"], window["end"]), window,
         )
+        traffic_query = {**trend["query"], "trend": trend["resolution"], "usage_range": window["range"]}
+        if requested_view_username in {item["username"] for item in admin_view_options}:
+            traffic_query["view_user"] = requested_view_username
+
+        def traffic_link(**changes):
+            return url_for("admin_traffic", **{**traffic_query, **changes})
+
         return render_template_string(
             TRAFFIC_TEMPLATE,
             stats=usage_stats(),
@@ -207,6 +213,8 @@ def register_administration_routes(*,
             top_users=formatted_users[:5],
             summary=summary,
             assignment_analytics=analytics,
+            traffic_query=traffic_query,
+            traffic_link=traffic_link,
             ip_summary=ip_overview,
             admin_view_options=admin_view_options,
             selected_view_username=selected_view_username,

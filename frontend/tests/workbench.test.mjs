@@ -15,6 +15,58 @@ import { initialize as initializeSearch, isBrowserAutofilled } from '../assignme
 import { courseColorKey, createCourseColorRegistry, register as registerCourseColors } from '../assignments/static/js/workbench/course-colors.js';
 import { initialize as initializeUsageEvents } from '../assignments/static/js/workbench/usage-events.js';
 
+function trafficHarness(fetch, hidden = false) {
+  const nodes = { online: { textContent: '1' }, total: { textContent: '20' } };
+  const handlers = {};
+  let interval;
+  const document = { hidden, body: { dataset: { trafficStatsUrl: '/traffic/stats' } },
+    addEventListener: (name, handler) => { handlers[name] = handler; },
+    querySelectorAll: selector => selector.includes('online') ? [nodes.online] : [nodes.total] };
+  const context = { document, fetch,
+    setInterval: (callback, delay) => { assert.equal(delay, 45000); interval = callback; },
+    window: { location: { reload: () => assert.fail('traffic must not reload the page') } } };
+  vm.runInNewContext(readFileSync(new URL('../shared/static/js/traffic-stats.js', import.meta.url), 'utf8'), context);
+  return { nodes, document, handlers, poll: () => interval() };
+}
+
+test('traffic versions update only count nodes without reloading or touching user input', async () => {
+  const response = { ok: true, json: async () => ({ version: 999999, online: 8, total: 120 }) };
+  const harness = trafficHarness(async (_url, options) => {
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.credentials, 'same-origin');
+    return response;
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(harness.nodes, { online: { textContent: '8' }, total: { textContent: '120' } });
+  await harness.poll();
+  assert.equal(harness.nodes.online.textContent, '8');
+});
+
+test('traffic polling pauses in background, avoids overlap and retains counts on network errors', async () => {
+  let calls = 0;
+  let resolve;
+  const harness = trafficHarness(() => { calls++; return new Promise(done => { resolve = done; }); }, true);
+  await harness.poll();
+  assert.equal(calls, 0);
+  harness.document.hidden = false;
+  const pending = harness.handlers.visibilitychange();
+  await harness.poll();
+  assert.equal(calls, 1);
+  resolve({ ok: false });
+  await pending;
+  assert.equal(harness.nodes.total.textContent, '20');
+  const failing = trafficHarness(async () => { throw Error('offline'); });
+  await new Promise(done => setImmediate(done));
+  await failing.poll();
+  assert.equal(failing.nodes.online.textContent, '1');
+});
+
+test('invalid traffic counts cannot replace the displayed values with markup or negative numbers', async () => {
+  const harness = trafficHarness(async () => ({ ok: true, json: async () => ({ online: '<img>', total: -1 }) }));
+  await new Promise(done => setImmediate(done));
+  assert.deepEqual(harness.nodes, { online: { textContent: '1' }, total: { textContent: '20' } });
+});
+
 test('feature telemetry records view and controls without sending search text or assignment details', () => {
   const handlers = {};
   const calls = [];

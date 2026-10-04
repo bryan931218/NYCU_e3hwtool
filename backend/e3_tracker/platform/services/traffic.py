@@ -15,6 +15,10 @@ from e3_tracker.platform.guest_privacy import (
 )
 
 PASSIVE_TRAFFIC_ACTIONS = {"heartbeat", "refresh_assignments"}
+QUIET_ACTIVITY_ACTIONS = {
+    "usage_due_view", "usage_course_view", "usage_calendar",
+    "usage_search", "usage_filters", "usage_notification_settings",
+}
 
 
 def traffic_event_site(action: str, handler_module: str = "") -> str:
@@ -33,6 +37,11 @@ def is_assignment_event(event: Dict[str, Any]) -> bool:
         meta.get("site") in (None, "", "assignments")
         and traffic_event_site(event.get("action")) == "assignments"
     )
+
+
+def is_recent_activity_event(event: Dict[str, Any]) -> bool:
+    action = str(event.get("action") or "").strip().lower()
+    return is_assignment_event(event) and action not in PASSIVE_TRAFFIC_ACTIONS | QUIET_ACTIVITY_ACTIONS
 
 
 class TrafficTracker:

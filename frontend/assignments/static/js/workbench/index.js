@@ -14,7 +14,6 @@ import * as cacheEvents from "./cache-events.js";
 import * as calendarEvents from "./calendar-events.js";
 import * as startup from "./startup.js";
 import * as announcements from "./announcements.js";
-import * as traffic from "./traffic.js";
 import * as profile from "./profile.js";
 import * as usageEvents from "./usage-events.js";
 
@@ -39,7 +38,6 @@ const features = [
   calendarEvents,
   startup,
   announcements,
-  traffic,
   profile,
   usageEvents,
 ];

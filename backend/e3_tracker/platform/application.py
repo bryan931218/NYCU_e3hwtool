@@ -3,7 +3,7 @@ from e3_tracker.platform.routes.administration import register_administration_ro
 from e3_tracker.platform.routes.common import register_platform_routes
 from e3_tracker.study.health import youtube_inventory_health
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE
-from e3_tracker.platform.services.traffic import TrafficTracker, traffic_event_site
+from e3_tracker.platform.services.traffic import TrafficTracker, traffic_event_site, QUIET_ACTIVITY_ACTIONS
 import os
 import secrets
 import threading
@@ -413,14 +413,15 @@ def create_app(
             details["username"] = user["username"]
             details["is_guest"] = user.get("is_guest")
             details["is_admin"] = user.get("is_admin")
-        traffic_tracker.record_visit(
-            _client_ip(), action=action, status=status, metadata=details
-        )
         if user and not user.get("is_guest") and details["site"] == "assignments":
             try:
                 storage.record_assignment_usage(user["username"], action, status, details)
             except Exception:
                 app.logger.warning("Assignment usage aggregate unavailable")
+        if str(action).strip().lower() not in QUIET_ACTIVITY_ACTIONS:
+            traffic_tracker.record_visit(
+                _client_ip(), action=action, status=status, metadata=details
+            )
 
     def usage_stats() -> Dict[str, int]:
         return traffic_tracker.snapshot()

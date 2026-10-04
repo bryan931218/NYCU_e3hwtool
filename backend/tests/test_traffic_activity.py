@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 
 from e3_tracker.platform.application import create_app
 from e3_tracker.platform.services.traffic import is_assignment_event, traffic_event_site
+from e3_tracker.platform.services.traffic import QUIET_ACTIVITY_ACTIONS
 from tests.security_helpers import csrf_client
 
 
@@ -161,6 +162,54 @@ class TrafficActivityTests(unittest.TestCase):
     def test_study_only_history_has_an_empty_activity_list(self):
         self.record("study_plan_replanned")
         self.assertIn("尚無操作紀錄", self.activity_text())
+
+    def test_browsing_telemetry_keeps_feature_statistics_without_filling_activity_history(self):
+        self.storage.save_user_profile("test-admin", "Test", "T")
+        for action in QUIET_ACTIVITY_ACTIONS:
+            self.assertEqual(self.record(action).status_code, 200)
+        self.assertEqual(self.storage.recent_traffic_events(500), [])
+        window = {"start": "2000-01-01", "end": "2100-01-01"}
+        snapshot = self.storage.assignment_usage_snapshot(**window)
+        self.assertEqual({row["feature"] for row in snapshot["usage"]},
+                         {"due_view", "course_view", "calendar", "search", "filters", "notification_settings"})
+        self.record("usage_ignore")
+        self.assertIn("忽略／恢復作業", self.activity_text())
+
+    def test_old_browsing_events_are_hidden_on_reload_without_rewriting_stored_history(self):
+        for index, action in enumerate(["usage_calendar", "usage_due_view", "notification_line_linked"]):
+            self.storage.append_traffic_event({"ts": index + 1, "action": action, "status": "success", "meta": {"username": "test-admin", "site": "assignments"}}, max_events=500)
+        app = create_app()
+        try:
+            client = csrf_client(app)
+            with client.session_transaction() as session:
+                session["session_token"] = "activity-test"
+            activity = BeautifulSoup(client.get("/admin/traffic").get_data(as_text=True), "html.parser").select_one(".events").get_text()
+            self.assertIn("LINE 綁定成功", activity)
+            self.assertNotIn("作業日曆", activity)
+            self.assertNotIn("到期日列表", activity)
+            self.assertEqual(len(self.storage.recent_traffic_events(500)), 3)
+        finally:
+            app.extensions["e3_storage"]._engine.dispose()
+
+    def test_traffic_and_login_pages_never_reload_for_traffic_versions(self):
+        for path in ["/admin/traffic", "/login"]:
+            client = self.app.test_client() if path == "/login" else self.client
+            response = client.get(path)
+            html = response.get_data(as_text=True)
+            self.assertNotIn("location.reload", html)
+            self.assertIn("shared/js/traffic-stats.js", html)
+            self.assertIn('data-traffic-stat="online"', html)
+            self.assertIn('data-traffic-stat="total"', html)
+
+    def test_monitoring_filters_and_manual_refresh_keep_both_analytics_date_ranges(self):
+        response = self.client.get("/admin/traffic?usage_range=90d&range=30d&trend=day")
+        page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+        self.assertIn("usage_range=90d", page.select_one('a[aria-label="更新監控資料"]')['href'])
+        self.assertIn("range=30d", page.select_one('a[aria-label="更新監控資料"]')['href'])
+        for link in page.select('.trend-presets a, .trend-toggle a'):
+            self.assertIn("usage_range=90d", link['href'])
+        self.assertEqual(page.select_one('.trend-dates input[name=usage_range]')['value'], '90d')
+        self.assertEqual(page.select_one('.analytics-range input[name=range]')['value'], '30d')
 
     def test_guest_login_remains_visible_after_logout_and_reload_without_identity(self):
         guest = csrf_client(self.app)

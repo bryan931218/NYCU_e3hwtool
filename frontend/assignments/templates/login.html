@@ -118,7 +118,7 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
 }
 </style>
 </head>
-<body>
+<body data-traffic-stats-url="{{ url_for('traffic_stats') }}">
 <div class="toast-container" id="toastContainer"></div>
 <div class="card">
     <div class="title-row">
@@ -128,8 +128,8 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
         </div>
         <div class="title-controls">
             <div class="stats login-stats" aria-live="polite">
-                <span class="chip" title="最近 5 分鐘內仍有操作的唯一帳號數">線上人數：<strong>{{ stats.online }}</strong></span>
-                <span class="chip" title="自服務啟動以來的總頁面載入次數">累積訪問次數：<strong>{{ stats.total }}</strong> 次</span>
+                <span class="chip" title="最近 5 分鐘內仍有操作的唯一帳號數">線上人數：<strong data-traffic-stat="online">{{ stats.online }}</strong></span>
+                <span class="chip" title="自服務啟動以來的總頁面載入次數">累積訪問次數：<strong data-traffic-stat="total">{{ stats.total }}</strong> 次</span>
             </div>
             <button type="button" class="icon-button" id="loginThemeToggle" title="切換深色模式">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-9H21m-17 0H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
@@ -424,27 +424,8 @@ html[data-theme="dark"] .toast-progress{background:#5f67f0}
 
 })();
 
-(function () {
-    const initialVersion = Number({{ stats_version or 0 }});
-    const pollUrl = "{{ url_for('traffic_stats') }}";
-    if (Number.isNaN(initialVersion)) return;
-    let latest = initialVersion;
-    async function poll() {
-        try {
-            const resp = await fetch(pollUrl, { cache: 'no-store' });
-            if (!resp.ok) return;
-            const data = await resp.json();
-            if (typeof data.version === 'number' && data.version > latest) {
-                latest = data.version;
-                window.location.reload();
-            }
-        } catch (err) {
-            console.debug('traffic poll failed', err);
-        }
-    }
-    setInterval(poll, 45000);
-})();
 </script>
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/traffic-stats.js') }}" defer></script>
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='assignments/js/login-session-guide.js') }}" defer></script>
 </body>
 </html>

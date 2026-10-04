@@ -20,6 +20,7 @@
         <header class="analytics-header">
             <div><h3 id="featureUsageTitle">功能使用</h3><p>{{ analytics.start }} 至 {{ analytics.end }}</p></div>
             <form method="get" action="{{ url_for('admin_traffic', _anchor='assignment-analytics') }}" class="analytics-range">
+                {% for key, value in traffic_query.items() if key != 'usage_range' %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
                 <label for="usageRange">統計區間</label>
                 <select id="usageRange" name="usage_range">{% for value, label in [('7d','近 7 天'),('30d','近 30 天'),('90d','近 90 天'),('all','全部保留紀錄')] %}<option value="{{ value }}" {% if analytics.range == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
                 <button type="submit">套用</button>
