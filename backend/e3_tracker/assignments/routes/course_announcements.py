@@ -9,6 +9,14 @@ from e3_tracker.assignments.services.collector import annotate_result_semesters,
 from e3_tracker.assignments.services.course_announcements import AnnouncementSessionExpired
 
 
+def register_course_message_entry(app, login_required):
+    @app.get('/courses/messages')
+    @login_required
+    def course_messages_page():
+        endpoint = 'course_mail_page' if request.args.get('tab') == 'mail' else 'course_announcements_page'
+        return app.view_functions[endpoint]()
+
+
 def register_course_announcement_routes(app, storage, current_user, login_required, load_cache, get_preferences, service, record_activity, *, kind='announcements'):
     is_mail = kind == 'mail'
     noun = '信件' if is_mail else '公告'
@@ -37,10 +45,17 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
     def course_announcements_page():
         user = current_user()
         result = catalog(user)
+        semesters = result.get('available_semesters') or []
+        selected = request.args.get('semester')
+        if selected not in {semester['key'] for semester in semesters}:
+            selected = (result.get('selected_semesters') or [''])[0]
+        item_key = request.args.get('item', '')
+        if not re.fullmatch(r'[1-9][0-9]{0,9}:[1-9][0-9]{0,9}', item_key):
+            item_key = ''
         return render_template('assignments/pages/course_announcements.html', user=user, message_noun=noun, message_kind=kind,
-            semesters=result.get('available_semesters') or [], selected_semester=(result.get('selected_semesters') or [''])[0],
+            semesters=semesters, selected_semester=selected,
             announcement_config={'dataUrl': url_for(f'{prefix}_data'), 'refreshUrl': url_for(f'{prefix}_refresh'),
-                'itemUrl': url_for(item_endpoint), 'kind': kind, 'noun': noun, 'autoOpen': not is_mail, 'guest': bool(user.get('is_guest'))})
+                'itemUrl': url_for(item_endpoint), 'kind': kind, 'noun': noun, 'itemKey': item_key, 'autoOpen': not is_mail, 'guest': bool(user.get('is_guest'))})
 
     @app.get(api_path, endpoint=f'{prefix}_data')
     @login_required

@@ -1,7 +1,7 @@
 from e3_tracker.assignments.routes.assignments import register_assignments_routes
 from e3_tracker.assignments.routes.dashboard import register_dashboard_routes
 from e3_tracker.assignments.routes.notifications import register_notification_routes
-from e3_tracker.assignments.routes.course_announcements import register_course_announcement_routes
+from e3_tracker.assignments.routes.course_announcements import register_course_announcement_routes, register_course_message_entry
 from e3_tracker.assignments.services.course_announcements import CourseAnnouncementService
 from e3_tracker.assignments.services.course_mail import CourseMailService
 from e3_tracker.assignments.services.notifications import NotificationService
@@ -853,6 +853,8 @@ def register_assignment_site(
     app.extensions['e3_course_mail'] = course_mail
     register_course_announcement_routes(app, storage, current_user, login_required,
         load_cache_from_disk, get_user_preferences, course_mail, record_activity, kind='mail')
+    register_course_message_entry(app, login_required)
+    notification_service.course_message_services = {'announcements': course_news, 'mail': course_mail}
     notification_service.start(app, fetch_assignments_for, set_assign_cache_for_user)
     session_identity_sync.start(app)
     return list_admin_view_options

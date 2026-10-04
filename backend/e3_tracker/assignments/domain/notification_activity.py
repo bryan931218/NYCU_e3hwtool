@@ -17,11 +17,13 @@ def notification_setting_changes(before, after):
         "browser_enabled": "瀏覽器通知",
         "line_enabled": "LINE 通知",
         "new_assignment": "新作業通知",
+        "new_announcement": "課程公告通知",
+        "new_mail": "課程信件通知",
         "due_reminder": "到期提醒",
     }
     changes = [
-        f"{label}：{'啟用' if after[key] else '關閉'}"
-        for key, label in labels.items() if before.get(key) != after[key]
+        f"{label}：{'啟用' if after.get(key, False) else '關閉'}"
+        for key, label in labels.items() if before.get(key, False) != after.get(key, False)
     ]
     if before.get("days_before") != after["days_before"]:
         days = "、".join(str(day) for day in after["days_before"])

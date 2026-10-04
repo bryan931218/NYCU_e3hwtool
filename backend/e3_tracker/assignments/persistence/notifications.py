@@ -5,6 +5,7 @@ import secrets
 import time
 from sqlalchemy import delete, insert, select, update, or_
 from sqlalchemy.exc import IntegrityError
+from urllib.parse import urlencode
 from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
 from e3_tracker.platform.guest_privacy import is_guest_identity
 from e3_tracker.assignments.domain.notifications import (
@@ -57,7 +58,7 @@ class NotificationStorage:
             )
         return {
             "preferences": (
-                json.loads(row["preferences"])
+                {**DEFAULT_NOTIFICATION_PREFERENCES, **json.loads(row["preferences"])}
                 if row
                 else dict(DEFAULT_NOTIFICATION_PREFERENCES)
             ),
@@ -363,7 +364,8 @@ class NotificationStorage:
                         event_key=event_key,
                         channel=channel,
                         target_hash=target,
-                        payload=json.dumps(payload, ensure_ascii=False),
+                        payload=self._credential_cipher.encrypt(json.dumps(payload, ensure_ascii=False), f'notification:{job_id}')
+                        if payload.get('kind') in {'new_announcement', 'new_mail'} else json.dumps(payload, ensure_ascii=False),
                         state="pending",
                         attempts=0,
                         retry_at=now,
@@ -371,6 +373,55 @@ class NotificationStorage:
                         created_at=now,
                     )
                 )
+
+    def _observe_course_message_notifications(self, conn, username, uid, kind, semester, items, successful_courses, *, baseline=False):
+        from e3_tracker.assignments.services.collector import current_semester_key
+        if semester != current_semester_key() or kind not in {'announcements', 'mail'}:
+            return
+        # The caller owns the account row write lock and commits cache + outbox together.
+        row = conn.execute(select(settings).where(settings.c.user_id == uid).with_for_update()).mappings().first()
+        if not row:
+            return
+        prefs = {**DEFAULT_NOTIFICATION_PREFERENCES, **json.loads(row['preferences'])}
+        known = set(conn.execute(select(seen.c.uid_hash).where(seen.c.user_id == uid)).scalars())
+        targets = []
+        if prefs['browser_enabled']:
+            targets.extend(('browser', key) for key in conn.execute(select(subscriptions.c.endpoint_hash).where(subscriptions.c.user_id == uid)).scalars())
+        if prefs['line_enabled']:
+            targets.extend(('line', key) for key in conn.execute(select(bindings.c.target_hash).where(bindings.c.user_id == uid)).scalars())
+        preference = 'new_mail' if kind == 'mail' else 'new_announcement'
+        now = time.time()
+        for course_id in successful_courses:
+            marker = digest(f'course-message-baseline:{kind}:{semester}:{course_id}')
+            initial = baseline or marker not in known
+            for item in items:
+                if int(item['course_id']) != int(course_id):
+                    continue
+                key = digest(f'course-message:{kind}:{semester}:{item["key"]}')
+                if key in known:
+                    continue
+                conn.execute(insert(seen).values(user_id=uid, uid_hash=key))
+                known.add(key)
+                # Older messages revealed by pagination/deletions must not become new alerts.
+                timestamp = item.get('updated_ts')
+                if initial or not prefs[preference] or not timestamp or not now - 86400 <= timestamp <= now + 300:
+                    continue
+                self._queue_notification(conn, uid, f'{preference}:{key}', targets, {
+                    'kind': preference, 'message_kind': kind, 'message_key': item['key'], 'semester': semester,
+                    'title': '新課程信件' if kind == 'mail' else '新課程公告',
+                    'body': f"{str(item.get('course_title') or '')[:160]}\n{str(item.get('title') or '')[:160]}",
+                    'url': '/courses/messages?' + urlencode({'tab':kind, 'semester':semester, 'item':item['key']}),
+                }, now, now + 86400)
+            if marker not in known:
+                conn.execute(insert(seen).values(user_id=uid, uid_hash=marker))
+                known.add(marker)
+
+    def baseline_course_message_notifications(self, username, kind, semester, items):
+        with self._lock, self._engine.begin() as conn:
+            uid = self._announcement_user(conn, username, write=True)
+            if uid:
+                self._observe_course_message_notifications(conn, username, uid, kind, semester, items,
+                    {item['course_id'] for item in items}, baseline=True)
 
     def notification_users(self):
         with self._lock, self._engine.connect() as conn:
@@ -492,12 +543,15 @@ class NotificationStorage:
             if not username or not row:
                 return None
             prefs = json.loads(row)
-            payload = json.loads(job["payload"])
+            raw = job['payload']
+            if raw.startswith(self._credential_cipher.PREFIX):
+                raw = self._credential_cipher.decrypt(raw, f'notification:{job["id"]}')
+            payload = json.loads(raw)
+            preference = {'new':'new_assignment', 'due':'due_reminder',
+                          'new_announcement':'new_announcement', 'new_mail':'new_mail'}.get(payload.get('kind'))
             if (
-                not prefs[f"{job['channel']}_enabled"]
-                or not prefs[
-                    "new_assignment" if payload["kind"] == "new" else "due_reminder"
-                ]
+                not preference or not prefs.get(f"{job['channel']}_enabled", False)
+                or not prefs.get(preference, False)
             ):
                 return None
             if payload["kind"] == "due" and payload["days"] not in prefs["days_before"]:

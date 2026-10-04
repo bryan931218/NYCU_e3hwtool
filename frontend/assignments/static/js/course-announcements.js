@@ -43,7 +43,7 @@ function initialize(config) {
   const refreshButton = byId('newsRefresh');
   const mobile = matchMedia('(max-width: 680px)');
   const colors = createCourseColorRegistry();
-  const state = { items: [], courses: [], running: false, active: '', attempted: new Set(), generation: 0, errors: new Map(), pending: new Set() };
+  const state = { items: [], courses: [], running: false, active: '', loadError: '', requested: config.itemKey || '', attempted: new Set(), generation: 0, errors: new Map(), pending: new Set() };
   const ctx = { courseFilter: course, courseAccent: colors.colorFor, coursePickerCourses: () => state.courses.map(item => ({
     dataset: { courseId: String(item.id), courseTitle: String(item.id) },
   })) };
@@ -197,7 +197,7 @@ function initialize(config) {
     if (focused) [...list.children].find(node => node.dataset.key === focused)?.focus({preventScroll: true});
     byId('newsListCount').textContent = visible.length;
     byId('newsEmpty').hidden = visible.length > 0 || loading || state.running;
-    byId('newsEmpty').textContent = state.items.length ? `沒有符合篩選的${noun}` : `目前沒有課程${noun}`;
+    byId('newsEmpty').textContent = state.items.length ? `沒有符合篩選的${noun}` : state.loadError ? `${noun}尚未載入` : `目前沒有課程${noun}`;
     counters();
   };
   const setRead = async item => {
@@ -252,7 +252,7 @@ function initialize(config) {
       state.active = ''; workspace.dataset.reading = 'false';
     }
     renderList(); renderReader();
-    if (autoSelect && config.autoOpen !== false && !mobile.matches && !state.active && visible.length) void openItem(visible[0].key);
+    if (autoSelect && !state.requested && config.autoOpen !== false && !mobile.matches && !state.active && visible.length) void openItem(visible[0].key);
   };
   list.addEventListener('keydown', event => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -290,12 +290,16 @@ function initialize(config) {
       const changed = JSON.stringify(state.items) !== JSON.stringify(data.items);
       if (revision === itemRevision) state.items = data.items;
       state.courses = data.courses;
+      state.loadError = data.error || '';
       state.running = data.running || (refreshing && state.running);
       syncCourses();
       byId('newsUpdated').textContent = data.fetched_at ? `上次更新 ${announcementDate(data.fetched_at)}` : '';
       message(data.error || (state.running ? `${noun}更新中…` : ''), !!data.error);
       loading = false;
       if (changed || !list.children.length) render(true); else counters();
+      if (state.requested && state.items.some(item => item.key === state.requested)) {
+        const key = state.requested; state.requested = ''; void openItem(key);
+      }
       schedule();
       if (auto && !refreshing && data.stale && !data.running && !state.attempted.has(semester.value)) {
         state.attempted.add(semester.value);
@@ -303,7 +307,7 @@ function initialize(config) {
       }
     } catch (error) {
       if (generation === state.generation) {
-        state.running = false; counters(); message(error.message, true);
+        loading = false; state.running = false; state.loadError = error.message; renderList(); message(error.message, true);
       }
     } finally {
       loading = false;
@@ -329,6 +333,7 @@ function initialize(config) {
   refreshButton.addEventListener('click', refresh);
   semester.addEventListener('change', () => {
     state.generation++; state.active = ''; state.errors.clear(); state.items = []; state.courses = []; state.running = false;
+    state.loadError = ''; state.requested = '';
     workspace.dataset.reading = 'false';
     clearTimeout(pollTimer); syncCourses(); render(); void load();
   });

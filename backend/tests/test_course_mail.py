@@ -46,6 +46,11 @@ class MailParsingTests(unittest.TestCase):
 
     def test_known_empty_inbox_and_unknown_html_are_not_equivalent(self):
         self.assertEqual(mail_summaries('<div class="mail_list">沒有郵件</div>', BASE, COURSE), [])
+        # Verified against the live E3 course inbox, not the extension's guessed markup.
+        empty = '<div class="mail_list"><div class="mail_item">沒有可查看的郵件. <a href="view.php?t=inbox">顯示最近的郵件</a></div></div>'
+        self.assertEqual(mail_summaries(empty, BASE, COURSE), [])
+        with self.assertRaises(ValueError):
+            mail_summaries(empty.replace('</div></div>', '</div><div class="mail_item">broken</div></div>'), BASE, COURSE)
         for html in ('<p>登入</p>', '<div class="mail_list"></div>', '<div class="mail_list"><div class="mail_item">broken</div></div>',
                      '<div class="mail_list"><div class="mail_item"><a class="mail_link" href="?m=7&c=43">其他課程</a></div></div>'):
             with self.assertRaises(ValueError): mail_summaries(html, BASE, COURSE)
@@ -102,7 +107,10 @@ class MailAccountTests(unittest.TestCase):
         html = self.client.get('/courses/mail').get_data(as_text=True)
         self.assertIn('課程信件', html); self.assertIn('"autoOpen": false', html)
         self.assertIn('/api/course-mail', html); self.assertIn('aria-current="page">課程信件', html)
-        self.assertIn('/courses/mail', self.client.get('/').get_data(as_text=True))
+        home = self.client.get('/').get_data(as_text=True)
+        self.assertIn('/courses/messages', home)
+        self.assertNotIn('href="/courses/mail"', home)
+        self.assertNotIn('href="/courses/announcements"', home)
         self.assertEqual(self.client.get('/api/course-mail?semester=115-1').json['items'][0]['title'], MAIL['title'])
         self.assertEqual(self.client.get('/api/course-announcements?semester=115-1').json['items'][0]['title'], NEWS['title'])
         with patch.object(MoodleNewsClient, 'get', return_value='<div class="mail_content"><p>信件內文</p></div>') as get:

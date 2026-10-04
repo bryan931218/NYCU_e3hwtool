@@ -9,6 +9,7 @@ from .course_announcements import _timestamp, safe_message_content
 
 
 MAIL_PATH = '/local/dcpcmail/view.php'
+EMPTY_INBOX = re.compile(r'沒有(?:可查看的|任何)?郵件|無郵件|no (?:messages|mail)', re.I)
 
 
 def mail_url(value, base_url, course_id, message_id=None):
@@ -38,7 +39,10 @@ def mail_summaries(html, base_url, course):
         raise ValueError('E3 mail inbox unavailable')
     items = {}
     rows = inbox.select('.mail_item')
-    if not rows and not re.search(r'沒有郵件|無郵件|沒有任何郵件|no (?:messages|mail)', inbox.get_text(' ', strip=True), re.I):
+    # E3 renders its empty-inbox notice as a mail_item without a message link.
+    if len(rows) == 1 and not rows[0].select_one('a.mail_link') and EMPTY_INBOX.search(rows[0].get_text(' ', strip=True)):
+        return []
+    if not rows and not EMPTY_INBOX.search(inbox.get_text(' ', strip=True)):
         raise ValueError('Unrecognized E3 mail inbox')
     for row in rows:
         link = row.select_one('a.mail_link[href]')

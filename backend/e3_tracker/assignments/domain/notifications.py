@@ -10,6 +10,8 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 
 DEFAULT_NOTIFICATION_PREFERENCES = {
     "new_assignment": False,
+    "new_announcement": False,
+    "new_mail": False,
     "due_reminder": False,
     "days_before": [1],
     "browser_enabled": False,
@@ -25,7 +27,7 @@ def validate_preferences(raw):
     if not isinstance(raw, dict):
         raise ValueError("設定格式不正確")
     result = dict(DEFAULT_NOTIFICATION_PREFERENCES)
-    for key in ("new_assignment", "due_reminder", "browser_enabled", "line_enabled"):
+    for key in ("new_assignment", "new_announcement", "new_mail", "due_reminder", "browser_enabled", "line_enabled"):
         value = raw.get(key, result[key])
         if not isinstance(value, bool):
             raise ValueError("通知開關格式不正確")

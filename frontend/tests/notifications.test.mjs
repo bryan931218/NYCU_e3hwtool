@@ -71,21 +71,54 @@ test('cancelled diagnostics do not leave a pending timeout', async () => {
   diagnostics.dispose();
 });
 
-function notificationWorker(showNotification, matchAll) {
+function notificationWorker(showNotification, matchAll, openWindow = async () => {}) {
   const handlers = {};
   vm.runInNewContext(readFileSync(new URL('../assignments/static/js/notifications-sw.js', import.meta.url), 'utf8'), {
     URL,
     self: {
+      location: {origin:'https://example.test'},
       addEventListener: (name, callback) => { handlers[name] = callback; },
-      registration: { showNotification }, clients: { matchAll },
+      registration: { showNotification }, clients: { matchAll, openWindow },
     },
   });
-  return payload => {
+  const push = payload => {
     let work;
     handlers.push({ data: { json: () => payload }, waitUntil(promise) { work = promise; } });
     return work;
   };
+  push.click = url => {
+    let work;
+    handlers.notificationclick({notification:{data:{url},close(){}},waitUntil(promise){work=promise;}});
+    return work;
+  };
+  return push;
 }
+
+test('course-message push retains its own-site deep link and focuses the matching tab', async () => {
+  const path = '/courses/messages?tab=mail&semester=115-1&item=1%3A7';
+  let shown, focused = false;
+  const push = notificationWorker(async (_title, options) => { shown = options; }, async () => [
+    {url:'https://example.test'+path,focus(){focused=true;}},
+  ], () => assert.fail('should focus existing tab'));
+  await push({title:'New mail',url:path});
+  assert.equal(shown.data.url,path);
+  await push.click(shown.data.url);
+  assert.equal(focused,true);
+});
+
+test('course-message clicks open their target; external and unexpected URLs fall back to home', async () => {
+  let shown;
+  const opened = [];
+  const push = notificationWorker(async (_title, options) => {shown=options;}, async () => [], async url => opened.push(url));
+  await push.click('/courses/messages?tab=announcements&item=1%3A7');
+  assert.equal(opened.pop(),'https://example.test/courses/messages?tab=announcements&item=1%3A7');
+  for (const url of ['https://evil.test/courses/messages','//evil.test/', 'javascript:alert(1)', '/logout', '/login', 'https://[bad']) {
+    await push({url});
+    assert.equal(shown.data.url,'/');
+    await push.click(url);
+    assert.equal(opened.pop(),'https://example.test/');
+  }
+});
 
 test('worker reports test receipt and notification creation only to notification settings tabs', async () => {
   const messages = [];

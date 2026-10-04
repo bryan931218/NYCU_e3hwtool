@@ -1642,6 +1642,7 @@ html[data-theme="dark"] #flatTable .assignment-new-badge {
   white-space: nowrap;
   padding-right: 3px;
 }
+.course-message-icon { display: inline-block; width: 17px; height: 17px; flex: none; background: currentColor; mask: url('/assets/shared/icons/inbox.svg') center / contain no-repeat; }
 .toolbar-counts strong {
   color: var(--fg);
   font-variant-numeric: tabular-nums;

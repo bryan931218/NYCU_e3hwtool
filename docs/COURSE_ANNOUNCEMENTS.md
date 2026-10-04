@@ -25,8 +25,9 @@ tracker's state; initial state is taken from the E3 inbox.
 
 Protocol/DOM reference: the original implementation of E3 dcpcmail integration
 in [NYCU portal_e3_helper](https://github.com/NYCU-Chung/portal_e3_helper/blob/main/content.js).
-Live authenticated E3 verification is still required for customized mailbox
-markup. Additional tests are in `backend/tests/test_course_mail.py`.
+The live authenticated inbox, empty current-course inbox and an already-read
+message's body selectors were verified on 2026-10-04. Additional tests are in
+`backend/tests/test_course_mail.py`.
 
 The assignment site's `/courses/announcements` page uses the current account's
 existing Moodle session. It does not access another account through `view_user`
@@ -55,7 +56,29 @@ Failed reads keep the unread state and expose an explicit retry action.
 Migration `0012_course_announcements` creates the account/semester cache table.
 Read status is local to this tracker, not Moodle's read-tracking state. Deleting
 an account also removes its announcement cache. No new environment variables or
-services are required. Announcement updates do not send browser or LINE pushes.
+services are required. The workbench has one course-message entry at
+`/courses/messages`; announcements and mail retain separate tabs, APIs, caches,
+and read markers. The former URLs remain compatible.
+
+## Opt-in Message Notifications
+
+Notification settings have independent `new_announcement` and `new_mail` switches,
+both off by default. Existing browser subscriptions and LINE bindings are reused.
+The bounded background worker checks only the account's current-semester courses.
+First successful synchronization per course/source establishes a baseline, even
+for an empty inbox. Failed courses never establish a baseline or erase old data.
+Only previously unseen IDs with a known timestamp within the last day trigger an
+alert; edits, historical semesters and old messages revealed later do not.
+
+Cache updates, seen IDs and outbox insertion commit atomically. Alert payloads
+are encrypted at rest and contain only the course name, subject and an own-account
+deep link, never the private body or sender. Delivery rechecks preferences and
+channel ownership. Disabling a channel, unlinking LINE or deleting a device/account
+prevents further delivery. Settings saves baseline existing cached messages.
+
+The live E3 empty inbox uses `.mail_list > .mail_item` containing
+`沒有可查看的郵件.` rather than a message link. This is a valid empty result,
+not a malformed mail row. Unknown pages and malformed mixed rows still fail closed.
 
 Tests: `backend/tests/test_course_announcements.py` and
 `frontend/tests/course-announcements.test.mjs`; run the normal backend and

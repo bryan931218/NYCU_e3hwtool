@@ -30,6 +30,9 @@ class CourseAnnouncementStorage:
     def _decode_message_payload(self, payload, username, semester):
         return json.loads(payload)
 
+    def _after_message_refresh(self, conn, username, user_id, semester, items, successful_courses):
+        self._observe_course_message_notifications(conn, username, user_id, 'announcements', semester, items, successful_courses)
+
     def _announcement_user(self, conn, username, *, write=False):
         if write and conn.dialect.name == 'sqlite':
             conn.exec_driver_sql('BEGIN IMMEDIATE')
@@ -90,6 +93,7 @@ class CourseAnnouncementStorage:
             merged.sort(key=lambda item: item.get('updated_ts') or 0, reverse=True)
             conn.execute(update(self.message_cache_table).where(*condition).values(payload=self._encode_message_payload(merged[:900], username, semester),
                 fetched_at=time.time() if successful_courses else row['fetched_at'], status='partial' if error and successful_courses else 'error' if error else 'success', error=error[:300]))
+            self._after_message_refresh(conn, username, user_id, semester, merged, successful_courses)
             return True
 
     def update_course_announcement(self, username, semester, key, *, content=None, read=None, expected_version=None):

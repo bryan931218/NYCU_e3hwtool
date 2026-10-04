@@ -1,3 +1,11 @@
+function notificationPath(value) {
+  try {
+    const url = new URL(value || '/', self.location.origin);
+    if (url.origin === self.location.origin && ['/', '/courses/messages'].includes(url.pathname)) return url.pathname + url.search;
+  } catch {}
+  return '/';
+}
+
 async function reportTestStatus(tag, status) {
   if (!/^test:[a-f0-9]{32}$/.test(tag)) return;
   const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -18,7 +26,7 @@ self.addEventListener("push", (event) => {
     try {
       await self.registration.showNotification(payload.title || "E3作業追蹤系統", {
         body: payload.body || "有新的作業提醒", tag: payload.tag || "e3-assignment",
-        data: { url: "/" }, renotify: false,
+        data: { url: notificationPath(payload.url) }, renotify: false,
       });
     } catch (error) {
       await reportTestStatus(payload.tag, "failed").catch(() => {});
@@ -30,7 +38,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil((async () => {
-    const url = new URL("/", self.location.origin).href;
+    const url = new URL(notificationPath(event.notification.data?.url), self.location.origin).href;
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of windows) {
       if (client.url === url) return client.focus();

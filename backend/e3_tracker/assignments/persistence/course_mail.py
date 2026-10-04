@@ -24,6 +24,7 @@ class CourseMailStorage(CourseAnnouncementStorage):
     message_cache_table = course_mail_cache
 
     def __init__(self, storage):
+        self._owner = storage
         self._engine, self._lock = storage._engine, storage._lock
         self._credential_cipher = storage._credential_cipher
 
@@ -32,3 +33,6 @@ class CourseMailStorage(CourseAnnouncementStorage):
 
     def _decode_message_payload(self, payload, username, semester):
         return json.loads(self._credential_cipher.decrypt(payload, f'course-mail:{username}:{semester}'))
+
+    def _after_message_refresh(self, conn, username, user_id, semester, items, successful_courses):
+        self._owner._observe_course_message_notifications(conn, username, user_id, 'mail', semester, items, successful_courses)

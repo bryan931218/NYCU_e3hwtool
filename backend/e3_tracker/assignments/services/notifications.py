@@ -6,7 +6,7 @@ import os
 import threading
 import time
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 
 import requests
 from e3_tracker.assignments.domain.notifications import (
@@ -38,6 +38,7 @@ class NotificationService:
         self.line_secret = os.getenv("E3_LINE_CHANNEL_SECRET", "").strip()
         self.line_bot_id = os.getenv("E3_LINE_BOT_BASIC_ID", "").strip()
         self.stop = threading.Event()
+        self.course_message_services = {}
 
     @property
     def browser_ready(self):
@@ -102,7 +103,8 @@ class NotificationService:
         public = {key: payload[key] for key in ("title", "body", "url")}
         public["tag"] = job["event_key"]
         if job["channel"] == "line":
-            text = f"{payload['title']}\n{payload['body']}\n{self.home_url}"
+            destination = urljoin(self.home_url.rstrip('/') + '/', payload['url'].lstrip('/'))
+            text = f"{payload['title']}\n{payload['body']}\n{destination}"
             self.line_request(
                 "push",
                 {"to": target, "messages": [{"type": "text", "text": text}]},
@@ -165,7 +167,13 @@ class NotificationService:
                     )
                     continue
 
-                if payload.get("custom_todo"):
+                if payload.get('kind') in {'new_announcement', 'new_mail'}:
+                    source = self.course_message_services.get(payload['message_kind'])
+                    cache = source.storage.load_course_announcements(username, payload['semester']) if source else {}
+                    if payload['semester'] != current_semester_key() or not any(item['key'] == payload['message_key'] for item in cache.get('items', [])):
+                        self.storage.finish_notification_job(job, 'cancelled', now=now)
+                        continue
+                elif payload.get("custom_todo"):
                     item = self.storage.get_custom_todo(
                         username, payload.get("custom_uid", "")
                     )
@@ -229,6 +237,7 @@ class NotificationService:
                         self.storage.notification_sync_error(username)
                     else:
                         save_cache(username, result, excel)
+                    self.refresh_course_messages(user, result)
             except Exception:
                 self.storage.notification_sync_error(username)
                 logger.warning("Assignment notification refresh failed")
@@ -242,6 +251,34 @@ class NotificationService:
             except Exception:
                 logger.warning("Assignment notification scan will retry")
         self.dispatch()
+
+    def baseline_course_messages(self, username):
+        semester = current_semester_key()
+        for kind, source in self.course_message_services.items():
+            items = source.storage.load_course_announcements(username, semester)['items']
+            self.storage.baseline_course_message_notifications(username, kind, semester, items)
+
+    def refresh_course_messages(self, user, result):
+        from flask import current_app
+        prefs = self.storage.notification_preferences(user['username'])['preferences']
+        annotate_result_semesters(result)
+        semester = current_semester_key()
+        courses = [course for course in result.get('courses', []) if course.get('semester_key') == semester][:30]
+        if not courses:
+            return
+        for kind, source in self.course_message_services.items():
+            preference = 'new_mail' if kind == 'mail' else 'new_announcement'
+            if not prefs.get(preference) or not source.slots.acquire(blocking=False):
+                continue
+            try:
+                attempt = source.storage.claim_course_announcement_refresh(user['username'], semester)
+                if attempt is None:
+                    source.slots.release()
+                    continue
+            except Exception:
+                source.slots.release()
+                raise
+            source._refresh(current_app._get_current_object(), user, semester, courses, attempt)
 
     def tick(self, fetch_assignments_for, save_cache):
         self.refresh_once(fetch_assignments_for, save_cache)

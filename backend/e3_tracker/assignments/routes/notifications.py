@@ -67,8 +67,12 @@ def register_notification_routes(app, storage, current_user, login_required, ser
     def notification_settings_api(username):
         if request.method == "POST":
             try:
-                prefs = validate_preferences(request.get_json(silent=True))
                 previous = storage.notification_preferences(username)
+                data = request.get_json(silent=True)
+                if isinstance(data, dict):
+                    # Older open settings tabs must not silently reset new preferences.
+                    data = {**{key: previous['preferences'][key] for key in ('new_announcement', 'new_mail')}, **data}
+                prefs = validate_preferences(data)
                 if prefs["browser_enabled"] and not service.browser_ready:
                     raise ValueError("瀏覽器推播服務尚未啟用")
                 if prefs["browser_enabled"] and not previous["browser_devices"]:
@@ -84,6 +88,7 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                 cache = storage.load_user_cache(username) or {}
                 if cache.get("result"):
                     service.observe(username, cache["result"], baseline=True)
+                service.baseline_course_messages(username)
                 reschedule_custom_todos(username)
             except ValueError as exc:
                 return {"ok": False, "message": str(exc)}, 400

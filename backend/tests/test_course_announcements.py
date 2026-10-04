@@ -145,8 +145,12 @@ class NewsAccountTests(unittest.TestCase):
 
     def test_page_navigation_and_guest_login_protection(self):
         html = self.client.get('/').get_data(as_text=True)
-        self.assertIn('/courses/announcements', html)
+        self.assertIn('/courses/messages', html)
         self.assertEqual(self.client.get('/courses/announcements').status_code, 200)
+        self.assertEqual(self.client.get('/courses/messages').status_code, 200)
+        mail = self.client.get('/courses/messages?tab=mail').get_data(as_text=True)
+        self.assertIn('"autoOpen": false', mail)
+        self.assertIn('/api/course-mail', mail)
         with self.client.session_transaction() as session: session.clear()
         self.assertEqual(self.client.get('/api/course-announcements').status_code, 302)
         self.login('訪客_demo', guest=True)
