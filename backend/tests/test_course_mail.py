@@ -200,5 +200,39 @@ class MailAccountTests(unittest.TestCase):
         self.assertEqual(before,migration_status(self.storage._engine))
         self.assertIn('0013_course_mail',str(before))
 
+    def test_unread_summary_combines_sources_and_updates_after_read_unread(self):
+        news_tests.NewsAccountTests.seed(self); self.seed_mail()
+        summary = self.client.get('/api/course-messages/unread?semester=115-1')
+        self.assertEqual(summary.status_code, 200)
+        self.assertIn('no-store', summary.headers['Cache-Control'])
+        self.assertEqual(summary.json, {'ok':True, 'semester':'115-1', 'announcements':1, 'mail':1, 'total':2})
+        self.storage.update_course_announcement('112550103','115-1','42:7',read=True)
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['total'], 1)
+        self.cache.update_course_announcement('112550103','115-1','42:7',read=True)
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['total'], 0)
+        self.cache.update_course_announcement('112550103','115-1','42:7',read=False)
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['mail'], 1)
+
+    def test_summary_is_own_account_only_and_contains_no_private_message_data(self):
+        self.seed_mail()
+        with patch.object(MoodleNewsClient, 'get') as fetch:
+            response = self.client.get('/api/course-messages/unread?semester=115-1')
+        fetch.assert_not_called()
+        self.assertNotIn(MAIL['title'], response.get_data(as_text=True))
+        self.assertNotIn('items', response.json)
+        self.login('Session-synthetic')
+        self.assertEqual(self.client.get('/api/course-messages/unread?username=112550103').json['total'], 0)
+        self.login('訪客_test', guest=True)
+        self.assertEqual(self.client.get('/api/course-messages/unread').status_code, 403)
+        self.assertNotIn('workspace-messages', self.client.get('/').get_data(as_text=True))
+        with self.client.session_transaction() as session: session.clear()
+        self.assertEqual(self.client.get('/api/course-messages/unread').status_code, 302)
+
+    def test_summary_respects_semester_and_current_owned_course_catalog(self):
+        self.seed_mail([{**MAIL, 'course_id':43, 'key':'43:7'}])
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['total'], 0)
+        self.assertEqual(self.client.get('/api/course-messages/unread?semester=114-2').json['total'], 0)
+        self.assertEqual(self.client.get('/api/course-messages/unread?semester=unknown').json['total'], 0)
+
 
 if __name__ == '__main__': unittest.main()

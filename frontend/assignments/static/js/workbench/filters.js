@@ -205,6 +205,7 @@ export function register(ctx) {
     ctx.updateCounts();
     ctx.renderIgnoredAssignmentsList();
     ctx.syncDeadlineCalendar?.();
+    ctx.refreshCourseMessageUnread?.();
   };
 
   ctx.persistPreferences = function persistPreferences(partial = {}) {

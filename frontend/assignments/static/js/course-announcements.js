@@ -1,5 +1,6 @@
 import { initialize as initializeCoursePicker } from './workbench/course-filter.js';
 import { createCourseColorRegistry } from './workbench/course-colors.js';
+import { createUnreadUpdater, updateUnreadIndicator } from './course-message-unread.js';
 
 export function filterAnnouncements(items, { course = '', query = '', unread = false } = {}) {
   const text = query.trim().toLocaleLowerCase('zh-Hant');
@@ -44,6 +45,10 @@ function initialize(config) {
   const mobile = matchMedia('(max-width: 680px)');
   const colors = createCourseColorRegistry();
   const state = { items: [], courses: [], running: false, active: '', loadError: '', requested: config.itemKey || '', attempted: new Set(), generation: 0, errors: new Map(), pending: new Set() };
+  const tabs = [...document.querySelectorAll('[data-message-kind]')];
+  const refreshUnread = createUnreadUpdater(config.unreadUrl, () => semester.value, counts => {
+    for (const tab of tabs) updateUnreadIndicator(tab, counts[tab.dataset.messageKind], tab.dataset.messageKind === 'mail' ? '課程信件' : '課程公告');
+  });
   const ctx = { courseFilter: course, courseAccent: colors.colorFor, coursePickerCourses: () => state.courses.map(item => ({
     dataset: { courseId: String(item.id), courseTitle: String(item.id) },
   })) };
@@ -98,6 +103,7 @@ function initialize(config) {
   const applyUpdate = incoming => {
     itemRevision++;
     state.items = state.items.map(item => item.key === incoming.key ? incoming : item);
+    void refreshUnread();
   };
   const returnToList = () => {
     workspace.dataset.reading = 'false';
@@ -293,6 +299,10 @@ function initialize(config) {
       state.loadError = data.error || '';
       state.running = data.running || (refreshing && state.running);
       syncCourses();
+      for (const tab of tabs) {
+        const url = new URL(tab.href); url.searchParams.set('semester', semester.value); tab.href = url.href;
+      }
+      void refreshUnread();
       byId('newsUpdated').textContent = data.fetched_at ? `上次更新 ${announcementDate(data.fetched_at)}` : '';
       message(data.error || (state.running ? `${noun}更新中…` : ''), !!data.error);
       loading = false;

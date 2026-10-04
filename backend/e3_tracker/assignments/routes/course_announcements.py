@@ -9,12 +9,26 @@ from e3_tracker.assignments.services.collector import annotate_result_semesters,
 from e3_tracker.assignments.services.course_announcements import AnnouncementSessionExpired
 
 
-def register_course_message_entry(app, login_required):
+def register_course_message_entry(app, login_required, current_user, load_cache, get_preferences, sources):
     @app.get('/courses/messages')
     @login_required
     def course_messages_page():
         endpoint = 'course_mail_page' if request.args.get('tab') == 'mail' else 'course_announcements_page'
         return app.view_functions[endpoint]()
+
+    @app.get('/api/course-messages/unread')
+    @login_required
+    def course_messages_unread():
+        user = current_user()
+        if user.get('is_guest'):
+            return {'ok': False, 'error': '訪客模式無法讀取課程訊息。'}, 403
+        result = (load_cache(user['username']) or {}).get('result') or {}
+        annotate_result_semesters(result, selected_keys=get_preferences(user['username']).get('semester_filter'))
+        semester = request.args.get('semester') or (result.get('selected_semesters') or [''])[0]
+        courses = {int(course['id']) for course in result.get('courses', []) if course.get('semester_key') == semester}
+        counts = {kind: sum(not item.get('read_at') for item in source.storage.load_course_announcements(user['username'], semester)['items']
+                           if item['course_id'] in courses) if courses else 0 for kind, source in sources.items()}
+        return {'ok': True, 'semester': semester, **counts, 'total': sum(counts.values())}, 200, {'Cache-Control': 'no-store'}
 
 
 def register_course_announcement_routes(app, storage, current_user, login_required, load_cache, get_preferences, service, record_activity, *, kind='announcements'):
@@ -54,7 +68,7 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
             item_key = ''
         return render_template('assignments/pages/course_announcements.html', user=user, message_noun=noun, message_kind=kind,
             semesters=semesters, selected_semester=selected,
-            announcement_config={'dataUrl': url_for(f'{prefix}_data'), 'refreshUrl': url_for(f'{prefix}_refresh'),
+            announcement_config={'dataUrl': url_for(f'{prefix}_data'), 'unreadUrl': url_for('course_messages_unread'), 'refreshUrl': url_for(f'{prefix}_refresh'),
                 'itemUrl': url_for(item_endpoint), 'kind': kind, 'noun': noun, 'itemKey': item_key, 'autoOpen': not is_mail, 'guest': bool(user.get('is_guest'))})
 
     @app.get(api_path, endpoint=f'{prefix}_data')

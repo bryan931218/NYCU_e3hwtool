@@ -48,6 +48,9 @@ h1 {
   width: 18px;
   height: 18px;
 }
+.message-indicator { display: inline-flex; align-items: center; justify-content: center; width: 8px; height: 8px; flex: none; margin-left: 6px; }
+.message-unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err-fg); }
+.message-unread-dot[hidden] { display: none; }
 .icon-button .dot {
   position: absolute;
   top: 6px;

@@ -24,8 +24,8 @@
         <div class="news-heading-actions"><a class="icon-button" href="{{ url_for('notification_settings_page') }}" title="通知設定" aria-label="通知設定"><span class="news-icon news-settings" aria-hidden="true"></span></a><button class="btn" type="button" id="newsRefresh"><span class="news-icon news-refresh-icon" aria-hidden="true"></span>更新{{ message_noun }}</button></div>
     </section>
     <nav class="news-tabs" aria-label="課程訊息分類">
-        <a href="{{ url_for('course_messages_page') }}"{% if message_kind == 'announcements' %} aria-current="page"{% endif %}>課程公告</a>
-        <a href="{{ url_for('course_messages_page', tab='mail') }}"{% if message_kind == 'mail' %} aria-current="page"{% endif %}>課程信件</a>
+        <a href="{{ url_for('course_messages_page') }}" data-message-kind="announcements"{% if message_kind == 'announcements' %} aria-current="page"{% endif %}>課程公告<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
+        <a href="{{ url_for('course_messages_page', tab='mail') }}" data-message-kind="mail"{% if message_kind == 'mail' %} aria-current="page"{% endif %}>課程信件<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
     </nav>
     <section class="news-toolbar" aria-label="{{ message_noun }}篩選">
         <select id="newsSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>

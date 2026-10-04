@@ -16,6 +16,7 @@ import * as startup from "./startup.js";
 import * as announcements from "./announcements.js";
 import * as profile from "./profile.js";
 import * as usageEvents from "./usage-events.js";
+import * as courseMessages from "./course-messages.js";
 
 const config = JSON.parse(
   document.getElementById("workbench-config").textContent,
@@ -40,6 +41,7 @@ const features = [
   announcements,
   profile,
   usageEvents,
+  courseMessages,
 ];
 
 // Register callbacks before initializing state and wiring DOM listeners.

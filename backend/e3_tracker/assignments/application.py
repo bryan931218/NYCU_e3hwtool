@@ -853,8 +853,9 @@ def register_assignment_site(
     app.extensions['e3_course_mail'] = course_mail
     register_course_announcement_routes(app, storage, current_user, login_required,
         load_cache_from_disk, get_user_preferences, course_mail, record_activity, kind='mail')
-    register_course_message_entry(app, login_required)
     notification_service.course_message_services = {'announcements': course_news, 'mail': course_mail}
+    register_course_message_entry(app, login_required, current_user, load_cache_from_disk, get_user_preferences,
+        notification_service.course_message_services)
     notification_service.start(app, fetch_assignments_for, set_assign_cache_for_user)
     session_identity_sync.start(app)
     return list_admin_view_options
