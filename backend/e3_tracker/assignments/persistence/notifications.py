@@ -13,6 +13,7 @@ from e3_tracker.assignments.domain.notifications import (
     active_assignments,
     digest,
     notification_payload,
+    course_message_notification_payload,
 )
 from .notification_schema import (
     notification_settings as settings,
@@ -408,8 +409,7 @@ class NotificationStorage:
                     continue
                 self._queue_notification(conn, uid, f'{preference}:{key}', targets, {
                     'kind': preference, 'message_kind': kind, 'message_key': item['key'], 'semester': semester,
-                    'title': '新課程信件' if kind == 'mail' else '新課程公告',
-                    'body': f"{str(item.get('course_title') or '')[:160]}\n{str(item.get('title') or '')[:160]}",
+                    **course_message_notification_payload(item, kind),
                     'url': '/courses/messages?' + urlencode({'tab':kind, 'semester':semester, 'item':item['key']}),
                 }, now, now + 86400)
             if marker not in known:

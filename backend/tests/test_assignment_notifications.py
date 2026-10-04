@@ -23,6 +23,8 @@ from e3_tracker.assignments.domain.notifications import (
     validate_preferences,
     validate_subscription,
     digest,
+    notification_payload,
+    course_message_notification_payload,
 )
 from e3_tracker.assignments.services.collector import current_semester_key
 from e3_tracker.assignments.persistence.notification_schema import (
@@ -47,6 +49,16 @@ def subscription(suffix="a"):
 
 
 class NotificationTests(unittest.TestCase):
+    def test_notification_copy_is_labeled_bounded_and_uses_taipei_time(self):
+        item = {'course_title':'  資料\n結構  ', 'title':' HW1\t第一章 ', 'due_ts':1791160200}
+        payload = notification_payload(item, 'due', 3)
+        self.assertEqual(payload['title'], 'E3｜作業到期提醒')
+        self.assertEqual(payload['body'], '課程：資料 結構\n作業：HW1 第一章\n截止：10/05（一）08:30')
+        self.assertEqual(notification_payload({'title':'HW2'}, 'new')['body'], '課程：未分類\n作業：HW2\n截止：未設定')
+        payload = course_message_notification_payload({'course_title':'a'*200, 'title':'b'*300}, 'announcements')
+        self.assertEqual(payload['title'], 'E3｜新課程公告')
+        self.assertEqual(payload['body'], '課程：'+'a'*99+'…\n標題：'+'b'*159+'…')
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.environment = patch.dict(

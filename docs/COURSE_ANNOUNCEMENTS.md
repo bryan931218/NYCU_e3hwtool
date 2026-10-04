@@ -60,11 +60,16 @@ services are required. The workbench has one course-message entry at
 `/courses/messages`; announcements and mail retain separate tabs, APIs, caches,
 and read markers. The former URLs remain compatible.
 
-The entry and source tabs show a red dot for unread cached messages in the
-selected semester. `/api/course-messages/unread` exposes counts only, scoped to
+The entry and source tabs show a red dot for new cached messages not yet seen
+at the message entry, independently of each item's read status. Entering the
+reader acknowledges both sources in the selected semester via the authenticated,
+CSRF-protected `POST /api/course-messages/seen`. Acknowledgement is stored per
+account in the existing cache payload (encrypted for mail), without a migration.
+Later new IDs restore the badge; refreshing, edits and manual unread changes do
+not. `/api/course-messages/unread` exposes read and unseen counts only, scoped to
 the signed-in account and its current course catalog. It never calls E3. The
 workbench polls this small summary once a minute while visible, and
-on semester changes or return from the reader; reading/unreading updates tab dots.
+on semester changes or return from the reader.
 
 ## Opt-in Message Notifications
 
@@ -77,7 +82,7 @@ Only previously unseen IDs with a known timestamp within the last day trigger an
 alert; edits, historical semesters and old messages revealed later do not.
 
 Cache updates, seen IDs and outbox insertion commit atomically. Alert payloads
-are encrypted at rest and contain only the course name, subject and an own-account
+are encrypted at rest and contain only the course name, subject, timestamp and an own-account
 deep link, never the private body or sender. Delivery rechecks preferences and
 channel ownership. Disabling a channel, unlinking LINE or deleting a device/account
 prevents further delivery. Settings saves baseline existing cached messages.

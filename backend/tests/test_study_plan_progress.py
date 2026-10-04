@@ -1510,7 +1510,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertEqual(delete_response.status_code, 200)
             self.assertEqual(storage.list_study_plan_video_markers(video_ids=[first_video["id"]]), [])
 
-            today = date.today()
+            today = _study_plan_business_date()
             next_monday = today - timedelta(days=today.weekday()) + timedelta(days=7)
             target_day = next_monday + timedelta(days=27)
             replan_response = client.post(

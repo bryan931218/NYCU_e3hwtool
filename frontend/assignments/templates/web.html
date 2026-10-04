@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/workbench.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-picker.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/deadline-calendar.css') }}">
+<script id="workbench-script" nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/workbench/index.js') }}"></script>
 </head>
 <body data-traffic-stats-url="{{ url_for('traffic_stats') }}" data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}" data-readonly-view="{{ 1 if is_admin_view else 0 }}" data-view-user="{{ viewed_username or '' }}">
 {% set server_now_ts = now_ts if now_ts is defined else none %}
@@ -45,6 +46,7 @@
 {% endif %}
 {% set selected_semester = selected_semesters|first if selected_semesters else '' %}
 {% set ignored_assignment_uids = preferences.ignored_assignment_uids if preferences.ignored_assignment_uids is defined else (preferences.ignored_overdue_uids if preferences.ignored_overdue_uids is defined else []) %}
+{% set initial_view = preferences.view_mode if preferences.view_mode in ['due', 'course', 'calendar'] else 'due' %}
 {% from 'assignments/components/assignments.html' import render_assignment_row with context %}
 <div class="loader-wrap" id="loader">
     <div class="loader-content">
@@ -271,7 +273,7 @@
 
         {% include 'assignments/components/deadline-calendar.html' %}
 
-        <section id="viewDue" class="assignment-workspace hidden">
+        <section id="viewDue" class="assignment-workspace{% if initial_view != 'due' %} hidden{% endif %}">
         <div class="table-shell">
         <div class="assignment-column-head" aria-hidden="true">
             <span>課程／作業名稱</span><span>截止時間</span><span>剩餘時間</span><span>繳交人數</span><span>狀態</span><span>操作</span>
@@ -304,7 +306,7 @@
         </div>
         </section>
 
-        <section id="viewCourse">
+        <section id="viewCourse"{% if initial_view != 'course' %} class="hidden"{% endif %}>
         {% for course in result.courses %}
             <section class="card course-card" data-course-id="{{ course.id }}" data-semester="{{ course.semester_key or 'other' }}" data-assignment-count="{{ course.assignments|length }}" data-course-title="{{ course.title }}">
             <div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
@@ -489,8 +491,6 @@
 </footer>
 
 {% include 'assignments/pages/web/config.html' %}
-<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='assignments/vendor/fullcalendar-6.1.21.min.js') }}"></script>
-<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/workbench/index.js') }}"></script>
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/traffic-stats.js') }}" defer></script>
 </body>
 </html>

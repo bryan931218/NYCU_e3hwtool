@@ -1,28 +1,17 @@
-/* Navigation stays browser-managed; unsupported browsers navigate normally. */
+/* Live content stays interactive; do not snapshot a whole page while its modules initialize. */
+@view-transition { navigation: none; }
+html { background-color: var(--bg); }
 @media (prefers-reduced-motion: no-preference) {
-  @view-transition { navigation: auto; }
-  ::view-transition { pointer-events: none; }
-  ::view-transition-group(root) { animation: none; }
-  ::view-transition-image-pair(root) { isolation: isolate; }
-  ::view-transition-old(root) {
-    animation: e3-page-leave 120ms ease-out both;
-    mix-blend-mode: normal;
-  }
-  ::view-transition-new(root) {
-    animation: e3-page-arrive 180ms cubic-bezier(.2, .7, .2, 1) both;
-    mix-blend-mode: normal;
-  }
+  body { animation: e3-page-arrive 120ms ease-out; }
   .mode-section.active { animation: e3-panel-arrive 170ms ease-out; }
 }
 
-@keyframes e3-page-leave { to { opacity: 0; } }
-@keyframes e3-page-arrive { from { opacity: 0; } to { opacity: 1; } }
+@keyframes e3-page-arrive { from { opacity: .82; } to { opacity: 1; } }
 @keyframes e3-panel-arrive {
   from { opacity: .72; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  @view-transition { navigation: none; }
-  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none; }
+  body { animation: none; }
 }

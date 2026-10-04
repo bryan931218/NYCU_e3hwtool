@@ -113,11 +113,29 @@ def active_assignments(result, semester_key, uid_for, ignored=()):
 
 
 def notification_payload(item, kind, days=None):
-    title = "新作業" if kind == "new" else f"作業到期提醒 · {days} 天前"
-    body = f"{str(item.get('course_title') or '')[:160]}\n{str(item.get('title') or '')[:160]}".strip()
+    title = "E3｜新作業" if kind == "new" else "E3｜作業到期提醒"
+    body = f"課程：{notification_text(item.get('course_title'), 100) or '未分類'}\n作業：{notification_text(item.get('title'), 160)}"
     if item.get("due_ts"):
-        due = datetime.fromtimestamp(int(item["due_ts"]), TAIPEI_TZ).strftime(
-            "%m/%d %H:%M"
-        )
-        body += f"\n截止：{due}"
+        body += f"\n截止：{notification_time(item['due_ts'])}"
+    else:
+        body += "\n截止：未設定"
     return {"title": title, "body": body, "url": "/"}
+
+
+def notification_text(value, limit):
+    value = ' '.join(str(value or '').split())
+    return value if len(value) <= limit else value[:limit - 1] + '…'
+
+
+def notification_time(timestamp):
+    date = datetime.fromtimestamp(int(timestamp), TAIPEI_TZ)
+    weekday = '一二三四五六日'[date.weekday()]
+    return f"{date:%m/%d}（{weekday}）{date:%H:%M}"
+
+
+def course_message_notification_payload(item, kind):
+    noun = '信件' if kind == 'mail' else '公告'
+    body = f"課程：{notification_text(item.get('course_title'), 100) or '未分類'}\n標題：{notification_text(item.get('title'), 160)}"
+    if item.get('updated_ts'):
+        body += f"\n時間：{notification_time(item['updated_ts'])}"
+    return {'title': f'E3｜新課程{noun}', 'body': body}

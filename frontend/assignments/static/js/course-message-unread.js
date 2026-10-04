@@ -3,8 +3,8 @@ export function updateUnreadIndicator(link, count, label) {
   if (!dot) return;
   const unread = Number.isFinite(count) && count > 0;
   dot.hidden = !unread;
-  link.setAttribute('aria-label', unread ? `${label}，有未讀訊息` : label);
-  link.title = unread ? `${label}：${count} 則未讀` : label;
+  link.setAttribute('aria-label', unread ? `${label}，有新訊息` : label);
+  link.title = unread ? `${label}：${count} 則新訊息` : label;
 }
 
 export function createUnreadUpdater(endpoint, getSemester, render, request = fetch) {

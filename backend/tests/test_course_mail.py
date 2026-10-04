@@ -205,7 +205,8 @@ class MailAccountTests(unittest.TestCase):
         summary = self.client.get('/api/course-messages/unread?semester=115-1')
         self.assertEqual(summary.status_code, 200)
         self.assertIn('no-store', summary.headers['Cache-Control'])
-        self.assertEqual(summary.json, {'ok':True, 'semester':'115-1', 'announcements':1, 'mail':1, 'total':2})
+        self.assertEqual(summary.json, {'ok':True, 'semester':'115-1', 'announcements':1, 'mail':1, 'total':2,
+                                       'unseen': {'announcements':1, 'mail':1, 'total':2}})
         self.storage.update_course_announcement('112550103','115-1','42:7',read=True)
         self.assertEqual(self.client.get('/api/course-messages/unread').json['total'], 1)
         self.cache.update_course_announcement('112550103','115-1','42:7',read=True)
@@ -233,6 +234,66 @@ class MailAccountTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/course-messages/unread').json['total'], 0)
         self.assertEqual(self.client.get('/api/course-messages/unread?semester=114-2').json['total'], 0)
         self.assertEqual(self.client.get('/api/course-messages/unread?semester=unknown').json['total'], 0)
+
+    def test_visiting_entry_clears_new_badge_without_marking_items_read(self):
+        news_tests.NewsAccountTests.seed(self); self.seed_mail()
+        self.assertEqual(self.client.post('/api/course-messages/seen', json={'semester':'115-1'}).status_code, 200)
+        summary = self.client.get('/api/course-messages/unread').json
+        self.assertEqual(summary['total'], 2)
+        self.assertEqual(summary['unseen']['total'], 0)
+        self.cache.update_course_announcement('112550103','115-1','42:7',read=True)
+        self.cache.update_course_announcement('112550103','115-1','42:7',read=False)
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['unseen']['total'], 0)
+        self.assertGreater(self.cache.load_course_announcements('112550103','115-1')['items'][0]['seen_at'], 0)
+        with self.storage._engine.connect() as conn:
+            payload = conn.execute(select(course_mail_cache.c.payload)).scalar_one()
+        self.assertTrue(payload.startswith('enc:v1:'))
+
+    def test_new_arrivals_restore_badge_but_refresh_edits_and_failed_courses_do_not(self):
+        self.seed_mail()
+        self.client.post('/api/course-messages/seen', json={'semester':'115-1'})
+        attempt = self.cache.claim_course_announcement_refresh('112550103', '115-1')
+        self.cache.finish_course_announcement_refresh('112550103', '115-1', attempt,
+            [{**MAIL, 'title':'Edited subject'}, {**MAIL, 'key':'42:8', 'id':'8', 'e3_read':True}], [42])
+        summary = self.client.get('/api/course-messages/unread').json
+        self.assertEqual(summary['unseen']['mail'], 1)
+        self.assertEqual(summary['mail'], 1)
+        # Partial refreshes preserve acknowledgement and unread state of old items.
+        attempt = self.cache.claim_course_announcement_refresh('112550103', '115-1', now=time.time()+120)
+        self.cache.finish_course_announcement_refresh('112550103', '115-1', attempt, [], [], 'failed')
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['unseen']['mail'], 1)
+        self.client.post('/api/course-messages/seen', json={'semester':'115-1'})
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['unseen']['total'], 0)
+
+    def test_legacy_read_messages_remain_seen_after_manual_unread(self):
+        self.seed_mail([{**MAIL, 'e3_read':True}])
+        items = self.cache.load_course_announcements('112550103', '115-1')['items']
+        items[0].pop('seen_at')
+        with self.storage._engine.begin() as conn:
+            conn.execute(course_mail_cache.update().values(payload=self.cache._encode_message_payload(items, '112550103', '115-1')))
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['unseen']['total'], 0)
+        self.client.post('/api/course-messages/seen', json={'semester':'115-1'})
+        self.cache.update_course_announcement('112550103', '115-1', '42:7', read=False)
+        self.assertEqual(self.client.get('/api/course-messages/unread').json['unseen']['total'], 0)
+
+    def test_acknowledgement_is_csrf_protected_and_cannot_touch_other_accounts_or_courses(self):
+        self.seed_mail([MAIL, {**MAIL, 'course_id':43, 'key':'43:8'}])
+        raw = self.app.test_client()
+        with raw.session_transaction() as session: session['session_token']='test-112550103'
+        self.assertEqual(raw.post('/api/course-messages/seen', json={'semester':'115-1'}).status_code, 400)
+        for payload in [[], {}, {'semester':[]}, {'semester':'unknown'}, {'semester':'114-2'}]:
+            self.assertEqual(self.client.post('/api/course-messages/seen', json=payload).status_code, 400)
+        self.login('Session-synthetic')
+        self.assertEqual(self.client.post('/api/course-messages/seen', json={'semester':'115-1','username':'112550103'}).status_code, 200)
+        self.assertEqual(self.cache.load_course_announcements('112550103','115-1')['items'][0]['seen_at'], 0)
+        self.login('112550103')
+        self.client.post('/api/course-messages/seen', json={'semester':'115-1'})
+        unrelated = next(item for item in self.cache.load_course_announcements('112550103','115-1')['items'] if item['course_id']==43)
+        self.assertEqual(unrelated['seen_at'], 0)
+        self.login('訪客_test', guest=True)
+        self.assertEqual(self.client.post('/api/course-messages/seen', json={'semester':'115-1'}).status_code, 403)
+        with self.client.session_transaction() as session: session.clear()
+        self.assertEqual(self.client.post('/api/course-messages/seen', json={'semester':'115-1'}).status_code, 302)
 
 
 if __name__ == '__main__': unittest.main()

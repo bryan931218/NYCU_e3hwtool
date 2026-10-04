@@ -172,3 +172,5 @@
   .calendar-task { animation: none; }
   .calendar-icon-button, .calendar-today { transition: none; }
 }
+#assignmentCalendar[aria-busy="true"] { min-height: 520px; }
+@media (max-width: 600px) { #assignmentCalendar[aria-busy="true"] { min-height: 350px; } }

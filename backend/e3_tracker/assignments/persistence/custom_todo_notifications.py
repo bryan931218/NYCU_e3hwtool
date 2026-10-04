@@ -2,19 +2,17 @@
 
 import json
 import time
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import insert, select, update
 
-from e3_tracker.assignments.domain.notifications import digest
+from e3_tracker.assignments.domain.notifications import digest, notification_text, notification_time
 from e3_tracker.assignments.persistence.notification_schema import (
     line_bindings as bindings,
     notification_jobs as jobs,
     notification_settings as settings,
     push_subscriptions as subscriptions,
 )
-from e3_tracker.platform.constants import TAIPEI_TZ
 
 
 class CustomTodoNotificationStorage:
@@ -72,7 +70,7 @@ class CustomTodoNotificationStorage:
             if due_ts <= now:
                 return 0
 
-            due_text = datetime.fromtimestamp(due_ts, TAIPEI_TZ).strftime("%m/%d %H:%M")
+            due_text = notification_time(due_ts)
             expires_at = float(due_ts)
             created = 0
 
@@ -134,8 +132,8 @@ class CustomTodoNotificationStorage:
 
                 for day, trigger_at in scheduled_thresholds:
                     payload = {
-                        "title": f"自訂待辦到期提醒 · {day} 天前",
-                        "body": f"{course[:160]}\n{title[:160]}\n截止：{due_text}",
+                        "title": "E3｜待辦到期提醒",
+                        "body": f"分類：{notification_text(course, 100)}\n待辦：{notification_text(title, 160)}\n截止：{due_text}",
                         "url": "/",
                         "kind": "due",
                         "custom_todo": True,

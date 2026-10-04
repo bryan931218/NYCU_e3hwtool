@@ -84,7 +84,8 @@ class CourseAnnouncementStorage:
             merged = [item for item in old.values() if item['course_id'] not in successful_courses]
             for item in items:
                 previous = old.get(item['key'], {})
-                saved = {**item, 'read_at': previous.get('read_at', time.time() if item.get('e3_read') else 0)}
+                saved = {**item, 'read_at': previous.get('read_at', time.time() if item.get('e3_read') else 0),
+                         'seen_at': previous.get('seen_at', previous.get('read_at', 0))}
                 if previous.get('updated_ts') == item.get('updated_ts') and previous.get('title') == item.get('title'):
                     for field in ('content', 'links'):
                         if field in previous:
@@ -95,6 +96,22 @@ class CourseAnnouncementStorage:
                 fetched_at=time.time() if successful_courses else row['fetched_at'], status='partial' if error and successful_courses else 'error' if error else 'success', error=error[:300]))
             self._after_message_refresh(conn, username, user_id, semester, merged, successful_courses)
             return True
+
+    def acknowledge_course_messages(self, username, semester, course_ids):
+        with self._lock, self._engine.begin() as conn:
+            user_id = self._announcement_user(conn, username, write=True)
+            condition = (self.message_cache_table.c.user_id == user_id, self.message_cache_table.c.semester_key == semester)
+            row = conn.execute(select(self.message_cache_table.c.payload).where(*condition)).first() if user_id else None
+            if not row:
+                return
+            items = self._decode_message_payload(row.payload, username, semester)
+            changed = False
+            for item in items:
+                if item['course_id'] in course_ids and not item.get('seen_at'):
+                    item['seen_at'] = time.time()
+                    changed = True
+            if changed:
+                conn.execute(update(self.message_cache_table).where(*condition).values(payload=self._encode_message_payload(items, username, semester)))
 
     def update_course_announcement(self, username, semester, key, *, content=None, read=None, expected_version=None):
         with self._lock, self._engine.begin() as conn:
@@ -112,6 +129,7 @@ class CourseAnnouncementStorage:
             if content is not None:
                 item.update(content)
             if read is not None:
+                item.setdefault('seen_at', item.get('read_at', 0))
                 item['read_at'] = time.time() if read else 0
             conn.execute(update(self.message_cache_table).where(*condition).values(payload=self._encode_message_payload(items, username, semester)))
             return item

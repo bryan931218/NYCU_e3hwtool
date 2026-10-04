@@ -23,7 +23,10 @@ def register_frontend_assets(app):
         owner, separator, asset = filename.partition("/")
         if not separator or owner not in FRONTEND_OWNERS:
             abort(404)
-        return send_from_directory(FRONTEND_ROOT / owner / "static", asset, max_age=0)
+        response = send_from_directory(FRONTEND_ROOT / owner / "static", asset, max_age=0)
+        # Keep a cached copy, but validate its ETag on each use so deployments stay fresh.
+        response.headers["Cache-Control"] = "public, no-cache, max-age=0, must-revalidate"
+        return response
 
     app.add_url_rule("/assets/<path:filename>", "frontend_asset", frontend_asset)
 

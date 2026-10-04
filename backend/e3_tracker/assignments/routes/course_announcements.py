@@ -10,6 +10,13 @@ from e3_tracker.assignments.services.course_announcements import AnnouncementSes
 
 
 def register_course_message_entry(app, login_required, current_user, load_cache, get_preferences, sources):
+    def scope(user, requested):
+        result = (load_cache(user['username']) or {}).get('result') or {}
+        annotate_result_semesters(result, selected_keys=get_preferences(user['username']).get('semester_filter'))
+        semester = requested or (result.get('selected_semesters') or [''])[0]
+        courses = {int(course['id']) for course in result.get('courses', []) if course.get('semester_key') == semester}
+        return semester, courses
+
     @app.get('/courses/messages')
     @login_required
     def course_messages_page():
@@ -22,13 +29,29 @@ def register_course_message_entry(app, login_required, current_user, load_cache,
         user = current_user()
         if user.get('is_guest'):
             return {'ok': False, 'error': '訪客模式無法讀取課程訊息。'}, 403
-        result = (load_cache(user['username']) or {}).get('result') or {}
-        annotate_result_semesters(result, selected_keys=get_preferences(user['username']).get('semester_filter'))
-        semester = request.args.get('semester') or (result.get('selected_semesters') or [''])[0]
-        courses = {int(course['id']) for course in result.get('courses', []) if course.get('semester_key') == semester}
-        counts = {kind: sum(not item.get('read_at') for item in source.storage.load_course_announcements(user['username'], semester)['items']
-                           if item['course_id'] in courses) if courses else 0 for kind, source in sources.items()}
-        return {'ok': True, 'semester': semester, **counts, 'total': sum(counts.values())}, 200, {'Cache-Control': 'no-store'}
+        semester, courses = scope(user, request.args.get('semester'))
+        items = {kind: [item for item in source.storage.load_course_announcements(user['username'], semester)['items']
+                       if item['course_id'] in courses] if courses else [] for kind, source in sources.items()}
+        counts = {kind: sum(not item.get('read_at') for item in entries) for kind, entries in items.items()}
+        unseen = {kind: sum(not item.get('seen_at', item.get('read_at', 0)) for item in entries) for kind, entries in items.items()}
+        return {'ok': True, 'semester': semester, **counts, 'total': sum(counts.values()),
+                'unseen': {**unseen, 'total': sum(unseen.values())}}, 200, {'Cache-Control': 'no-store'}
+
+    @app.post('/api/course-messages/seen')
+    @login_required
+    def course_messages_seen():
+        user = current_user()
+        if user.get('is_guest'):
+            return {'ok': False, 'error': '訪客模式無法讀取課程訊息。'}, 403
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get('semester'), str) or len(payload['semester']) > 16:
+            return {'ok': False, 'error': '請選擇學期。'}, 400
+        semester, courses = scope(user, payload['semester'])
+        if not courses:
+            return {'ok': False, 'error': '找不到該學期課程。'}, 400
+        for source in sources.values():
+            source.storage.acknowledge_course_messages(user['username'], semester, courses)
+        return {'ok': True}, 200, {'Cache-Control': 'no-store'}
 
 
 def register_course_announcement_routes(app, storage, current_user, login_required, load_cache, get_preferences, service, record_activity, *, kind='announcements'):
@@ -68,7 +91,7 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
             item_key = ''
         return render_template('assignments/pages/course_announcements.html', user=user, message_noun=noun, message_kind=kind,
             semesters=semesters, selected_semester=selected,
-            announcement_config={'dataUrl': url_for(f'{prefix}_data'), 'unreadUrl': url_for('course_messages_unread'), 'refreshUrl': url_for(f'{prefix}_refresh'),
+            announcement_config={'dataUrl': url_for(f'{prefix}_data'), 'unreadUrl': url_for('course_messages_unread'), 'seenUrl': url_for('course_messages_seen'), 'refreshUrl': url_for(f'{prefix}_refresh'),
                 'itemUrl': url_for(item_endpoint), 'kind': kind, 'noun': noun, 'itemKey': item_key, 'autoOpen': not is_mail, 'guest': bool(user.get('is_guest'))})
 
     @app.get(api_path, endpoint=f'{prefix}_data')

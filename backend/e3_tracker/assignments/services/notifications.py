@@ -104,7 +104,7 @@ class NotificationService:
         public["tag"] = job["event_key"]
         if job["channel"] == "line":
             destination = urljoin(self.home_url.rstrip('/') + '/', payload['url'].lstrip('/'))
-            text = f"{payload['title']}\n{payload['body']}\n{destination}"
+            text = f"{payload['title']}\n\n{payload['body']}\n\n查看詳情\n{destination}"
             self.line_request(
                 "push",
                 {"to": target, "messages": [{"type": "text", "text": text}]},

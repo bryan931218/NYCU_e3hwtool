@@ -4,7 +4,7 @@ export function register(ctx) {
   const entry = document.querySelector('.workspace-messages');
   if (!entry?.dataset.unreadUrl) return;
   const semester = () => ctx.currentSemesterFilters?.[0] || '';
-  const refresh = createUnreadUpdater(entry.dataset.unreadUrl, semester, counts => updateUnreadIndicator(entry, counts.total, '課程訊息'));
+  const refresh = createUnreadUpdater(entry.dataset.unreadUrl, semester, counts => updateUnreadIndicator(entry, counts.unseen?.total || 0, '課程訊息'));
   let previous;
   ctx.refreshCourseMessageUnread = (force = false) => {
     if (document.hidden || (!force && previous === semester())) return;

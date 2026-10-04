@@ -1,5 +1,6 @@
 """Calendar is a shared-data view, not a new authorization or storage boundary."""
 import os
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -66,12 +67,23 @@ class AssignmentCalendarTests(unittest.TestCase):
         page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
         for identifier in ("viewCalendarBtn", "viewCalendar", "assignmentCalendar", "calendarDayList", "calendarAddTask", "calendarCourseLegend", "calendarMonthPicker", "calendarNextDeadline"):
             self.assertIsNotNone(page.select_one(f"#{identifier}"))
-        script = page.select_one("script[src*='fullcalendar-6.1.21.min.js']")
+        script = page.select_one("head #workbench-script")
         self.assertTrue(script.get("nonce"))
-        for url in (script["src"], "/assets/assignments/css/deadline-calendar.css", "/assets/assignments/js/workbench/deadline-calendar.js", "/assets/assignments/vendor/lucide-calendar/plus.svg"):
+        self.assertEqual(script.get("type"), "module")
+        self.assertIsNone(page.select_one("script[src*='fullcalendar-6.1.21.min.js']"))
+        config = json.loads(page.select_one("#workbench-config").string)
+        for url in (script["src"], config["calendarScriptUrl"], "/assets/assignments/css/deadline-calendar.css", "/assets/assignments/js/workbench/deadline-calendar.js", "/assets/assignments/vendor/lucide-calendar/plus.svg"):
             asset = self.client.get(url)
             self.assertEqual(asset.status_code, 200, url)
             asset.close()
+
+    def test_initial_html_displays_the_saved_view_without_waiting_for_javascript(self):
+        for mode, visible_id in (("due", "viewDue"), ("course", "viewCourse"), ("calendar", "viewCalendar")):
+            with self.subTest(mode=mode):
+                self.client.post("/preferences", json={"viewMode": mode})
+                page = BeautifulSoup(self.client.get("/").get_data(as_text=True), "html.parser")
+                for identifier in ("viewDue", "viewCourse", "viewCalendar"):
+                    self.assertEqual("hidden" not in page.select_one(f"#{identifier}").get("class", []), identifier == visible_id)
 
     def test_calendar_does_not_remove_csrf_or_anonymous_preference_checks(self):
         self.assertEqual(self.app.test_client().post("/preferences", json={"viewMode": "calendar"}).status_code, 400)

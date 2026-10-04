@@ -73,7 +73,8 @@ class CourseMessageNotificationTests(unittest.TestCase):
             self.assertNotIn('Private subject', job['payload'])
             username, prefs, payload, target = self.storage.notification_delivery(job)
             self.assertEqual(username, 'student')
-            self.assertEqual(payload['body'], 'Test course\nPrivate subject 7')
+            self.assertEqual(payload['title'], 'E3｜新課程信件')
+            self.assertTrue(payload['body'].startswith('課程：Test course\n標題：Private subject 7\n時間：'))
             self.assertIn('tab=mail', payload['url']); self.assertIn('item=1%3A7', payload['url'])
             self.assertNotIn('Private full body', json.dumps(payload))
             self.assertNotIn('Private sender', json.dumps(payload))
@@ -95,6 +96,20 @@ class CourseMessageNotificationTests(unittest.TestCase):
         self.assertEqual(len(cache['items']), 1)
         self.refresh('mail', [self.item(), self.item(8)])
         self.assertEqual(len(self.job_rows()), 2)
+
+    def test_browser_receives_same_formatted_copy_without_private_body_or_sender(self):
+        self.enable(); self.refresh('announcements', []); self.refresh('announcements', [self.item()])
+        job = next(row for row in self.job_rows() if row['channel']=='browser')
+        payload = self.storage.notification_delivery(job)[2]
+        with patch('pywebpush.webpush') as send:
+            self.service.deliver(job, payload, self.sub)
+        public = json.loads(send.call_args.kwargs['data'])
+        self.assertEqual(public['title'], 'E3｜新課程公告')
+        self.assertEqual(public['body'], payload['body'])
+        self.assertEqual(public['url'], payload['url'])
+        self.assertEqual(public['tag'], job['event_key'])
+        self.assertNotIn('Private full body', json.dumps(public))
+        self.assertNotIn('Private sender', json.dumps(public))
 
     def test_disabled_pref_old_unknown_future_dates_and_archive_never_alert(self):
         self.enable(new_mail=False); self.refresh('mail', [])
@@ -153,6 +168,8 @@ class CourseMessageNotificationTests(unittest.TestCase):
             self.service.deliver(job, payload, 'synthetic-line-target')
         text = send.call_args.args[1]['messages'][0]['text']
         self.assertIn('/courses/messages?tab=mail', text)
+        self.assertIn('E3｜新課程信件\n\n課程：Test course', text)
+        self.assertIn('\n\n查看詳情\n', text)
         self.assertNotIn('Private full body', text)
 
     def test_background_sync_only_opted_in_own_current_courses_and_shared_capacity(self):

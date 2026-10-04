@@ -151,8 +151,10 @@ def configure_http_security(app, storage):
         if production or request.is_secure:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
         # Even images/attachments returned from authenticated pages must not be public-cacheable.
-        if session.get("session_token") or request.path.startswith(
-            ("/admin/", "/study-progress/notes/")
+        public_asset = request.endpoint == "frontend_asset" and response.status_code in {200, 304}
+        if not public_asset and (
+            session.get("session_token")
+            or request.path.startswith(("/admin/", "/study-progress/notes/"))
         ):
             response.headers["Cache-Control"] = "private, no-store, max-age=0"
         return response

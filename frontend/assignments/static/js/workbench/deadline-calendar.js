@@ -6,6 +6,29 @@ const partsFormatter = new Intl.DateTimeFormat("en-CA", {
   hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
 });
 
+let libraryRequest;
+export function loadCalendarLibrary(url) {
+  if (window.FullCalendar) return Promise.resolve(window.FullCalendar);
+  if (!libraryRequest) {
+    libraryRequest = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = url;
+      script.async = true;
+      script.nonce = document.getElementById('workbench-script')?.nonce || '';
+      const fail = () => { clearTimeout(timeout); script.remove(); reject(new Error('Calendar library unavailable')); };
+      const timeout = setTimeout(fail, 15000);
+      script.onload = () => {
+        if (!window.FullCalendar) { fail(); return; }
+        clearTimeout(timeout);
+        resolve(window.FullCalendar);
+      };
+      script.onerror = fail;
+      document.head.append(script);
+    }).catch(error => { libraryRequest = null; throw error; });
+  }
+  return libraryRequest;
+}
+
 export function taipeiDeadline(ts) {
   const seconds = Number(ts);
   if (!Number.isFinite(seconds) || seconds <= 0 || seconds >= 9999999999) return null;
@@ -236,13 +259,37 @@ export function register(ctx) {
     if (ctx.currentViewMode !== "calendar") return;
     const root = document.getElementById("assignmentCalendar");
     if (!root) return;
+    if (!window.FullCalendar) {
+      if (ctx.calendarLoading) return;
+      ctx.calendarLoading = true;
+      root.setAttribute('aria-busy', 'true');
+      document.getElementById('calendarUnavailable').hidden = true;
+      const controls = ['calendarPrevious', 'calendarNext', 'calendarToday', 'calendarMonthPicker'];
+      const setLoading = loading => controls.forEach(id => { const control = document.getElementById(id); if (control) control.disabled = loading; });
+      setLoading(true);
+      loadCalendarLibrary(ctx.config.calendarScriptUrl).then(() => {
+        ctx.calendarLoading = false;
+        root.removeAttribute('aria-busy');
+        setLoading(false);
+        ctx.syncDeadlineCalendar();
+      }, () => {
+        ctx.calendarLoading = false;
+        root.removeAttribute('aria-busy');
+        setLoading(false);
+        if (ctx.currentViewMode === 'calendar') document.getElementById('calendarUnavailable').hidden = false;
+      });
+      return;
+    }
     ctx.deadlineAssignments = calendarAssignments(document.querySelectorAll("#flatTable tbody tr[data-uid]"));
+    const events = ctx.deadlineAssignments.filter((item) => item.deadline).map((item) => ({
+      // A deadline is a point, not an hour-long event spilling into tomorrow.
+      id: item.uid, title: item.title, start: item.deadline.day, allDay: true,
+      classNames: [`calendar-event-${item.status}`],
+      extendedProps: { course: item.course, courseKey: item.courseKey, day: item.deadline.day, time: item.deadline.time, status: item.status, deadlineTs: item.dueTs },
+    }));
     if (!ctx.deadlineCalendar) {
-      if (!window.FullCalendar) {
-        document.getElementById("calendarUnavailable").hidden = false;
-        return;
-      }
       ctx.deadlineCalendar = new window.FullCalendar.Calendar(root, {
+        events,
         initialView: "dayGridMonth",
         initialDate: ctx.calendarSelectedDay,
         now: () => taipeiDeadline(Date.now() / 1000).iso,
@@ -322,19 +369,12 @@ export function register(ctx) {
         },
       });
       ctx.deadlineCalendar.render();
+    } else {
+      ctx.deadlineCalendar.batchRendering(() => {
+        ctx.deadlineCalendar.getEventSources().forEach((source) => source.remove());
+        ctx.deadlineCalendar.addEventSource(events);
+      });
     }
-    const events = ctx.deadlineAssignments.filter((item) => item.deadline).map((item) => ({
-      // A deadline is a point, not an hour-long event spilling into tomorrow.
-      id: item.uid, title: item.title, start: item.deadline.day, allDay: true,
-      classNames: [`calendar-event-${item.status}`],
-      extendedProps: { course: item.course, courseKey: item.courseKey, day: item.deadline.day, time: item.deadline.time, status: item.status, deadlineTs: item.dueTs },
-    }));
-    ctx.deadlineCalendar.batchRendering(() => {
-      ctx.deadlineCalendar.getEventSources().forEach((source) => source.remove());
-      ctx.deadlineCalendar.addEventSource(events);
-    });
-    ctx.deadlineCalendar.setOption("height", ctx.calendarHeight());
-    ctx.deadlineCalendar.updateSize();
     const undatedCount = ctx.deadlineAssignments.length - events.length;
     document.getElementById("calendarUndated").hidden = undatedCount === 0;
     document.getElementById("calendarUndatedCount").textContent = String(undatedCount);

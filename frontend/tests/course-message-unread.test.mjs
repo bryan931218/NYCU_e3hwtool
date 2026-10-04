@@ -8,8 +8,8 @@ test('unread indicator is red only for positive counts and has an accessible lab
   const link = {querySelector:()=>dot, setAttribute:(key,value)=>{attrs[key]=value;}};
   updateUnreadIndicator(link, 2, '課程訊息');
   assert.equal(dot.hidden,false);
-  assert.equal(attrs['aria-label'],'課程訊息，有未讀訊息');
-  assert.equal(link.title,'課程訊息：2 則未讀');
+  assert.equal(attrs['aria-label'],'課程訊息，有新訊息');
+  assert.equal(link.title,'課程訊息：2 則新訊息');
   for(const count of [0, -1, undefined, NaN]) {
     updateUnreadIndicator(link,count,'課程訊息');
     assert.equal(dot.hidden,true);

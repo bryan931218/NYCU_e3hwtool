@@ -48,7 +48,7 @@ function initialize(config) {
   const state = { items: [], courses: [], running: false, active: '', loadError: '', requested: config.itemKey || '', attempted: new Set(), generation: 0, errors: new Map(), pending: new Set() };
   const tabs = [...document.querySelectorAll('[data-message-kind]')];
   const refreshUnread = createUnreadUpdater(config.unreadUrl, () => semester.value, counts => {
-    for (const tab of tabs) updateUnreadIndicator(tab, counts[tab.dataset.messageKind], tab.dataset.messageKind === 'mail' ? '課程信件' : '課程公告');
+    for (const tab of tabs) updateUnreadIndicator(tab, counts.unseen?.[tab.dataset.messageKind] || 0, tab.dataset.messageKind === 'mail' ? '課程信件' : '課程公告');
   });
   const ctx = { courseFilter: course, courseAccent: colors.colorFor, coursePickerCourses: () => state.courses.map(item => ({
     dataset: { courseId: String(item.id), courseTitle: String(item.id) },
@@ -58,6 +58,8 @@ function initialize(config) {
   let loading = false;
   let refreshing = false;
   let itemRevision = 0;
+  let acknowledgedGeneration = -1;
+  let acknowledgingGeneration = -1;
   initializeCoursePicker(ctx);
 
   const element = (tag, className, text) => {
@@ -99,6 +101,20 @@ function initialize(config) {
     return result;
   };
   const post = (url, payload) => fetchJson(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+  const acknowledgeEntry = async () => {
+    const generation = state.generation;
+    if (document.hidden || !config.seenUrl || acknowledgedGeneration === generation || acknowledgingGeneration === generation) return;
+    acknowledgingGeneration = generation;
+    try {
+      await post(config.seenUrl, {semester: semester.value});
+      if (generation === state.generation) {
+        acknowledgedGeneration = generation;
+        void refreshUnread();
+      }
+    } catch {
+      // Leave the badge intact if acknowledgement failed; retry on the next load.
+    } finally { if (acknowledgingGeneration === generation) acknowledgingGeneration = -1; }
+  };
   const activeItem = () => state.items.find(item => item.key === state.active);
   const requestKey = key => `${state.generation}:${key}`;
   const applyUpdate = incoming => {
@@ -306,7 +322,6 @@ function initialize(config) {
       for (const tab of tabs) {
         const url = new URL(tab.href); url.searchParams.set('semester', semester.value); tab.href = url.href;
       }
-      void refreshUnread();
       byId('newsUpdated').textContent = data.fetched_at ? `上次更新 ${announcementDate(data.fetched_at)}` : '';
       message(data.error || (state.running ? `${noun}更新中…` : ''), !!data.error);
       loading = false;
@@ -315,6 +330,7 @@ function initialize(config) {
         const key = state.requested; state.requested = ''; void openItem(key);
       }
       schedule();
+      if (acknowledgedGeneration === generation) void refreshUnread(); else void acknowledgeEntry();
       if (auto && !refreshing && data.stale && !data.running && !state.attempted.has(semester.value)) {
         state.attempted.add(semester.value);
         await refresh();
@@ -356,6 +372,9 @@ function initialize(config) {
   search.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => render(true), 150); });
   byId('newsSearchForm').addEventListener('submit', event => { event.preventDefault(); clearTimeout(searchTimer); render(true); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(pollTimer); else void load(false); });
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) { acknowledgedGeneration = -1; void load(false); }
+  });
   byId('newsTheme').addEventListener('click', () => {
     const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = theme;

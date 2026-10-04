@@ -113,6 +113,47 @@ class SecurityTests(unittest.TestCase):
             400,
         )
 
+    def test_public_assets_revalidate_without_caching_authenticated_data(self):
+        path = "/assets/assignments/vendor/fullcalendar-6.1.21.min.js"
+        for authenticated in (False, True):
+            with self.subTest(authenticated=authenticated):
+                client = self.app.test_client()
+                if authenticated:
+                    self.login(client=client, token="asset-cache-test")
+                asset = client.get(path)
+                self.assertEqual(asset.status_code, 200)
+                self.assertIn("public", asset.headers["Cache-Control"])
+                self.assertIn("no-cache", asset.headers["Cache-Control"])
+                self.assertIn("must-revalidate", asset.headers["Cache-Control"])
+                self.assertNotIn("no-store", asset.headers["Cache-Control"])
+                etag = asset.headers["ETag"]
+                asset.close()
+                unchanged = client.get(path, headers={"If-None-Match": etag})
+                self.assertEqual(unchanged.status_code, 304)
+                self.assertIn("public", unchanged.headers["Cache-Control"])
+                unchanged.close()
+                for private_path in ("/login", "/api/course-messages/unread", "/assets/assignments/../templates/web.html"):
+                    response = client.get(private_path)
+                    self.assertIn("no-store", response.headers["Cache-Control"])
+                    self.assertNotIn("public", response.headers["Cache-Control"])
+
+
+    def test_changed_public_asset_does_not_reuse_an_old_etag(self):
+        with tempfile.TemporaryDirectory() as directory, patch("e3_tracker.platform.assets.FRONTEND_ROOT", Path(directory)):
+            asset = Path(directory) / "assignments/static/js/fixture.js"
+            asset.parent.mkdir(parents=True)
+            asset.write_text("const version = 1;", encoding="utf-8")
+            self.login()
+            first = self.client.get("/assets/assignments/js/fixture.js")
+            etag = first.headers["ETag"]
+            first.close()
+            asset.write_text("const version = 'new-release';", encoding="utf-8")
+            updated = self.client.get("/assets/assignments/js/fixture.js", headers={"If-None-Match": etag})
+            self.assertEqual(updated.status_code, 200)
+            self.assertNotEqual(updated.headers["ETag"], etag)
+            self.assertIn(b"new-release", updated.data)
+            updated.close()
+
     def test_csrf_is_bound_to_the_browser_and_valid_guest_login_works(self):
         other = self.app.test_client()
         foreign_token = self.token(other)

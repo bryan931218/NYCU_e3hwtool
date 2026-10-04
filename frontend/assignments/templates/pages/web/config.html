@@ -5,6 +5,7 @@
     'cacheUrl': url_for('api_cache', view_user=viewed_username) if is_admin_view else url_for('api_cache'),
     'eventUrl': url_for('ui_event'),
     'assignmentsUrl': url_for('api_assignments'),
+    'calendarScriptUrl': url_for('frontend_asset', filename='assignments/vendor/fullcalendar-6.1.21.min.js'),
     'guest': guest_mode|default(false),
     'announcementVersion': announcement_version|default('', true),
     'statsVersion': stats_version|default(0),
