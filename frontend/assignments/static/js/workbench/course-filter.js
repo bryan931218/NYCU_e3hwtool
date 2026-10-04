@@ -80,7 +80,8 @@ export function initialize(ctx) {
     const entries = Array.from(select.options);
     const next = JSON.stringify(entries.map(option => [option.value, option.textContent]));
     if (next !== signature) {
-      const cards = Array.from(document.querySelectorAll("#viewCourse .course-card"));
+      const focusedValue = list.contains(document.activeElement) ? document.activeElement.dataset.value : undefined;
+      const cards = ctx.coursePickerCourses?.() || Array.from(document.querySelectorAll("#viewCourse .course-card"));
       const nodes = entries.map(option => {
         const button = document.createElement("button");
         button.type = "button";
@@ -100,6 +101,9 @@ export function initialize(ctx) {
       });
       list.replaceChildren(...nodes);
       signature = next;
+      if (isOpen() && focusedValue !== undefined) {
+        (nodes.find(node => node.dataset.value === focusedValue) || nodes[0])?.focus({preventScroll: true});
+      }
     }
     const current = entries.find(option => option.value === select.value);
     label.textContent = current?.textContent || "全部課程";

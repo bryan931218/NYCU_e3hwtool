@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/workbench.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-picker.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/deadline-calendar.css') }}">
 </head>
 <body data-traffic-stats-url="{{ url_for('traffic_stats') }}" data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}" data-readonly-view="{{ 1 if is_admin_view else 0 }}" data-view-user="{{ viewed_username or '' }}">
@@ -60,6 +61,7 @@
         <h1>E3作業追蹤系統</h1>
     </div>
     <div class="header-actions">
+        {% if user and not guest_mode and not is_admin_view %}<a class="btn" href="{{ url_for('course_announcements_page') }}">課程公告</a>{% endif %}
         {% if user %}
         <span class="user-meta">
             <span id="userAvatar" class="user-avatar" aria-hidden="true" data-avatar-length="{{ user.surname|length if user.surname else 0 }}"{% if not guest_mode %} data-profile-url="{{ url_for('user_profile') }}"{% endif %}>

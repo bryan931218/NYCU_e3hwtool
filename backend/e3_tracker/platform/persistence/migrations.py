@@ -109,6 +109,11 @@ def _assignment_memberships(conn):
     migrate_memberships(conn)
 
 
+def _course_announcements(conn):
+    from e3_tracker.assignments.persistence.course_announcements import course_announcement_cache
+    course_announcement_cache.create(conn, checkfirst=True)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -121,6 +126,7 @@ MIGRATIONS = (
     ("0009_custom_todos", _custom_todos),
     ("0010_assignment_usage", _assignment_usage),
     ("0011_assignment_memberships", _assignment_memberships),
+    ("0012_course_announcements", _course_announcements),
 )
 
 

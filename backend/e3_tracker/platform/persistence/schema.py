@@ -2,6 +2,7 @@
 
 from .metadata import metadata
 from e3_tracker.assignments.persistence.membership import assignment_memberships
+from e3_tracker.assignments.persistence.course_announcements import course_announcement_cache
 from e3_tracker.assignments.persistence.schema import (
     user_preferences_table,
     courses_table,

@@ -1,0 +1,12 @@
+.course-picker { flex: none; min-width: 0; }
+.course-picker-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 190px; padding-right: 12px; }
+.course-picker-toggle[hidden], .course-filter[hidden] { display: none; }
+#courseFilterLabel { min-width: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.course-picker-chevron { width: 16px; height: 16px; flex: none; background: currentColor; mask: url('/assets/assignments/vendor/lucide-calendar/chevron-right.svg') center / contain no-repeat; transform: rotate(90deg); }
+.course-picker-toggle[aria-expanded="true"] { border-color: var(--primary); }
+.course-options { position: fixed; margin: 0; padding: 5px; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--fg); box-shadow: var(--shadow-sm); overflow-y: auto; overscroll-behavior: contain; }
+.course-option { display: flex; align-items: start; gap: 10px; width: 100%; padding: 11px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--fg); font: inherit; font-size: 13px; line-height: 1.5; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.course-option[aria-selected="true"] { background: var(--card-2); color: var(--primary); font-weight: 600; }
+.course-option:hover, .course-option:focus-visible { background: var(--card-2); outline: 2px solid var(--primary); outline-offset: -2px; }
+.course-option-swatch { width: 8px; height: 8px; flex: none; margin-top: 6px; border-radius: 2px; background: var(--muted); }
+@media (max-width: 780px) { .course-picker-toggle { width: 100%; max-width: none; } }

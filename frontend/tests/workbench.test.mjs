@@ -438,6 +438,35 @@ test('unsupported popovers retain the native course select without showing an em
   assert.equal(list.hidden, true);
 });
 
+test('course picker retains keyboard focus when background updates replace its options', () => {
+  const previousWindow = globalThis.window;
+  const document = { activeElement: null, addEventListener() {}, querySelectorAll: () => [] };
+  const makeNode = () => ({ dataset: {}, style: {}, children: [], attributes: {},
+    setAttribute(key, value) { this.attributes[key] = value; }, addEventListener() {},
+    append(...nodes) { this.children.push(...nodes); },
+    focus() { document.activeElement = this; } });
+  const select = Object.assign(makeNode(), { options: [{value:'',textContent:'All'}, {value:'one',textContent:'One'}], value:'' });
+  const toggle = makeNode();
+  const label = makeNode();
+  const list = Object.assign(makeNode(), { showPopover() {}, matches: () => true,
+    contains(node) { return this.children.includes(node); },
+    replaceChildren(...nodes) { this.children = nodes; }, querySelectorAll() { return this.children; } });
+  document.getElementById = id => ({courseFilterToggle:toggle,courseFilterOptions:list,courseFilterLabel:label})[id];
+  document.createElement = makeNode;
+  globalThis.window = { addEventListener() {} };
+  try {
+    withDocument(document, () => {
+      const ctx = { courseFilter: select };
+      initializeCoursePicker(ctx);
+      list.children[1].focus();
+      select.options.push({value:'two',textContent:'Two'});
+      ctx.syncCoursePicker();
+      assert.equal(document.activeElement.dataset.value, 'one');
+      assert.ok(list.children.includes(document.activeElement));
+    });
+  } finally { globalThis.window = previousWindow; }
+});
+
 test('changing semesters clears stale course selection and safely inserts option text', () => {
   const title = '<img src=x onerror=alert(1)>';
   const select = { options: [], replaceChildren(...options) { this.options = options; } };
