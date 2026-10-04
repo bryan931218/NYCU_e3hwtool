@@ -109,6 +109,8 @@ def register_platform_routes(
         meta = payload.get("meta")
         if not isinstance(meta, dict):
             meta = None
+        elif "is_new_user" in meta:
+            meta = {key: value for key, value in meta.items() if key != "is_new_user"}
         if not action:
             return {"ok": False, "error": "action required"}, 400
         if action.lower().startswith("notification_"):

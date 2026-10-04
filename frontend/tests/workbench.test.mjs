@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { semesterCourseTitles, register as registerCourses } from '../assignments/static/js/workbench/course-filter.js';
+import { semesterCourseTitles, register as registerCourses, initialize as initializeCoursePicker } from '../assignments/static/js/workbench/course-filter.js';
 import { register as registerFilters, initialize as initializeFilters } from '../assignments/static/js/workbench/filter-state.js';
 import { register as registerAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
@@ -14,6 +14,139 @@ import { initialize as initializeAssignments } from '../assignments/static/js/wo
 import { initialize as initializeSearch, isBrowserAutofilled } from '../assignments/static/js/workbench/search.js';
 import { courseColorKey, createCourseColorRegistry, register as registerCourseColors } from '../assignments/static/js/workbench/course-colors.js';
 import { initialize as initializeUsageEvents } from '../assignments/static/js/workbench/usage-events.js';
+import { initialize as initializeCacheEvents } from '../assignments/static/js/workbench/cache-events.js';
+
+test('identical server preferences do not rebuild the calendar or disturb a local search', () => {
+  const ctx = filterContext({ view_mode: 'calendar', status_filter: ['pending'], semester_filter: ['115-1'], ignored_assignment_uids: ['task'] });
+  registerWorkspaceFilters(ctx);
+  ctx.currentAssignmentQuery = 'my query';
+  ctx.applyFilters = () => assert.fail('unchanged preferences must not render');
+  ctx.setView = () => assert.fail('unchanged view must not switch');
+  assert.equal(ctx.applyServerPreferenceState({ ...ctx.USER_PREFERENCES, ignored_assignment_uids: [' task ', 'task'] }), false);
+  assert.equal(ctx.currentAssignmentQuery, 'my query');
+});
+
+test('changed preferences render once, preserve local search and synchronize semester and ignored state', () => {
+  const ctx = filterContext({ view_mode: 'due', status_filter: ['pending'], semester_filter: ['115-1'], ignored_assignment_uids: [] });
+  registerWorkspaceFilters(ctx);
+  const semester = { value: '114-2', checked: false };
+  let renders = 0;
+  ctx.currentAssignmentQuery = 'local';
+  ctx.applyFilters = () => { renders++; };
+  ctx.setView = (mode, options) => {
+    assert.equal(mode, 'calendar');
+    assert.deepEqual(options, { skipPersist: true, skipApply: true });
+    ctx.currentViewMode = mode;
+  };
+  withDocument({ querySelectorAll: () => [semester], querySelector: () => semester, getElementById: () => null }, () => {
+    assert.equal(ctx.applyServerPreferenceState({ view_mode: 'calendar', status_filter: ['overdue'], semester_filter: ['114-2'], ignored_assignment_uids: ['task'] }), true);
+    assert.equal(ctx.applyServerPreferenceState(ctx.USER_PREFERENCES), false);
+  });
+  assert.equal(renders, 1);
+  assert.equal(semester.checked, true);
+  assert.equal(ctx.currentAssignmentQuery, 'local');
+  assert.deepEqual(ctx.USER_PREFERENCES.ignored_assignment_uids, ['task']);
+});
+
+test('table sorting preserves status priority without moving already sorted rows', () => {
+  const ctx = { currentStatusFilters: ['pending', 'graded'] };
+  registerFilters(ctx);
+  const rows = [
+    { dataset: { dueTs: '200', primaryStatus: 'pending' } },
+    { dataset: { dueTs: '100', primaryStatus: 'graded' } },
+  ];
+  let writes = 0;
+  const body = { querySelectorAll: () => rows, appendChild: row => { writes++; rows.splice(rows.indexOf(row), 1); rows.push(row); } };
+  ctx.sortAssignmentTable(body);
+  assert.equal(writes, 0);
+  rows[1].dataset.primaryStatus = 'pending';
+  ctx.sortAssignmentTable(body);
+  assert.equal(rows[0].dataset.dueTs, '100');
+  assert.equal(writes, 2);
+  ctx.sortAssignmentTable(body);
+  withDocument({ querySelector: () => body }, () => ctx.sortFlatTableAsc());
+  assert.equal(writes, 2);
+});
+
+test('unchanged course colors never rewrite inline styles during repeated filtering', () => {
+  let writes = 0;
+  const node = { dataset: { courseId: '1' }, style: { setProperty: () => { writes++; } } };
+  const ctx = {};
+  registerCourseColors(ctx);
+  withDocument({ querySelectorAll: () => [node] }, () => {
+    ctx.syncCourseColors();
+    ctx.syncCourseColors();
+    ctx.syncCourseColors();
+    assert.equal(writes, 1);
+    node.dataset.courseId = '2';
+    ctx.syncCourseColors();
+    assert.equal(writes, 2);
+  });
+});
+
+test('search batches fast typing, flushes on change and avoids rendering identical text', async () => {
+  const previousWindow = globalThis.window;
+  const handlers = {};
+  const input = { value: '', matches: () => false, addEventListener: (key, fn) => { handlers[key] = fn; } };
+  const queries = [];
+  const ctx = { assignmentSearch: input, currentAssignmentQuery: '', applyFilters: () => queries.push(ctx.currentAssignmentQuery) };
+  globalThis.window = { addEventListener() {} };
+  try {
+    initializeSearch(ctx);
+    for (const text of ['a', 'ab', 'abc']) { input.value = text; handlers.input(); }
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.deepEqual(queries, ['abc']);
+    input.value = 'abcd';
+    handlers.input();
+    handlers.change();
+    assert.deepEqual(queries, ['abc', 'abcd']);
+    handlers.input();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.deepEqual(queries, ['abc', 'abcd']);
+  } finally { globalThis.window = previousWindow; }
+});
+
+test('cache polling pauses in background, rejects overlap and recovers after failure', async () => {
+  const previous = Object.fromEntries(['document', 'window', 'localStorage', 'fetch', 'setInterval', 'setTimeout'].map(key => [key, globalThis[key]]));
+  const handlers = {};
+  let poll;
+  let calls = 0;
+  let resolve;
+  let fail = false;
+  let preferenceUpdates = 0;
+  try {
+    globalThis.document = { hidden: true, querySelectorAll: () => [], addEventListener: (key, fn) => { handlers[key] = fn; } };
+    globalThis.window = { addEventListener() {} };
+    globalThis.localStorage = { getItem: () => '', setItem() {} };
+    globalThis.setInterval = fn => { poll = fn; };
+    globalThis.setTimeout = () => {};
+    globalThis.fetch = () => { calls++; return fail ? Promise.reject(Error('offline')) : new Promise(done => { resolve = done; }); };
+    const ctx = { IS_GUEST: true, CACHE_SYNC_ENDPOINT: '/cache', CACHE_SYNC_INTERVAL: 120000, currentCacheTs: 1,
+      applyServerPreferenceState: () => { preferenceUpdates++; } };
+    initializeCacheEvents(ctx);
+    await poll();
+    assert.equal(calls, 0);
+    document.hidden = false;
+    handlers.visibilitychange();
+    await poll();
+    assert.equal(calls, 1);
+    resolve({ ok: true, json: async () => ({ ok: true, ts: 1, preferences: {} }) });
+    await new Promise(done => setImmediate(done));
+    assert.equal(preferenceUpdates, 1);
+    ctx.refreshInFlight = true;
+    await poll();
+    assert.equal(calls, 1);
+    ctx.refreshInFlight = false;
+    fail = true;
+    await poll();
+    await poll();
+    assert.equal(calls, 3, 'a failed request must release the polling lock');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
+    }
+  }
+});
 
 function trafficHarness(fetch, hidden = false) {
   const nodes = { online: { textContent: '1' }, total: { textContent: '20' } };
@@ -134,7 +267,7 @@ test('both assignment copies and empty courses are colored from the full catalog
   });
 });
 
-test('search discards native autofill but preserves typing, paste and Enter without submitting', () => {
+test('search discards native autofill but preserves typing, paste and Enter without submitting', async () => {
   const previousWindow = globalThis.window;
   const events = new Map();
   const windowEvents = new Map();
@@ -153,6 +286,7 @@ test('search discards native autofill but preserves typing, paste and Enter with
     autofilled = false;
     input.value = ' Homework ABC ';
     events.get('input')();
+    await new Promise(resolve => setTimeout(resolve, 150));
     assert.equal(ctx.currentAssignmentQuery, 'homework abc');
     input.value = '貼上的作業名稱';
     events.get('input')();
@@ -171,6 +305,7 @@ test('search discards native autofill but preserves typing, paste and Enter with
     input.value = '112550101';
     events.get('input')();
     assert.equal(input.value, '112550101', 'a deliberately typed number is a valid search');
+    await new Promise(resolve => setTimeout(resolve, 150));
     assert.equal(ctx.currentAssignmentQuery, '112550101');
   } finally { globalThis.window = previousWindow; }
 });
@@ -289,6 +424,18 @@ test('course options only include the selected semester, including empty courses
   ];
   assert.deepEqual(semesterCourseTitles(courses, ['115-1']), ['Current course', 'Empty current course']);
   assert.deepEqual(semesterCourseTitles(courses, []), []);
+});
+
+test('unsupported popovers retain the native course select without showing an empty menu', () => {
+  const select = { hidden: false };
+  const toggle = { hidden: true };
+  const list = { hidden: true };
+  withDocument({ getElementById: id => ({ courseFilterToggle: toggle, courseFilterOptions: list })[id] }, () => {
+    initializeCoursePicker({ courseFilter: select });
+  });
+  assert.equal(select.hidden, false);
+  assert.equal(toggle.hidden, true);
+  assert.equal(list.hidden, true);
 });
 
 test('changing semesters clears stale course selection and safely inserts option text', () => {

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>E3 自動跳轉套件隱私說明</title>
+    <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
+</head>
+<body>
+<main class="container">
+    <h1>E3 自動跳轉套件隱私說明</h1>
+    <h2>資料使用</h2>
+    <p>套件只處理從 E3 作業追蹤系統開啟的作業網址，以及 E3 頁面是否需要登入的狀態。不收集或儲存帳號密碼、Cookie、驗證碼、作業內容或成績，也不將 E3 登入憑證傳回追蹤系統。</p>
+    <h2>暫存與清除</h2>
+    <p>待開啟的作業網址暫存於瀏覽器的套件工作階段儲存空間。完成跳轉、關閉該分頁或關閉瀏覽器時清除；超過 30 分鐘不再自動跳轉。</p>
+    <h2>權限範圍</h2>
+    <p>套件僅於 e3hwtool.space、www.e3hwtool.space 與 e3p.nycu.edu.tw 執行。學校登入與雙重驗證由用戶在校方頁面完成。沒有從追蹤系統開啟作業時，套件不會介入 E3 瀏覽。</p>
+    <p>可在 Chrome 或 Edge 的擴充功能管理頁移除套件，停用自動跳轉並清除套件儲存資料。</p>
+    {% if support_email %}<p>聯絡方式：<a href="mailto:{{ support_email }}">{{ support_email }}</a></p>{% endif %}
+    <p><a href="{{ url_for('e3_navigation_extension') }}">返回套件安裝頁</a></p>
+</main>
+</body>
+</html>

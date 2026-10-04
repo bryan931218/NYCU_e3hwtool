@@ -3,12 +3,13 @@ export function register(ctx) {
     const tbody = document.querySelector("#flatTable tbody");
     if (!tbody) return;
     const rows = Array.from(tbody.querySelectorAll("tr[data-uid]"));
+    const previous = rows.slice();
     rows.sort((a, b) => {
       const A = parseInt(a.dataset.dueTs || "9999999999", 10);
       const B = parseInt(b.dataset.dueTs || "9999999999", 10);
       return A - B;
     });
-    rows.forEach((r) => tbody.appendChild(r));
+    if (rows.some((row, index) => row !== previous[index])) rows.forEach((r) => tbody.appendChild(r));
   };
 
   ctx.getStatusPriority = function getStatusPriority(row) {
@@ -22,6 +23,7 @@ export function register(ctx) {
   ctx.sortAssignmentTable = function sortAssignmentTable(tbody) {
     if (!tbody) return;
     const rows = Array.from(tbody.querySelectorAll("tr[data-uid]"));
+    const previous = rows.slice();
     rows.sort((a, b) => {
       if (ctx.currentStatusFilters.length > 1) {
         const priorityA = ctx.getStatusPriority(a);
@@ -34,7 +36,7 @@ export function register(ctx) {
       const dueB = parseInt(b.dataset.dueTs || "9999999999", 10);
       return dueA - dueB;
     });
-    rows.forEach((row) => tbody.appendChild(row));
+    if (rows.some((row, index) => row !== previous[index])) rows.forEach((row) => tbody.appendChild(row));
   };
 
   ctx.normalizeSemesterFilters = function normalizeSemesterFilters(value) {

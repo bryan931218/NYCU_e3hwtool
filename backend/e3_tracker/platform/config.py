@@ -66,6 +66,8 @@ def load_env_defaults() -> Dict[str, str]:
         "database_url": _database_url(),
         "support_email": os.getenv("E3_SUPPORT_EMAIL", "bryan931218@gmail.com"),
         "app_home_url": os.getenv("E3_APP_HOME_URL", "https://www.e3hwtool.space/"),
+        "chrome_extension_url": os.getenv("E3_CHROME_EXTENSION_URL", ""),
+        "edge_extension_url": os.getenv("E3_EDGE_EXTENSION_URL", ""),
         "legal_entity_name": os.getenv("E3_LEGAL_ENTITY_NAME", "E3 Homework Tracker Project"),
         "legal_effective_date": os.getenv("E3_LEGAL_EFFECTIVE_DATE", "2024-11-19"),
         "openai_api_key": os.getenv("OPENAI_API_KEY", ""),

@@ -36,6 +36,7 @@
     <header class="home-header">
         <a class="home-brand" href="{{ url_for('index') }}" aria-label="E3 作業追蹤系統首頁"><span class="brand-mark" aria-hidden="true">E3</span><h1>作業追蹤系統</h1></a>
         <nav class="home-nav" aria-label="主導覽">
+            <a class="home-button button-small" href="{{ url_for('e3_navigation_extension') }}">安裝 E3 自動跳轉</a>
             <button class="theme-toggle" id="homeThemeToggle" type="button" aria-label="切換深色模式" title="切換深色模式" aria-pressed="false" hidden><span class="icon-moon">{{ icon('moon') }}</span><span class="icon-sun">{{ icon('sun') }}</span></button>
             <a class="home-button button-small" href="{{ url_for('login') }}">登入 {{ icon('arrow') }}</a>
         </nav>

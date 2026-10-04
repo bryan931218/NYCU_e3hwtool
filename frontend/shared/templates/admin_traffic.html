@@ -211,7 +211,7 @@
                     {% if user_rows %}
                         {% for row in user_rows %}
                         <tr>
-                            <td class="account-label">{{ row.username|account_label(row.student_number) }}</td>
+                            <td class="account-label">{{ row.username|account_label(row.student_number) }}{% if row.is_new_user %}<span class="new-user-badge" title="首次加入：{{ row.joined_at }}">新用戶</span>{% endif %}</td>
                             <td>{% if row.profile_name %}{{ row.profile_name }}{% else %}<span class="muted">尚未取得</span>{% endif %}</td>
                             <td>
                                 {% if row.online %}
@@ -249,7 +249,7 @@
                 <li>
                     <span class="time">{{ item.ts }}</span>
                     <span class="path event-account">{{ item.username|account_label(item.student_number) }}</span>
-                    <div class="event-content"><strong>{{ item.description }}</strong>{% if item.details or item.ip != '-' %}<span class="event-detail">{{ item.details or item.ip }}</span>{% endif %}</div>
+                    <div class="event-content"><strong>{{ item.description }}{% if item.is_new_user %}<span class="new-user-badge">首次加入</span>{% endif %}</strong>{% if item.details or item.ip != '-' %}<span class="event-detail">{{ item.details or item.ip }}</span>{% endif %}</div>
                     <span class="status-badge {{ item.status }}">{{ item.status_label }}</span>
                 </li>
                 {% endfor %}

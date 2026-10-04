@@ -73,6 +73,13 @@ def register_assignments_routes(*,
     session_identity_sync,
 ):
 
+    def record_login(username):
+        try:
+            is_new_user = storage.claim_assignment_membership(username)
+        except Exception:
+            app.logger.warning("Assignment first-login record unavailable")
+            is_new_user = False
+        record_ui_event("login_success", "success", {"username": username, "is_new_user": is_new_user})
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -103,10 +110,10 @@ def register_assignments_routes(*,
                             is_admin=bool(admin_user_id and session_label == admin_user_id),
                             permanent=True,
                         )
-                        record_ui_event("login_success", meta={"username": session_label})
                         session_identity_sync.refresh_user(
                             {"username": session_label, "moodle_session": raw_session}, force=True
                         )
+                        record_login(session_label)
                         if existing_cache:
                             flash("已載入先前的課程資料，系統將在背景自動更新最新內容。", "info")
                         else:
@@ -144,7 +151,7 @@ def register_assignments_routes(*,
                             is_admin=bool(admin_user_id and raw_username == admin_user_id),
                             permanent=True,
                         )
-                        record_ui_event("login_success", meta={"username": raw_username})
+                        record_login(raw_username)
                         existing_cache = load_cache_from_disk(raw_username)
                         if existing_cache:
                             flash("已載入先前的課程資料，系統將在背景自動更新最新內容。", "info")

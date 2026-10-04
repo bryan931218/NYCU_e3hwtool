@@ -15,7 +15,7 @@ export function register(ctx) {
     if (!options.skipPersist) {
       ctx.persistPreferences({ viewMode: nextMode });
     }
-    ctx.applyFilters();
+    if (!options.skipApply) ctx.applyFilters();
   };
 }
 

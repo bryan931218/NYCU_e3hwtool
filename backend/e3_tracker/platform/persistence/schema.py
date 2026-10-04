@@ -1,6 +1,7 @@
 """Deployment schema registry, aggregating independently owned table definitions."""
 
 from .metadata import metadata
+from e3_tracker.assignments.persistence.membership import assignment_memberships
 from e3_tracker.assignments.persistence.schema import (
     user_preferences_table,
     courses_table,

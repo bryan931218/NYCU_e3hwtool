@@ -44,13 +44,18 @@ export function createCourseColorRegistry() {
 
 export function register(ctx) {
   const registry = createCourseColorRegistry();
+  const applied = new WeakMap();
   ctx.courseAccent = (key) => registry.colorFor(key);
   ctx.syncCourseColors = () => {
     const elements = [...document.querySelectorAll("[data-course-id], tr[data-uid]")];
     // Seed from the complete catalog so searching or changing views cannot reassign colors.
     registry.ensure(elements.map((element) => courseColorKey(element.dataset)));
     elements.forEach((element) => {
-      element.style.setProperty("--course-accent", registry.colorFor(courseColorKey(element.dataset)));
+      const color = registry.colorFor(courseColorKey(element.dataset));
+      if (applied.get(element) !== color) {
+        element.style.setProperty("--course-accent", color);
+        applied.set(element, color);
+      }
     });
   };
 }

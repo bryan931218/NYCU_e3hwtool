@@ -1,13 +1,10 @@
 """E3 assignment dashboard entry route."""
 
-import io
-from zipfile import ZipFile, ZIP_DEFLATED
-
 from flask import render_template, render_template_string, send_file
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE
-from e3_tracker.platform.paths import FRONTEND_ROOT
-
-EXTENSION_FILES = ("manifest.json", "background.js", "core.js", "tracker.js", "probe.js", "e3-page.js", "README.html")
+from e3_tracker.assignments.services.e3_navigation_extension import (
+    EXTENSION_FILES, build_extension_archive, official_store_url,
+)
 
 
 def register_dashboard_routes(
@@ -24,17 +21,18 @@ def register_dashboard_routes(
 ):
     @app.get("/e3-auto-navigation")
     def e3_navigation_extension():
-        return render_template("assignments/pages/e3_navigation_extension.html")
+        return render_template("assignments/pages/e3_navigation_extension.html",
+            chrome_store_url=official_store_url(app.config.get("E3_CHROME_EXTENSION_URL"), "chrome"),
+            edge_store_url=official_store_url(app.config.get("E3_EDGE_EXTENSION_URL"), "edge"))
+
+    @app.get("/e3-auto-navigation/privacy")
+    def e3_navigation_extension_privacy():
+        return render_template("assignments/pages/e3_navigation_extension_privacy.html",
+                               support_email=support_email)
 
     @app.get("/e3-auto-navigation/download")
     def e3_navigation_extension_download():
-        source = FRONTEND_ROOT / "assignments" / "static" / "e3-navigation-extension"
-        archive = io.BytesIO()
-        with ZipFile(archive, "w", compression=ZIP_DEFLATED) as package:
-            for filename in EXTENSION_FILES:
-                package.write(source / filename, arcname=f"e3-auto-navigation/{filename}")
-        archive.seek(0)
-        return send_file(archive, mimetype="application/zip", as_attachment=True,
+        return send_file(build_extension_archive(), mimetype="application/zip", as_attachment=True,
                          download_name="e3-auto-navigation.zip", max_age=0)
 
     @app.route("/", methods=["GET"])

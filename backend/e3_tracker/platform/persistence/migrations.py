@@ -104,6 +104,11 @@ def _assignment_usage(conn):
     migrate_usage(conn)
 
 
+def _assignment_memberships(conn):
+    from e3_tracker.assignments.persistence.membership import migrate_memberships
+    migrate_memberships(conn)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -115,6 +120,7 @@ MIGRATIONS = (
     ("0008_session_student_number", _session_student_number),
     ("0009_custom_todos", _custom_todos),
     ("0010_assignment_usage", _assignment_usage),
+    ("0011_assignment_memberships", _assignment_memberships),
 )
 
 

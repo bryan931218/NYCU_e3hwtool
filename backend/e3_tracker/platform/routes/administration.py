@@ -46,6 +46,8 @@ def register_administration_routes(*,
             return redirect(url_for("index"))
         admin_view_options = list_admin_view_options()
         profiles = storage.list_user_profiles()
+        memberships = storage.assignment_membership_snapshot(profiles)
+        now = time.time()
         names = {row["username"]: row["profile_name"] or "" for row in profiles}
         student_numbers = {row["username"]: row["student_number"] or "" for row in profiles}
         for option in admin_view_options:
@@ -119,7 +121,7 @@ def register_administration_routes(*,
                 key: value
                 for key, value in meta.items()
                 if key
-                not in {"username", "is_guest", "is_admin", "site", "activity_only", "info", "course", "message", "target", "action_detail"}
+                not in {"username", "is_guest", "is_admin", "site", "activity_only", "is_new_user", "info", "course", "message", "target", "action_detail"}
             }
             if extra:
                 try:
@@ -136,6 +138,7 @@ def register_administration_routes(*,
                     "username": meta.get("username") or ("訪客" if meta.get("is_guest") else "-"),
                     "student_number": student_numbers.get(meta.get("username"), ""),
                     "description": _action_description(ev.get("action") or "-"),
+                    "is_new_user": ev.get("action") == "login_success" and meta.get("is_new_user") is True and not meta.get("is_guest"),
                     "details": "；".join(detail_parts),
                 }
             )
@@ -189,6 +192,10 @@ def register_administration_routes(*,
             if row["username"] not in known_users
             and not row["username"].startswith("Session-")
         ]
+        for row in account_rows:
+            member = memberships.get(row["username"])
+            row["joined_at"] = _fmt_ts(member["joined_at"]) if member else "-"
+            row["is_new_user"] = bool(member and member["is_new"] and 0 <= now - member["joined_at"] < 7 * 86400)
         window = analytics_window(request.args)
         analytics = build_assignment_analytics(
             storage.assignment_usage_snapshot(window["start"], window["end"]), window,

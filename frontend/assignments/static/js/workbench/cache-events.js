@@ -39,7 +39,10 @@ export function initialize(ctx) {
     }
     const HEARTBEAT_INTERVAL = 240000;
     let heartbeatTimer = null;
+    let lastHeartbeat = -Infinity;
     function sendHeartbeat() {
+      if (document.hidden || Date.now() - lastHeartbeat < 10000) return;
+      lastHeartbeat = Date.now();
       ctx.logUiEvent("heartbeat", "info");
     }
     function scheduleHeartbeat() {
@@ -66,15 +69,20 @@ export function initialize(ctx) {
     }
     const refreshBroadcastKey = `e3_assignment_refresh_broadcast_${ctx.STORAGE_USER_KEY}`;
     let seenRefreshBroadcast = "";
+    let polling = false;
     try {
       seenRefreshBroadcast = localStorage.getItem(refreshBroadcastKey) || "";
     } catch (err) {}
     async function pollCacheSync() {
+      if (document.hidden || polling || ctx.refreshInFlight) return;
+      polling = true;
       try {
-        const resp = await fetch(ctx.CACHE_SYNC_ENDPOINT, {
+        const options = {
           cache: "no-store",
           credentials: "same-origin",
-        });
+        };
+        if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) options.signal = AbortSignal.timeout(30000);
+        const resp = await fetch(ctx.CACHE_SYNC_ENDPOINT, options);
         if (!resp.ok) return;
         const payload = await resp.json();
         if (!payload.ok) return;
@@ -116,9 +124,12 @@ export function initialize(ctx) {
         }
       } catch (err) {
         console.debug("cache sync failed", err);
+      } finally {
+        polling = false;
       }
     }
     setInterval(pollCacheSync, ctx.CACHE_SYNC_INTERVAL);
     setTimeout(pollCacheSync, 5000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) void pollCacheSync(); });
   })();
 }

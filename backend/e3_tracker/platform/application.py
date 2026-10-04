@@ -135,6 +135,8 @@ def create_app(
         SESSION_COOKIE_HTTPONLY=True,
         PREFERRED_URL_SCHEME="https",
         MAX_CONTENT_LENGTH=STUDY_NOTE_MAX_REQUEST_BYTES,
+        E3_CHROME_EXTENSION_URL=env_defaults["chrome_extension_url"],
+        E3_EDGE_EXTENSION_URL=env_defaults["edge_extension_url"],
     )
     try:
         configure_http_security(app, storage)

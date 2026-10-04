@@ -142,7 +142,7 @@ export function register(ctx) {
     document.querySelectorAll("#flatTable tbody tr[data-uid]").forEach((tr) => {
       const primaryStatus = tr.dataset.primaryStatus || "pending";
       const ignored = ignoredSet.has(tr.dataset.uid || "");
-      tr.dataset.ignored = ignored ? "1" : "0";
+      if (tr.dataset.ignored !== (ignored ? "1" : "0")) tr.dataset.ignored = ignored ? "1" : "0";
       const semesterVisible =
         tr.dataset.semester === "custom" ||
         selectedSemesters.has(tr.dataset.semester || "other");
@@ -159,7 +159,7 @@ export function register(ctx) {
       .forEach((tr) => {
         const primaryStatus = tr.dataset.primaryStatus || "pending";
         const ignored = ignoredSet.has(tr.dataset.uid || "");
-        tr.dataset.ignored = ignored ? "1" : "0";
+        if (tr.dataset.ignored !== (ignored ? "1" : "0")) tr.dataset.ignored = ignored ? "1" : "0";
         const semesterVisible =
           tr.dataset.semester === "custom" ||
           selectedSemesters.has(tr.dataset.semester || "other");
@@ -275,9 +275,13 @@ export function register(ctx) {
       ignored_assignment_uids: nextPrefs.ignored_assignment_uids
         ?? nextPrefs.ignored_overdue_uids ?? [],
     };
-    if (incoming.view_mode && incoming.view_mode !== ctx.currentViewMode) {
-      ctx.setView(incoming.view_mode, { skipPersist: true });
-    }
+    incoming.ignored_assignment_uids = [...new Set((Array.isArray(incoming.ignored_assignment_uids)
+      ? incoming.ignored_assignment_uids : []).map(value => String(value || "").trim()).filter(Boolean))];
+    const same = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
+    const viewChanged = incoming.view_mode !== ctx.currentViewMode;
+    if (!viewChanged && same(incoming.status_filter, ctx.currentStatusFilters)
+      && (!incoming.semester_filter.length || same(incoming.semester_filter, ctx.currentSemesterFilters))
+      && same(incoming.ignored_assignment_uids, ctx.USER_PREFERENCES.ignored_assignment_uids || [])) return false;
     ctx.USER_PREFERENCES.view_mode = incoming.view_mode;
     ctx.USER_PREFERENCES.status_filter = incoming.status_filter.slice();
     ctx.currentStatusFilters = incoming.status_filter.slice();
@@ -294,7 +298,9 @@ export function register(ctx) {
     ctx.setIgnoredAssignmentUids(incoming.ignored_assignment_uids);
     ctx.syncStatusFilterButtons();
     ctx.updateFilterSummary();
+    if (viewChanged) ctx.setView(incoming.view_mode, { skipPersist: true, skipApply: true });
     ctx.applyFilters();
+    return true;
   };
 
   ctx.ignoreAssignment = function ignoreAssignment(uid) {
