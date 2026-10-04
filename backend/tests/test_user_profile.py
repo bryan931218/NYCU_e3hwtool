@@ -41,6 +41,23 @@ class ProfileParsingTests(unittest.TestCase):
         html = '<header id="page-header"><h1>資工系 / DCP 歐陽小明</h1></header><dd>private@example.test</dd>'
         self.assertEqual(parse_profile_name(html), '歐陽小明')
 
+    def test_department_can_follow_the_name_and_is_never_a_person(self):
+        cases = {
+            '王小明 / 藥學系': '王小明',
+            '藥學系 / 王小明': '王小明',
+            'DCP 王小明 藥學系': '王小明',
+            '藥學系 王小明': '王小明',
+            '王小明（藥學系）': '王小明',
+            '歐陽小明／資訊工程學系': '歐陽小明',
+            '藥學系': '',
+            'DCP 資工系': '',
+            '電機工程研究所': '',
+            '王小明 李小明': '',
+        }
+        for title, expected in cases.items():
+            with self.subTest(title=title):
+                self.assertEqual(parse_profile_name(f'<header id="page-header"><h1>{title}</h1></header>'), expected)
+
     def test_login_and_error_pages_do_not_become_profile_names(self):
         for title in ('登入', '關於我', '個人資料', '焦點綜覽', '錯誤訊息', '112550103'):
             with self.subTest(title=title):
@@ -240,9 +257,26 @@ class UserProfileTests(unittest.TestCase):
 
     def test_profile_write_is_atomic_and_invalid_values_do_not_erase_name(self):
         self.storage.save_user_profile('student', '王小明', '王')
-        for name, surname in [('', '王'), ('x' * 129, '王'), ('李小明', ''), ('李小明', 'x' * 17)]:
+        for name, surname in [('', '王'), ('x' * 129, '王'), ('李小明', ''), ('李小明', 'x' * 17), ('藥學系', '藥')]:
             self.storage.save_user_profile('student', name, surname)
         self.assertEqual(self.storage.load_user_profile('student'), {'name': '王小明', 'surname': '王'})
+
+    def test_department_name_repair_preserves_accounts_and_refetches_only_bad_names(self):
+        self.storage.save_user_profile('someone-else', '王小明', '王')
+        self.storage.save_user_cache('student', {'ts': 1, 'result': {'courses': [], 'all_assignments': []}})
+        with self.storage._engine.begin() as conn:
+            conn.execute(text("UPDATE users SET profile_name='藥學系', profile_surname='藥' WHERE username='student'"))
+            conn.execute(text("DELETE FROM e3_schema_migrations WHERE version='0014_repair_department_profile_names'"))
+        self.assertEqual(migrations.run_migrations(self.storage._engine), ['0014_repair_department_profile_names'])
+        self.assertEqual(migrations.run_migrations(self.storage._engine), [])
+        self.assertEqual(self.storage.load_user_profile('student'), {'name': '', 'surname': ''})
+        self.assertEqual(self.storage.load_user_profile('someone-else'), {'name': '王小明', 'surname': '王'})
+        self.assertIsNotNone(self.storage.load_user_cache('student'))
+        self.assertTrue(self.storage.is_valid_web_session('profile-test', 'student'))
+        with patch('e3_tracker.assignments.routes.assignments.fetch_profile_name', return_value='李小明') as fetch:
+            self.assertEqual(self.client.get('/api/profile').json['surname'], '李')
+            fetch.assert_called_once()
+        self.assertEqual(self.storage.load_user_profile('student')['name'], '李小明')
 
     def test_additive_upgrade_preserves_existing_users_and_is_idempotent(self):
         with self.storage._engine.begin() as conn:

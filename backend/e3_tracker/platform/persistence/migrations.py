@@ -119,6 +119,18 @@ def _course_mail(conn):
     course_mail_cache.create(conn, checkfirst=True)
 
 
+def _repair_department_profile_names(conn):
+    from e3_tracker.platform.persistence.core_schema import users_table
+    from e3_tracker.platform.services.profile_names import is_academic_unit_name
+
+    rows = conn.execute(select(users_table.c.id, users_table.c.profile_name)).all()
+    ids = [row.id for row in rows if is_academic_unit_name(row.profile_name)]
+    for user_id in ids:
+        conn.execute(users_table.update().where(users_table.c.id == user_id).values(
+            profile_name=None, profile_surname=None,
+        ))
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -133,6 +145,7 @@ MIGRATIONS = (
     ("0011_assignment_memberships", _assignment_memberships),
     ("0012_course_announcements", _course_announcements),
     ("0013_course_mail", _course_mail),
+    ("0014_repair_department_profile_names", _repair_department_profile_names),
 )
 
 

@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 from bs4 import BeautifulSoup
 
 from e3_tracker.platform.constants import HEADERS
+from e3_tracker.platform.services.profile_names import is_academic_unit_name
 from e3_tracker.assignments.services.http import safe_request
 
 
@@ -20,15 +21,15 @@ def parse_profile_name(html: str) -> str:
     heading = soup.select_one("#page-header h1")
     if not heading:
         return ""
-    # E3 prefixes the name with department text, e.g. "資工系 / DCP 王小明".
-    name = heading.get_text(" ", strip=True).rsplit("/", 1)[-1].strip()
-    match = re.search(r"(?:^|\s)([\u3400-\u9fff]{2,8})$", name)
-    if not match:
-        return ""
-    name = match.group(1)
-    if name in {"登入", "登出", "關於我", "個人資料", "使用者資料", "焦點綜覽", "錯誤", "錯誤訊息"}:
-        return ""
-    return name
+    # E3 may put the department before or after the person's name.
+    labels = {"登入", "登出", "關於我", "個人資料", "使用者資料", "焦點綜覽", "錯誤", "錯誤訊息"}
+    candidates = re.findall(
+        r"(?<![\u3400-\u9fff])([\u3400-\u9fff]{2,8})(?![\u3400-\u9fff])",
+        heading.get_text(" ", strip=True),
+    )
+    names = list(dict.fromkeys(name for name in candidates
+                             if name not in labels and not is_academic_unit_name(name)))
+    return names[0] if len(names) == 1 else ""
 
 
 def profile_surname(name: str) -> str:

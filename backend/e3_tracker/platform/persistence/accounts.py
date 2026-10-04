@@ -8,6 +8,7 @@ from cryptography.fernet import InvalidToken
 from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from e3_tracker.platform.guest_privacy import is_guest_identity
+from e3_tracker.platform.services.profile_names import is_academic_unit_name
 from .guest_cleanup import (
     delete_guest_accounts,
     guest_account_condition,
@@ -114,6 +115,7 @@ class AccountsStorage:
         name, surname = str(name or "").strip(), str(surname or "").strip()
         if (
             not username or not name or len(name) > 128
+            or is_academic_unit_name(name)
             or not surname or len(surname) > 16
         ):
             return

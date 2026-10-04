@@ -30,6 +30,12 @@ def response(html, status=200):
 
 
 class IdentityParsingTests(unittest.TestCase):
+    def test_session_name_does_not_use_the_trailing_department(self):
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
+            response(MENU), response(PROFILE.replace('王小明', '王小明 / 藥學系')), response(LOCKED),
+        ]):
+            self.assertEqual(fetch_session_identity(Mock(), BASE), IDENTITY)
+
     def test_display_label_is_not_an_authorization_identity(self):
         self.assertEqual(account_label('Session-demo', '112550101'), '112550101（session登入）')
         self.assertEqual(account_label('112550103', '112550101'), '112550103')

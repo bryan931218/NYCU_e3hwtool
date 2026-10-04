@@ -1,4 +1,5 @@
 import os
+import copy
 import tempfile
 import unittest
 from datetime import datetime
@@ -38,6 +39,9 @@ class AssignmentSemesterTests(unittest.TestCase):
             "115年第1學期 線性代數": "115-1",
             "1142 離散數學": "114-2",
             "1132.515617.正規語言概論": "113-2",
+            "1151.519501.百川學堂(一)": "115-1",
+            "113X.010028.無所不在的經濟學": "other",
+            "114X.010029.生成式AI輔助的Python物理模擬實驗": "other",
             "[112 Fall] Algorithms": "112-1",
             "114 Turnitin Originality": "other",
             "2026年09月行事曆": "other",
@@ -182,7 +186,7 @@ class AssignmentSemesterTests(unittest.TestCase):
         self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1", "114-2"])
         self.assertEqual([item["semester_key"] for item in result["all_assignments"]], ["115-1", "114-2"])
 
-    def test_single_selected_semester_backfills_unmarked_legacy_cache(self):
+    def test_single_selected_semester_does_not_guess_unmarked_legacy_course_terms(self):
         result = {
             "courses": [
                 {"id": 1, "title": "資料結構", "assignments": [{"title": "作業一"}]},
@@ -195,8 +199,74 @@ class AssignmentSemesterTests(unittest.TestCase):
             "selected_semesters": ["115-1"],
         }
         annotate_result_semesters(result)
-        self.assertEqual([item["key"] for item in result["available_semesters"]], ["115-1"])
-        self.assertEqual([item["semester_key"] for item in result["all_assignments"]], ["115-1", "115-1"])
+        self.assertEqual([item["key"] for item in result["available_semesters"]], ["other"])
+        self.assertEqual([item["semester_key"] for item in result["all_assignments"]], ["other", "other"])
+
+    def test_title_markers_repair_wrong_cached_terms_and_catalog_counts(self):
+        titles = ['1151.519501.百川學堂(一)', '1142.519504.人文課程', '113X.010028.經濟學', '114X.010029.Python']
+        result = {
+            'courses': [{'id': index + 10, 'title': title, 'semester_key': '115-1',
+                         'semester_label': '115 上學期', 'assignments': []} for index, title in enumerate(titles)],
+            'all_assignments': [{'course_id': index + 10, 'course_title': title, 'title': '作業'}
+                                for index, title in enumerate(titles)],
+            'available_semesters': [
+                {'key': '115-1', 'label': '115 上學期', 'course_count': 4, 'is_current': True},
+                {'key': '112-1', 'label': '112 上學期', 'course_count': 5, 'is_current': False},
+            ],
+            'selected_semesters': ['115-1'],
+        }
+        annotate_result_semesters(result)
+        self.assertEqual([course['semester_key'] for course in result['courses']], ['115-1', '114-2', 'other', 'other'])
+        self.assertEqual([item['semester_key'] for item in result['all_assignments']], ['115-1', '114-2', 'other', 'other'])
+        self.assertEqual({item['key']: item['course_count'] for item in result['available_semesters']},
+                         {'115-1': 1, '114-2': 1, 'other': 2, '112-1': 5})
+        self.assertEqual(result['selected_semesters'], ['115-1'])
+        first = copy.deepcopy(result)
+        annotate_result_semesters(result)
+        self.assertEqual(result, first)
+
+    def test_current_refresh_keeps_unclassified_old_courses_out_of_current_term(self):
+        previous = {'courses': [{'id': 10, 'title': '113X.010028.經濟學', 'semester_key': '115-1',
+                                  'assignments': [{'title': '歷史作業'}]}], 'all_assignments': [],
+                    'selected_semesters': ['115-1']}
+        current = {'courses': [{'id': 20, 'title': '1151.519501.百川學堂(一)', 'assignments': []}],
+                   'all_assignments': []}
+        result = merge_current_semester_cache(previous, current, now=self.now, selected_keys=['115-1'])
+        courses = {course['id']: course for course in result['courses']}
+        self.assertEqual(courses[10]['semester_key'], 'other')
+        self.assertEqual(courses[20]['semester_key'], '115-1')
+        self.assertEqual(result['all_assignments'][0]['semester_key'], 'other')
+
+    def test_repaired_database_cache_is_used_in_admin_readonly_course_view(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            'E3_CACHE_DIR': directory, 'E3_DATABASE_URL': '', 'E3_SESSION_COOKIE_SECURE': '0',
+        }):
+            app = create_app()
+            storage = app.extensions['e3_storage']
+            try:
+                courses = [{'id': 10, 'title': '1151.519501.百川學堂(一)', 'semester_key': '115-1', 'assignments': []},
+                           {'id': 20, 'title': '113X.010028.經濟學', 'semester_key': '115-1', 'assignments': []},
+                           {'id': 30, 'title': '1142.519504.人文課程', 'semester_key': '115-1', 'assignments': []}]
+                storage.save_user_cache('student', {'ts': 1, 'result': {
+                    'courses': courses, 'all_assignments': [], 'selected_semesters': ['115-1'],
+                    'available_semesters': [{'key': '115-1', 'label': '115 上學期', 'course_count': 3, 'is_current': True}],
+                }})
+                storage.save_web_session('admin-test', 'admin', is_admin=True)
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
+                with client.session_transaction() as state:
+                    state['session_token'] = 'admin-test'
+                page = BeautifulSoup(client.get('/?view_user=student').get_data(as_text=True), 'html.parser')
+                cards = page.select('#viewCourse .course-card')
+                self.assertEqual([card['data-semester'] for card in cards], ['115-1', 'other', '114-2'])
+                self.assertEqual([card['data-course-id'] for card in cards if 'hidden' not in card.get('class', [])], ['10'])
+                self.assertEqual(page.select_one('#semesterSelectedCount').get_text(strip=True), '1 門課')
+                payload = client.get('/api/cache?view_user=student&include_cache=1').json
+                self.assertTrue(payload['readonly_view'])
+                cached = payload['cache']['result']
+                self.assertEqual([course['semester_key'] for course in cached['courses']], ['115-1', 'other', '114-2'])
+            finally:
+                storage._engine.dispose()
 
     def test_external_selected_keys_do_not_backfill_unmarked_cache_metadata(self):
         result = {

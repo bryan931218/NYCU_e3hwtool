@@ -156,11 +156,18 @@ def parse_course_semester(title: Any, now: Optional[datetime] = None) -> Dict[st
 
 
 def _course_semester(course: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    title_semester = parse_course_semester(course.get("title"), now)
+    # Explicit title markers correct legacy caches that guessed the selected term.
+    # X does not identify an upper/lower/summer term, so do not guess one.
+    if title_semester["key"] != "other" or re.match(
+        r"^\s*[\[【(（]?\s*\d{3}[Xx](?=[.\s\]】)）]|$)", str(course.get("title") or "")
+    ):
+        return title_semester
     existing_keys = normalize_semester_keys([course.get("semester_key")])
     if existing_keys and existing_keys[0] != "other":
         existing_label = str(course.get("semester_label") or "").strip() or None
         return _semester_from_key(existing_keys[0], now, existing_label)
-    return parse_course_semester(course.get("title"), now)
+    return title_semester
 
 
 def normalize_semester_keys(value: Any) -> List[str]:
@@ -300,17 +307,13 @@ def annotate_result_semesters(
     selected_hint = normalize_semester_selection(selected_keys)
     if not selected_hint:
         selected_hint = result_selected_hint
-    if len(result_selected_hint) == 1 and result_selected_hint[0] != "other":
-        fallback_semester = _semester_from_key(result_selected_hint[0])
-        for course in courses:
-            if not isinstance(course, dict):
-                continue
-            if _course_semester(course)["key"] == "other":
-                course.update(
-                    semester_key=fallback_semester["key"],
-                    semester_label=fallback_semester["label"],
-                )
+    previous_semesters = {str(course.get("id")): course.get("semester_key") for course in courses}
     catalog = _semester_catalog([course for course in courses if isinstance(course, dict)])
+    corrected_keys = set()
+    for course in courses:
+        before, after = previous_semesters[str(course.get("id"))], course["semester_key"]
+        if before and before != after:
+            corrected_keys.update((before, after))
     course_semesters = {
         str(course.get("id")): (course.get("semester_key"), course.get("semester_label"))
         for course in courses
@@ -327,6 +330,18 @@ def annotate_result_semesters(
         item["semester_label"] = label
     if not isinstance(result.get("available_semesters"), list) or (not result.get("available_semesters") and catalog):
         result["available_semesters"] = catalog
+    else:
+        # Keep catalog entries for unloaded semesters, but repair affected counts.
+        entries = {entry["key"]: entry for entry in result["available_semesters"]
+                   if isinstance(entry, dict) and normalize_semester_keys([entry.get("key")])}
+        for key in corrected_keys:
+            entries.pop(key, None)
+        for entry in catalog:
+            if entry["key"] in corrected_keys or entry["key"] not in entries:
+                entries[entry["key"]] = entry
+        result["available_semesters"] = sorted(
+            entries.values(), key=lambda entry: _semester_from_key(entry["key"])["sort_key"], reverse=True,
+        )
     available_keys = {item["key"] for item in catalog}
     selected = [key for key in selected_hint if key in available_keys]
     if not selected:

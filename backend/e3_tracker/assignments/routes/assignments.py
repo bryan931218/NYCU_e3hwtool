@@ -10,7 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 from flask import Response, flash, redirect, render_template_string, request, send_file, session, url_for
 from werkzeug.http import http_date
-from e3_tracker.assignments.services.collector import normalize_semester_selection
+from e3_tracker.assignments.services.collector import annotate_result_semesters, normalize_semester_selection
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
 from e3_tracker.assignments.services.http import apply_cookie, login_with_password
 from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
@@ -246,6 +246,7 @@ def register_assignments_routes(*,
             "assignment_refresh_after_ts": ASSIGNMENT_REFRESH_BROADCAST_AFTER_TS,
         }
         if include_cache:
+            annotate_result_semesters(cache.get("result"), selected_keys=preferences.get("semester_filter"))
             payload["cache"] = cache
         return payload
 
