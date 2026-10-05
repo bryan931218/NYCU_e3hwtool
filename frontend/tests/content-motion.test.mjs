@@ -123,13 +123,15 @@ test('every continuous homepage animation can pause and respects reduced motion'
   const css = readFileSync(new URL('../assignments/static/css/home.css', import.meta.url), 'utf8');
   const paused = css.slice(css.indexOf('html.motion-paused'));
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  for (const selector of ['.home-stats > div::after', '.stat-icon::after', '.workspace-preview', '.preview-topbar::after', '.demo-assignment::before']) {
+  for (const selector of ['.demo-check.checked', '.demo-check.checked path', '.due-tag.complete', '.assignment-complete h3::after']) {
     assert.ok(paused.includes(selector), `must pause ${selector}`);
     assert.ok(reduced.includes(selector), `must disable ${selector}`);
   }
   assert.match(paused, /animation-play-state: paused/);
-  assert.match(reduced, /\.home-ambient\s*\{\s*display: none/);
   assert.match(reduced, /animation: none/);
+  assert.doesNotMatch(css, /(?:stat-shimmer|stat-pulse|perspective\(|ambient-drift|preview-float)/);
+  const template = readFileSync(new URL('../assignments/templates/home.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(template, /home-ambient/);
   for (const frames of css.match(/@keyframes [^\n]+/g)) {
     assert.doesNotMatch(frames, /\b(?:width|height|top|left|margin|padding|filter|box-shadow)\s*:/);
   }
