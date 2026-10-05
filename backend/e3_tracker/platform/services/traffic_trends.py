@@ -1,4 +1,4 @@
-"""Bounded, Taipei-time views of distinct active-account traffic buckets."""
+"""Bounded, Taipei-time views of active accounts and first successful logins."""
 
 from datetime import date, datetime, time, timedelta
 
@@ -6,10 +6,31 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS
 
 
-def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, now=None):
+def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, memberships=(), now=None):
     now = (now or datetime.now(TAIPEI_TZ)).astimezone(TAIPEI_TZ)
     today = now.astimezone(TAIPEI_TZ).date()
     current_hour = now.replace(minute=0, second=0, microsecond=0)
+    first_joins = {}
+    # Membership history is independent of the resettable, truncated event stream.
+    for member in memberships:
+        identity = member.get('identity_key')
+        if not identity:
+            continue
+        try:
+            moment = datetime.fromtimestamp(float(member['joined_at']), tz=TAIPEI_TZ)
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+            continue
+        if moment > now:
+            continue
+        if identity not in first_joins or moment < first_joins[identity][0]:
+            first_joins[identity] = (moment, member.get('is_new') in (True, 1))
+    new_hours, new_days = {}, {}
+    for moment, is_new in first_joins.values():
+        if not is_new:
+            continue
+        hour = int(moment.replace(minute=0, second=0, microsecond=0).timestamp())
+        new_hours[hour] = new_hours.get(hour, 0) + 1
+        new_days[moment.date()] = new_days.get(moment.date(), 0) + 1
     hourly_counts = {int(item["ts"]): int(item["count"]) for item in hourly_series}
     daily_members = {}
     for timestamp, members in hourly_buckets.items():
@@ -42,6 +63,7 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, now=No
 
     history_days = [datetime.fromtimestamp(ts, tz=TAIPEI_TZ).date() for ts in hourly_counts]
     history_days.extend(daily_members)
+    history_days.extend(new_days)
     first_day = min(history_days, default=today)
     selection = params.get("range", "7d")
     if selection not in {"today", "7d", "30d", "all", "custom"}:
@@ -69,7 +91,7 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, now=No
         resolution = "day"
         notice = "超過 31 天的區間以每天顯示；縮小日期區間即可查看每小時資料。"
 
-    labels, values, rows = [], [], []
+    labels, values, new_values, rows = [], [], [], []
     cursor = TAIPEI_TZ.localize(datetime.combine(start, time.min))
     last = TAIPEI_TZ.localize(datetime.combine(end, time.min))
     if resolution == "hour":
@@ -81,7 +103,10 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, now=No
         label = cursor.strftime("%Y-%m-%d %H:00" if resolution == "hour" else "%Y-%m-%d")
         labels.append(label)
         values.append(count)
-        rows.append({"label": label, "count": count})
+        new_count = (new_hours.get(int(cursor.timestamp()), 0) if resolution == 'hour'
+                     else new_days.get(cursor.date(), 0))
+        new_values.append(new_count)
+        rows.append({"label": label, "count": count, "new_users": new_count})
         cursor += step
 
     query = {"range": selection}
@@ -94,7 +119,8 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, now=No
         "range": selection, "resolution": resolution, "query": query,
         "start": start.isoformat(), "end": end.isoformat(), "today": today.isoformat(),
         "labels": labels, "values": values, "rows": rows, "notice": notice,
-        "has_data": any(values), "has_history": bool(history_days),
+        "new_values": new_values, "new_total": sum(new_values),
+        "has_data": any(values) or any(new_values), "has_history": bool(history_days),
         "unit": "小時" if resolution == "hour" else "天",
         "peak": peak, "peak_label": labels[values.index(peak)] if peak else "—",
         "active_periods": sum(value > 0 for value in values),

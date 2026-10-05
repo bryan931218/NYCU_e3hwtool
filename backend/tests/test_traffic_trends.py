@@ -11,8 +11,11 @@ class TrafficTrendTests(unittest.TestCase):
     def timestamp(self, day, hour):
         return int(TAIPEI_TZ.localize(datetime(2026, 1, day, hour)).timestamp())
 
-    def build(self, buckets=None, series=None, events=None, **params):
-        return build_traffic_trend(series or [], buckets or {}, events or [], params, now=self.now)
+    def build(self, buckets=None, series=None, events=None, memberships=(), **params):
+        return build_traffic_trend(series or [], buckets or {}, events or [], params, memberships=memberships, now=self.now)
+
+    def member(self, key, day, hour, **changes):
+        return {'identity_key': key, 'joined_at': self.timestamp(day, hour), 'is_new': True, **changes}
 
     def test_daily_counts_deduplicate_accounts_across_hours_and_fill_quiet_days(self):
         buckets = {self.timestamp(1, 8): {"alice"}, self.timestamp(1, 9): {"alice", "bob"}}
@@ -62,6 +65,41 @@ class TrafficTrendTests(unittest.TestCase):
         self.assertIsNone(trend["previous"])
         self.assertEqual(trend["next"], {"start": "2026-01-02", "end": "2026-01-02"})
         self.assertEqual(trend["query"], {"range": "custom", "start": "2026-01-01", "end": "2026-01-01"})
+
+    def test_new_users_are_deduplicated_and_baselined_accounts_are_excluded(self):
+        members = [self.member('student:alice',1,8), self.member('student:alice',2,9),
+                   self.member('student:bob',2,1), self.member('student:old',1,1,is_new=False),
+                   self.member('student:old',2,2), self.member('student:future',2,11),
+                   self.member('invalid',2,1,joined_at='invalid'), {'joined_at':self.timestamp(2,1)}]
+        trend = self.build(memberships=members)
+        self.assertEqual(trend['new_values'],[0,0,0,0,0,1,1])
+        self.assertEqual(trend['new_total'],2)
+        self.assertEqual([row['new_users'] for row in trend['rows']],trend['new_values'])
+        self.assertTrue(trend['has_data'])
+        self.assertEqual(trend['values'],[0]*7)
+
+    def test_new_users_follow_taipei_hours_and_selected_range(self):
+        members=[self.member('alice',1,23), self.member('bob',2,0), self.member('charlie',2,10)]
+        trend=self.build(memberships=members,range='today')
+        self.assertEqual(trend['new_values'],[1]+[0]*9+[1])
+        self.assertEqual(trend['new_total'],2)
+        trend=self.build(memberships=members,range='custom',start='2026-01-01',end='2026-01-01',trend='day')
+        self.assertEqual(trend['new_values'],[1])
+        self.assertEqual(trend['new_total'],1)
+
+    def test_all_range_uses_first_join_history_even_without_retained_traffic_events(self):
+        trend=self.build(memberships=[self.member('alice',1,1)],range='all')
+        self.assertEqual(trend['labels'],['2026-01-01','2026-01-02'])
+        self.assertEqual(trend['new_values'],[1,0])
+        self.assertTrue(trend['has_history'])
+        baseline=self.build(memberships=[self.member('legacy',1,1,is_new=False)],range='all')
+        self.assertFalse(baseline['has_data'])
+        self.assertEqual(baseline['new_total'],0)
+
+    def test_event_claims_are_not_used_as_first_join_statistics(self):
+        trend=self.build(events=[{'ts':self.timestamp(2,1),'action':'login_success',
+                                 'meta':{'username':'alice','is_new_user':True}}],range='today')
+        self.assertEqual(trend['new_total'],0)
 
 
 if __name__ == "__main__":

@@ -50,6 +50,8 @@
 .trend-header { display: flex; justify-content: space-between; gap: 18px; align-items: start; flex-wrap: wrap; }
 .trend-peak { text-align: right; }
 .trend-peak strong { color: var(--primary); font-size: 26px; font-variant-numeric: tabular-nums; margin: 0 5px; }
+.trend-new-total { margin: 8px 0 0; color: var(--muted); }
+.trend-new-total strong { color: var(--info-fg); font-size: 18px; }
 .trend-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin: 18px 0 14px; }
 .trend-presets { display: flex; gap: 5px; flex-wrap: wrap; }
 .trend-presets a { text-decoration: none; padding: 6px 10px; border-radius: 5px; font-size: 12px; color: var(--muted); }

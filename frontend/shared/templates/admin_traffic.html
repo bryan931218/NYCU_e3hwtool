@@ -86,11 +86,12 @@
         <div class="trend-header">
             <div>
                 <h2 id="trend-title">帳號訪問趨勢</h2>
-                <p class="muted">同帳號每{{ trend.unit }}計一次 · 不含訪客</p>
+                <p class="muted">活躍帳號每{{ trend.unit }}計一次 · 新用戶依首次登入 · 不含訪客</p>
             </div>
             <div class="trend-peak">
                 <span class="muted">區間最高</span> <strong>{{ trend.peak }}</strong> <span class="muted">個帳號</span>
                 <p class="muted">{{ trend.peak_label }}</p>
+                <p class="trend-new-total">區間新用戶 <strong>{{ trend.new_total }}</strong> 人</p>
             </div>
         </div>
         <div class="trend-toolbar">
@@ -130,9 +131,9 @@
         </div>
         <div class="chart-wrap">
             <div class="chart-plot">
-                <canvas id="visitChart" class="chart-canvas" role="img" aria-label="{{ trend.start }} 至 {{ trend.end }}，每{{ trend.unit }}活躍帳號數；詳細數值見下方表格" {% if not trend.has_data %}hidden{% endif %}></canvas>
+                <canvas id="visitChart" class="chart-canvas" role="img" aria-label="{{ trend.start }} 至 {{ trend.end }}，每{{ trend.unit }}活躍帳號與新用戶數；詳細數值見下方表格" {% if not trend.has_data %}hidden{% endif %}></canvas>
                 <div class="chart-empty" id="chartEmpty" {% if trend.has_data %}hidden{% endif %}>
-                    <p>{{ '這個區間沒有帳號訪問紀錄' if trend.has_history else '目前尚無帳號訪問紀錄' }}</p>
+                    <p>{{ '這個區間沒有帳號訪問或新用戶紀錄' if trend.has_history else '目前尚無帳號訪問或新用戶紀錄' }}</p>
                     {% if trend.has_history and trend.range != 'all' %}<a class="btn" href="{{ traffic_link(range='all', _anchor='visit-trend') }}">查看全部紀錄</a>{% endif %}
                 </div>
             </div>
@@ -144,9 +145,9 @@
             <summary>查看詳細數值</summary>
             <div class="table-wrap">
                 <table>
-                    <caption class="muted">{{ trend.start }} — {{ trend.end }} 的每{{ trend.unit }}活躍帳號數</caption>
-                    <thead><tr><th scope="col">{{ '日期與時間' if trend.resolution == 'hour' else '日期' }}</th><th scope="col">活躍帳號數</th></tr></thead>
-                    <tbody>{% for row in trend.rows %}<tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>{% endfor %}</tbody>
+                    <caption class="muted">{{ trend.start }} — {{ trend.end }} 的每{{ trend.unit }}活躍帳號與新用戶數</caption>
+                    <thead><tr><th scope="col">{{ '日期與時間' if trend.resolution == 'hour' else '日期' }}</th><th scope="col">活躍帳號數</th><th scope="col">新用戶數</th></tr></thead>
+                    <tbody>{% for row in trend.rows %}<tr><td>{{ row.label }}</td><td>{{ row.count }}</td><td>{{ row.new_users }}</td></tr>{% endfor %}</tbody>
                 </table>
             </div>
         </details>
@@ -265,6 +266,7 @@
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}">
 const chartLabels = {{ trend.labels|tojson }};
 const chartValues = {{ trend['values']|tojson }};
+const chartNewValues = {{ trend.new_values|tojson }};
 const chartSeriesLabel = {{ ('每' ~ trend.unit ~ '活躍帳號數')|tojson }};
 const chartHourly = {{ (trend.resolution == 'hour')|tojson }};
 const chartHasData = {{ trend.has_data|tojson }};
@@ -274,6 +276,7 @@ const rootStyles = getComputedStyle(document.body);
 const axisColor = rootStyles.getPropertyValue('--chart-axis').trim() || '#cbd5f5';
 const gridColor = rootStyles.getPropertyValue('--chart-grid').trim() || 'rgba(148,163,184,0.25)';
 const lineColor = rootStyles.getPropertyValue('--chart-line').trim() || '#6366f1';
+const newUserColor = rootStyles.getPropertyValue('--info-fg').trim() || '#286aa6';
 const tooltipBg = rootStyles.getPropertyValue('--chart-tooltip-bg').trim() || '#0f172a';
 const tooltipFg = rootStyles.getPropertyValue('--chart-tooltip-fg').trim() || '#e2e8f0';
 let visitChart = null;
@@ -293,6 +296,16 @@ if (chartHasData && typeof Chart !== 'undefined') {
                     categoryPercentage: 0.8,
                     barPercentage: 0.9,
                 },
+                {
+                    label: '新用戶',
+                    data: chartNewValues,
+                    borderColor: newUserColor,
+                    backgroundColor: newUserColor,
+                    borderRadius: 4,
+                    maxBarThickness: 42,
+                    categoryPercentage: 0.8,
+                    barPercentage: 0.9,
+                },
             ]
         },
         options: {
@@ -304,7 +317,7 @@ if (chartHasData && typeof Chart !== 'undefined') {
             scales: {
                 y: {
                     beginAtZero: true,
-                    suggestedMax: Math.max(2, Math.max(...chartValues)),
+                    suggestedMax: Math.max(2, ...chartValues, ...chartNewValues),
                     ticks: { color: axisColor, precision: 0, maxTicksLimit: 6 },
                     grid: { color: gridColor },
                     border: { display: false }
@@ -327,7 +340,7 @@ if (chartHasData && typeof Chart !== 'undefined') {
                 }
             },
             plugins: {
-                legend: { display: false },
+                legend: { display: true, position: 'bottom', labels: {color: axisColor, usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 10, padding: 16} },
                 tooltip: {
                     backgroundColor: tooltipBg,
                     borderColor: lineColor,
@@ -335,10 +348,10 @@ if (chartHasData && typeof Chart !== 'undefined') {
                     titleColor: tooltipFg,
                     bodyColor: tooltipFg,
                     padding: 12,
-                    displayColors: false,
+                    displayColors: true,
                     callbacks: {
                         title(items) { return `${items[0].label}（台北時間）`; },
-                        label(item) { return `活躍帳號：${item.parsed.y} 個`; }
+                        label(item) { return `${item.datasetIndex === 1 ? '新用戶' : '活躍帳號'}：${item.parsed.y} ${item.datasetIndex === 1 ? '人' : '個'}`; }
                     }
                 }
             }
@@ -368,6 +381,9 @@ function syncAdminTheme() {
     const color = name => styles.getPropertyValue(name).trim();
     visitChart.data.datasets[0].backgroundColor = color('--primary');
     visitChart.data.datasets[0].borderColor = color('--primary');
+    visitChart.data.datasets[1].backgroundColor = color('--info-fg');
+    visitChart.data.datasets[1].borderColor = color('--info-fg');
+    visitChart.options.plugins.legend.labels.color = color('--muted');
     for (const axis of ['x', 'y']) visitChart.options.scales[axis].ticks.color = color('--muted');
     visitChart.options.scales.y.grid.color = color('--border');
     visitChart.options.scales.x.border.color = color('--border');

@@ -1,7 +1,9 @@
 """New-user markers come only from a first successful, non-guest login."""
 
 import hashlib
+import json
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -148,6 +150,26 @@ class AssignmentMembershipTests(unittest.TestCase):
             self.assertEqual(sorted(results), [False, True])
         finally:
             other._engine.dispose()
+
+    def test_chart_new_users_deduplicate_session_aliases_and_survive_traffic_reset(self):
+        for username in ('115550020','Session-chart-one','Session-chart-two'):
+            self.storage.save_user_profile(username,'示範用戶','示')
+            if username.startswith('Session-'):
+                self.storage.save_student_number(username,'115550020')
+            self.storage.claim_assignment_membership(username)
+        self.storage.save_user_profile('Session-chart-unknown','示範用戶','示')
+        self.storage.claim_assignment_membership('Session-chart-unknown')
+        csrf_client(self.app).post('/guest-login')
+        self.assertEqual(self.admin.post('/admin/traffic/reset').status_code,302)
+        page=self.page()
+        self.assertIn('區間新用戶',page.select_one('.trend-new-total').get_text())
+        self.assertEqual(page.select_one('.trend-new-total strong').get_text(),'2')
+        self.assertIn('新用戶數',page.select_one('.trend-values').get_text())
+        self.assertFalse(page.select_one('#visitChart').has_attr('hidden'))
+        scripts='\n'.join(script.get_text() for script in page.select('script'))
+        counts=json.loads(re.search(r'const chartNewValues = (\[[^;]*\]);',scripts)[1])
+        self.assertEqual(sum(counts),2)
+        self.assertIn("label: '新用戶'",scripts)
 
 
 if __name__ == "__main__":

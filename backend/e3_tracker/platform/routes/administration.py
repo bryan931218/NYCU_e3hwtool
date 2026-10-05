@@ -4,7 +4,7 @@ from e3_tracker.platform.services.traffic import is_recent_activity_event
 from e3_tracker.platform.services.traffic_trends import build_traffic_trend
 from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics
 from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
-from e3_tracker.assignments.domain.usage import FEATURE_LABELS
+from e3_tracker.assignments.domain.usage import FEATURE_LABELS, student_identity
 import json
 import time
 from collections import Counter
@@ -147,6 +147,9 @@ def register_administration_routes(*,
         trend = build_traffic_trend(
             traffic_tracker.hourly_series(), traffic_tracker.hourly_buckets(),
             filtered_events, request.args,
+            memberships=[{**memberships[profile['username']],
+                          'identity_key': student_identity(profile) or memberships[profile['username']]['identity_key']}
+                         for profile in profiles if profile['username'] in memberships],
         )
         action_counter: Counter = Counter()
         for ev in filtered_events:
