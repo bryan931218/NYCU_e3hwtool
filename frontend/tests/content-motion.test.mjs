@@ -123,7 +123,7 @@ test('every continuous homepage animation can pause and respects reduced motion'
   const css = readFileSync(new URL('../assignments/static/css/home.css', import.meta.url), 'utf8');
   const paused = css.slice(css.indexOf('html.motion-paused'));
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  for (const selector of ['.demo-check.checked', '.demo-check.checked path', '.due-tag.complete', '.assignment-complete h3::after']) {
+  for (const selector of ['.stationery-paper', '.demo-check.checked', '.demo-check.checked path', '.due-tag.complete', '.assignment-complete h3::after']) {
     assert.ok(paused.includes(selector), `must pause ${selector}`);
     assert.ok(reduced.includes(selector), `must disable ${selector}`);
   }
@@ -132,6 +132,10 @@ test('every continuous homepage animation can pause and respects reduced motion'
   assert.doesNotMatch(css, /(?:stat-shimmer|stat-pulse|perspective\(|ambient-drift|preview-float)/);
   const template = readFileSync(new URL('../assignments/templates/home.html', import.meta.url), 'utf8');
   assert.doesNotMatch(template, /home-ambient/);
+  assert.match(template, /class="home-stationery" aria-hidden="true"/);
+  assert.equal((template.match(/class="stationery-paper"/g) || []).length, 4);
+  assert.match(css, /\.home-stationery\s*\{[^}]*pointer-events: none/);
+  assert.match(reduced, /\.home-stationery\s*\{\s*display: none/);
   for (const frames of css.match(/@keyframes [^\n]+/g)) {
     assert.doesNotMatch(frames, /\b(?:width|height|top|left|margin|padding|filter|box-shadow)\s*:/);
   }

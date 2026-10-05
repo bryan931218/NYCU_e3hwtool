@@ -15,6 +15,13 @@ html[data-theme="dark"] .home-page { --bg: #151a1e; --card: #1d2429; --card-2: #
 .home-page a:focus-visible, .home-page button:focus-visible { outline: 3px solid var(--primary); outline-offset: 5px; }
 .home-page [hidden] { display: none !important; }
 .home-shell { position: relative; z-index: 1; width: min(1200px, calc(100% - 80px)); margin: 0 auto; }
+.home-stationery { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.stationery-paper { --paper-ink: var(--primary); --paper-turn: -12deg; position: absolute; top: 28%; left: 2%; width: 44px; height: 58px; border: 1px solid color-mix(in srgb, var(--paper-ink) 28%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--card) 65%, transparent); opacity: .65; transform: rotate(var(--paper-turn)); animation: paper-sway 22s ease-in-out infinite; }
+.stationery-paper::before { content: ""; position: absolute; top: -1px; right: -1px; width: 11px; height: 11px; background: var(--bg); border-left: 1px solid color-mix(in srgb, var(--paper-ink) 28%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--paper-ink) 28%, transparent); border-radius: 0 2px 0 2px; }
+.stationery-paper::after { content: ""; position: absolute; inset: 19px 9px 10px; background: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--paper-ink) 25%, transparent) 0 1px, transparent 1px 8px); }
+.stationery-paper:nth-child(2) { --paper-ink: var(--info-fg); --paper-turn: 9deg; top: 15%; right: 2%; left: auto; width: 56px; height: 72px; animation-duration: 26s; animation-delay: -9s; }
+.stationery-paper:nth-child(3) { --paper-ink: var(--warn-fg); --paper-turn: 14deg; top: auto; bottom: 5%; left: 34%; width: 40px; height: 52px; animation-duration: 24s; animation-delay: -16s; }
+.stationery-paper:nth-child(4) { --paper-turn: -8deg; top: auto; bottom: 9%; right: 7%; left: auto; width: 36px; height: 48px; animation-duration: 20s; animation-delay: -5s; }
 .skip-link { position: fixed; top: 12px; left: 12px; padding: 10px 18px; background: var(--card); z-index: 5; transform: translateY(-160%); }
 .skip-link:focus { transform: translateY(0); }
 .home-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 28px 0; border-bottom: 1px solid var(--border); }
@@ -108,6 +115,9 @@ html[data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
   .home-stats > div { padding: 20px; }
 }
 @media (max-width: 760px) {
+  .stationery-paper:first-child { left: -15px; top: 12%; }
+  .stationery-paper:nth-child(2) { right: -20px; top: 60%; }
+  .stationery-paper:nth-child(n + 3) { display: none; }
   .home-header { padding: 19px 0; }
   .home-nav { gap: 12px; }
   .home-hero { grid-template-columns: 1fr; padding: 42px 0 46px; gap: 35px; }
@@ -151,6 +161,7 @@ html[data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
   .home-footer nav { flex-wrap: wrap; gap: 20px; }
 }
 @keyframes home-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes paper-sway { 0%, 100% { transform: translate(0, 0) rotate(var(--paper-turn)); } 50% { transform: translate(7px, -14px) rotate(calc(var(--paper-turn) + 5deg)); } }
 @media (hover: hover) and (pointer: fine) {
   .home-stats > div:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--stat-accent) 35%, var(--border)); }
 }
@@ -158,11 +169,14 @@ html[data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
 @keyframes completion-check { 0%, 8% { stroke-dashoffset: 24; opacity: 0; } 12% { stroke-dashoffset: 24; opacity: 1; } 23%, 88% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
 @keyframes completion-label { 0%, 18%, 100% { opacity: 0; transform: translateY(3px); } 26%, 88% { opacity: 1; transform: translateY(0); } 96% { opacity: 0; transform: translateY(0); } }
 @keyframes completion-strike { 0%, 20% { transform: scaleX(0); opacity: .5; } 29%, 88% { transform: scaleX(1); opacity: .5; } 96%, 100% { transform: scaleX(1); opacity: 0; } }
+html.motion-paused .stationery-paper,
 html.motion-paused .demo-check.checked,
 html.motion-paused .demo-check.checked path,
 html.motion-paused .assignment-complete h3::after,
 html.motion-paused .due-tag.complete { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
+  .home-stationery { display: none; }
+  .stationery-paper { animation: none; }
   .home-hero, .demo-check.checked, .demo-check.checked path, .due-tag.complete, .assignment-complete h3::after { animation: none; }
   .home-button, .home-button svg, .home-stats > div, .workspace-preview { transition: none; }
   .home-button:hover svg, .home-stats > div:hover { transform: none; }
