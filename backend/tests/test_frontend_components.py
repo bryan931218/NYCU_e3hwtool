@@ -8,7 +8,7 @@ from e3_tracker.platform.assets import configure_frontend
 
 
 class FrontendComponentTests(unittest.TestCase):
-    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, overdue=True, completed=False, readonly=False, google_ready=False, google_linked=False, excel_data=''):
+    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, overdue=True, completed=False, readonly=False, google_ready=False, google_linked=False, excel_data='', admin=False):
         app = Flask(__name__)
         configure_frontend(app)
         app.secret_key = 'component-test'
@@ -27,14 +27,14 @@ class FrontendComponentTests(unittest.TestCase):
                   'all_assignments': [item], 'errors': [], 'available_semesters': [], 'selected_semesters': ['115-1']}
         with app.test_request_context('/'):
             html = render_template('assignments/web.html', result=result, preferences=preferences,
-                                   user={'username': 'qa', 'surname': surname}, viewed_username='qa',
+                                   user={'username': 'qa', 'surname': surname, 'is_admin': admin}, viewed_username='qa',
                                    guest_mode=guest_mode, is_admin_view=readonly, google_ready=google_ready,
                                    google_linked=google_linked, excel_data=excel_data, now_ts=200,
                                    last_updated_label='2026-09-26 13:31', stats={'online': 3, 'total': 3286})
         return BeautifulSoup(html, 'html.parser'), uid
 
     def test_more_operations_groups_download_calendar_and_extension_with_explicit_disconnect(self):
-        page, _uid = self.render(google_ready=True, google_linked=True, excel_data='cHJldmlldw==')
+        page, _uid = self.render(google_ready=True, google_linked=True, excel_data='cHJldmlldw==', admin=True)
         panel = page.select_one('#moreOperationsPanel')
         self.assertEqual([h.get_text() for h in panel.select('h3')], ['作業資料', 'Google 日曆', '瀏覽器套件'])
         self.assertIsNone(panel.select_one('.btn'))
@@ -64,7 +64,7 @@ class FrontendComponentTests(unittest.TestCase):
                 self.assertIsNone(panel.select_one('.more-connection'))
 
     def test_e3_return_entry_keeps_native_links_and_escapes_assignment_metadata(self):
-        document, _uid = self.render()
+        document, _uid = self.render(admin=True)
         for link in document.select('.assignment-link a'):
             self.assertTrue(link.has_attr('data-e3-assignment'))
             self.assertEqual(link['href'], 'https://example.test/task')
@@ -73,6 +73,15 @@ class FrontendComponentTests(unittest.TestCase):
             self.assertEqual(link.find_parent('tr')['data-title'], '<img src=x onerror=alert(1)>')
         self.assertIsNone(document.select_one('#e3NavigationRecovery'))
         self.assertIsNotNone(document.select_one('a[href="/e3_navigation_extension"]'))
+
+    def test_extension_entry_only_shows_for_authenticated_admins(self):
+        for options, visible in [({}, False), ({'guest_mode': True}, False),
+                                 ({'admin': True}, True), ({'admin': True, 'readonly': True}, True),
+                                 ({'admin': True, 'guest_mode': True}, False)]:
+            with self.subTest(options=options):
+                page, _uid = self.render(**options)
+                self.assertEqual(page.select_one('#moreExtensionHeading') is not None, visible)
+                self.assertEqual(page.select_one('a[href="/e3_navigation_extension"]') is not None, visible)
 
     def test_both_views_share_escaped_content_and_ignored_state(self):
         document, uid = self.render()

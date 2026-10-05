@@ -12,7 +12,7 @@
 </head>
 <body class="extension-guide">
 <div class="guide-shell">
-    <header class="guide-header"><a class="guide-brand" href="{{ url_for('index') }}">E3作業追蹤系統</a><div class="guide-header-actions"><a class="guide-back" href="{{ url_for('e3_navigation_extension') }}"><span class="guide-icon icon-back" aria-hidden="true"></span>安裝指南</a><button class="guide-icon-button" id="guideTheme" type="button" aria-label="切換深淺色模式" title="切換深淺色模式"><span class="guide-icon icon-theme" aria-hidden="true"></span></button></div></header>
+    <header class="guide-header"><a class="guide-brand" href="{{ url_for('index') }}">E3作業追蹤系統</a><div class="guide-header-actions"><a class="guide-back" href="{{ url_for('e3_navigation_extension') if can_install else url_for('index') }}"><span class="guide-icon icon-back" aria-hidden="true"></span>{{ '安裝指南' if can_install else '返回網站' }}</a><button class="guide-icon-button" id="guideTheme" type="button" aria-label="切換深淺色模式" title="切換深淺色模式"><span class="guide-icon icon-theme" aria-hidden="true"></span></button></div></header>
 <main class="privacy-body privacy-copy">
     <section class="guide-intro"><p class="guide-eyebrow">E3 作業自動跳轉</p><h1>套件隱私說明</h1><p class="guide-lead">此說明僅適用於自動跳轉套件，不取代追蹤系統本身的隱私政策。</p></section>
     <h2>資料使用</h2>
@@ -24,7 +24,7 @@
     <p>套件僅於 e3hwtool.space、www.e3hwtool.space 與 e3p.nycu.edu.tw 執行。學校登入與雙重驗證由用戶在校方頁面完成。沒有從追蹤系統開啟作業時，套件不會介入 E3 瀏覽。</p>
     <p>可在 Chrome 或 Edge 的擴充功能管理頁移除套件，停用自動跳轉並清除套件儲存資料。</p>
     {% if support_email %}<p>聯絡方式：<a href="mailto:{{ support_email }}">{{ support_email }}</a></p>{% endif %}
-    <p><a href="{{ url_for('e3_navigation_extension') }}">返回套件安裝頁</a></p>
+    {% if can_install %}<p><a href="{{ url_for('e3_navigation_extension') }}">返回套件安裝頁</a></p>{% endif %}
 </main>
 <footer class="guide-footer"><a href="{{ url_for('index') }}">返回作業追蹤系統</a></footer>
 </div>

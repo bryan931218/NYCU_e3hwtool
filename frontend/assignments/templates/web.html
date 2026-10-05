@@ -261,10 +261,12 @@
                     {% else %}<a class="more-action" href="{{ url_for('google_authorize') }}"><span class="more-icon" data-icon="calendar" aria-hidden="true"></span><span>連結 Google 日曆</span></a>{% endif %}
                     {% else %}<p class="more-unavailable">尚未開放日曆同步</p>{% endif %}
                 </section>
+                {% if user.is_admin and not guest_mode %}
                 <section class="more-group" aria-labelledby="moreExtensionHeading">
                     <h3 id="moreExtensionHeading">瀏覽器套件</h3>
                     <a class="more-action" href="{{ url_for('e3_navigation_extension') }}" target="_blank" rel="noopener"><span class="more-icon" data-icon="puzzle" aria-hidden="true"></span><span>安裝自動跳轉套件</span><span class="more-icon more-external" data-icon="external" aria-hidden="true"></span><span class="more-sr-only">（開啟新分頁）</span></a>
                 </section>
+                {% endif %}
             </div>
         </details>
         {% if google_ready and google_linked %}<form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"><input type="hidden" name="selected_uids" id="googleSyncInput"></form>{% endif %}

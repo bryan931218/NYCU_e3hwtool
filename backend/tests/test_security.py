@@ -90,6 +90,30 @@ class SecurityTests(unittest.TestCase):
         with (client or self.client).session_transaction() as cookie:
             cookie["session_token"] = token
 
+    def test_extension_installer_is_admin_only_with_public_privacy_and_no_public_entry(self):
+        paths = ('/e3-auto-navigation', '/e3-auto-navigation/download',
+                 '/assets/assignments/e3-navigation-extension/README.html',
+                 '/assets/assignments/e3-navigation-extension/manifest.json')
+        for user_type in ('anonymous', 'student', 'session', 'guest', 'admin'):
+            with self.subTest(user_type=user_type):
+                with self.client.session_transaction() as state:
+                    state.clear()
+                if user_type != 'anonymous':
+                    self.login(username=user_type, token=user_type, admin=user_type == 'admin',
+                               guest=user_type == 'guest', moodle='synthetic' if user_type == 'session' else None)
+                for path in paths:
+                    response = self.client.get(path)
+                    self.assertEqual(response.status_code, 200 if user_type == 'admin' else 403, path)
+                    self.assertIn('no-store', response.headers['Cache-Control'])
+                    response.close()
+                response = self.client.get('/e3-auto-navigation/privacy')
+                self.assertEqual(response.status_code, 200)
+                page = BeautifulSoup(response.data, 'html.parser')
+                self.assertEqual(page.select_one('a[href="/e3-auto-navigation"]') is not None, user_type == 'admin')
+                if user_type == 'anonymous':
+                    page = BeautifulSoup(self.client.get('/').data, 'html.parser')
+                    self.assertIsNone(page.select_one('a[href="/e3-auto-navigation"]'))
+
     def test_missing_or_invalid_csrf_blocks_all_mutations(self):
         for path in (
             "/login",

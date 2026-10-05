@@ -1,4 +1,4 @@
-"""Public extension download contains the current reviewed sources only."""
+"""Admin-only extension downloads contain the current reviewed sources only."""
 import io
 import json
 import unittest
@@ -18,12 +18,41 @@ class E3NavigationExtensionTests(unittest.TestCase):
         app = Flask(__name__)
         configure_frontend(app)
         register_frontend_assets(app)
-        register_dashboard_routes(app=app, current_user=lambda: None,
+        self.user = {'username': 'admin', 'is_admin': True, 'is_guest': False}
+        register_dashboard_routes(app=app, current_user=lambda: self.user,
             HOME_TEMPLATE='home', WEB_TEMPLATE='dashboard', _build_dashboard_context=lambda _: {},
             usage_stats=lambda: {}, current_stats_version=lambda: 0,
             app_home_url='', support_email='')
         self.client = app.test_client()
         self.app = app
+
+    def test_non_admins_cannot_open_install_download_or_raw_package_sources(self):
+        paths = ['/e3-auto-navigation', '/e3-auto-navigation/download']
+        paths += ['/assets/assignments/e3-navigation-extension/' + name
+                  for name in EXTENSION_FILES if name != 'guide.css' and not name.startswith('icons/')]
+        paths += ['/assets/assignments/e3-navigation-extension/./README.html',
+                  '/assets/assignments/e3-navigation-extension/icons/../README.html',
+                  '/assets/assignments/e3-navigation-extension/README.HTML']
+        for user in (None, {'username': 'student', 'is_admin': False},
+                     {'username': 'Session-demo', 'is_admin': False},
+                     {'username': 'guest', 'is_guest': True, 'is_admin': True}):
+            self.user = user
+            for path in paths:
+                with self.subTest(user=user, path=path):
+                    response = self.client.get(path)
+                    self.assertEqual(response.status_code, 403)
+                    self.assertIn('no-store', response.headers['Cache-Control'])
+                    self.assertNotIn('下載套件 ZIP', response.get_data(as_text=True))
+
+    def test_public_privacy_has_no_install_entry(self):
+        self.user = None
+        response = self.client.get('/e3-auto-navigation/privacy')
+        self.assertEqual(response.status_code, 200)
+        page = BeautifulSoup(response.data, 'html.parser')
+        self.assertIsNone(page.select_one('a[href="/e3-auto-navigation"]'))
+        response = self.client.get('/assets/assignments/e3-navigation-extension/guide.css')
+        self.assertEqual(response.status_code, 200)
+        response.close()
 
     def test_privacy_page_is_available_and_linked(self):
         page = BeautifulSoup(self.client.get('/e3-auto-navigation').data, 'html.parser')
@@ -51,9 +80,11 @@ class E3NavigationExtensionTests(unittest.TestCase):
                 with Image.open(io.BytesIO(package.read(filename))) as icon:
                     self.assertEqual(icon.size, (int(size), int(size)))
 
-    def test_public_install_page_links_to_a_working_download(self):
+    def test_admin_install_page_links_to_a_working_download(self):
         response = self.client.get('/e3-auto-navigation')
         self.assertEqual(response.status_code, 200)
+        self.assertIn('private', response.headers['Cache-Control'])
+        self.assertIn('no-store', response.headers['Cache-Control'])
         page = BeautifulSoup(response.data, 'html.parser')
         self.assertIsNotNone(page.select_one('a[href="/e3-auto-navigation/download"]'))
         self.assertIn('載入未封裝項目', page.get_text())
@@ -92,6 +123,8 @@ class E3NavigationExtensionTests(unittest.TestCase):
         response = self.client.get('/e3-auto-navigation/download')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, 'application/zip')
+        self.assertIn('private', response.headers['Cache-Control'])
+        self.assertIn('no-store', response.headers['Cache-Control'])
         self.assertIn('attachment', response.headers['Content-Disposition'])
         with ZipFile(io.BytesIO(response.data)) as package:
             self.assertEqual(set(package.namelist()), {'e3-auto-navigation/' + name for name in EXTENSION_FILES})
