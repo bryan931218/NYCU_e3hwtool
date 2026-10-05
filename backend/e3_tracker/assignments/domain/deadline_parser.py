@@ -61,12 +61,19 @@ def _clock(tail, date):
         minute = 30 if match['cnminute'] == '半' else int(match['minute'] or match['cnminute'] or 0)
         second = int(match['second'] or 0)
         period = match['period'] or (match['ampm'] or '').lower().replace('.', '')
+        evening_midnight = period == '晚上' and hour == 12
         if period:
-            if not 1 <= hour <= 12:
+            if hour == 0 and period in {'凌晨', '上午', '早上'}:
+                pass
+            elif not 1 <= hour <= 12:
                 raise ValueError('invalid 12-hour time')
             hour %= 12
             if period in {'下午', '晚上', '中午', 'pm'}:
                 hour += 12
+            if evening_midnight:
+                hour = 0
+                date += timedelta(days=1)
+                warnings.append('晚上 12 點判讀為次日 00 點，請核對日期。')
         rollover = hour == 24 and minute == second == 0
         date = date.replace(hour=0 if rollover else hour, minute=minute, second=second)
         if rollover:

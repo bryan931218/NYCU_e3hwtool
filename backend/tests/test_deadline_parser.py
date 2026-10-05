@@ -34,6 +34,9 @@ class DeadlineParserTests(unittest.TestCase):
             '截止 2026/10/09 中午': '2026-10-09 12:00',
             'Due October 9, 2026 at noon': '2026-10-09 12:00',
             '截止时间改为2026年10月9日下午5点': '2026-10-09 17:00',
+            '截止 2026/10/09 晚上12點': '2026-10-10 00:00',
+            '截止 2026/10/09 凌晨0點': '2026-10-09 00:00',
+            '截止 2026/10/09 中午12點': '2026-10-09 12:00',
         }
         for text, expected in cases.items():
             with self.subTest(text=text): self.date(text, expected)
