@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    {% include 'shared/components/security.html' %}
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登入｜研究所備考中心</title>
+    {% include 'study/components/study_assets.html' %}
+    <style nonce="{{ csp_nonce() }}">
+        .study-login { width: min(480px, 100%); box-sizing: border-box; margin: 15vh auto; padding: 28px; }
+        .study-login h1 { font-size: 26px; }
+        .study-login p { line-height: 1.7; }
+        .study-login button, .study-login a { display: inline-block; margin: 8px 8px 0 0; padding: 10px 16px; border: 1px solid var(--study-line); border-radius: 6px; color: var(--study-ink); background: var(--study-paper); font: inherit; font-size: 14px; text-decoration: none; cursor: pointer; }
+        .study-login button { background: var(--study-blue); color: white; border-color: var(--study-blue); }
+    </style>
+</head>
+<body class="study-center-page">
+    <main class="study-login">
+        <h1>研究所備考中心</h1>
+        {% if can_resume %}
+        <form method="post" action="{{ url_for('study_resume') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit">登入備考站</button>
+        </form>
+        {% else %}
+        <p>請先以管理員身分登入 E3，再回到此頁繼續。此裝置尚未同步的影片進度會保留。</p>
+        <a href="{{ url_for('login') }}" target="_blank" rel="noopener">登入 E3</a>
+        <a href="{{ url_for('study_login') }}">繼續</a>
+        {% endif %}
+        <a href="{{ url_for('public_study_progress') }}">公開頁面</a>
+    </main>
+</body>
+</html>

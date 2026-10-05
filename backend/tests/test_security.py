@@ -64,6 +64,8 @@ class SecurityTests(unittest.TestCase):
         )["content"]
 
     def post(self, path, *, client=None, token=None, headers=None, **kwargs):
+        if token is None and path.startswith("/admin/study-"):
+            token = self.study_csrf(client)
         return (client or self.client).post(
             path,
             base_url="http://localhost",
@@ -73,6 +75,12 @@ class SecurityTests(unittest.TestCase):
             },
             **kwargs,
         )
+
+    def study_csrf(self, client=None):
+        response = (client or self.client).get("/admin/study-auth/state", base_url="http://localhost")
+        if response.status_code == 200:
+            return response.json["csrf_token"]
+        return self.token(client, path="/admin/study-auth/login")
 
     def login(
         self,
@@ -229,6 +237,11 @@ class SecurityTests(unittest.TestCase):
             self.client.get("/admin/study-player-settings").status_code, 200
         )
         self.storage.clear_web_session("secure-test-session")
+        # E3 revocation is independent; revoking the study session still denies access.
+        self.assertEqual(self.client.get("/admin/study-player-settings").status_code, 200)
+        with self.client.session_transaction(path="/admin/study-plan") as cookie:
+            study_token = cookie["session_token"]
+        self.storage.clear_web_session(study_token)
         self.assertEqual(
             self.client.get("/admin/study-player-settings").status_code, 302
         )
@@ -468,13 +481,18 @@ class SecurityTests(unittest.TestCase):
                 for method in sorted(
                     rule.methods & {"GET", "POST", "PUT", "DELETE", "PATCH"}
                 ):
+                    scoped_csrf = self.study_csrf() if path.startswith("/admin/study-") else csrf
                     response = self.client.open(
                         path,
                         method=method,
                         base_url="http://localhost",
-                        headers={"X-CSRFToken": csrf},
+                        headers={"X-CSRFToken": scoped_csrf},
                     )
                     with self.subTest(path=path, method=method, guest=guest):
+                        if rule.endpoint == "study_login" and method == "GET":
+                            self.assertEqual(response.status_code, 200)
+                            self.assertNotIn(b"video_id", response.data)
+                            continue
                         self.assertIn(response.status_code, {302, 303, 401, 403, 404})
 
     def test_production_requires_encryption_key_secure_cookies_and_allowed_hosts(self):

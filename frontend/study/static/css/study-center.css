@@ -141,6 +141,35 @@ body.study-center-page {
   white-space: nowrap;
 }
 
+.study-center-page .study-nav form { margin: 0; flex-shrink: 0; }
+.study-center-page .study-signout {
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--study-line);
+  border-radius: 6px;
+  color: var(--study-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.study-center-page .study-signout:hover { color: var(--study-ink); background: var(--study-paper); }
+
+.study-center-page .player-status-line { flex-wrap: wrap; gap: 8px; }
+.study-center-page .player-recovery { display: flex; flex-wrap: wrap; gap: 8px; }
+.study-center-page .player-recovery a,
+.study-center-page .player-recovery button {
+  padding: 7px 10px;
+  border: 1px solid var(--study-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--study-blue);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.study-center-page .player-recovery [hidden] { display: none; }
+
 .study-center-page .content,
 .study-center-page main.shell {
   width: min(1480px, 100%) !important;

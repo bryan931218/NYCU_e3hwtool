@@ -61,6 +61,10 @@ with tempfile.TemporaryDirectory() as directory:
         assert client.get('/admin/study-calendar/time-summary.json?start=2026-09-01&end=2026-09-30').status_code == 200
         assert client.get('/admin/study-calendar/time-summary.json?start=2026-09-30&end=2026-09-01').status_code == 400
         storage.save_web_session('bootstrap-smoke', 'test-admin', is_admin=False)
+        assert client.get('/admin/study-player-settings').status_code == 200
+        with client.session_transaction(path='/admin/study-plan') as study_session:
+            study_token = study_session['session_token']
+        storage.save_web_session(study_token, 'test-admin', is_admin=False)
         assert client.get('/admin/study-player-settings').status_code == 403
         assert client.get('/admin/study-recall/favorites.json').status_code == 401
         assert client.get('/admin/study-calendar/time-summary.json?start=2026-09-01&end=2026-09-30').status_code == 403

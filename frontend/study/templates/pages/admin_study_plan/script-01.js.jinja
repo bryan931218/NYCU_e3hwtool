@@ -179,8 +179,6 @@
             let activeRecordId = '';
             let saveTimer = null;
             let playbackTimer = null;
-            let queuedSaveCount = 0;
-            let saveQueue = Promise.resolve();
             let videoMarkers = [];
             let requestedMarker = null;
             let markerSaving = false;
@@ -230,6 +228,100 @@
             const shouldFocusRequestedVideo = Boolean(requestedVideoId || window.location.hash === '#youtube-player-section');
 
             if (!videoSelect || !durationHint) return;
+
+            const studyAccount = {{ admin_user.username|tojson }};
+            let studyStorage = null;
+            try { studyStorage = window.localStorage; } catch (error) {}
+            const progressBuffer = window.E3StudyBuffer.create(studyStorage, studyAccount);
+            const practiceTimerKey = 'e3-practice-timer:' + encodeURIComponent(studyAccount);
+            const studyReauth = document.getElementById('study-reauth');
+            const restoreLocalProgress = document.getElementById('restore-local-progress');
+            let studyCsrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            let authRefresh = null;
+            let pendingSync = Promise.resolve();
+            let syncInFlight = false;
+            const localSaveMessage = function () {
+                return progressBuffer.isDurable() ? '已保存本機，等待同步' : '僅暫存在此分頁，請勿關閉';
+            };
+            const refreshStudyAuth = function () {
+                if (authRefresh) return authRefresh;
+                authRefresh = fetch('{{ url_for("study_auth_state") }}', { redirect: 'error' })
+                    .then(function (response) {
+                        if (!response.ok) throw new Error('study_login_required');
+                        return response.json();
+                    }).then(function (result) {
+                        if (!result.ok || result.username !== studyAccount) throw new Error('study_account_changed');
+                        studyCsrf = result.csrf_token;
+                        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+                        if (csrfMeta) csrfMeta.content = studyCsrf;
+                        if (studyReauth) studyReauth.hidden = true;
+                    }).catch(function (error) {
+                        if (studyReauth) studyReauth.hidden = false;
+                        throw error;
+                    }).finally(function () { authRefresh = null; });
+                return authRefresh;
+            };
+            const sendStudySnapshot = async function (record, keepalive, retry) {
+                const controller = new AbortController();
+                const timeout = keepalive ? null : window.setTimeout(function () { controller.abort(); }, 10000);
+                let response;
+                try {
+                    response = await fetch(record.kind === 'video'
+                        ? '{{ url_for("admin_study_plan_video_progress") }}'
+                        : '{{ url_for("admin_study_plan_study_time") }}', {
+                        method: 'POST', redirect: 'error', credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': studyCsrf, 'X-Study-Account': studyAccount },
+                        body: JSON.stringify(record.payload), keepalive: Boolean(keepalive),
+                        signal: keepalive ? undefined : controller.signal
+                    });
+                } finally { if (timeout) window.clearTimeout(timeout); }
+                const result = await response.json();
+                if (!retry && !keepalive && (response.status === 401 || result.error === 'csrf_validation_failed')) {
+                    await refreshStudyAuth();
+                    return sendStudySnapshot(record, false, true);
+                }
+                if (!response.ok || !result.ok) {
+                    if (studyReauth && [401, 403].includes(response.status)) studyReauth.hidden = false;
+                    throw new Error(result.error || 'study_sync_failed');
+                }
+                return result;
+            };
+            const synchronizeSnapshot = function (record, keepalive) {
+                const perform = async function () {
+                    const latest = progressBuffer.read(record.key);
+                    if (!latest?.pending) return { ok: true };
+                    syncInFlight = true;
+                    try {
+                        const result = await sendStudySnapshot(latest, keepalive, false);
+                        progressBuffer.acknowledge(latest, result);
+                        if (latest.kind === 'video') {
+                            applyProgressResult(result);
+                            if (String(videoSelect.value) === String(latest.payload.video_id)) {
+                                playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+                                playerSyncState.textContent = progressBuffer.read(latest.key)?.conflict ? '已保留伺服器較新的紀錄' : '已自動儲存';
+                                if (restoreLocalProgress) restoreLocalProgress.hidden = !progressBuffer.conflict(latest.payload.video_id);
+                            }
+                        } else {
+                            updateTodayStudyTime(result.today);
+                            if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '已同步';
+                            const current = progressBuffer.read(latest.key);
+                            if (current && !current.pending) progressBuffer.forget(latest.key);
+                        }
+                        return result;
+                    } catch (error) {
+                        playerSyncState.textContent = localSaveMessage();
+                        if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = localSaveMessage();
+                        return { ok: false };
+                    } finally { syncInFlight = false; }
+                };
+                // Closing a tab never races a second write against an in-flight one.
+                // Its newer snapshot is already durable and will be retried next visit.
+                if (keepalive && syncInFlight) return Promise.resolve({ ok: false });
+                if (keepalive) return perform();
+                const queued = pendingSync.catch(function () {}).then(perform);
+                pendingSync = queued;
+                return queued;
+            };
 
             const setVideoSummaryOpen = function (isOpen) {
                 if (!videoSummary || !videoSummaryToggle || !videoSummaryBody) return;
@@ -314,29 +406,15 @@
                 if (!session || !session.id) return Promise.resolve();
                 const elapsedSeconds = Math.max(0, Number(session.elapsed || 0))
                     + (session.runningSince ? Math.max(0, (Date.now() - session.runningSince) / 1000) : 0);
-                return fetch('{{ url_for("admin_study_plan_study_time") }}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                const snapshot = progressBuffer.capture('time', session.id, {
                         session_id: session.id,
                         kind: session.kind,
                         video_id: session.videoId || null,
                         label: session.label || '',
                         elapsed_seconds: elapsedSeconds,
                         completed: Boolean(completed)
-                    }),
-                    keepalive: Boolean(keepalive)
-                }).then(function (response) {
-                    if (!response.ok) throw new Error('study_time_not_saved');
-                    return response.json();
-                }).then(function (result) {
-                    updateTodayStudyTime(result.today);
-                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '已同步';
-                    return result;
-                }).catch(function () {
-                    if (studyTimeSyncStatus) studyTimeSyncStatus.textContent = '同步失敗，請重試';
-                    return { ok: false };
                 });
+                return synchronizeSnapshot(snapshot, keepalive);
             };
             const currentSessionSeconds = function (session) {
                 if (!session) return 0;
@@ -356,12 +434,14 @@
             };
             const persistPracticeTimer = function () {
                 try {
-                    if (practiceTimer) window.localStorage.setItem('e3-practice-timer', JSON.stringify(practiceTimer));
-                    else window.localStorage.removeItem('e3-practice-timer');
+                    if (practiceTimer) window.localStorage.setItem(practiceTimerKey, JSON.stringify({
+                        ...practiceTimer, elapsed: currentSessionSeconds(practiceTimer), runningSince: null
+                    }));
+                    else window.localStorage.removeItem(practiceTimerKey);
                 } catch (error) {}
             };
             try {
-                const savedPracticeTimer = JSON.parse(window.localStorage.getItem('e3-practice-timer') || 'null');
+                const savedPracticeTimer = JSON.parse(window.localStorage.getItem(practiceTimerKey) || 'null');
                 if (savedPracticeTimer && savedPracticeTimer.id && savedPracticeTimer.kind === 'practice') {
                     practiceTimer = savedPracticeTimer;
                     if (practiceTimerLabel) practiceTimerLabel.value = practiceTimer.label || '';
@@ -1364,49 +1444,23 @@
                 const option = explicitOption || optionByValue(activeRecordId) || selectedOption();
                 const youtubeId = option ? option.dataset.youtubeVideoId : '';
                 if (!option || !youtubeId || !player || typeof player.getCurrentTime !== 'function') return Promise.resolve();
-                if (queuedSaveCount && reason === 'interval') return Promise.resolve();
                 const playerSeconds = Math.max(0, Number(player.getCurrentTime() || 0));
+                if (!Number.isFinite(playerSeconds)) return Promise.resolve();
                 if (String(videoSelect.value) === String(option.value)) {
                     setPlayerPosition(playerSeconds, Number(option.dataset.durationSeconds || 0));
                 }
                 const durationSeconds = Number(option.dataset.durationSeconds || 0);
-                const currentSeconds = reason === 'ended' && durationSeconds > 0 ? durationSeconds : playerSeconds;
+                const currentSeconds = durationSeconds > 0
+                    ? reason === 'ended' ? durationSeconds : Math.min(durationSeconds, playerSeconds)
+                    : playerSeconds;
                 const videoId = Number(option.value);
-                queuedSaveCount += 1;
-                playerSyncState.textContent = '儲存中…';
-                const performRequest = function () {
-                    const expectedVersion = Math.max(0, Number(option.dataset.progressVersion || 0));
-                    return fetch('{{ url_for("admin_study_plan_video_progress") }}', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            video_id: videoId,
-                            watched_seconds: currentSeconds,
-                            expected_version: expectedVersion
-                        }),
-                        keepalive: Boolean(useKeepalive)
-                    }).then(function (response) {
-                        if (!response.ok) throw new Error('save_failed');
-                        return response.json();
-                    }).then(function (data) {
-                        if (!applyProgressResult(data)) return;
-                        playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-                        playerSyncState.textContent = data.stale
-                            ? '偵測到較新的紀錄，已保留最新進度'
-                            : reason === 'ended' ? '已完成並儲存' : '已自動儲存';
-                    });
-                };
-                // A keepalive request must start during beforeunload. Normal saves stay
-                // serialized so an older player position cannot overwrite a newer one.
-                const queuedRequest = useKeepalive
-                    ? performRequest()
-                    : saveQueue.catch(function () {}).then(performRequest);
-                if (!useKeepalive) saveQueue = queuedRequest.catch(function () {});
-                return queuedRequest.catch(function () {
-                    playerSyncState.textContent = '儲存失敗，稍後重試';
-                }).finally(function () {
-                    queuedSaveCount = Math.max(0, queuedSaveCount - 1);
+                const snapshot = progressBuffer.capture('video', videoId, {
+                    video_id: videoId, watched_seconds: currentSeconds,
+                    expected_version: Math.max(0, Number(option.dataset.progressVersion || 0))
                 });
+                if (reason === 'local') return Promise.resolve();
+                playerSyncState.textContent = localSaveMessage();
+                return synchronizeSnapshot(snapshot, useKeepalive);
             };
             const startSaveTimer = function () {
                 if (saveTimer) return;
@@ -1419,7 +1473,12 @@
             const startPlaybackTimer = function () {
                 if (playbackTimer) return;
                 syncPlaybackPosition();
-                playbackTimer = window.setInterval(syncPlaybackPosition, 1000);
+                let ticks = 0;
+                playbackTimer = window.setInterval(function () {
+                    syncPlaybackPosition();
+                    ticks += 1;
+                    if (ticks % 5 === 0) saveProgress('local', false);
+                }, 1000);
             };
             const stopPlaybackTimer = function () {
                 if (playbackTimer) window.clearInterval(playbackTimer);
@@ -1437,9 +1496,11 @@
                 const requestedStartSeconds = hasRequestedMarker
                     ? Math.max(0, Number(requestedMarker.playback_seconds || 0))
                     : null;
+                const localSeconds = progressBuffer.playback(option.value, option.dataset.progressVersion || 0);
                 const startSeconds = Math.floor(requestedStartSeconds !== null
                     ? requestedStartSeconds
-                    : Number(option.dataset.playbackSeconds || option.dataset.watchedSeconds || 0));
+                    : localSeconds !== null ? localSeconds : Number(option.dataset.playbackSeconds || 0));
+                if (restoreLocalProgress) restoreLocalProgress.hidden = !progressBuffer.conflict(option.value);
                 activeRecordId = option.value;
                 playerEmpty.style.display = 'none';
                 if (!player) {
@@ -1733,8 +1794,15 @@
             window.addEventListener('blur', endSpaceBoost);
             window.addEventListener('resize', updateFocusMode);
             document.addEventListener('visibilitychange', function () {
-                if (document.hidden) endSpaceBoost();
-                else updateFocusMode();
+                if (document.hidden) {
+                    endSpaceBoost();
+                    saveProgress('hidden', true);
+                    if (videoStudySession) postStudyTime(videoStudySession, false, true);
+                    if (practiceTimer) { persistPracticeTimer(); postStudyTime(practiceTimer, false, true); }
+                } else {
+                    updateFocusMode();
+                    retryPendingStudySaves();
+                }
             });
             document.querySelectorAll('[data-select-video]').forEach(function (button) {
                 button.addEventListener('click', function () {
@@ -1750,13 +1818,42 @@
                     }, 80);
                 });
             });
-            window.addEventListener('beforeunload', function () {
+            const saveBeforeLeave = function () {
                 saveProgress('leave', true);
                 if (videoStudySession) postStudyTime(videoStudySession, false, true);
                 if (practiceTimer) {
                     persistPracticeTimer();
                     postStudyTime(practiceTimer, false, true);
                 }
+            };
+            window.addEventListener('pagehide', saveBeforeLeave);
+            window.addEventListener('beforeunload', saveBeforeLeave);
+            const retryPendingStudySaves = function () {
+                const pending = progressBuffer.pending();
+                if (!pending.length) return;
+                refreshStudyAuth().then(async function () {
+                    for (const record of pending) {
+                        if (record.kind === 'video' && !optionByValue(record.payload.video_id)) continue;
+                        const result = await synchronizeSnapshot(record, false);
+                        if (!result.ok) break;
+                    }
+                }).catch(function () { playerSyncState.textContent = localSaveMessage(); });
+            };
+            window.addEventListener('online', retryPendingStudySaves);
+            window.addEventListener('focus', retryPendingStudySaves);
+            if (restoreLocalProgress) restoreLocalProgress.addEventListener('click', function () {
+                const option = selectedOption();
+                const snapshot = option && progressBuffer.conflict(option.value);
+                if (!snapshot || !player || typeof player.seekTo !== 'function') return;
+                player.seekTo(Number(snapshot.payload.watched_seconds), true);
+                const recovered = progressBuffer.capture('video', option.value, {
+                    ...snapshot.payload, expected_version: Number(option.dataset.progressVersion || 0)
+                }, true);
+                restoreLocalProgress.hidden = true;
+                synchronizeSnapshot(recovered, false).then(function (result) {
+                    if (result.ok && !result.stale) progressBuffer.forget('conflict:' + option.value);
+                    restoreLocalProgress.hidden = !progressBuffer.conflict(option.value);
+                });
             });
             if (requestedVideoId) {
                 const requestedOption = optionByValue(requestedVideoId);
@@ -1764,6 +1861,7 @@
             }
             sortVideoOptions();
             updateDuration();
+            retryPendingStudySaves();
             const smartReplan = document.getElementById('smart-replan');
             if (smartReplan && window.location.hash === '#smart-replan') smartReplan.open = true;
             focusVideoArea();

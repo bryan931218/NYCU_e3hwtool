@@ -1,12 +1,13 @@
 (() => {
-  const token = document.querySelector('meta[name="csrf-token"]')?.content;
+  const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content;
   const originalFetch = window.fetch.bind(window);
   window.fetch = (input, options = {}) => {
+    const token = csrfToken();
     const url = new URL(input instanceof Request ? input.url : input, location.href);
     const method = String(options.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
     if (token && url.origin === location.origin && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
       const headers = new Headers(options.headers || (input instanceof Request ? input.headers : undefined));
-      headers.set('X-CSRFToken', token);
+      if (!headers.has('X-CSRFToken')) headers.set('X-CSRFToken', token);
       options = { ...options, headers };
     }
     return originalFetch(input, options);
@@ -21,7 +22,7 @@
       field.name = 'csrf_token';
       form.append(field);
     }
-    field.value = token || '';
+    field.value = csrfToken() || '';
   };
   // Legacy feature code constructs forms and submits without a submit event.
   const originalSubmit = HTMLFormElement.prototype.submit;

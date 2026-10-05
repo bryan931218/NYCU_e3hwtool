@@ -11,5 +11,9 @@
         <a href="{{ url_for(endpoint) }}"{% if active_study_page == endpoint %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
         <span class="admin">{{ admin_user.username }}・管理員</span>
+        <form method="post" action="{{ url_for('study_logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="study-signout" title="只登出備考站">登出</button>
+        </form>
     </nav>
 </header>

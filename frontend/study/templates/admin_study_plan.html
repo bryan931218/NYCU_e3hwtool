@@ -193,11 +193,15 @@
                             </div>
                             <div class="player-copy">
                                 <h3 id="player-title" class="player-title">尚未載入影片</h3>
-                                <span id="player-duration" hidden></span><span id="player-watched" hidden></span><span id="player-sync-state" hidden></span>
+                                <span id="player-duration" hidden></span><span id="player-watched" hidden></span>
                                 <div class="player-status">
                                     <div class="player-status-line"><span>播放位置</span><strong id="player-current-time">00:00:00</strong></div>
                                     <div class="track"><div id="player-progress-fill" class="fill" style="--progress:0%"></div></div>
-                                    <div class="player-status-line"><span>自動儲存</span><strong id="player-last-saved">尚未儲存</strong></div>
+                                    <div class="player-status-line"><span id="player-sync-state" role="status">自動儲存</span><strong id="player-last-saved">尚未儲存</strong></div>
+                                    <div class="player-recovery">
+                                        <a id="study-reauth" href="{{ url_for('study_login') }}" target="_blank" rel="noopener" hidden>重新登入備考站</a>
+                                        <button id="restore-local-progress" type="button" hidden>恢復本機進度</button>
+                                    </div>
                                     <div class="player-status-line"><span>本次播放時間</span><strong id="player-study-time">00:00:00</strong></div>
                                 </div>
                                 <section class="marker-studio" aria-label="影片關鍵點">
@@ -261,6 +265,7 @@
             </div>
         </main>
     </div>
+    <script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='study/js/progress-buffer.js') }}"></script>
     <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}">{% include 'study/pages/admin_study_plan/script-01.js.jinja' %}</script>
     {% include 'study/_study_upload_tracker.html' %}
 {% include 'study/_global_study_assistant.html' %}

@@ -26,6 +26,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.storage import PersistentStorage
 from e3_tracker.platform.security import signing_key
 from e3_tracker.platform.http_security import configure_http_security
+from e3_tracker.study.session import configure_study_sessions, is_study_request
 
 from e3_tracker.assignments.application import register_assignment_site
 from e3_tracker.study.application import (
@@ -144,6 +145,8 @@ def create_app(
         storage._engine.dispose()
         raise
 
+    configure_study_sessions(app, storage)
+
     @app.get("/favicon.ico")
     def favicon():
         return Response(status=204)
@@ -225,6 +228,8 @@ def create_app(
             return user
         if session_token or session.get("username"):
             session.clear()
+            if is_study_request(request.path):
+                session["study_signed_out"] = True
             session.modified = True
         return None
 
@@ -242,6 +247,10 @@ def create_app(
         def wrapper(*args, **kwargs):
             user = current_user()
             if not user:
+                if is_study_request(request.path):
+                    if request.is_json:
+                        return {"ok": False, "error": "study_login_required"}, 401
+                    return redirect(url_for("study_login"))
                 return redirect(url_for("login"))
             if not user.get("is_admin"):
                 flash("僅限管理員使用讀書計畫。", "error")

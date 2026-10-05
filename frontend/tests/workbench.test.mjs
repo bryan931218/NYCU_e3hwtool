@@ -751,7 +751,9 @@ test('CSRF wrapper protects same-origin writes without sending tokens to other s
   await context.window.fetch('/api/cache');
   assert.equal(requests[2][1].headers, undefined);
   await context.window.fetch(new Request('https://example.test/preferences', { method: 'PUT' }));
-  assert.equal(requests[3][1].headers.get('X-CSRFToken'), 'session-csrf');
+    assert.equal(requests[3][1].headers.get('X-CSRFToken'), 'session-csrf');
+    await context.window.fetch('/admin/study-plan/video-progress', { method: 'POST', headers: { 'X-CSRFToken': 'refreshed-study-csrf' } });
+    assert.equal(requests[4][1].headers.get('X-CSRFToken'), 'refreshed-study-csrf');
 });
 
 test('old remembered passwords and Moodle sessions are removed while retaining the account', () => {
