@@ -1,14 +1,21 @@
 <!doctype html>
-<html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>E3 作業自動跳轉－安裝說明</title>
-<body><h1>E3 作業自動跳轉</h1>
-<p>安裝一次後，從 E3 作業追蹤系統按「前往 E3」。已登入時直接開啟；需要登入時，自動開啟校園單一入口，登入完成後自動返回原作業。</p>
-<ol><li>保留這個含有 manifest.json 的資料夾，不要刪除或移動。</li>
-<li>桌機 Chrome 開啟 chrome://extensions，Edge 開啟 edge://extensions。</li>
-<li>開啟「開發人員模式」，按「載入未封裝項目」，選取這個資料夾。</li>
-<li>重新整理 https://www.e3hwtool.space/，即可使用。</li></ol>
-<p>只適用桌機 Chrome／Edge 與 e3hwtool.space、www.e3hwtool.space、e3p.nycu.edu.tw。手機 Chrome 不支援桌機擴充套件。</p>
-<p>不收集或儲存密碼、Cookie 或驗證碼，不會把 E3 登入憑證傳回追蹤系統。學校登入與二階段驗證仍由使用者在校方頁面完成。</p>
-<p>作業目標只保留於瀏覽器的套件暫存中。完成跳轉或關閉分頁時清除，超過 30 分鐘不再自動跳轉；關閉瀏覽器也會清除。沒有從本工具開啟作業時，不會介入 E3 瀏覽。</p>
-<p>更新版本時下載新套件，替換資料夾內容，再於擴充功能頁按「重新載入」。可隨時移除套件來停用。</p>
-</body></html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>E3 作業自動跳轉－安裝說明</title><link rel="stylesheet" href="guide.css"></head>
+<body class="extension-guide">
+<div class="guide-shell">
+    <header class="guide-header"><a class="guide-brand" href="https://www.e3hwtool.space/">E3作業追蹤系統</a><a class="guide-back" href="https://www.e3hwtool.space/e3-auto-navigation">線上安裝指南</a></header>
+    <main>
+        <section class="guide-intro"><div class="guide-product"><img class="guide-product-icon" src="icons/icon-128.png" width="64" height="64" alt=""><div><p class="guide-eyebrow">瀏覽器擴充套件 · 離線安裝說明</p><h1>E3 作業自動跳轉</h1></div></div><p class="guide-lead">從作業列表開啟 E3，完成學校登入後，自動回到原本的作業。</p><div class="guide-meta"><span>電腦版 Chrome／Edge</span><span>此資料夾已解壓縮，可直接載入</span></div></section>
+        <section class="guide-section"><div class="guide-section-heading"><h2>安裝步驟</h2></div><ol class="install-steps">
+            <li><span class="step-number">1</span><div class="step-body"><h3>保留這個資料夾</h3><p>將 <code>e3-auto-navigation</code> 放在固定位置。此層應同時包含 <code>manifest.json</code>、<code>background.js</code> 與這份說明。</p><p class="step-note">安裝後不要刪除或移動資料夾；不要選擇原本的 ZIP。</p></div></li>
+            <li><span class="step-number">2</span><div class="step-body"><h3>開啟擴充功能管理頁</h3><p>把對應網址貼到瀏覽器網址列，再按 Enter。</p><dl class="guide-definition"><div><dt>Chrome</dt><dd><code>chrome://extensions</code></dd></div><div><dt>Edge</dt><dd><code>edge://extensions</code></dd></div></dl></div></li>
+            <li><span class="step-number">3</span><div class="step-body"><h3>開啟開發人員模式，載入資料夾</h3><p>開啟「開發人員模式」，按「載入未封裝項目」（Edge 可能顯示「載入解壓縮」），選取包含 <code>manifest.json</code> 的這個資料夾。</p><p class="step-note">若找不到 manifest.json，請再進入一層資料夾。不要繞過學校或公司瀏覽器的管理政策。</p></div></li>
+            <li><span class="step-number">4</span><div class="step-body"><h3>確認啟用並重新整理網站</h3><p>確認管理頁中的「E3 作業自動跳轉」已啟用，重新整理追蹤系統與 E3 分頁。從作業列表點「前往 E3」即可使用，不必釘選套件圖示。</p><a class="guide-button guide-primary" href="https://www.e3hwtool.space/">開啟 E3 作業追蹤系統</a></div></li>
+        </ol></section>
+        <section class="guide-section"><h2>使用、更新與移除</h2><dl class="guide-definition"><div><dt>何時跳轉</dt><dd>只在正式追蹤系統開啟目標時執行。已登入時直接開啟作業；需要登入時開啟校園單一入口，登入後返回目標。超過 30 分鐘不再自動跳轉。</dd></div><div><dt>更新</dt><dd>下載新版，替換原資料夾內容，在擴充功能管理頁按「重新載入」，再重新整理追蹤系統與 E3 分頁。</dd></div><div><dt>停用或移除</dt><dd>在管理頁關閉套件開關即可停用；按「移除」可刪除套件與其儲存資料。</dd></div><div><dt>支援範圍</dt><dd>電腦版 Chrome／Edge 與 e3hwtool.space、www.e3hwtool.space、e3p.nycu.edu.tw。手機 Chrome 不支援這種安裝方式；未安裝仍能使用原 E3 連結。</dd></div></dl></section>
+        <section class="guide-section"><h2>資料與隱私</h2><dl class="guide-definition"><div><dt>不收集登入憑證</dt><dd>不收集或儲存帳密、Cookie、驗證碼、作業內容與成績，不將 E3 登入憑證傳回追蹤系統。學校登入與 2FA 仍由你在校方頁面完成。</dd></div><div><dt>只暫存目標網址</dt><dd>目標網址、對應分頁編號與時間僅保存在套件工作階段儲存空間。完成跳轉、關閉分頁或關閉瀏覽器時清除。</dd></div></dl><a class="guide-text-link" href="https://www.e3hwtool.space/e3-auto-navigation/privacy">完整隱私說明</a></section>
+    </main>
+    <footer class="guide-footer"><span>E3 作業自動跳轉</span><a href="https://www.e3hwtool.space/e3-auto-navigation#questions">常見問題與線上說明</a></footer>
+</div>
+</body>
+</html>

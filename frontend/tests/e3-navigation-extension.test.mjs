@@ -2,10 +2,38 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { installBrowser, managerAddress, copyManagerAddress } from '../assignments/static/js/e3-navigation-install.js';
 import { assignmentTarget, createNavigationController, E3_ORIGIN, PORTAL_ENTRY, PENDING_TTL_MS, pendingKey }
   from "../assignments/static/e3-navigation-extension/core.js";
 
 const target = E3_ORIGIN + "/mod/assign/view.php?id=42&action=viewsubmission#submission";
+
+test('installation guide chooses Edge ahead of its Chrome user-agent token', () => {
+  assert.equal(installBrowser('Mozilla/5.0 Chrome/130.0 Safari/537.36 Edg/130.0'),'edge');
+  assert.equal(installBrowser('Mozilla/5.0 Chrome/130.0 Safari/537.36'),'chrome');
+  assert.equal(managerAddress('edge'),'edge://extensions');
+  assert.equal(managerAddress('chrome'),'chrome://extensions');
+  assert.equal(managerAddress('invalid'),'chrome://extensions');
+});
+
+test('copying the manager address reports success only after clipboard completion', async () => {
+  let value='';
+  const feedback={textContent:''};
+  assert.equal(await copyManagerAddress({value:'edge://extensions'},feedback,{writeText:async text=>{value=text;}}),true);
+  assert.equal(value,'edge://extensions');
+  assert.match(feedback.textContent,/已複製/);
+});
+
+test('unavailable or blocked clipboard selects the URL for manual copying', async () => {
+  for (const clipboard of [undefined,{writeText:async()=>{throw Error('blocked');}}]) {
+    const selected=[];
+    const input={value:'chrome://extensions',focus:()=>selected.push('focus'),select:()=>selected.push('select')};
+    const feedback={textContent:''};
+    assert.equal(await copyManagerAddress(input,feedback,clipboard),false);
+    assert.deepEqual(selected,['focus','select']);
+    assert.match(feedback.textContent,/手動複製/);
+  }
+});
 const tracker = { frameId: 0, tab: { id: 1, windowId: 3 }, url: "https://www.e3hwtool.space/" };
 const e3 = (id, url, documentId) => ({ frameId: 0, tab: { id }, url, documentId });
 function fixture() {

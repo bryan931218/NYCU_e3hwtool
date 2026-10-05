@@ -1,6 +1,7 @@
 """Build extension packages and accept only official store listing URLs."""
 
 import io
+import json
 import re
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -10,9 +11,14 @@ from e3_tracker.platform.paths import FRONTEND_ROOT
 EXTENSION_SOURCE = FRONTEND_ROOT / "assignments/static/e3-navigation-extension"
 EXTENSION_FILES = (
     "manifest.json", "background.js", "core.js", "tracker.js", "probe.js",
-    "e3-page.js", "README.html", "icons/icon-16.png", "icons/icon-32.png",
+    "e3-page.js", "README.html", "guide.css", "icons/icon-16.png", "icons/icon-32.png",
     "icons/icon-48.png", "icons/icon-128.png",
 )
+
+
+def extension_details():
+    manifest = json.loads((EXTENSION_SOURCE / "manifest.json").read_text(encoding="utf-8"))
+    return {"version": manifest["version"], "minimum_chrome_version": manifest["minimum_chrome_version"]}
 
 
 def build_extension_archive(*, for_store=False):

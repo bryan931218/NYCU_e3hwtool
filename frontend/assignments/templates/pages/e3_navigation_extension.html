@@ -1,32 +1,74 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-{% include 'shared/components/page-transitions.html' %}
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>E3 自動跳轉套件</title>
+    <title>E3 自動跳轉套件 | E3作業追蹤系統</title>
+    <meta name="description" content="E3 作業自動跳轉套件的 Chrome、Edge 安裝步驟、使用方式與隱私說明。">
+    {% include 'shared/components/page-transitions.html' %}
+    <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
-    <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/e3-navigation-extension/guide.css') }}">
+    <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/e3-navigation-install.js') }}"></script>
 </head>
-<body>
-<main class="container">
-    <h1>E3 登入後，自動開啟原作業</h1>
-    <p>安裝一次後，在追蹤系統點「前往 E3」即可。已登入時直接開啟作業；需要登入時，自動開啟校園單一入口，完成登入後自動回到原作業。</p>
-    <p>{% if chrome_store_url %}<a class="btn accent" href="{{ chrome_store_url }}" target="_blank" rel="noopener noreferrer">Chrome 安裝</a>{% endif %}{% if edge_store_url %}<a class="btn accent" href="{{ edge_store_url }}" target="_blank" rel="noopener noreferrer">Edge 安裝</a>{% endif %}<a class="btn" href="{{ url_for('e3_navigation_extension_download') }}">下載自動跳轉套件</a></p>
-    <h2>一次安裝，之後不用再點返回</h2>
-    <ol>
-        <li>下載並解壓縮 ZIP，保留解壓縮後的 <strong>e3-auto-navigation</strong> 資料夾。</li>
-        <li>桌機 Chrome 開啟 <code>chrome://extensions</code>；Edge 開啟 <code>edge://extensions</code>。</li>
-        <li>開啟「開發人員模式」，按「載入未封裝項目」，選取包含 <strong>manifest.json</strong> 的 e3-auto-navigation 資料夾。</li>
-        <li>重新整理 E3 作業追蹤系統，即可使用。</li>
-    </ol>
-    <h2>登入與隱私</h2>
-    <p>登入與二階段驗證仍在學校的頁面完成。套件只在本工具與 E3 執行，不收集或儲存密碼、Cookie 或驗證碼，也不將 E3 登入憑證傳回本工具。</p>
-    <p>只保留正在開啟的作業網址，完成跳轉或關閉該分頁時清除；超過 30 分鐘不再自動跳轉。沒有從本工具開啟作業時，套件不會介入 E3 瀏覽。</p>
-    <p>支援桌機 Chrome／Edge。手機 Chrome 不支援這種擴充套件；未安裝的瀏覽器仍會直接開啟原 E3 連結。</p>
-    <p>目前適用 <strong>www.e3hwtool.space</strong>、<strong>e3hwtool.space</strong> 與 <strong>e3p.nycu.edu.tw</strong>。移除套件可隨時停用自動跳轉。</p>
-    <p><a href="{{ url_for('e3_navigation_extension_privacy') }}">套件隱私說明</a></p>
-    <p><a href="{{ url_for('index') }}">返回作業追蹤系統</a></p>
-</main>
+<body class="extension-guide">
+<div class="guide-shell">
+    <header class="guide-header">
+        <a class="guide-brand" href="{{ url_for('index') }}">E3作業追蹤系統</a>
+        <div class="guide-header-actions">
+            <a class="guide-back" href="{{ url_for('index') }}"><span class="guide-icon icon-back" aria-hidden="true"></span>返回網站</a>
+            <button class="guide-icon-button" id="guideTheme" type="button" title="切換深淺色模式" aria-label="切換深淺色模式"><span class="guide-icon icon-theme" aria-hidden="true"></span></button>
+        </div>
+    </header>
+    <main>
+        <section class="guide-intro" aria-labelledby="extensionTitle">
+            <div class="guide-product">
+                <img src="{{ url_for('frontend_asset', filename='assignments/e3-navigation-extension/icons/icon-128.png') }}" width="64" height="64" alt="" class="guide-product-icon">
+                <div><p class="guide-eyebrow">瀏覽器擴充套件 <span>v{{ extension.version }}</span></p><h1 id="extensionTitle">E3 作業自動跳轉</h1></div>
+            </div>
+            <p class="guide-lead">從作業列表開啟 E3，完成學校登入後，自動回到原本的作業。</p>
+            <div class="guide-meta"><span>桌機 Chrome／Edge</span><span>登入與 2FA 仍在校方頁面完成</span></div>
+        </section>
+        <figure class="guide-flow" id="navigationFlow" aria-labelledby="flowCaption">
+            <figcaption id="flowCaption">跳轉流程示意 <button class="guide-icon-button flow-control" id="flowPause" type="button" aria-label="暫停流程動畫" title="暫停流程動畫" aria-pressed="false"><span class="guide-icon icon-pause" aria-hidden="true"></span></button></figcaption>
+            <ol class="flow-track"><li><span class="flow-number">01</span><div><strong>開啟作業</strong><small>在追蹤系統點「前往 E3」</small></div></li><li><span class="flow-number">02</span><div><strong>完成學校登入</strong><small>已登入時會略過這一步</small></div></li><li><span class="flow-number">03</span><div><strong>回到原作業</strong><small>在同一個 E3 分頁繼續操作</small></div></li></ol>
+        </figure>
+        <nav class="guide-nav" aria-label="安裝指南章節"><a href="#installation">安裝步驟</a><a href="#questions">常見問題</a><a href="#permissions">資料與權限</a></nav>
+        <section class="guide-section" id="installation" aria-labelledby="installationTitle">
+            <div class="guide-section-heading"><div><p class="guide-eyebrow">INSTALLATION</p><h2 id="installationTitle">安裝套件</h2></div><span class="guide-detail">一次安裝，之後自動執行</span></div>
+            <fieldset class="browser-choice"><legend>選擇瀏覽器</legend><div class="browser-segment"><label><input type="radio" name="install_browser" value="chrome" checked><span>Chrome</span></label><label><input type="radio" name="install_browser" value="edge"><span>Edge</span></label></div></fieldset>
+            <p class="guide-device-note" id="guideDeviceNote">支援電腦版 Chrome {{ extension.minimum_chrome_version }} 以上及最新版 Edge。手機 Chrome 不支援此套件。</p>
+            {% if chrome_store_url or edge_store_url %}
+            <div class="store-install" aria-label="官方商店安裝">
+                {% if chrome_store_url %}<div data-store-browser="chrome"><h3>從 Chrome 線上應用程式商店安裝</h3><a class="guide-button guide-primary" href="{{ chrome_store_url }}" target="_blank" rel="noopener noreferrer">前往 Chrome 商店<span class="guide-icon icon-external" aria-hidden="true"></span></a></div>{% endif %}
+                {% if edge_store_url %}<div data-store-browser="edge"><h3>從 Microsoft Edge 附加元件安裝</h3><a class="guide-button guide-primary" href="{{ edge_store_url }}" target="_blank" rel="noopener noreferrer">前往 Edge 商店<span class="guide-icon icon-external" aria-hidden="true"></span></a></div>{% endif %}
+                <p>商店安裝後，重新整理追蹤系統即可。也可以使用下方的 ZIP 手動安裝。</p>
+            </div>
+            {% endif %}
+            <ol class="install-steps">
+                <li><span class="step-number">1</span><div class="step-body"><h3>下載並解壓縮</h3><p>下載 ZIP，解壓縮到固定位置，保留 <code>e3-auto-navigation</code> 資料夾。</p><a class="guide-button guide-primary" href="{{ url_for('e3_navigation_extension_download') }}" id="extensionDownload"><span class="guide-icon icon-download" aria-hidden="true"></span>下載套件 ZIP<span class="button-version">v{{ extension.version }}</span></a><div class="folder-path"><span class="guide-icon icon-folder" aria-hidden="true"></span><code>e3-auto-navigation</code><span aria-hidden="true">/</span><code>manifest.json</code></div><p class="step-note">不要直接選 ZIP，也不要在安裝後刪除或移動資料夾。</p></div></li>
+                <li><span class="step-number">2</span><div class="step-body"><h3>開啟擴充功能管理頁</h3><p>複製下方網址，貼到 <span data-browser-name>Chrome</span> 的網址列後開啟。</p><div class="browser-address"><label class="visually-hidden" for="extensionManagerUrl">擴充功能管理頁網址</label><input id="extensionManagerUrl" value="chrome://extensions" readonly spellcheck="false" autocomplete="off"><button class="guide-icon-button" id="copyManagerUrl" type="button" title="複製管理頁網址" aria-label="複製管理頁網址"><span class="guide-icon icon-copy" aria-hidden="true"></span></button></div><p class="copy-feedback" id="copyManagerFeedback" role="status" aria-live="polite"></p><noscript><p>Edge 請使用 <code>edge://extensions</code>。</p></noscript></div></li>
+                <li><span class="step-number">3</span><div class="step-body"><h3>開啟開發人員模式，載入資料夾</h3><p>開啟「開發人員模式」，點「<span data-load-label>載入未封裝項目</span>」，選取內含 <code>manifest.json</code> 的資料夾。</p><figure class="manager-preview"><figcaption>管理頁操作位置示意</figcaption><div class="manager-preview-content" role="img" aria-label="開啟開發人員模式，再選擇載入未封裝項目"><div class="manager-toolbar"><strong>擴充功能</strong><span class="manager-mode">開發人員模式<span class="demo-toggle" aria-hidden="true"></span></span></div><span class="demo-load" data-load-label>載入未封裝項目</span><div class="demo-folder"><span class="guide-icon icon-folder" aria-hidden="true"></span><span><strong>e3-auto-navigation</strong><small>manifest.json 位於這一層</small></span></div></div></figure><p class="step-note">Edge 也可能顯示「載入解壓縮」。若找不到 manifest.json，請再進入一層資料夾。</p></div></li>
+                <li><span class="step-number">4</span><div class="step-body"><h3>確認啟用，重新整理追蹤系統</h3><p>在管理頁確認「E3 作業自動跳轉」已啟用，再重新整理網站。從作業列表點「前往 E3」即可使用。</p><a class="guide-button" href="{{ url_for('index') }}">返回作業追蹤系統<span class="guide-icon icon-external" aria-hidden="true"></span></a><p class="step-note">不需要提供密碼、Cookie 或驗證碼給套件，也不需要釘選套件圖示。</p></div></li>
+            </ol>
+        </section>
+        <section class="guide-section" id="questions" aria-labelledby="questionsTitle">
+            <div class="guide-section-heading"><div><p class="guide-eyebrow">HELP</p><h2 id="questionsTitle">常見問題</h2></div></div>
+            <div class="guide-faq">
+                <details><summary>找不到 manifest.json，或載入失敗？</summary><p>先完整解壓縮 ZIP，再選取 <code>e3-auto-navigation</code> 資料夾。若解壓縮後多了一層同名資料夾，請選擇真正內含 <code>manifest.json</code> 的那一層。確認瀏覽器版本符合需求。</p></details>
+                <details><summary>安裝後沒有自動回到作業？</summary><p>確認套件已啟用，並重新整理追蹤系統與 E3 分頁。請從正式站的作業列表開啟 E3；直接前往 E3 或等待超過 30 分鐘，不會自動跳轉。若登入仍失敗，請先確認能在校方頁面完成登入。</p></details>
+                <details><summary>沒有「開發人員模式」，或出現安全提示？</summary><p>學校或公司管理的瀏覽器可能禁止手動安裝，請使用允許安裝的個人瀏覽器，不要繞過管理政策。開發人員模式的安全提示屬於瀏覽器機制；只載入本站下載的套件，不必關閉瀏覽器安全防護。</p></details>
+                <details><summary>如何更新或移除套件？</summary><p>手動安裝：下載新版，解壓縮並替換原資料夾內容，在管理頁按套件的「重新載入」，再重新整理追蹤系統。商店安裝由瀏覽器更新。要停用可關閉套件開關；要移除可在管理頁按「移除」。</p></details>
+                <details><summary>手機或其他瀏覽器可以使用嗎？</summary><p>此套件目前支援電腦版 Chrome 與 Edge。手機 Chrome、Safari、Firefox 不適用此安裝方式；未安裝套件仍可使用追蹤系統與原 E3 連結。</p></details>
+            </div>
+        </section>
+        <section class="guide-section" id="permissions" aria-labelledby="permissionsTitle">
+            <div class="guide-section-heading"><div><p class="guide-eyebrow">PRIVACY</p><h2 id="permissionsTitle">資料與權限</h2></div><span class="guide-icon icon-shield" aria-hidden="true"></span></div>
+            <dl class="guide-definition"><div><dt>只處理跳轉</dt><dd>只記住從追蹤系統開啟的目標網址，並判斷 E3 是否需要登入。不收集帳密、Cookie、驗證碼、作業內容或成績。</dd></div><div><dt>暫存於瀏覽器</dt><dd>目標網址保存在套件的工作階段儲存空間。完成跳轉、關閉分頁或關閉瀏覽器時清除；超過 30 分鐘不再跳轉。</dd></div><div><dt>限定網站</dt><dd><code>e3hwtool.space</code>、<code>www.e3hwtool.space</code> 與 <code>e3p.nycu.edu.tw</code>。校方登入與 2FA 由你自行完成，套件不會代填或傳回登入憑證。</dd></div></dl>
+            <a class="guide-text-link" href="{{ url_for('e3_navigation_extension_privacy') }}">完整隱私說明<span class="guide-icon icon-external" aria-hidden="true"></span></a>
+        </section>
+    </main>
+    <footer class="guide-footer"><span>E3 作業自動跳轉 · v{{ extension.version }}</span><div><a href="https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked" target="_blank" rel="noopener noreferrer">Chrome 官方安裝文件</a><a href="https://learn.microsoft.com/en-us/microsoft-edge/extensions/getting-started/extension-sideloading" target="_blank" rel="noopener noreferrer">Edge 官方安裝文件</a></div></footer>
+</div>
 </body>
 </html>

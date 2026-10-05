@@ -60,6 +60,34 @@ class E3NavigationExtensionTests(unittest.TestCase):
         self.assertIn('手機 Chrome', page.get_text())
         self.assertIsNone(page.select_one('#e3NavigationRecovery'))
 
+    def test_guide_has_complete_steps_browser_controls_and_local_assets(self):
+        page = BeautifulSoup(self.client.get('/e3-auto-navigation').data, 'html.parser')
+        self.assertEqual(len(page.select('.install-steps > li')), 4)
+        self.assertEqual({field['value'] for field in page.select('[name="install_browser"]')}, {'chrome', 'edge'})
+        self.assertEqual(page.select_one('#extensionManagerUrl')['value'], 'chrome://extensions')
+        self.assertIsNotNone(page.select_one('#copyManagerUrl'))
+        self.assertIsNotNone(page.select_one('#guideTheme'))
+        self.assertEqual(len(page.select('.guide-faq details')), 5)
+        source = FRONTEND_ROOT / 'assignments/static/e3-navigation-extension'
+        manifest = json.loads((source / 'manifest.json').read_text(encoding='utf-8'))
+        self.assertIn('v' + manifest['version'], page.get_text())
+        for node in page.select('script[src], link[rel="stylesheet"], img[src]'):
+            url = node.get('src') or node['href']
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, url)
+            response.close()
+        self.assertIsNone(page.select_one('a[href^="chrome://"], a[href^="edge://"]'))
+
+    def test_offline_guide_is_complete_and_checked_in_copy_matches_the_download(self):
+        source = FRONTEND_ROOT / 'assignments/static/e3-navigation-extension'
+        checked_in = FRONTEND_ROOT.parent / 'e3-auto-navigation'
+        page = BeautifulSoup((source / 'README.html').read_text(encoding='utf-8'), 'html.parser')
+        self.assertEqual(len(page.select('.install-steps > li')), 4)
+        self.assertEqual(page.select_one('link[rel="stylesheet"]')['href'], 'guide.css')
+        self.assertIsNotNone(page.select_one('a[href="https://www.e3hwtool.space/e3-auto-navigation"]'))
+        for name in EXTENSION_FILES:
+            self.assertEqual((checked_in / name).read_bytes(), (source / name).read_bytes(), name)
+
     def test_zip_includes_exact_current_sources_and_minimal_site_permissions(self):
         response = self.client.get('/e3-auto-navigation/download')
         self.assertEqual(response.status_code, 200)
