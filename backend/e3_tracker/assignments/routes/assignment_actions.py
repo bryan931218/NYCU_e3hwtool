@@ -40,7 +40,7 @@ def register_assignment_action_routes(app, storage, account_only, actions):
                 raise ValueError('安排資料無效。')
             if not storage.consume_security_limit(f'assignment-plan:{username}', 30, 600):
                 return {'ok': False, 'error': '操作過於頻繁，請稍後再試。'}, 429
-            return actions.schedule(username, raw.get('uid'), raw.get('start_ts'), raw.get('minutes'),
+            return actions.schedule(username, raw.get('uid'), raw.get('start_ts'),
                 request_id=raw['request_id'], google=raw.get('google', False))
         except ValueError as error:
             return {'ok': False, 'error': str(error)}, 400

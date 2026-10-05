@@ -117,7 +117,7 @@ class AssignmentActionStorage:
             targets.extend(('browser', key) for key in conn.execute(select(push_subscriptions.c.endpoint_hash).where(push_subscriptions.c.user_id == uid)).scalars())
         return prefs, targets
 
-    def schedule_assignment_plan(self, username, key, item, item_hash, start, minutes, *, line_job=None):
+    def schedule_assignment_plan(self, username, key, item, item_hash, start, *, line_job=None):
         with self._lock, self._engine.begin() as conn:
             uid = self._announcement_user(conn, username, write=True)
             if not uid:
@@ -137,7 +137,7 @@ class AssignmentActionStorage:
             if not targets:
                 raise ValueError('請先在通知設定啟用 LINE 或瀏覽器通知。')
             plan = {'uid_hash': item_hash, 'title': item['title'], 'course_title': item.get('course_title', ''),
-                    'start_ts': start, 'minutes': minutes, 'due_ts': item.get('due_ts'), 'created_at': time.time()}
+                    'start_ts': start, 'due_ts': item.get('due_ts'), 'created_at': time.time()}
             self._write_action(conn, work_plans, uid, key, plan)
             payload = {**notification_payload(item, 'due'), 'title': 'E3｜你安排的作業提醒', 'kind': 'scheduled',
                        'uid_hash': item_hash, 'due_ts': item.get('due_ts'), 'plan_id': key, 'url': f'/assignments/plan?uid={item_hash}'}

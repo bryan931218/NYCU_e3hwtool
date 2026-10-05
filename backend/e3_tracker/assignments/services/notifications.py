@@ -113,7 +113,7 @@ class NotificationService:
                 actions = []
                 try:
                     reminder = tonight_time(time.time(), payload.get('due_ts'))
-                    if not payload.get('due_ts') or reminder+900 <= payload['due_ts']:
+                    if not payload.get('due_ts') or reminder < payload['due_ts']:
                         from datetime import datetime
                         from e3_tracker.platform.constants import TAIPEI_TZ
                         local = datetime.fromtimestamp(reminder, TAIPEI_TZ)
@@ -247,7 +247,7 @@ class NotificationService:
                         from e3_tracker.assignments.persistence.assignment_actions import work_plans
                         plan = self.storage.assignment_action_records(username, work_plans).get(payload['plan_id'])
                         if not plan or plan['state'] != 'pending' or (item.get('due_ts') and
-                                (item['due_ts'] <= now or plan['start_ts']+plan['minutes']*60 > item['due_ts'])):
+                                (item['due_ts'] <= now or plan['start_ts'] >= item['due_ts'])):
                             self.storage.finish_notification_job(job, 'cancelled', now=now)
                             continue
                         from e3_tracker.assignments.domain.notifications import notification_payload

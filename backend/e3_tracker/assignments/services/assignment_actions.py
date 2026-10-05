@@ -88,16 +88,14 @@ class AssignmentActions:
             return '請確認 Google 日曆已連結，或稍後重試同步。'
         return ''
 
-    def schedule(self, username, key, start, minutes, *, request_id, google=False, line_job=None):
+    def schedule(self, username, key, start, *, request_id, google=False, line_job=None):
         item = self.item(username, key)
         validate_future_time(start)
-        if type(minutes) is not int or minutes not in (15, 30, 45, 60, 90, 120):
-            raise ValueError('請選擇有效的處理時間。')
-        if item.get('due_ts') and start+minutes*60 > item['due_ts']:
-            raise ValueError('安排的時間必須在截止時間之前。')
+        if item.get('due_ts') and start >= item['due_ts']:
+            raise ValueError('提醒時間必須在截止時間之前。')
         plan_id = digest(f'{key}:{request_id}')
-        plan = self.storage.schedule_assignment_plan(username, plan_id, item, key, start, minutes, line_job=line_job)
-        if plan.get('duplicate') and (plan['start_ts'] != start or plan['minutes'] != minutes):
+        plan = self.storage.schedule_assignment_plan(username, plan_id, item, key, start, line_job=line_job)
+        if plan.get('duplicate') and plan['start_ts'] != start:
             raise ValueError('這次安排已提交，請重新開啟頁面。')
         error = self.sync_calendar(username, item, plan={**plan, 'id': plan_id}) if google else ''
         if google and not error:
@@ -108,25 +106,25 @@ class AssignmentActions:
         expires = int(time.time()+7*86400) if expires is None else expires
         value = f"{action}:{job['id']}:{expires}"
         if action in {'plan', 'cancel'}:
-            value += f':{start}:{minutes}'
+            value += f':{start}:{minutes if minutes is not None else 0}'
         signature = hmac.new(self.notifications.line_secret.encode(), f"{value}:{job['target_hash']}".encode(), hashlib.sha256).hexdigest()
         return f'{value}:{signature}'
 
     def line_picker(self, job, due=None):
         now = time.time()
         minimum = int((now+90)//60)*60
-        maximum = min(int(now+370*86400), int(due)-900 if due else int(now+370*86400))
+        maximum = min(int(now+370*86400), int(due)-1 if due else int(now+370*86400))
         if maximum <= minimum:
             return None
         stamp = lambda value: datetime.fromtimestamp(value, TAIPEI_TZ).strftime('%Y-%m-%dT%H:%M')
-        return {'type': 'datetimepicker', 'label': '安排處理時間', 'data': self.action_data(job, 'schedule'),
+        return {'type': 'datetimepicker', 'label': '設定提醒時間', 'data': self.action_data(job, 'schedule'),
                 'mode': 'datetime', 'min': stamp(minimum), 'max': stamp(maximum), 'initial': stamp(min(now+3600, maximum))}
 
     def handle_postback(self, data, target):
         return self.handle_line_postback(data, target)['text']
 
     def handle_line_postback(self, data, target, params=None):
-        match = re.fullmatch(r'(tonight|schedule|plan|cancel):([0-9a-f]{64}):(\d{10})(?::(\d{10}):(15|30|45|60|90|120))?:([0-9a-f]{64})', data) if isinstance(data, str) else None
+        match = re.fullmatch(r'(tonight|schedule|plan|cancel):([0-9a-f]{64}):(\d{10})(?::(\d{10}):(0|15|30|45|60|90|120))?:([0-9a-f]{64})', data) if isinstance(data, str) else None
         if (not match or (match[1] in {'plan', 'cancel'}) != bool(match[4]) or int(match[3]) < time.time()
                 or int(match[3]) > time.time()+7*86400+60):
             raise ValueError('此通知操作已失效，請回到網站安排提醒。')
@@ -146,7 +144,7 @@ class AssignmentActions:
         if match[1] == 'cancel':
             plan_id = digest(f'{key}:line:{job["id"]}:{match[4]}')
             plan = self.storage.assignment_action_records(username, work_plans).get(plan_id)
-            if not plan or plan['start_ts'] != int(match[4]) or plan['minutes'] != int(match[5]):
+            if not plan or plan['start_ts'] != int(match[4]) or plan.get('minutes', 0) != int(match[5]):
                 raise ValueError('找不到這筆提醒，請回網站查看已安排的提醒。')
             self.storage.cancel_assignment_plan(username, plan_id)
             return {'type': 'text', 'text': '這筆提醒已取消。'}
@@ -157,41 +155,31 @@ class AssignmentActions:
         if match[1] == 'schedule':
             value = params.get('datetime') if isinstance(params, dict) else None
             if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}', value):
-                raise ValueError('請重新點選安排處理時間，選擇日期與時間。')
+                raise ValueError('請重新點選設定提醒時間，選擇日期與時間。')
             try:
                 start = int(TAIPEI_TZ.localize(datetime.strptime(value.upper(), '%Y-%m-%dT%H:%M')).timestamp())
             except ValueError:
                 raise ValueError('日期與時間無效，請重新選擇。') from None
-            validate_future_time(start)
-            durations = [minute for minute in (15, 30, 45, 60, 90, 120)
-                         if not item.get('due_ts') or start+minute*60 <= item['due_ts']]
-            if not durations:
-                raise ValueError('預留時間至少 15 分鐘，且必須在截止前結束。請重新選擇。')
-            choices = [{'type': 'action', 'action': {'type': 'postback', 'label': f'{minute} 分鐘',
-                'displayText': f'預留 {minute} 分鐘', 'data': self.action_data(job, 'plan', expires=int(match[3]), start=start, minutes=minute)}}
-                for minute in durations]
-            return {'type': 'text', 'text': f"{notification_text(item['title'], 160)}\n開始：{notification_time(start)}（台灣時間）\n請選擇預留時間，點選後建立提醒。" + suffix,
-                    'quickReply': {'items': choices}}
-        start = int(match[4]) if match[4] else tonight_time(time.time(), item.get('due_ts'))
-        minutes = int(match[5]) if match[5] else 15
-        request_id = f'line:{job["id"]}' + (f':{start}' if match[4] else '')
+        else:
+            start = int(match[4]) if match[4] else tonight_time(time.time(), item.get('due_ts'))
+        request_id = f'line:{job["id"]}' + (f':{start}' if match[1] in {'schedule', 'plan'} else '')
         plan_id = digest(f'{key}:{request_id}')
         old = self.storage.assignment_action_records(username, work_plans).get(plan_id)
         if old:
-            text = (f"已安排過 {notification_time(old['start_ts'])} 的提醒，預留 {old['minutes']} 分鐘。"
+            text = (f"已安排過 {notification_time(old['start_ts'])}（台灣時間）的提醒。"
                     if old['state'] != 'cancelled' else '這則提醒已取消。')
         else:
             if not self.storage.consume_security_limit(f'assignment-plan:{username}', 30, 600):
                 raise ValueError('操作過於頻繁，請稍後再試。')
-            self.schedule(username, key, start, minutes, request_id=request_id, line_job=job)
-            text = f'已安排 {notification_time(start)}（台灣時間）再提醒你，預留 {minutes} 分鐘。'
+            self.schedule(username, key, start, request_id=request_id, line_job=job)
+            text = f"{notification_text(item['title'], 160)}\n已設定 {notification_time(start)}（台灣時間）提醒你。"
         response = {'type': 'text', 'text': text + suffix}
         choices = []
         if link:
             choices.append({'type': 'action', 'action': {'type': 'uri', 'label': '開啟作業', 'uri': link}})
-        if match[1] == 'plan' and (not old or old['state'] != 'cancelled'):
+        if match[1] in {'schedule', 'plan'} and (not old or old['state'] != 'cancelled'):
             choices.append({'type': 'action', 'action': {'type': 'postback', 'label': '取消提醒', 'displayText': '取消這筆提醒',
-                'data': self.action_data(job, 'cancel', expires=int(match[3]), start=start, minutes=old['minutes'] if old else minutes)}})
+                'data': self.action_data(job, 'cancel', expires=int(match[3]), start=start, minutes=old.get('minutes', 0) if old else 0)}})
         if choices:
             response['quickReply'] = {'items': choices}
         return response

@@ -137,18 +137,21 @@ def compute_expiry(expires_in: int) -> float:
 
 
 def upsert_assignment_action(item, *, access_token, calendar_id, plan=None, timeout=10):
-    """Update only an E3-owned event; work blocks have separate stable identities."""
+    """Update only an E3-owned event; reminders have separate stable identities."""
     identity, body = _event_body_for(item if item.get('due_ts') else {**item, 'due_ts': plan['start_ts']})
     if plan:
         identity = 'e3-plan-' + plan['id']
         start = datetime.fromtimestamp(plan['start_ts'], TAIPEI_TZ)
-        body.update(summary=f"處理作業｜{item['title']}"[:250], colorId='7',
+        # Calendar requires an end; this non-blocking marker is not a work duration.
+        body.update(summary=f"作業提醒｜{item['title']}"[:250], colorId='7', transparency='transparent',
                     start={'dateTime': start.isoformat(), 'timeZone': 'Asia/Taipei'},
-                    end={'dateTime': (start+timedelta(minutes=plan['minutes'])).isoformat(), 'timeZone': 'Asia/Taipei'},
-                    reminders={'useDefault': False, 'overrides': [{'method': 'popup', 'minutes': 10}]})
-    body['extendedProperties'] = {'private': {'e3_uid': identity, 'category': '處理作業' if plan else '作業'}}
+                    end={'dateTime': (start+timedelta(seconds=1)).isoformat(), 'timeZone': 'Asia/Taipei'},
+                    reminders={'useDefault': False, 'overrides': [{'method': 'popup', 'minutes': 0}]})
+    body['extendedProperties'] = {'private': {'e3_uid': identity, 'category': '作業提醒' if plan else '作業'}}
     base = f'{GOOGLE_CAL_BASE}/calendars/{quote(calendar_id, safe="")}/events'
     headers = {'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}
+    changes = ({key: body[key] for key in ('summary', 'start', 'end', 'transparency', 'reminders', 'extendedProperties')}
+               if plan else {'start': body['start'], 'end': body['end']})
     def checked(response):
         if response.status_code in (401, 403):
             raise GoogleUnauthorizedError('Google authorization required')
@@ -163,7 +166,7 @@ def upsert_assignment_action(item, *, access_token, calendar_id, plan=None, time
     if existing:
         for event in existing:
             checked(requests.patch(f"{base}/{quote(event['id'], safe='')}", headers=headers,
-                json={'start': body['start'], 'end': body['end']}, timeout=timeout, allow_redirects=False))
+                json=changes, timeout=timeout, allow_redirects=False))
     else:
         event_id = 'e3' + hashlib.sha256(identity.encode()).hexdigest()
         response = requests.post(base, headers=headers, json={**body, 'id': event_id}, timeout=timeout, allow_redirects=False)
@@ -171,7 +174,7 @@ def upsert_assignment_action(item, *, access_token, calendar_id, plan=None, time
             event = checked(requests.get(f'{base}/{event_id}', headers=headers, timeout=timeout, allow_redirects=False))
             if event.get('extendedProperties', {}).get('private', {}).get('e3_uid') != identity:
                 raise ValueError('Calendar event identity collision')
-            checked(requests.patch(f'{base}/{event_id}', headers=headers, json={'start': body['start'], 'end': body['end']},
+            checked(requests.patch(f'{base}/{event_id}', headers=headers, json=changes,
                                    timeout=timeout, allow_redirects=False))
         else:
             checked(response)

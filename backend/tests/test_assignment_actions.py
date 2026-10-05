@@ -113,14 +113,17 @@ class AssignmentActionTests(unittest.TestCase):
 
     def test_plan_api_dedup_cancel_and_boundary_validation(self):
         item, key = self.seed()
-        raw = {'uid':key, 'start_ts':self.now+3600, 'minutes':60, 'request_id':'a'*32, 'google':False}
+        raw = {'uid':key, 'start_ts':self.now+3600, 'request_id':'a'*32, 'google':False}
         response = self.client.post('/api/assignments/plans', json=raw)
         self.assertEqual(response.status_code, 200, response.json)
         self.assertEqual(self.client.post('/api/assignments/plans', json=raw).json['id'], response.json['id'])
         self.assertEqual(len(self.client.get('/api/assignments/plans').json['items']), 1)
         self.assertEqual(self.client.post('/api/assignments/plans', json={**raw, 'uid':'f'*64}).status_code, 400)
-        self.assertEqual(self.client.post('/api/assignments/plans', json={**raw, 'start_ts':item['due_ts']-60}).status_code, 400)
-        self.assertEqual(self.client.post('/api/assignments/plans', json={**raw, 'minutes':True}).status_code, 400)
+        self.assertEqual(self.client.post('/api/assignments/plans', json={**raw, 'start_ts':item['due_ts']}).status_code, 400)
+        near_deadline = self.client.post('/api/assignments/plans', json={**raw, 'request_id':'b'*32, 'start_ts':item['due_ts']-60})
+        self.assertEqual(near_deadline.status_code, 200, near_deadline.json)
+        self.assertNotIn('minutes', self.client.get('/api/assignments/plans').json['items'][0])
+        self.client.delete('/api/assignments/plans', json={'id':near_deadline.json['id']})
         self.assertTrue(self.client.delete('/api/assignments/plans', json={'id':response.json['id']}).json['ok'])
         self.assertEqual(self.client.get('/api/assignments/plans').json['items'], [])
         with patch.object(self.service, 'deliver') as send:
@@ -129,7 +132,7 @@ class AssignmentActionTests(unittest.TestCase):
     def test_scheduled_reminders_do_not_require_automatic_due_preference(self):
         _, key = self.seed()
         self.storage.save_notification_preferences('student', validate_preferences({'browser_enabled':True}))
-        self.service.actions.schedule('student', key, self.now+3600, 60, request_id='b'*32)
+        self.service.actions.schedule('student', key, self.now+3600, request_id='b'*32)
         with patch.object(self.service, 'deliver') as send:
             self.service.dispatch(now=self.now+3601)
             self.assertEqual(send.call_count, 1)
@@ -148,12 +151,12 @@ class AssignmentActionTests(unittest.TestCase):
             message = transport.call_args.args[1]['messages'][0]
         actions = message['quickReply']['items']
         self.assertIn(actions[0]['action']['label'], ['今晚再提醒', '明晚再提醒'])
-        self.assertEqual([entry['action']['label'] for entry in actions[1:]], ['安排處理時間', '開啟作業'])
+        self.assertEqual([entry['action']['label'] for entry in actions[1:]], ['設定提醒時間', '開啟作業'])
         self.assertEqual(actions[1]['action']['type'], 'datetimepicker')
         token = actions[0]['action']['data']
         with self.assertRaises(ValueError): self.service.actions.handle_postback(token, 'U'+'b'*32)
         with self.assertRaises(ValueError): self.service.actions.handle_postback(token[:-1]+('0' if token[-1]!='0' else '1'), target)
-        self.assertIn('已安排', self.service.actions.handle_postback(token, target))
+        self.assertIn('已設定', self.service.actions.handle_postback(token, target))
         self.assertIn('已安排過', self.service.actions.handle_postback(token, target))
         self.assertEqual(len(self.storage.assignment_action_records('student', work_plans)), 1)
         self.storage.unlink_line(username='student')
@@ -172,7 +175,7 @@ class AssignmentActionTests(unittest.TestCase):
     def test_cleanup_removes_all_action_data(self):
         item, key, _, _ = self.proposal()
         self.storage.set_personal_deadline('student', key, item['due_ts']+100)
-        self.service.actions.schedule('student', key, self.now+3600, 60, request_id='c'*32)
+        self.service.actions.schedule('student', key, self.now+3600, request_id='c'*32)
         from e3_tracker.assignments.persistence.cleanup import delete_assignment_account_data
         from e3_tracker.platform.persistence.core_schema import users_table
         with self.storage._engine.begin() as conn:
@@ -184,7 +187,9 @@ class AssignmentActionTests(unittest.TestCase):
         _, key = self.seed()
         response = self.client.get(f'/assignments/plan?uid={key}')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('安排處理時間'.encode(), response.data)
+        self.assertIn('設定提醒時間'.encode(), response.data)
+        self.assertNotIn('planDuration'.encode(), response.data)
+        self.assertNotIn('預留時間'.encode(), response.data)
         anonymous = self.app.test_client()
         self.assertNotEqual(anonymous.post('/api/assignments/plans', json={}).status_code, 200)
         with anonymous.session_transaction() as session: session['session_token']='notifications-test'
@@ -204,18 +209,21 @@ class AssignmentActionTests(unittest.TestCase):
             self.assertTrue(write.call_args.args[0].endswith('/owned'))
             self.assertEqual(set(write.call_args.kwargs['json']), {'start', 'end'})
 
-    def test_calendar_work_block_has_stable_separate_identity(self):
+    def test_calendar_reminder_has_stable_separate_identity_and_no_busy_duration(self):
         item, _ = self.seed()
         listed=Mock(status_code=200); listed.json.return_value={'items':[]}
         created=Mock(status_code=200); created.json.return_value={}
-        plan={'id':'a'*64, 'start_ts':self.now+3600, 'minutes':60}
+        plan={'id':'a'*64, 'start_ts':self.now+3600}
         with patch('e3_tracker.assignments.services.google_calendar.requests.get', return_value=listed), patch(
             'e3_tracker.assignments.services.google_calendar.requests.post', return_value=created) as write:
             upsert_assignment_action(item, access_token='synthetic', calendar_id='primary', plan=plan)
             body = write.call_args.kwargs['json']
             self.assertRegex(body['id'], '^[a-v0-9]+$')
             self.assertEqual(body['extendedProperties']['private']['e3_uid'], 'e3-plan-'+'a'*64)
-            self.assertEqual(body['summary'], '處理作業｜HW1')
+            self.assertEqual(body['summary'], '作業提醒｜HW1')
+            self.assertEqual(body['transparency'], 'transparent')
+            self.assertEqual(body['reminders']['overrides'][0]['minutes'], 0)
+            self.assertEqual((datetime.fromisoformat(body['end']['dateTime'])-datetime.fromisoformat(body['start']['dateTime'])).total_seconds(), 1)
 
     def test_signed_line_webhook_handles_action_and_redelivery(self):
         item, _ = self.seed()
@@ -240,9 +248,24 @@ class AssignmentActionTests(unittest.TestCase):
         self.assertEqual(len(self.storage.assignment_action_records('student',work_plans)),1)
         self.assertEqual(self.client.post('/api/notifications/line/webhook',json={'events':[event]}).status_code,403)
 
+    def test_calendar_existing_work_block_becomes_non_blocking_reminder_on_sync(self):
+        item,_=self.seed()
+        plan={'id':'a'*64,'start_ts':self.now+3600,'minutes':120}
+        listed=Mock(status_code=200)
+        listed.json.return_value={'items':[{'id':'owned','extendedProperties':{'private':{'e3_uid':'e3-plan-'+plan['id']}}}]}
+        changed=Mock(status_code=200); changed.json.return_value={}
+        with patch('e3_tracker.assignments.services.google_calendar.requests.get',return_value=listed), patch(
+            'e3_tracker.assignments.services.google_calendar.requests.patch',return_value=changed) as write:
+            upsert_assignment_action(item,access_token='synthetic',calendar_id='primary',plan=plan)
+            body=write.call_args.kwargs['json']
+            self.assertEqual(body['summary'],'作業提醒｜HW1')
+            self.assertEqual(body['transparency'],'transparent')
+            self.assertEqual(body['reminders']['overrides'][0]['minutes'],0)
+            self.assertEqual((datetime.fromisoformat(body['end']['dateTime'])-datetime.fromisoformat(body['start']['dateTime'])).total_seconds(),1)
+
     def test_another_account_cannot_confirm_cancel_or_list_own_actions(self):
         item,key,_,proposal=self.proposal()
-        plan=self.service.actions.schedule('student',key,self.now+3600,60,request_id='e'*32)
+        plan=self.service.actions.schedule('student',key,self.now+3600,request_id='e'*32)
         self.storage.save_web_session('other-test','other',moodle_session='synthetic')
         with self.client.session_transaction() as session: session['session_token']='other-test'
         self.assertEqual(self.client.get('/api/assignments/plans').json['items'],[])
@@ -259,7 +282,7 @@ class AssignmentActionTests(unittest.TestCase):
 
     def test_completed_assignment_cancels_scheduled_reminder(self):
         item,key=self.seed()
-        self.service.actions.schedule('student',key,self.now+3600,60,request_id='f'*32)
+        self.service.actions.schedule('student',key,self.now+3600,request_id='f'*32)
         self.storage.save_user_cache('student',{'ts':self.now,'result':self.result({**item,'completed':True})})
         with patch.object(self.service,'deliver') as send:
             self.service.dispatch(now=self.now+3601); send.assert_not_called()
@@ -277,12 +300,12 @@ class AssignmentActionTests(unittest.TestCase):
     def test_calendar_synced_marker_and_cancelled_plan_cannot_be_replayed(self):
         _,key=self.seed()
         with patch.object(self.service.actions,'calendar_sync'):
-            plan=self.service.actions.schedule('student',key,self.now+3600,60,request_id='d'*32,google=True)
+            plan=self.service.actions.schedule('student',key,self.now+3600,request_id='d'*32,google=True)
         records=self.storage.assignment_action_records('student',work_plans)
         self.assertTrue(records[plan['id']]['google_synced'])
         self.storage.cancel_assignment_plan('student',plan['id'])
         with self.assertRaises(ValueError):
-            self.service.actions.schedule('student',key,self.now+3600,60,request_id='d'*32)
+            self.service.actions.schedule('student',key,self.now+3600,request_id='d'*32)
 
     def test_old_settings_tabs_preserve_new_deadline_preference(self):
         self.seed()
