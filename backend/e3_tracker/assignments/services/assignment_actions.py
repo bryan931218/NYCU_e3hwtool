@@ -107,7 +107,7 @@ class AssignmentActions:
     def action_data(self, job, action='tonight', *, expires=None, start=None, minutes=None):
         expires = int(time.time()+7*86400) if expires is None else expires
         value = f"{action}:{job['id']}:{expires}"
-        if action == 'plan':
+        if action in {'plan', 'cancel'}:
             value += f':{start}:{minutes}'
         signature = hmac.new(self.notifications.line_secret.encode(), f"{value}:{job['target_hash']}".encode(), hashlib.sha256).hexdigest()
         return f'{value}:{signature}'
@@ -126,8 +126,8 @@ class AssignmentActions:
         return self.handle_line_postback(data, target)['text']
 
     def handle_line_postback(self, data, target, params=None):
-        match = re.fullmatch(r'(tonight|schedule|plan):([0-9a-f]{64}):(\d{10})(?::(\d{10}):(15|30|45|60|90|120))?:([0-9a-f]{64})', data) if isinstance(data, str) else None
-        if (not match or (match[1] == 'plan') != bool(match[4]) or int(match[3]) < time.time()
+        match = re.fullmatch(r'(tonight|schedule|plan|cancel):([0-9a-f]{64}):(\d{10})(?::(\d{10}):(15|30|45|60|90|120))?:([0-9a-f]{64})', data) if isinstance(data, str) else None
+        if (not match or (match[1] in {'plan', 'cancel'}) != bool(match[4]) or int(match[3]) < time.time()
                 or int(match[3]) > time.time()+7*86400+60):
             raise ValueError('此通知操作已失效，請回到網站安排提醒。')
         value = data.rsplit(':', 1)[0]
@@ -143,6 +143,13 @@ class AssignmentActions:
         if not delivery or delivery[2].get('kind') not in {'new', 'due', 'scheduled'} or delivery[2].get('custom_todo'):
             raise ValueError('此通知無法安排提醒。')
         key = delivery[2]['uid_hash']
+        if match[1] == 'cancel':
+            plan_id = digest(f'{key}:line:{job["id"]}:{match[4]}')
+            plan = self.storage.assignment_action_records(username, work_plans).get(plan_id)
+            if not plan or plan['start_ts'] != int(match[4]) or plan['minutes'] != int(match[5]):
+                raise ValueError('找不到這筆提醒，請回網站查看已安排的提醒。')
+            self.storage.cancel_assignment_plan(username, plan_id)
+            return {'type': 'text', 'text': '這筆提醒已取消。'}
         item = self.item(username, key)
         from e3_tracker.assignments.domain.notifications import notification_time, notification_text
         link = safe_assignment_url(item.get('url'))
@@ -182,6 +189,9 @@ class AssignmentActions:
         choices = []
         if link:
             choices.append({'type': 'action', 'action': {'type': 'uri', 'label': '開啟作業', 'uri': link}})
+        if match[1] == 'plan' and (not old or old['state'] != 'cancelled'):
+            choices.append({'type': 'action', 'action': {'type': 'postback', 'label': '取消提醒', 'displayText': '取消這筆提醒',
+                'data': self.action_data(job, 'cancel', expires=int(match[3]), start=start, minutes=old['minutes'] if old else minutes)}})
         if choices:
             response['quickReply'] = {'items': choices}
         return response

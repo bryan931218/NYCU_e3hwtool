@@ -125,5 +125,17 @@ class LinePlanningTests(unittest.TestCase):
             self.assertEqual(reply.call_count,2)
         self.assertEqual(len(self.storage.assignment_action_records('student',work_plans)),1)
 
+    def test_line_can_cancel_only_its_own_confirmed_plan_and_replay_is_safe(self):
+        _,_,target,job,_=self.line_job()
+        _,choice=self.select(job,target)
+        response=self.service.actions.handle_line_postback(choice['quickReply']['items'][0]['action']['data'],target)
+        cancel=next(entry['action']['data'] for entry in response['quickReply']['items'] if entry['action']['label']=='取消提醒')
+        with self.assertRaises(ValueError): self.service.actions.handle_line_postback(cancel,'U'+'b'*32)
+        for _ in range(2): self.assertIn('已取消',self.service.actions.handle_line_postback(cancel,target)['text'])
+        plan=next(iter(self.storage.assignment_action_records('student',work_plans).values()))
+        self.assertEqual(plan['state'],'cancelled')
+        with self.storage._engine.connect() as conn:
+            self.assertTrue(all(row.state=='cancelled' for row in conn.execute(select(jobs.c.state).where(jobs.c.event_key.like('plan:%')))))
+
 
 if __name__ == '__main__': unittest.main()
