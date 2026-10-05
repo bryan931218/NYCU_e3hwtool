@@ -201,12 +201,13 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                         activity(owner, "notification_line_unlinked", "透過 LINE 取消追蹤")
                 if event.get('type') == 'postback':
                     try:
-                        text = service.actions.handle_postback((event.get('postback') or {}).get('data'), target)
+                        postback = event.get('postback') or {}
+                        message = service.actions.handle_line_postback(postback.get('data'), target, postback.get('params'))
                     except ValueError as error:
-                        text = str(error)
+                        message = {'type': 'text', 'text': str(error)}
                     if event.get('replyToken') and not event.get('deliveryContext', {}).get('isRedelivery'):
                         try:
-                            service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [{'type': 'text', 'text': text}]})
+                            service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [message]})
                         except Exception:
                             app.logger.warning('LINE action reply unavailable')
                     continue

@@ -4,10 +4,12 @@ import hashlib
 import hmac
 import re
 import time
+from datetime import datetime
 from urllib.parse import urlencode
+from e3_tracker.platform.constants import TAIPEI_TZ
 
 from e3_tracker.assignments.domain.assignment_actions import (
-    assignment_hash, deadline_dates, effective_result, match_assignment, source_version, tonight_time,
+    assignment_hash, deadline_dates, effective_result, match_assignment, source_version, tonight_time, safe_assignment_url,
 )
 from e3_tracker.assignments.domain.notifications import active_assignments, digest
 from e3_tracker.assignments.services.collector import annotate_result_semesters, current_semester_key
@@ -36,14 +38,14 @@ class AssignmentActions:
         return item
 
     def proposals(self, username, kind, semester, message, *, notify=False):
-        dates = deadline_dates(message)
-        if not dates:
-            return []
         candidates = [item for item in self.items(username, semester).values() if str(item['course_id']) == str(message['course_id'])]
         if not candidates or 'content' not in message:
             return []
         version = source_version(message)
         matched = match_assignment(message, candidates)
+        dates = deadline_dates(message, baseline_due=matched.get('original_due_ts', matched.get('due_ts')) if matched else None)
+        if not dates:
+            return []
         for suggestion in dates:
             if matched and suggestion['due_ts'] == matched.get('due_ts'):
                 continue
@@ -102,22 +104,38 @@ class AssignmentActions:
             self.storage.mark_plan_calendar_synced(username, plan_id)
         return {'ok': True, 'id': plan_id, 'calendar_error': error, 'message': '提醒已安排。' + ('Google 日曆同步失敗，可重新嘗試同步。' if error else '')}
 
-    def action_data(self, job):
-        expires = int(time.time()+7*86400)
-        value = f"tonight:{job['id']}:{expires}"
+    def action_data(self, job, action='tonight', *, expires=None, start=None, minutes=None):
+        expires = int(time.time()+7*86400) if expires is None else expires
+        value = f"{action}:{job['id']}:{expires}"
+        if action == 'plan':
+            value += f':{start}:{minutes}'
         signature = hmac.new(self.notifications.line_secret.encode(), f"{value}:{job['target_hash']}".encode(), hashlib.sha256).hexdigest()
         return f'{value}:{signature}'
 
+    def line_picker(self, job, due=None):
+        now = time.time()
+        minimum = int((now+90)//60)*60
+        maximum = min(int(now+370*86400), int(due)-900 if due else int(now+370*86400))
+        if maximum <= minimum:
+            return None
+        stamp = lambda value: datetime.fromtimestamp(value, TAIPEI_TZ).strftime('%Y-%m-%dT%H:%M')
+        return {'type': 'datetimepicker', 'label': '安排處理時間', 'data': self.action_data(job, 'schedule'),
+                'mode': 'datetime', 'min': stamp(minimum), 'max': stamp(maximum), 'initial': stamp(min(now+3600, maximum))}
+
     def handle_postback(self, data, target):
-        match = re.fullmatch(r'tonight:([0-9a-f]{64}):(\d{10}):([0-9a-f]{64})', data) if isinstance(data, str) else None
-        if not match or int(match[2]) < time.time() or int(match[2]) > time.time()+7*86400+60:
+        return self.handle_line_postback(data, target)['text']
+
+    def handle_line_postback(self, data, target, params=None):
+        match = re.fullmatch(r'(tonight|schedule|plan):([0-9a-f]{64}):(\d{10})(?::(\d{10}):(15|30|45|60|90|120))?:([0-9a-f]{64})', data) if isinstance(data, str) else None
+        if (not match or (match[1] == 'plan') != bool(match[4]) or int(match[3]) < time.time()
+                or int(match[3]) > time.time()+7*86400+60):
             raise ValueError('此通知操作已失效，請回到網站安排提醒。')
-        value = f'tonight:{match[1]}:{match[2]}'
+        value = data.rsplit(':', 1)[0]
         target_hash = digest(target)
         expected = hmac.new(self.notifications.line_secret.encode(), f'{value}:{target_hash}'.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, match[3]):
+        if not hmac.compare_digest(expected, match[6]):
             raise ValueError('無法驗證此通知。')
-        found = self.storage.line_action_job(match[1], target_hash)
+        found = self.storage.line_action_job(match[2], target_hash)
         if not found:
             raise ValueError('帳號綁定或通知已失效。')
         username, job = found
@@ -125,15 +143,48 @@ class AssignmentActions:
         if not delivery or delivery[2].get('kind') not in {'new', 'due', 'scheduled'} or delivery[2].get('custom_todo'):
             raise ValueError('此通知無法安排提醒。')
         key = delivery[2]['uid_hash']
-        plan_id = digest(f'{key}:line:{job["id"]}')
+        item = self.item(username, key)
+        from e3_tracker.assignments.domain.notifications import notification_time, notification_text
+        link = safe_assignment_url(item.get('url'))
+        suffix = f'\n\n開啟作業\n{link}' if link else '\n\n作業列表\n' + self.notifications.home_url
+        if match[1] == 'schedule':
+            value = params.get('datetime') if isinstance(params, dict) else None
+            if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}', value):
+                raise ValueError('請重新點選安排處理時間，選擇日期與時間。')
+            try:
+                start = int(TAIPEI_TZ.localize(datetime.strptime(value.upper(), '%Y-%m-%dT%H:%M')).timestamp())
+            except ValueError:
+                raise ValueError('日期與時間無效，請重新選擇。') from None
+            validate_future_time(start)
+            durations = [minute for minute in (15, 30, 45, 60, 90, 120)
+                         if not item.get('due_ts') or start+minute*60 <= item['due_ts']]
+            if not durations:
+                raise ValueError('預留時間至少 15 分鐘，且必須在截止前結束。請重新選擇。')
+            choices = [{'type': 'action', 'action': {'type': 'postback', 'label': f'{minute} 分鐘',
+                'displayText': f'預留 {minute} 分鐘', 'data': self.action_data(job, 'plan', expires=int(match[3]), start=start, minutes=minute)}}
+                for minute in durations]
+            return {'type': 'text', 'text': f"{notification_text(item['title'], 160)}\n開始：{notification_time(start)}（台灣時間）\n請選擇預留時間，點選後建立提醒。" + suffix,
+                    'quickReply': {'items': choices}}
+        start = int(match[4]) if match[4] else tonight_time(time.time(), item.get('due_ts'))
+        minutes = int(match[5]) if match[5] else 15
+        request_id = f'line:{job["id"]}' + (f':{start}' if match[4] else '')
+        plan_id = digest(f'{key}:{request_id}')
         old = self.storage.assignment_action_records(username, work_plans).get(plan_id)
         if old:
-            return '這則通知已安排過提醒。' if old['state'] != 'cancelled' else '這則提醒已取消。'
-        item = self.item(username, key)
-        start = tonight_time(time.time(), item.get('due_ts'))
-        self.schedule(username, key, start, 15, request_id=f'line:{job["id"]}', line_job=job)
-        from e3_tracker.assignments.domain.notifications import notification_time
-        return f'已安排 {notification_time(start)} 再提醒你。'
+            text = (f"已安排過 {notification_time(old['start_ts'])} 的提醒，預留 {old['minutes']} 分鐘。"
+                    if old['state'] != 'cancelled' else '這則提醒已取消。')
+        else:
+            if not self.storage.consume_security_limit(f'assignment-plan:{username}', 30, 600):
+                raise ValueError('操作過於頻繁，請稍後再試。')
+            self.schedule(username, key, start, minutes, request_id=request_id, line_job=job)
+            text = f'已安排 {notification_time(start)}（台灣時間）再提醒你，預留 {minutes} 分鐘。'
+        response = {'type': 'text', 'text': text + suffix}
+        choices = []
+        if link:
+            choices.append({'type': 'action', 'action': {'type': 'uri', 'label': '開啟作業', 'uri': link}})
+        if choices:
+            response['quickReply'] = {'items': choices}
+        return response
 
 
 def validate_future_time(value):

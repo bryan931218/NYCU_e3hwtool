@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from urllib.parse import quote, urljoin
-from e3_tracker.assignments.domain.assignment_actions import safe_assignment_url
+from e3_tracker.assignments.domain.assignment_actions import safe_assignment_url, tonight_time
 
 import requests
 from e3_tracker.assignments.domain.notifications import (
@@ -110,15 +110,28 @@ class NotificationService:
             message = {'type': 'text', 'text': text}
             if self.actions and payload.get('kind') in {'new', 'due', 'scheduled'} and not payload.get('custom_todo'):
                 key = payload.get('uid_hash')
-                actions = [
-                    {'type': 'postback', 'label': '今晚再提醒', 'data': self.actions.action_data(job), 'displayText': '今晚再提醒'},
-                    {'type': 'uri', 'label': '安排處理時間', 'uri': urljoin(self.home_url, f'/assignments/plan?uid={key}')},
-                ]
+                actions = []
+                try:
+                    reminder = tonight_time(time.time(), payload.get('due_ts'))
+                    if not payload.get('due_ts') or reminder+900 <= payload['due_ts']:
+                        from datetime import datetime
+                        from e3_tracker.platform.constants import TAIPEI_TZ
+                        local = datetime.fromtimestamp(reminder, TAIPEI_TZ)
+                        today = datetime.fromtimestamp(time.time(), TAIPEI_TZ)
+                        label = '1 小時後提醒' if local.hour != 20 else '今晚再提醒' if local.date() == today.date() else '明晚再提醒'
+                        actions.append({'type': 'postback', 'label': label, 'data': self.actions.action_data(job), 'displayText': label})
+                except ValueError:
+                    pass
+                picker = self.actions.line_picker(job, payload.get('due_ts'))
+                if picker:
+                    actions.append(picker)
                 url = safe_assignment_url(payload.get('assignment_url'))
                 if url:
                     actions.append({'type': 'uri', 'label': '開啟作業', 'uri': url})
-                message['quickReply'] = {'items': [{'type': 'action', 'action': action} for action in actions]}
-                message['text'] += '\n\n安排處理時間\n' + urljoin(self.home_url, f'/assignments/plan?uid={key}')
+                    message['text'] += '\n\n開啟作業\n' + url
+                if actions:
+                    message['quickReply'] = {'items': [{'type': 'action', 'action': action} for action in actions]}
+                message['text'] += '\n\n網頁安排／管理提醒\n' + urljoin(self.home_url, f'/assignments/plan?uid={key}') + '\nLINE 選擇的時間以台灣時間為準。'
             self.line_request(
                 "push",
                 {"to": target, "messages": [message]},

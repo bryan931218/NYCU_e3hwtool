@@ -23,6 +23,7 @@ export function renderDeadlineReview(item, {element, button, post, onDismiss}) {
     dateLabel.append(date);
     const evidence = element('p', 'deadline-evidence', `來源：${proposal.evidence}`);
     const precision = element('p', 'deadline-evidence', proposal.time_explicit ? '只更新你的個人期限，不會改動 E3。' : '來源未註明時間，請確認日期與時間。');
+    const warnings = element('p', 'deadline-evidence', (proposal.warnings || []).join(' '));
     const googleLabel = element('label'); const google = element('input'); google.type = 'checkbox';
     googleLabel.append(google, document.createTextNode(' 同步 Google 日曆'));
     const status = element('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
@@ -47,7 +48,9 @@ export function renderDeadlineReview(item, {element, button, post, onDismiss}) {
       try {await post('/api/assignments/deadline-proposals', {id: proposal.id, dismiss: true}); onDismiss(proposal.id); section.remove();}
       catch (error) {status.textContent = error.message; status.dataset.error = 'true'; dismiss.disabled = confirm.disabled = false;}
     });
-    actions.append(confirm, dismiss); section.append(selectLabel, old, dateLabel, evidence, precision, googleLabel, actions, status);
+    actions.append(confirm, dismiss); section.append(selectLabel, old, dateLabel, evidence, precision);
+    if (warnings.textContent) section.append(warnings);
+    section.append(googleLabel, actions, status);
     fragment.append(section);
   }
   return fragment;

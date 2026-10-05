@@ -147,7 +147,9 @@ class AssignmentActionTests(unittest.TestCase):
             self.service.dispatch()
             message = transport.call_args.args[1]['messages'][0]
         actions = message['quickReply']['items']
-        self.assertEqual([entry['action']['label'] for entry in actions], ['今晚再提醒', '安排處理時間', '開啟作業'])
+        self.assertIn(actions[0]['action']['label'], ['今晚再提醒', '明晚再提醒'])
+        self.assertEqual([entry['action']['label'] for entry in actions[1:]], ['安排處理時間', '開啟作業'])
+        self.assertEqual(actions[1]['action']['type'], 'datetimepicker')
         token = actions[0]['action']['data']
         with self.assertRaises(ValueError): self.service.actions.handle_postback(token, 'U'+'b'*32)
         with self.assertRaises(ValueError): self.service.actions.handle_postback(token[:-1]+('0' if token[-1]!='0' else '1'), target)
@@ -327,6 +329,21 @@ class AssignmentActionTests(unittest.TestCase):
                 'due_ts':proposal['due_ts'],'original_due_ts':item['due_ts']})
         self.assertEqual(response.status_code,400)
         self.assertFalse(self.storage.personal_deadline_overrides('student'))
+
+    def test_relative_extension_does_not_compound_after_confirming(self):
+        item,key,message,_=self.proposal()
+        message=self.service.course_message_services['announcements'].storage.update_course_announcement('student',item['semester_key'],message['key'],content={'content':'HW1 deadline extended by 3 days'})
+        proposal=self.service.actions.proposals('student','announcements',item['semester_key'],message)[0]
+        self.assertEqual(proposal['due_ts'],item['due_ts']+3*86400)
+        self.service.actions.confirm('student',proposal['id'],key,proposal['due_ts'],item['due_ts'])
+        self.assertEqual(self.service.actions.proposals('student','announcements',item['semester_key'],message),[])
+
+    def test_assignment_matching_handles_chinese_numbers_and_avoids_prefix_collisions(self):
+        item,_=self.seed()
+        self.assertEqual(match_assignment({'content':'第一份作業延期'},[item])['title'],'HW1')
+        self.assertEqual(match_assignment({'content':'HW１ 延期'},[item])['title'],'HW1')
+        self.assertIsNone(match_assignment({'content':'HW10 延期'},[item]))
+        self.assertIsNone(match_assignment({'content':'HW1-2 延期'},[item]))
 
 
 if __name__ == '__main__': unittest.main()

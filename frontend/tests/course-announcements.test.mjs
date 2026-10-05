@@ -107,3 +107,9 @@ test('dismissed suggestions disappear only after the server acknowledges the act
   assert.equal(fixture.dismissed(),'proposal');
   assert.equal(fixture.get(node=>node.tag==='section').removed,true);
 });
+
+test('ambiguous date and timezone warnings are shown as literal text',()=>{
+  const fixture=reviewFixture(async()=>({ok:true}),{warnings:['日期可能為月／日或日／月，請核對。','CST 時區可能有歧義。']});
+  assert.ok(fixture.nodes.some(node=>node.textContent==='日期可能為月／日或日／月，請核對。 CST 時區可能有歧義。'));
+  assert.ok(fixture.nodes.every(node=>node.innerHTML===undefined));
+});

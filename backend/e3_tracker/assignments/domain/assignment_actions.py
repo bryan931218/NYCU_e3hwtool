@@ -2,11 +2,13 @@
 
 import copy
 import re
+import unicodedata
 from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 
 from e3_tracker.platform.constants import TAIPEI_TZ
 from .notifications import digest
+from .deadline_parser import deadline_dates, chinese_number
 
 
 def assignment_hash(item, uid_for):
@@ -39,43 +41,28 @@ def source_version(item):
     return digest(f"{item.get('title')}|{item.get('updated_ts')}|{item.get('content', '')}")
 
 
-def deadline_dates(item, *, now=None):
-    """Only suggest explicit future dates near deadline/change language; never apply them."""
-    now = datetime.now(TAIPEI_TZ) if now is None else datetime.fromtimestamp(now, TAIPEI_TZ)
-    reference = datetime.fromtimestamp(item.get('updated_ts') or now.timestamp(), TAIPEI_TZ)
-    text = f"{item.get('title', '')}\n{item.get('content', '')}"[:20000]
-    change = re.compile(r'截止|期限|繳交|延期|延後|延長|延至|改為|改至|改到|deadline|due\b|extend|postpon', re.I)
-    date = re.compile(r'(?:(20\d{2}|1\d{2})\s*[/年.-]\s*)?(\d{1,2})\s*[/月.-]\s*(\d{1,2})\s*(?:日)?(?:\s*[（(][^\n）)]{0,10}[）)])?(?:\s*(\d{1,2}):(\d{2}))?')
-    suggestions = []
-    for match in date.finditer(text):
-        excerpt = text[max(0, match.start()-100):min(len(text), match.end()+60)]
-        if not change.search(excerpt):
-            continue
-        before = text[max(0, match.start()-30):match.start()]
-        if re.search(r'(?:原(?:訂|本|先)?|從|由|original(?:ly)?|from)\s*(?:截止|期限)?\s*[:：]?\s*$', before, re.I):
-            continue
-        year = int(match[1] or reference.year)
-        if year < 1911:
-            year += 1911
-        try:
-            value = TAIPEI_TZ.localize(datetime(year, int(match[2]), int(match[3]), int(match[4] or 23), int(match[5] or 59)))
-            if not match[1] and reference.month == 12 and value.month == 1:
-                value = value.replace(year=year+1)
-        except ValueError:
-            continue
-        if now < value <= now + timedelta(days=370) and value.timestamp() not in {entry['due_ts'] for entry in suggestions}:
-            suggestions.append({'due_ts': int(value.timestamp()), 'evidence': excerpt.strip(), 'time_explicit': bool(match[4])})
-    return suggestions[-3:]
-
-
 def match_assignment(message, candidates):
-    text = re.sub(r'\s+', '', f"{message.get('title', '')} {message.get('content', '')}").lower()
+    raw = unicodedata.normalize('NFKC', f"{message.get('title', '')} {message.get('content', '')}"[:20000]).lower()
+    text = re.sub(r'\s+', '', raw)
     matches = []
-    numbers = set(re.findall(r'(?:hw|homework|assignment|作業)\s*#?\s*0*(\d+)(?!\d)', text, re.I))
+    def numbers(value):
+        found = re.findall(r'(?:hw|homework|assignment|problem\s+set|lab|作業|作业|實驗)\s*(?:#|第)?\s*([\d一二兩三四五六七八九十]+)', value, re.I)
+        found += re.findall(r'第([\d一二兩三四五六七八九十]+)(?:份|次)?(?:作業|作业)', value)
+        normalized = set()
+        for word in found:
+            if word.isdigit():
+                normalized.add(str(int(word)))
+            elif not any(character.isdigit() for character in word):
+                normalized.add(str(int(chinese_number(word))))
+        return normalized
+    identifiers = numbers(raw)
+    if re.search(r'(?:hw|homework|assignment|作業|作业)\s*#?\s*\d+\s*[-~～至]\s*\d+', raw, re.I):
+        return None
     for item in candidates:
-        title = re.sub(r'\s+', '', item.get('title', '')).lower()
-        ids = set(re.findall(r'(?:hw|homework|assignment|作業)\s*#?\s*0*(\d+)(?!\d)', title, re.I))
-        if (len(title) >= 3 and title in text) or numbers.intersection(ids):
+        raw_title = unicodedata.normalize('NFKC', item.get('title', '')).lower()
+        title = re.sub(r'\s+', '', raw_title)
+        ids = numbers(raw_title)
+        if (not ids and len(title) >= 3 and title in text) or identifiers.intersection(ids):
             matches.append(item)
     return matches[0] if len(matches) == 1 else None
 
