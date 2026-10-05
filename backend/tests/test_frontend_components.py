@@ -8,7 +8,7 @@ from e3_tracker.platform.assets import configure_frontend
 
 
 class FrontendComponentTests(unittest.TestCase):
-    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, overdue=True, completed=False, readonly=False):
+    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, overdue=True, completed=False, readonly=False, google_ready=False, google_linked=False, excel_data=''):
         app = Flask(__name__)
         configure_frontend(app)
         app.secret_key = 'component-test'
@@ -28,9 +28,40 @@ class FrontendComponentTests(unittest.TestCase):
         with app.test_request_context('/'):
             html = render_template('assignments/web.html', result=result, preferences=preferences,
                                    user={'username': 'qa', 'surname': surname}, viewed_username='qa',
-                                   guest_mode=guest_mode, is_admin_view=readonly, google_ready=False, now_ts=200,
+                                   guest_mode=guest_mode, is_admin_view=readonly, google_ready=google_ready,
+                                   google_linked=google_linked, excel_data=excel_data, now_ts=200,
                                    last_updated_label='2026-09-26 13:31', stats={'online': 3, 'total': 3286})
         return BeautifulSoup(html, 'html.parser'), uid
+
+    def test_more_operations_groups_download_calendar_and_extension_with_explicit_disconnect(self):
+        page, _uid = self.render(google_ready=True, google_linked=True, excel_data='cHJldmlldw==')
+        panel = page.select_one('#moreOperationsPanel')
+        self.assertEqual([h.get_text() for h in panel.select('h3')], ['作業資料', 'Google 日曆', '瀏覽器套件'])
+        self.assertIsNone(panel.select_one('.btn'))
+        self.assertEqual(panel.select_one('[data-log-action="download_excel"]')['download'], '待繳作業.xlsx')
+        self.assertEqual(panel.select_one('#googleSyncBtn').get_text(strip=True), '同步作業到日曆')
+        self.assertEqual(panel.select_one('.more-connection').get_text(), '已連結')
+        form = panel.select_one('form[action="/google_unlink"]')
+        self.assertEqual(form['method'], 'post')
+        self.assertIsNotNone(form.select_one('input[name="csrf_token"]'))
+        button = form.select_one('button')
+        self.assertEqual(button.get_text(strip=True), '解除連結')
+        self.assertIn('確定解除', button['data-confirm'])
+        self.assertNotIn('管理 Google 連結', panel.get_text())
+        self.assertEqual(panel.select_one('a[href="/e3_navigation_extension"]')['target'], '_blank')
+
+    def test_more_operations_preserves_unlinked_unavailable_and_readonly_states(self):
+        for options, expected in [({'google_ready': True}, '連結 Google 日曆'),
+                                  ({}, '尚未開放日曆同步'),
+                                  ({'google_ready': True, 'google_linked': True, 'readonly': True}, '唯讀模式無法同步')]:
+            with self.subTest(options=options):
+                page, _uid = self.render(**options)
+                panel = page.select_one('#moreOperationsPanel')
+                self.assertIn(expected, panel.get_text())
+                self.assertIsNone(panel.select_one('#googleSyncBtn'))
+                self.assertIsNone(panel.select_one('form'))
+                self.assertIsNone(panel.select_one('#moreExportHeading'))
+                self.assertIsNone(panel.select_one('.more-connection'))
 
     def test_e3_return_entry_keeps_native_links_and_escapes_assignment_metadata(self):
         document, _uid = self.render()

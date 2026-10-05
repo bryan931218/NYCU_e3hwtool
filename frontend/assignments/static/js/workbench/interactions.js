@@ -1,5 +1,19 @@
 import { animateContentChange } from '../content-motion.js';
 
+export function initializeMoreMenu(doc = document) {
+  const menu = doc.getElementById('moreOperations');
+  if (!menu) return;
+  doc.addEventListener('click', event => {
+    if (!menu.open) return;
+    if (!menu.contains(event.target) || event.target.closest('.more-action')) menu.open = false;
+  });
+  doc.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !menu.open) return;
+    menu.open = false;
+    menu.querySelector('summary').focus();
+  });
+}
+
 export function register(ctx) {
   ctx.setView = function setView(mode, options = {}) {
     const nextMode = ["due", "course", "calendar"].includes(mode) ? mode : "due";
@@ -25,6 +39,7 @@ export function register(ctx) {
 }
 
 export function initialize(ctx) {
+  initializeMoreMenu();
   ctx.hydrateLocalAssignments();
 
   ctx.setView(ctx.currentViewMode, { skipPersist: true, skipApply: true });

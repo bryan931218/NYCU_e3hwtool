@@ -241,19 +241,30 @@
             </details>
             <div class="seg" role="group" aria-label="作業檢視"><button type="button" id="viewDueBtn" class="seg-btn" data-view="due">到期日</button><button type="button" id="viewCourseBtn" class="seg-btn" data-view="course">依課程</button><button type="button" id="viewCalendarBtn" class="seg-btn" data-view="calendar"><span class="calendar-icon" data-icon="calendar-days" aria-hidden="true"></span>日曆</button></div>
         </div></div>
-        <details class="more-menu">
-            <summary class="icon-button more-trigger" title="更多操作" aria-label="更多操作">
+        <details class="more-menu" id="moreOperations">
+            <summary class="icon-button more-trigger" title="匯出與整合" aria-label="匯出與整合" aria-controls="moreOperationsPanel">
                 <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
             </summary>
-            <div class="more-panel tc-center">
-            <a class="btn" href="{{ url_for('e3_navigation_extension') }}" target="_blank" rel="noopener">安裝 E3 自動跳轉</a>
-            {% if result and excel_data %}<a class="btn excel-btn" data-log-action="download_excel" download="待繳作業.xlsx" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}">匯出 Excel</a>{% endif %}
-            {% if is_admin_view %}<span class="btn disabled">唯讀檢視</span>
-            {% elif google_ready %}{% if google_linked %}
-                <button class="btn google" type="button" id="googleSyncBtn">同步 Google 日曆</button>
-                <form method="post" action="{{ url_for('google_unlink') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"><button class="btn" type="submit">管理 Google 連結</button></form>
-            {% else %}<a class="btn google" href="{{ url_for('google_authorize') }}">連結 Google 日曆</a>{% endif %}
-            {% else %}<span class="btn disabled">尚未啟用 Google 日曆</span>{% endif %}
+            <div class="more-panel" id="moreOperationsPanel">
+                {% if result and excel_data %}
+                <section class="more-group" aria-labelledby="moreExportHeading">
+                    <h3 id="moreExportHeading">作業資料</h3>
+                    <a class="more-action" data-log-action="download_excel" download="待繳作業.xlsx" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ excel_data }}"><span class="more-icon" data-icon="download" aria-hidden="true"></span><span>匯出 Excel</span></a>
+                </section>
+                {% endif %}
+                <section class="more-group" aria-labelledby="moreCalendarHeading">
+                    <div class="more-group-heading"><h3 id="moreCalendarHeading">Google 日曆</h3>{% if google_ready and google_linked and not is_admin_view %}<span class="more-connection">已連結</span>{% endif %}</div>
+                    {% if is_admin_view %}<p class="more-unavailable">唯讀模式無法同步</p>
+                    {% elif google_ready %}{% if google_linked %}
+                        <button class="more-action" type="button" id="googleSyncBtn"><span class="more-icon" data-icon="refresh" aria-hidden="true"></span><span>同步作業到日曆</span></button>
+                        <form method="post" action="{{ url_for('google_unlink') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"><button class="more-action more-disconnect" type="submit" data-confirm="確定解除 Google 日曆連結？解除後需重新連結才能同步作業。"><span class="more-icon" data-icon="unlink" aria-hidden="true"></span><span>解除連結</span></button></form>
+                    {% else %}<a class="more-action" href="{{ url_for('google_authorize') }}"><span class="more-icon" data-icon="calendar" aria-hidden="true"></span><span>連結 Google 日曆</span></a>{% endif %}
+                    {% else %}<p class="more-unavailable">尚未開放日曆同步</p>{% endif %}
+                </section>
+                <section class="more-group" aria-labelledby="moreExtensionHeading">
+                    <h3 id="moreExtensionHeading">瀏覽器套件</h3>
+                    <a class="more-action" href="{{ url_for('e3_navigation_extension') }}" target="_blank" rel="noopener"><span class="more-icon" data-icon="puzzle" aria-hidden="true"></span><span>安裝自動跳轉套件</span><span class="more-icon more-external" data-icon="external" aria-hidden="true"></span><span class="more-sr-only">（開啟新分頁）</span></a>
+                </section>
             </div>
         </details>
         {% if google_ready and google_linked %}<form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"><input type="hidden" name="selected_uids" id="googleSyncInput"></form>{% endif %}

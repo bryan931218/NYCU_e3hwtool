@@ -1015,24 +1015,103 @@ html[data-theme="dark"] .theme-icon-moon {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  width: 220px;
-  padding: 9px;
+  gap: 0;
+  width: min(280px, calc(100vw - 32px));
+  padding: 6px;
+  max-height: min(480px, calc(100dvh - 100px));
+  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
   box-shadow: var(--shadow);
 }
-.more-panel .btn {
-  width: 100%;
-  justify-content: flex-start;
-  background: transparent;
-  border-color: transparent;
-  color: var(--fg);
+.more-group {
+  padding: 8px 0;
 }
-.more-panel .btn:hover {
+.more-group + .more-group {
+  border-top: 1px solid var(--border);
+}
+.more-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 12px;
+}
+.more-group h3 {
+  margin: 0;
+  padding: 2px 12px 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+.more-connection {
+  color: var(--primary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.more-action {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.more-action:hover {
   background: var(--card-2);
-  border-color: var(--border);
+  color: var(--primary);
+}
+.more-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: var(--card-2);
+}
+.more-disconnect { color: var(--muted); }
+.more-disconnect:hover { color: var(--err-fg); background: var(--err-bg); }
+.more-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--more-icon) center / contain no-repeat;
+  mask: var(--more-icon) center / contain no-repeat;
+  color: var(--muted);
+}
+.more-action:hover .more-icon { color: inherit; }
+.more-icon[data-icon="download"] { --more-icon: url('/assets/shared/icons/download.svg'); }
+.more-icon[data-icon="refresh"] { --more-icon: url('/assets/shared/icons/refresh-cw.svg'); }
+.more-icon[data-icon="unlink"] { --more-icon: url('/assets/shared/icons/unlink.svg'); }
+.more-icon[data-icon="calendar"] { --more-icon: url('../vendor/lucide-calendar/calendar-days.svg'); }
+.more-icon[data-icon="puzzle"] { --more-icon: url('/assets/shared/icons/puzzle.svg'); }
+.more-icon[data-icon="external"] { --more-icon: url('/assets/shared/icons/external-link.svg'); }
+.more-external { width: 14px; height: 14px; margin-left: auto; }
+.more-unavailable {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.more-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .more-panel form {
   margin: 0;
@@ -2017,7 +2096,7 @@ html[data-theme="dark"]
   .more-panel {
     position: absolute;
     right: 0;
-    width: min(250px, calc(100vw - 28px));
+    width: min(280px, calc(100vw - 32px));
   }
   .toolbar-counts {
     grid-column: 1;

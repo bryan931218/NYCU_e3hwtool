@@ -8,7 +8,7 @@ import { register as registerAssignments } from '../assignments/static/js/workbe
 import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
 import { calendarAssignments, calendarEventsInRange, register as registerDeadlineCalendar, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay } from '../assignments/static/js/workbench/deadline-calendar.js';
 import { register as registerGoogleCalendar } from '../assignments/static/js/workbench/calendar.js';
-import { register as registerInteractions } from '../assignments/static/js/workbench/interactions.js';
+import { register as registerInteractions, initializeMoreMenu } from '../assignments/static/js/workbench/interactions.js';
 import { register as registerWorkspaceFilters } from '../assignments/static/js/workbench/filters.js';
 import { initialize as initializeAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { initialize as initializeSearch, isBrowserAutofilled } from '../assignments/static/js/workbench/search.js';
@@ -16,6 +16,29 @@ import { courseColorKey, createCourseColorRegistry, register as registerCourseCo
 import { initialize as initializeUsageEvents } from '../assignments/static/js/workbench/usage-events.js';
 import { initialize as initializeCacheEvents } from '../assignments/static/js/workbench/cache-events.js';
 import { register as registerCustomTodos } from '../assignments/static/js/workbench/custom-todo-notifications.js';
+
+test('more operations close on actions, outside click and Escape while keeping inner headings usable', () => {
+  const handlers = {};
+  let focus = 0;
+  const menu = {open: true, contains: target => target.inside, querySelector: () => ({focus: () => focus++})};
+  initializeMoreMenu({getElementById: () => menu, addEventListener: (name, handler) => handlers[name] = handler});
+  handlers.click({target: {inside: true, closest: () => null}});
+  assert.equal(menu.open, true);
+  handlers.click({target: {inside: true, closest: () => ({})}});
+  assert.equal(menu.open, false);
+  menu.open = true;
+  handlers.click({target: {inside: false}});
+  assert.equal(menu.open, false);
+  menu.open = true;
+  handlers.keydown({key: 'Tab'});
+  assert.equal(menu.open, true);
+  handlers.keydown({key: 'Escape'});
+  assert.equal(menu.open, false);
+  assert.equal(focus, 1);
+  handlers.keydown({key: 'Escape'});
+  assert.equal(focus, 1);
+  initializeMoreMenu({getElementById: () => null});
+});
 
 test('calendar event source processes only visible days, including adjacent month cells, with an exclusive end', () => {
   const items = ['2025-10-01','2026-09-28','2026-10-05','2026-11-01','2026-11-02'].map((day,index) => ({
