@@ -20,6 +20,7 @@ from e3_tracker.assignments.persistence.usage import AssignmentUsageStorage
 from e3_tracker.assignments.persistence.membership import AssignmentMembershipStorage
 from e3_tracker.assignments.persistence.course_announcements import CourseAnnouncementStorage
 from e3_tracker.assignments.persistence.notifications import NotificationStorage
+from e3_tracker.assignments.persistence.assignment_actions import AssignmentActionStorage
 from e3_tracker.assignments.persistence.custom_todo_notifications import (
     CustomTodoNotificationStorage,
 )
@@ -36,6 +37,7 @@ from e3_tracker.platform.security import CredentialCipher
 
 
 class PersistentStorage(
+    AssignmentActionStorage,
     CourseAnnouncementStorage,
     AssignmentMembershipStorage,
     AssignmentUsageStorage,

@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from urllib.parse import quote, urljoin
+from e3_tracker.assignments.domain.assignment_actions import safe_assignment_url
 
 import requests
 from e3_tracker.assignments.domain.notifications import (
@@ -39,6 +40,7 @@ class NotificationService:
         self.line_bot_id = os.getenv("E3_LINE_BOT_BASIC_ID", "").strip()
         self.stop = threading.Event()
         self.course_message_services = {}
+        self.actions = None
 
     @property
     def browser_ready(self):
@@ -105,9 +107,21 @@ class NotificationService:
         if job["channel"] == "line":
             destination = urljoin(self.home_url.rstrip('/') + '/', payload['url'].lstrip('/'))
             text = f"{payload['title']}\n\n{payload['body']}\n\n查看詳情\n{destination}"
+            message = {'type': 'text', 'text': text}
+            if self.actions and payload.get('kind') in {'new', 'due', 'scheduled'} and not payload.get('custom_todo'):
+                key = payload.get('uid_hash')
+                actions = [
+                    {'type': 'postback', 'label': '今晚再提醒', 'data': self.actions.action_data(job), 'displayText': '今晚再提醒'},
+                    {'type': 'uri', 'label': '安排處理時間', 'uri': urljoin(self.home_url, f'/assignments/plan?uid={key}')},
+                ]
+                url = safe_assignment_url(payload.get('assignment_url'))
+                if url:
+                    actions.append({'type': 'uri', 'label': '開啟作業', 'uri': url})
+                message['quickReply'] = {'items': [{'type': 'action', 'action': action} for action in actions]}
+                message['text'] += '\n\n安排處理時間\n' + urljoin(self.home_url, f'/assignments/plan?uid={key}')
             self.line_request(
                 "push",
-                {"to": target, "messages": [{"type": "text", "text": text}]},
+                {"to": target, "messages": [message]},
                 str(uuid.UUID(job["id"][:32])),
             )
         else:
@@ -167,7 +181,20 @@ class NotificationService:
                     )
                     continue
 
-                if payload.get('kind') in {'new_announcement', 'new_mail'}:
+                if payload.get('kind') == 'deadline_change':
+                    from e3_tracker.assignments.persistence.assignment_actions import deadline_proposals
+                    from e3_tracker.assignments.domain.assignment_actions import source_version
+                    proposal = self.storage.assignment_action_records(username, deadline_proposals).get(payload['proposal_id'])
+                    source = self.course_message_services.get(proposal['kind']) if proposal else None
+                    messages = source.storage.load_course_announcements(username, proposal['semester'])['items'] if source else []
+                    valid = proposal and proposal['state'] == 'pending' and any(item['key'] == proposal['message_key'] and
+                        source_version(item) == proposal['source_version'] for item in messages)
+                    valid = valid and proposal['semester'] == current_semester_key() and any(
+                        str(item['course_id']) == str(proposal['course_id']) for item in self.actions.items(username).values())
+                    if not valid:
+                        self.storage.finish_notification_job(job, 'cancelled', now=now)
+                        continue
+                elif payload.get('kind') in {'new_announcement', 'new_mail'}:
                     source = self.course_message_services.get(payload['message_kind'])
                     cache = source.storage.load_course_announcements(username, payload['semester']) if source else {}
                     if payload['semester'] != current_semester_key() or not any(item['key'] == payload['message_key'] for item in cache.get('items', [])):
@@ -186,6 +213,8 @@ class NotificationService:
                     cache = self.storage.load_user_cache(username) or {}
                     result = cache.get("result") or {}
                     annotate_result_semesters(result)
+                    from e3_tracker.assignments.domain.assignment_actions import effective_result
+                    result = effective_result(result, self.storage.personal_deadline_overrides(username), self.storage.assignment_uid, now=now)
                     items = active_assignments(
                         result,
                         current_semester_key(),
@@ -196,11 +225,25 @@ class NotificationService:
                     )
                     item = items.get(payload["uid_hash"])
                     if not item or (
-                        payload["kind"] == "due"
+                        payload["kind"] == 'due'
                         and item.get("due_ts") != payload["due_ts"]
                     ):
                         self.storage.finish_notification_job(job, "cancelled", now=now)
                         continue
+                    if payload['kind'] == 'scheduled':
+                        from e3_tracker.assignments.persistence.assignment_actions import work_plans
+                        plan = self.storage.assignment_action_records(username, work_plans).get(payload['plan_id'])
+                        if not plan or plan['state'] != 'pending' or (item.get('due_ts') and
+                                (item['due_ts'] <= now or plan['start_ts']+plan['minutes']*60 > item['due_ts'])):
+                            self.storage.finish_notification_job(job, 'cancelled', now=now)
+                            continue
+                        from e3_tracker.assignments.domain.notifications import notification_payload
+                        payload = {**payload, **notification_payload(item, 'due'), 'title': 'E3｜你安排的作業提醒',
+                                   'kind': 'scheduled', 'url': payload['url'], 'due_ts': item.get('due_ts')}
+                    elif payload['kind'] == 'new':
+                        from e3_tracker.assignments.domain.notifications import notification_payload
+                        payload = {**payload, **notification_payload(item, 'new')}
+                    payload['assignment_url'] = safe_assignment_url(item.get('url'))
 
                 self.deliver(job, payload, target)
                 self.storage.finish_notification_job(job, "sent", now=now)
@@ -268,7 +311,7 @@ class NotificationService:
             return
         for kind, source in self.course_message_services.items():
             preference = 'new_mail' if kind == 'mail' else 'new_announcement'
-            if not prefs.get(preference) or not source.slots.acquire(blocking=False):
+            if not (prefs.get(preference) or prefs.get('deadline_changes')) or not source.slots.acquire(blocking=False):
                 continue
             try:
                 attempt = source.storage.claim_course_announcement_refresh(user['username'], semester)
@@ -279,6 +322,21 @@ class NotificationService:
                 source.slots.release()
                 raise
             source._refresh(current_app._get_current_object(), user, semester, courses, attempt)
+            if prefs.get('deadline_changes') and self.actions:
+                messages = source.storage.load_course_announcements(user['username'], semester)['items']
+                # One fresh body per source per poll bounds school requests and avoids page-load work.
+                fresh = [item for item in messages if time.time()-86400 < (item.get('updated_ts') or 0) <= time.time()+300]
+                missing = next((item for item in fresh if 'content' not in item), None)
+                if missing:
+                    try:
+                        content = source.content(user, missing)
+                        source.storage.update_course_announcement(user['username'], semester, missing['key'], content=content,
+                            expected_version=(missing.get('title'), missing.get('updated_ts')))
+                    except Exception:
+                        logger.warning('Deadline source body will retry')
+                for message in source.storage.load_course_announcements(user['username'], semester)['items']:
+                    if message.get('updated_ts') and time.time()-86400 < message['updated_ts'] <= time.time()+300:
+                        self.actions.proposals(user['username'], kind, semester, message, notify=True)
 
     def tick(self, fetch_assignments_for, save_cache):
         self.refresh_once(fetch_assignments_for, save_cache)

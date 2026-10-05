@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-announcements.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-picker.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/assignment-actions.css') }}">
 <script nonce="{{ csp_nonce() }}" type="application/json" id="course-news-config">{{ announcement_config|tojson }}</script>
 <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/course-announcements.js') }}"></script>
 </head>

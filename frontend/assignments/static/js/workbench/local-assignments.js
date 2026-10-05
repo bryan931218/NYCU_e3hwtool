@@ -201,6 +201,10 @@ export function register(ctx) {
 
   ctx.applyDueOverrides = function applyDueOverrides() {
     document.querySelectorAll("tr[data-uid]").forEach((row) => {
+      if (row.dataset.personalDue === '1') {
+        delete ctx.dueOverrides[row.dataset.uid || ''];
+        return;
+      }
       const override = ctx.dueOverrides[row.dataset.uid || ""];
       if (override && override.due_ts) {
         ctx.setRowDue(

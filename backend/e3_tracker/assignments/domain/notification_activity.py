@@ -19,6 +19,7 @@ def notification_setting_changes(before, after):
         "new_assignment": "新作業通知",
         "new_announcement": "課程公告通知",
         "new_mail": "課程信件通知",
+        "deadline_changes": "期限異動提醒",
         "due_reminder": "到期提醒",
     }
     changes = [

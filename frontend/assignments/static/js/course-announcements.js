@@ -2,6 +2,7 @@ import { initialize as initializeCoursePicker } from './workbench/course-filter.
 import { createCourseColorRegistry } from './workbench/course-colors.js';
 import { createUnreadUpdater, updateUnreadIndicator } from './course-message-unread.js';
 import { animateContentChange } from './content-motion.js';
+import { renderDeadlineReview } from './deadline-review.js';
 
 export function filterAnnouncements(items, { course = '', query = '', unread = false } = {}) {
   const text = query.trim().toLocaleLowerCase('zh-Hant');
@@ -100,7 +101,8 @@ function initialize(config) {
     if (!response.ok || !result.ok) throw Error(result.error || `${noun}更新失敗，請稍後再試。`);
     return result;
   };
-  const post = (url, payload) => fetchJson(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+  const post = (url, payload) => fetchJson(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(url === '/api/assignments/deadline-proposals' ? 60000 : 20000)});
   const acknowledgeEntry = async () => {
     const generation = state.generation;
     if (document.hidden || !config.seenUrl || acknowledgedGeneration === generation || acknowledgingGeneration === generation) return;
@@ -177,7 +179,9 @@ function initialize(config) {
     const body = element('p', 'news-content', item.content !== undefined ? item.content || `此${noun}沒有文字內文。` : error ?? '讀取內文中…');
     body.dataset.error = String(!!error && item.content === undefined);
     if (item.content === undefined && !error) body.classList.add('news-loading');
-    reader.append(back, heading, body);
+    reader.append(back, heading, renderDeadlineReview(item, {element, button, post, onDismiss: id => {
+      item.deadline_proposals = item.deadline_proposals.filter(proposal => proposal.id !== id);
+    }}), body);
     if (item.links?.length) {
       const links = element('div', 'news-links');
       links.append(element('h3', '', '附件與連結'));
@@ -255,7 +259,7 @@ function initialize(config) {
     if (changed) animateContentChange(reader);
     if (mobile.matches) byId('newsReaderTitle')?.focus({preventScroll: false});
     const pendingKey = requestKey(key);
-    if (state.pending.has(pendingKey) || (!retry && (state.errors.has(key) || (item.read_at && item.content !== undefined)))) return;
+    if (state.pending.has(pendingKey) || (!retry && (state.errors.has(key) || (item.read_at && item.content !== undefined && item.deadline_proposals !== undefined)))) return;
     const generation = state.generation;
     state.errors.delete(key); state.pending.add(pendingKey); renderReader();
     try {

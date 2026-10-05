@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+{% include 'shared/components/security.html' %}
+{% include 'shared/components/page-transitions.html' %}
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>安排處理時間 | E3作業追蹤系統</title>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/notifications.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/assignment-actions.css') }}">
+<script nonce="{{ csp_nonce() }}" type="application/json" id="assignment-plan-config">{{ plan_config|tojson }}</script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/assignment-plan.js') }}"></script>
+</head>
+<body class="notification-page"><main class="notification-shell">
+<header class="notification-header"><a class="back-link" href="{{ url_for('index') }}">返回作業</a><a class="text-button" href="{{ url_for('notification_settings_page') }}">通知設定</a></header>
+<h1>安排處理時間</h1>
+{% if item %}
+<section class="plan-subject"><p>{{ item.course_title }}</p><h2>{{ item.title }}</h2><p>截止：{{ item.due_at or '未設定' }}</p></section>
+<form id="assignmentPlanForm" class="plan-form">
+<label for="planStart">開始時間</label><input type="datetime-local" id="planStart" required>
+<label for="planDuration">預留時間</label><select id="planDuration"><option value="15">15 分鐘</option><option value="30">30 分鐘</option><option value="45">45 分鐘</option><option value="60" selected>1 小時</option><option value="90">1.5 小時</option><option value="120">2 小時</option></select>
+<label class="plan-calendar"><input type="checkbox" id="planGoogle" {% if not plan_config.google_linked %}disabled{% endif %}>同步到 Google 日曆{% if not plan_config.google_linked %}<a href="{{ url_for('google_authorize') }}">連結</a>{% endif %}</label>
+<div class="plan-submit"><button type="submit" class="save-button">安排提醒</button><p id="planMessage" role="status" aria-live="polite"></p></div>
+</form>
+<section><h2>已安排</h2><div id="assignmentPlans" class="plan-list"></div></section>
+{% else %}<p role="alert">{{ error }}</p>{% endif %}
+</main></body></html>

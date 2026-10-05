@@ -157,7 +157,7 @@ export function initialize(ctx) {
   }
 
   if (ctx.dueEditForm) {
-    ctx.dueEditForm.addEventListener("submit", (evt) => {
+    ctx.dueEditForm.addEventListener("submit", async (evt) => {
       evt.preventDefault();
       const uid = ctx.dueEditUid ? ctx.dueEditUid.value : "";
       const dueTs = ctx.parseDatetimeLocalToTs(
@@ -167,7 +167,8 @@ export function initialize(ctx) {
         ctx.showToast("請輸入有效的繳交期限。", "warning");
         return;
       }
-      ctx.applyDueOverride(uid, dueTs);
+      try { await ctx.applyDueOverride(uid, dueTs); }
+      catch (error) {ctx.showToast(error.message, 'error'); return;}
       const customItem = ctx.customAssignments.find((item) => item.uid === uid);
       if (customItem) {
         customItem.due_ts = dueTs;
@@ -179,14 +180,15 @@ export function initialize(ctx) {
   }
 
   if (ctx.dueResetBtn) {
-    ctx.dueResetBtn.addEventListener("click", () => {
+    ctx.dueResetBtn.addEventListener("click", async () => {
       const uid = ctx.dueEditUid ? ctx.dueEditUid.value : "";
       if (!uid) return;
       if (uid.startsWith("custom|")) {
         ctx.showToast("自訂代辦沒有 E3 原始期限可還原。", "info");
         return;
       }
-      ctx.resetDueOverride(uid);
+      try { await ctx.resetDueOverride(uid); }
+      catch (error) {ctx.showToast(error.message, 'error'); return;}
       ctx.closeModalRoot(ctx.dueEditModal);
       ctx.showToast("已還原原本的繳交期限。", "success");
     });

@@ -21,6 +21,7 @@ from e3_tracker.assignments.domain.notifications import (
 from e3_tracker.assignments.routes.custom_todo_notifications import (
     register_custom_todo_notification_routes,
 )
+from e3_tracker.assignments.routes.assignment_actions import register_assignment_action_routes
 
 
 def register_notification_routes(app, storage, current_user, login_required, service, record_activity):
@@ -52,6 +53,7 @@ def register_notification_routes(app, storage, current_user, login_required, ser
             storage.schedule_custom_todo_notifications(username, item)
 
     register_custom_todo_notification_routes(app, storage, account_only)
+    register_assignment_action_routes(app, storage, account_only, service.actions)
 
     @app.get("/settings/notifications")
     @account_only
@@ -71,7 +73,7 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                 data = request.get_json(silent=True)
                 if isinstance(data, dict):
                     # Older open settings tabs must not silently reset new preferences.
-                    data = {**{key: previous['preferences'][key] for key in ('new_announcement', 'new_mail')}, **data}
+                    data = {**{key: previous['preferences'][key] for key in ('new_announcement', 'new_mail', 'deadline_changes')}, **data}
                 prefs = validate_preferences(data)
                 if prefs["browser_enabled"] and not service.browser_ready:
                     raise ValueError("瀏覽器推播服務尚未啟用")
@@ -197,6 +199,17 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                     owner = storage.unlink_line(target_hash=digest(target))
                     if owner:
                         activity(owner, "notification_line_unlinked", "透過 LINE 取消追蹤")
+                if event.get('type') == 'postback':
+                    try:
+                        text = service.actions.handle_postback((event.get('postback') or {}).get('data'), target)
+                    except ValueError as error:
+                        text = str(error)
+                    if event.get('replyToken') and not event.get('deliveryContext', {}).get('isRedelivery'):
+                        try:
+                            service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [{'type': 'text', 'text': text}]})
+                        except Exception:
+                            app.logger.warning('LINE action reply unavailable')
+                    continue
                 message = event.get("message") or {}
                 if event.get("type") != "message" or message.get("type") != "text":
                     continue

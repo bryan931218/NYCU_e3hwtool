@@ -81,7 +81,7 @@ class NotificationStorage:
                 )
             conn.execute(
                 update(jobs)
-                .where(jobs.c.user_id == uid, jobs.c.state == "pending")
+                .where(jobs.c.user_id == uid, jobs.c.state == "pending", ~jobs.c.event_key.like('plan:%'))
                 .values(state="cancelled")
             )
 
@@ -261,6 +261,8 @@ class NotificationStorage:
     ):
         now = time.time() if now is None else now
         ignored = self.load_user_preferences(username).get("ignored_assignment_uids", [])
+        from e3_tracker.assignments.domain.assignment_actions import effective_result
+        result = effective_result(result, self.personal_deadline_overrides(username), self.assignment_uid, now=now)
         items = active_assignments(result, semester_key, self.assignment_uid, ignored)
         with self._lock, self._engine.begin() as conn:
             uid = self._notification_user(conn, username)
@@ -366,7 +368,7 @@ class NotificationStorage:
                         channel=channel,
                         target_hash=target,
                         payload=self._credential_cipher.encrypt(json.dumps(payload, ensure_ascii=False), f'notification:{job_id}')
-                        if payload.get('kind') in {'new_announcement', 'new_mail'} else json.dumps(payload, ensure_ascii=False),
+                        if payload.get('kind') in {'new_announcement', 'new_mail', 'deadline_change'} else json.dumps(payload, ensure_ascii=False),
                         state="pending",
                         attempts=0,
                         retry_at=now,
@@ -548,10 +550,11 @@ class NotificationStorage:
                 raw = self._credential_cipher.decrypt(raw, f'notification:{job["id"]}')
             payload = json.loads(raw)
             preference = {'new':'new_assignment', 'due':'due_reminder',
-                          'new_announcement':'new_announcement', 'new_mail':'new_mail'}.get(payload.get('kind'))
+                          'new_announcement':'new_announcement', 'new_mail':'new_mail', 'deadline_change':'deadline_changes',
+                          'scheduled':'scheduled'}.get(payload.get('kind'))
             if (
                 not preference or not prefs.get(f"{job['channel']}_enabled", False)
-                or not prefs.get(preference, False)
+                or (preference != 'scheduled' and not prefs.get(preference, False))
             ):
                 return None
             if payload["kind"] == "due" and payload["days"] not in prefs["days_before"]:

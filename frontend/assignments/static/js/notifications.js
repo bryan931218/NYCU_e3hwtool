@@ -106,6 +106,7 @@ function applyPreferences(prefs) {
   byId("notifyNew").checked = prefs.new_assignment;
   byId("notifyAnnouncement").checked = !!prefs.new_announcement;
   byId("notifyMail").checked = !!prefs.new_mail;
+  byId("notifyDeadlineChanges").checked = !!prefs.deadline_changes;
   byId("notifyDue").checked = prefs.due_reminder;
   byId("notifyBrowser").checked = prefs.browser_enabled;
   byId("notifyLine").checked = prefs.line_enabled;
@@ -136,6 +137,7 @@ form.addEventListener("submit", async (event) => {
     state = await api("settings", "POST", {
       new_assignment: byId("notifyNew").checked, due_reminder: byId("notifyDue").checked,
       new_announcement: byId("notifyAnnouncement").checked, new_mail: byId("notifyMail").checked,
+      deadline_changes: byId("notifyDeadlineChanges").checked,
       browser_enabled: byId("notifyBrowser").checked, line_enabled: byId("notifyLine").checked,
       days_before: [...byId("dayInputs").querySelectorAll("input")].map((input) => Number(input.value)),
     });

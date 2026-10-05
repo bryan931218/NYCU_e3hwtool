@@ -146,8 +146,9 @@
     data-primary-status="{{ primary_status }}"
     data-ignored="{{ 1 if item_uid in ignored_assignment_uids else 0 }}"
     data-uid="{{ item_uid }}"
-    data-original-due-ts="{{ item.due_ts if item.due_ts is not none else '' }}"
-    data-original-due="{{ item.due_at or '' }}"
+    data-personal-due="{{ 1 if item.personal_due else 0 }}"
+    data-original-due-ts="{{ (item.original_due_ts if item.personal_due else item.due_ts) or '' }}"
+    data-original-due="{{ (item.original_due_at if item.personal_due else item.due_at) or '' }}"
     data-course="{{ course_title }}"
     data-course-id="{{ item.course_id }}"
     data-semester="{{ semester_key or 'other' }}"
@@ -171,7 +172,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
                 </button>{% endif %}
             </div>
-            <span class="assignment-due-sub">{{ raw_status_text or '截止資訊同步中' }}</span>
+            <span class="assignment-due-sub">{{ '個人期限（E3 原始期限未變更）' if item.personal_due else (raw_status_text or '截止資訊同步中') }}</span>
         </div>
     </td>
     <td class="assignment-center"><span class="submission-label">已繳交／總人數</span>{{ render_submission_pill(item) }}</td>

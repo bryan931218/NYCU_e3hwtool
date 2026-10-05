@@ -247,6 +247,8 @@ def register_assignments_routes(*,
         }
         if include_cache:
             annotate_result_semesters(cache.get("result"), selected_keys=preferences.get("semester_filter"))
+            from e3_tracker.assignments.domain.assignment_actions import effective_result
+            cache = {**cache, 'result': effective_result(cache.get('result'), storage.personal_deadline_overrides(viewed_username), storage.assignment_uid)}
             payload["cache"] = cache
         return payload
 
@@ -494,6 +496,8 @@ def register_assignments_routes(*,
             cache = get_assign_cache() or {}
             result = cache.get("result") or {}
             excel_data = cache.get("excel_data")
+            from e3_tracker.assignments.domain.assignment_actions import effective_result
+            result = effective_result(result, storage.personal_deadline_overrides(user['username']), storage.assignment_uid)
             assignments = _select_assignments_from_result(result, selected_uids)
             if user.get("is_guest"):
                 if not assignments:
@@ -501,6 +505,7 @@ def register_assignments_routes(*,
             elif not assignments:
                 result, excel_data = fetch_assignments_for({"username": user["username"], "moodle_session": user.get("moodle_session")})
                 set_assign_cache(result, excel_data)
+                result = effective_result(result, storage.personal_deadline_overrides(user['username']), storage.assignment_uid)
                 assignments = _select_assignments_from_result(result, selected_uids)
             if not assignments:
                 flash("找不到選擇的作業，請重新整理後再試。", "warning")
@@ -617,7 +622,9 @@ def register_assignments_routes(*,
     @login_required
     def calendar_export():
         cache = get_assign_cache()
-        assignments = cache.get("result", {}).get("all_assignments", []) if cache else []
+        from e3_tracker.assignments.domain.assignment_actions import effective_result
+        result = effective_result((cache or {}).get('result'), storage.personal_deadline_overrides(current_user()['username']), storage.assignment_uid)
+        assignments = result.get('all_assignments', [])
         calendar = _build_calendar(assignments)
         if not calendar:
             flash("尚無可匯出的作業資料。", "info")

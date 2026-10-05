@@ -5,6 +5,8 @@ from e3_tracker.assignments.routes.course_announcements import register_course_a
 from e3_tracker.assignments.services.course_announcements import CourseAnnouncementService
 from e3_tracker.assignments.services.course_mail import CourseMailService
 from e3_tracker.assignments.services.notifications import NotificationService
+from e3_tracker.assignments.services.assignment_actions import AssignmentActions
+from e3_tracker.assignments.domain.assignment_actions import effective_result
 from e3_tracker.assignments.services.session_identity import SessionIdentitySync
 import base64
 import json
@@ -27,6 +29,7 @@ from e3_tracker.assignments.services.collector import (
 from e3_tracker.assignments.services.google_calendar import (
     compute_expiry,
     refresh_google_token,
+    upsert_assignment_action,
 )
 from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.assignments.domain.excel import build_excel
@@ -660,6 +663,8 @@ def register_assignment_site(
             excel_data = _generate_excel_data(result.get("all_assignments"))
             if excel_data:
                 set_assign_cache_for_user(viewed_username, result, excel_data)
+        if result:
+            result = effective_result(result, storage.personal_deadline_overrides(viewed_username), storage.assignment_uid)
         if not result and not guest_mode and not is_admin_view:
             flash("正在載入資料，請稍候...", "info")
         google_linked = bool(not is_admin_view and load_google_tokens(user["username"]))
@@ -844,6 +849,15 @@ def register_assignment_site(
         app_home_url=app_home_url,
         support_email=support_email,
     )
+    def sync_action_calendar(username, item, plan):
+        tokens = load_google_tokens(username)
+        if not _google_ready() or not tokens:
+            raise ValueError('Google Calendar not linked')
+        tokens = _ensure_google_access_token(username, tokens)
+        upsert_assignment_action(item, access_token=tokens['access_token'], calendar_id=google_calendar_id, plan=plan)
+
+    notification_service.actions = AssignmentActions(storage, notification_service, sync_action_calendar)
+    app.extensions['e3_assignment_actions'] = notification_service.actions
     register_notification_routes(app, storage, current_user, login_required, notification_service, record_activity)
     course_news = CourseAnnouncementService(storage, base_url, default_timeout)
     app.extensions['e3_course_announcements'] = course_news

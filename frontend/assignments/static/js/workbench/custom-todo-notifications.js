@@ -91,8 +91,17 @@ export function register(ctx) {
 
   const applyDueOverride = ctx.applyDueOverride;
   ctx.applyDueOverride = function applySyncedDueOverride(uid, dueTs) {
-    if (ctx.IS_GUEST || !String(uid || "").startsWith("custom|")) {
+    if (ctx.IS_GUEST) {
       return applyDueOverride(uid, dueTs);
+    }
+    if (!String(uid || '').startsWith('custom|')) {
+      return persistDeadline('POST', uid, dueTs).then(() => {
+        document.querySelectorAll(`tr[data-uid="${ctx.cssEscapeValue(uid)}"]`).forEach(row => {
+          row.dataset.personalDue = '1';
+          ctx.setRowDue(row, dueTs, ctx.formatDueDisplayFromTs(dueTs), '個人期限（E3 原始期限未變更）');
+        });
+        delete ctx.dueOverrides[uid]; ctx.saveDueOverrides(); ctx.applyFilters();
+      });
     }
 
     const dueText = ctx.formatDueDisplayFromTs(dueTs);
@@ -113,6 +122,22 @@ export function register(ctx) {
     }, 0);
     return true;
   };
+  const resetDueOverride = ctx.resetDueOverride;
+  ctx.resetDueOverride = function resetSyncedDeadline(uid) {
+    if (ctx.IS_GUEST || String(uid || '').startsWith('custom|')) return resetDueOverride(uid);
+    return persistDeadline('DELETE', uid).then(() => {
+      document.querySelectorAll(`tr[data-uid="${ctx.cssEscapeValue(uid)}"]`).forEach(row => {row.dataset.personalDue = '0';});
+      return resetDueOverride(uid);
+    });
+  };
+}
+
+async function persistDeadline(method, uid, due_ts) {
+  const response = await fetch('/api/assignments/personal-deadline', {method, credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({uid, due_ts}), signal: AbortSignal.timeout(15000)});
+  if (response.redirected) throw Error('請重新登入。');
+  const data = await response.json();
+  if (!response.ok || !data.ok) throw Error(data.error || '期限同步失敗。');
 }
 
 export function initialize(ctx) {

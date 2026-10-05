@@ -123,27 +123,55 @@ def sync_assignments_to_google_calendar(
     calendar_id: str,
     timeout: int = 15,
 ) -> int:
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-    encoded_calendar = quote(calendar_id, safe="")
     updated = 0
-    for event_id, body in _iter_event_payloads(assignments):
-        payload = dict(body)
-        payload["iCalUID"] = f"{event_id}@e3.hwtool"
-        ext = payload.setdefault("extendedProperties", {}).setdefault("private", {})
-        ext["e3_uid"] = event_id
-        ext["category"] = "作業"
-        url = f"{GOOGLE_CAL_BASE}/calendars/{encoded_calendar}/events/import"
-        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        if resp.status_code in (401, 403):
-            raise GoogleUnauthorizedError("Google API authorization required")
-        if resp.status_code >= 400:
-            raise RuntimeError(f"Google API error: {resp.status_code} {resp.text}")
+    for item in assignments:
+        if not item.get('due_ts'):
+            continue
+        upsert_assignment_action(item, access_token=access_token, calendar_id=calendar_id, timeout=timeout)
         updated += 1
     return updated
 
 
 def compute_expiry(expires_in: int) -> float:
     return time.time() + max(expires_in - 30, 0)
+
+
+def upsert_assignment_action(item, *, access_token, calendar_id, plan=None, timeout=10):
+    """Update only an E3-owned event; work blocks have separate stable identities."""
+    identity, body = _event_body_for(item if item.get('due_ts') else {**item, 'due_ts': plan['start_ts']})
+    if plan:
+        identity = 'e3-plan-' + plan['id']
+        start = datetime.fromtimestamp(plan['start_ts'], TAIPEI_TZ)
+        body.update(summary=f"處理作業｜{item['title']}"[:250], colorId='7',
+                    start={'dateTime': start.isoformat(), 'timeZone': 'Asia/Taipei'},
+                    end={'dateTime': (start+timedelta(minutes=plan['minutes'])).isoformat(), 'timeZone': 'Asia/Taipei'},
+                    reminders={'useDefault': False, 'overrides': [{'method': 'popup', 'minutes': 10}]})
+    body['extendedProperties'] = {'private': {'e3_uid': identity, 'category': '處理作業' if plan else '作業'}}
+    base = f'{GOOGLE_CAL_BASE}/calendars/{quote(calendar_id, safe="")}/events'
+    headers = {'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}
+    def checked(response):
+        if response.status_code in (401, 403):
+            raise GoogleUnauthorizedError('Google authorization required')
+        response.raise_for_status()
+        return response.json()
+    listed = checked(requests.get(base, headers=headers, params={'privateExtendedProperty': f'e3_uid={identity}', 'maxResults': 250},
+                                  timeout=timeout, allow_redirects=False))
+    if listed.get('nextPageToken'):
+        raise ValueError('Too many matching calendar events; no event was created')
+    existing = [event for event in listed.get('items', []) if event.get('status') != 'cancelled'
+                and event.get('extendedProperties', {}).get('private', {}).get('e3_uid') == identity]
+    if existing:
+        for event in existing:
+            checked(requests.patch(f"{base}/{quote(event['id'], safe='')}", headers=headers,
+                json={'start': body['start'], 'end': body['end']}, timeout=timeout, allow_redirects=False))
+    else:
+        event_id = 'e3' + hashlib.sha256(identity.encode()).hexdigest()
+        response = requests.post(base, headers=headers, json={**body, 'id': event_id}, timeout=timeout, allow_redirects=False)
+        if response.status_code == 409:
+            event = checked(requests.get(f'{base}/{event_id}', headers=headers, timeout=timeout, allow_redirects=False))
+            if event.get('extendedProperties', {}).get('private', {}).get('e3_uid') != identity:
+                raise ValueError('Calendar event identity collision')
+            checked(requests.patch(f'{base}/{event_id}', headers=headers, json={'start': body['start'], 'end': body['end']},
+                                   timeout=timeout, allow_redirects=False))
+        else:
+            checked(response)

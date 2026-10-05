@@ -131,6 +131,12 @@ def _repair_department_profile_names(conn):
         ))
 
 
+def _assignment_actions(conn):
+    from e3_tracker.assignments.persistence.assignment_actions import ACTION_TABLES
+    for table in ACTION_TABLES:
+        table.create(conn, checkfirst=True)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -146,6 +152,7 @@ MIGRATIONS = (
     ("0012_course_announcements", _course_announcements),
     ("0013_course_mail", _course_mail),
     ("0014_repair_department_profile_names", _repair_department_profile_names),
+    ("0015_assignment_actions", _assignment_actions),
 )
 
 

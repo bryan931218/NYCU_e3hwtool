@@ -172,4 +172,7 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
             expected_version=(item.get('title'), item.get('updated_ts')) if content is not None else None)
         if not updated:
             return {'ok': False, 'error': f'{noun}已更新，請重新整理列表。'}, 409
+        actions = app.extensions.get('e3_assignment_actions')
+        if actions and 'content' in updated:
+            updated = {**updated, 'deadline_proposals': actions.proposals(user['username'], kind, semester, updated, notify=True)}
         return {'ok': True, 'item': updated}

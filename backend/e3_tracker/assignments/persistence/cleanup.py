@@ -3,6 +3,7 @@
 from sqlalchemy import delete, select
 from sqlalchemy import inspect
 from .notification_schema import NOTIFICATION_TABLES
+from .assignment_actions import ACTION_TABLES
 from .usage_schema import feature_usage
 from .course_announcements import course_announcement_cache
 from .course_mail import course_mail_cache
@@ -32,6 +33,6 @@ def delete_assignment_account_data(conn, user_ids):
         user_preferences_table,
     ):
         conn.execute(delete(table).where(table.c.user_id.in_(user_ids)))
-    for table in (*NOTIFICATION_TABLES, feature_usage, course_announcement_cache, course_mail_cache):
+    for table in (*NOTIFICATION_TABLES, *ACTION_TABLES, feature_usage, course_announcement_cache, course_mail_cache):
         if inspect(conn).has_table(table.name):
             conn.execute(delete(table).where(table.c.user_id.in_(user_ids)))
