@@ -45,6 +45,25 @@ class SchemaMigrationTests(unittest.TestCase):
         with self.engine.connect() as conn:
             self.assertEqual(conn.execute(text('SELECT playback_seconds FROM study_plan_video_records')).scalar(), 18)
 
+    def test_grading_notification_upgrade_preserves_existing_seen_assignments(self):
+        with self.engine.begin() as conn:
+            conn.execute(text('CREATE TABLE assignment_notification_seen (user_id INTEGER NOT NULL, uid_hash VARCHAR(64) NOT NULL, PRIMARY KEY (user_id, uid_hash))'))
+            conn.execute(text("INSERT INTO assignment_notification_seen VALUES (7, 'existing-assignment')"))
+            conn.execute(text('CREATE TABLE assignments (id INTEGER PRIMARY KEY, course_id INTEGER, title TEXT, grade_text TEXT, due_ts INTEGER)'))
+            conn.execute(text("INSERT INTO assignments (id, course_id, title, grade_text) VALUES (12, 1, 'existing homework', '85')"))
+        with patch.object(migrations, 'MIGRATIONS', migrations.MIGRATIONS[:-1]):
+            migrations.run_migrations(self.engine)
+        self.assertEqual(migrations.run_migrations(self.engine), ['0016_grading_notifications'])
+        with self.engine.begin() as conn:
+            row = conn.execute(text('SELECT * FROM assignment_notification_seen')).mappings().one()
+            self.assertEqual(dict(row), {'user_id': 7, 'uid_hash': 'existing-assignment', 'graded_observed': 0})
+            conn.execute(text('UPDATE assignment_notification_seen SET graded_observed = 1'))
+            grade = conn.execute(text('SELECT grade_text, feedback_text FROM assignments')).one()
+            self.assertEqual(tuple(grade), ('85', None))
+        self.assertEqual(migrations.run_migrations(self.engine), [])
+        with self.engine.connect() as conn:
+            self.assertEqual(conn.execute(text('SELECT graded_observed FROM assignment_notification_seen')).scalar(), 1)
+
     def test_existing_settings_are_preserved(self):
         with self.engine.begin() as conn:
             conn.execute(text('CREATE TABLE study_player_settings (id INTEGER PRIMARY KEY, hold_space_rate FLOAT, hold_delay_ms INTEGER, center_click_toggle INTEGER, show_shortcut_hint INTEGER, hint_duration_ms INTEGER, updated_at TEXT)'))

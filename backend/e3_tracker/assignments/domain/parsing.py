@@ -41,9 +41,23 @@ def _clean_grade_text(value: Optional[str]) -> Optional[str]:
     return text
 
 
+def _find_feedback_text(soup):
+    labels = {"feedback comments", "feedback comment", "評語", "回饋評語", "回饋意見", "教師評語", "老師評語", "評分回饋"}
+    for label_node in soup.select("tr > th, tr > td:first-child, dt"):
+        if _normalize_label(extract_text(label_node)) not in labels:
+            continue
+        content = label_node.find_next_sibling("dd" if label_node.name == "dt" else "td")
+        if content is None:
+            continue
+        text = re.sub(r"\s+", " ", content.get_text(" ", strip=True)).strip()
+        if text.casefold() not in {"", "-", "—", "n/a", "no feedback", "尚無評語", "無評語"}:
+            return text[:4000]
+    return None
+
+
 def find_due_and_status_from_assign_page(
-    html: str,
-) -> Tuple[bool, Optional[bool], Optional[datetime], str, Optional[str], Optional[datetime], Optional[str]]:
+    html: str, *, include_feedback: bool = False,
+) -> tuple:
     soup = BeautifulSoup(html, "html.parser")
     status_cell_text = ""
     due_str = None
@@ -145,7 +159,8 @@ def find_due_and_status_from_assign_page(
         except Exception:
             submitted_dt = None
 
-    return status_is_complete, status_is_incomplete, due_dt, status_cell_text.strip(), grade_text, submitted_dt, remaining_text
+    result = (status_is_complete, status_is_incomplete, due_dt, status_cell_text.strip(), grade_text, submitted_dt, remaining_text)
+    return (*result, _find_feedback_text(soup)) if include_feedback else result
 
 
 def parse_due_text_to_dt(due_text: Optional[str]):

@@ -17,6 +17,7 @@ notification_seen = Table(
     metadata,
     Column("user_id", Integer, primary_key=True),
     Column("uid_hash", String(64), primary_key=True),
+    Column("graded_observed", Integer, nullable=False, default=0, server_default="0"),
 )
 push_subscriptions = Table(
     "assignment_push_subscriptions",

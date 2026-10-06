@@ -11,6 +11,8 @@ from e3_tracker.platform.guest_privacy import is_guest_identity
 from e3_tracker.assignments.domain.notifications import (
     DEFAULT_NOTIFICATION_PREFERENCES,
     active_assignments,
+    semester_assignments,
+    is_assignment_graded,
     digest,
     notification_payload,
     course_message_notification_payload,
@@ -264,6 +266,8 @@ class NotificationStorage:
         from e3_tracker.assignments.domain.assignment_actions import effective_result
         result = effective_result(result, self.personal_deadline_overrides(username), self.assignment_uid, now=now)
         items = active_assignments(result, semester_key, self.assignment_uid, ignored)
+        observed_items = semester_assignments(result, semester_key, self.assignment_uid)
+        not_ignored = semester_assignments(result, semester_key, self.assignment_uid, ignored)
         with self._lock, self._engine.begin() as conn:
             uid = self._notification_user(conn, username)
             # Also takes a write lock in SQLite before reading initialization state.
@@ -282,10 +286,10 @@ class NotificationStorage:
             if not row:
                 return
             prefs = json.loads(row["preferences"])
-            known = set(
+            known = dict(
                 conn.execute(
-                    select(seen.c.uid_hash).where(seen.c.user_id == uid)
-                ).scalars()
+                    select(seen.c.uid_hash, seen.c.graded_observed).where(seen.c.user_id == uid)
+                ).all()
             )
             targets = []
             if prefs["browser_enabled"]:
@@ -304,11 +308,13 @@ class NotificationStorage:
                         select(bindings.c.target_hash).where(bindings.c.user_id == uid)
                     ).scalars()
                 )
-            for key, item in items.items():
+            for key, item in observed_items.items():
+                graded = is_assignment_graded(item)
                 if key not in known:
-                    conn.execute(insert(seen).values(user_id=uid, uid_hash=key))
+                    conn.execute(insert(seen).values(user_id=uid, uid_hash=key, graded_observed=int(graded)))
                     if (
-                        row["initialized"]
+                        key in items
+                        and row["initialized"]
                         and not baseline
                         and prefs["new_assignment"]
                         and (not item.get("due_ts") or item["due_ts"] > now)
@@ -326,6 +332,16 @@ class NotificationStorage:
                             now,
                             now + 86400,
                         )
+                elif graded and not known[key]:
+                    # Never reset this flag: temporary missing grades or regrading must not resend.
+                    conn.execute(update(seen).where(seen.c.user_id == uid, seen.c.uid_hash == key)
+                                 .values(graded_observed=1))
+                    if row["initialized"] and not baseline and prefs.get("assignment_graded") and key in not_ignored:
+                        self._queue_notification(conn, uid, f"graded:{key}", targets, {
+                            **notification_payload(item, "graded"), "kind": "graded", "uid_hash": key,
+                        }, now, now + 86400)
+                if key not in items:
+                    continue
                 due = item.get("due_ts")
                 if baseline or not prefs["due_reminder"] or not due or due <= now:
                     continue
@@ -368,7 +384,7 @@ class NotificationStorage:
                         channel=channel,
                         target_hash=target,
                         payload=self._credential_cipher.encrypt(json.dumps(payload, ensure_ascii=False), f'notification:{job_id}')
-                        if payload.get('kind') in {'new_announcement', 'new_mail', 'deadline_change'} else json.dumps(payload, ensure_ascii=False),
+                        if payload.get('kind') in {'new_announcement', 'new_mail', 'deadline_change', 'graded'} else json.dumps(payload, ensure_ascii=False),
                         state="pending",
                         attempts=0,
                         retry_at=now,
@@ -549,7 +565,7 @@ class NotificationStorage:
             if raw.startswith(self._credential_cipher.PREFIX):
                 raw = self._credential_cipher.decrypt(raw, f'notification:{job["id"]}')
             payload = json.loads(raw)
-            preference = {'new':'new_assignment', 'due':'due_reminder',
+            preference = {'new':'new_assignment', 'due':'due_reminder', 'graded':'assignment_graded',
                           'new_announcement':'new_announcement', 'new_mail':'new_mail', 'deadline_change':'deadline_changes',
                           'scheduled':'scheduled'}.get(payload.get('kind'))
             if (

@@ -10,6 +10,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 
 DEFAULT_NOTIFICATION_PREFERENCES = {
     "new_assignment": False,
+    "assignment_graded": False,
     "new_announcement": False,
     "new_mail": False,
     "deadline_changes": False,
@@ -28,7 +29,7 @@ def validate_preferences(raw):
     if not isinstance(raw, dict):
         raise ValueError("設定格式不正確")
     result = dict(DEFAULT_NOTIFICATION_PREFERENCES)
-    for key in ("new_assignment", "new_announcement", "new_mail", "deadline_changes", "due_reminder", "browser_enabled", "line_enabled"):
+    for key in ("new_assignment", "assignment_graded", "new_announcement", "new_mail", "deadline_changes", "due_reminder", "browser_enabled", "line_enabled"):
         value = raw.get(key, result[key])
         if not isinstance(value, bool):
             raise ValueError("通知開關格式不正確")
@@ -93,7 +94,19 @@ def validate_subscription(raw):
     return {"endpoint": endpoint, "keys": clean_keys}
 
 
-def active_assignments(result, semester_key, uid_for, ignored=()):
+def published_grade_text(item):
+    grade = item.get("grade_text")
+    text = " ".join(str(grade if grade is not None else "").split())
+    return text if text.casefold() not in {"", "-", "—", "n/a", "not graded", "ungraded", "尚未評分", "未評分"} else None
+
+
+def is_assignment_graded(item):
+    return bool(published_grade_text(item) or item.get("feedback_text")) or str(
+        item.get("raw_status_text") or item.get("raw_status") or ""
+    ).strip().casefold() in {"graded", "已評分"}
+
+
+def semester_assignments(result, semester_key, uid_for, ignored=()):
     course_keys = {
         str(c.get("id")): c.get("semester_key") for c in result.get("courses", [])
     }
@@ -107,16 +120,33 @@ def active_assignments(result, semester_key, uid_for, ignored=()):
         uid = uid_for(
             item.get("course_id"), str(item.get("title") or ""), item.get("url")
         )
-        if uid in ignored or item.get("completed") or item.get("grade_text"):
+        if uid in ignored:
             continue
         items[digest(uid)] = item
     return items
 
 
-def notification_payload(item, kind, days=None):
-    title = "E3｜新作業" if kind == "new" else "E3｜作業到期提醒"
+def active_assignments(result, semester_key, uid_for, ignored=()):
+    return {
+        key: item for key, item in semester_assignments(result, semester_key, uid_for, ignored).items()
+        if not item.get("completed") and not is_assignment_graded(item)
+    }
+
+
+def notification_payload(item, kind, days=None, *, include_grading_details=False):
+    title = {"new": "E3｜新作業", "graded": "E3｜作業已評分"}.get(kind, "E3｜作業到期提醒")
     body = f"課程：{notification_text(item.get('course_title'), 100) or '未分類'}\n作業：{notification_text(item.get('title'), 160)}"
-    if item.get("due_ts"):
+    if kind == "graded":
+        grade = published_grade_text(item)
+        feedback = notification_text(item.get("feedback_text"), 800)
+        if include_grading_details and (grade or feedback):
+            if grade:
+                body += f"\n分數：{notification_text(grade, 120)}"
+            if feedback:
+                body += f"\n評語：{feedback}"
+        else:
+            body += "\n評分已公布，請至 E3 查看成績與回饋。"
+    elif item.get("due_ts"):
         body += f"\n截止：{notification_time(item['due_ts'])}"
     else:
         body += "\n截止：未設定"

@@ -24,9 +24,11 @@ from e3_tracker.assignments.domain.notifications import (
     validate_subscription,
     digest,
     notification_payload,
+    is_assignment_graded,
     course_message_notification_payload,
 )
-from e3_tracker.assignments.services.collector import current_semester_key
+from e3_tracker.assignments.services.collector import current_semester_key, collect_assignments, CollectOptions
+from e3_tracker.assignments.domain.parsing import find_due_and_status_from_assign_page
 from e3_tracker.assignments.persistence.notification_schema import (
     notification_jobs as jobs,
     notification_settings as settings,
@@ -167,6 +169,252 @@ class NotificationTests(unittest.TestCase):
         self.observe(result)
         self.assertEqual(len(self.job_rows()), 1)
         self.assertEqual(json.loads(self.job_rows()[0]["payload"])["kind"], "new")
+
+    def enable_grading(self, *, line=False):
+        self.prefs.update(assignment_graded=True, new_assignment=False, due_reminder=False, line_enabled=line)
+        if line:
+            code = self.storage.create_line_link_code("student")
+            self.assertTrue(self.storage.consume_line_link_code(code, "U" + "a" * 32))
+        self.enable()
+
+    def test_grade_detection_preserves_zero_and_rejects_ungraded_placeholders(self):
+        for grade in (0, "0", "0 / 100", "85", "A+", "合格"):
+            with self.subTest(grade=grade):
+                self.assertTrue(is_assignment_graded({"grade_text": grade}))
+        for grade in (None, "", "-", "—", "N/A", "Not graded", "Ungraded", "尚未評分", "未評分"):
+            with self.subTest(grade=grade):
+                self.assertFalse(is_assignment_graded({"grade_text": grade, "raw_status": "Submitted for grading"}))
+        for status in ("Not graded", "Ungraded", "已提交評分", "尚未評分"):
+            self.assertFalse(is_assignment_graded({"raw_status": status}))
+        for status in ("Graded", "已評分"):
+            self.assertTrue(is_assignment_graded({"raw_status": status}))
+
+    def test_grading_notifies_completed_assignment_once_on_both_channels(self):
+        self.enable_grading(line=True)
+        item = self.item("submitted homework", completed=True, days=-5)
+        self.observe(self.result(item))
+        graded = self.result({**item, "grade_text": "85 / 100", "feedback_text": "推導完整，請補充邊界條件。"})
+        self.save(graded)
+        self.observe(graded)
+        self.observe(graded)
+        rows = self.job_rows()
+        self.assertEqual({row["channel"] for row in rows}, {"line", "browser"})
+        self.assertTrue(all(row["payload"].startswith("enc:v1:") for row in rows))
+        with patch.object(self.service, "deliver") as send:
+            self.service.dispatch(now=self.now)
+            self.service.dispatch(now=self.now + 60)
+        self.assertEqual(send.call_count, 2)
+        for call in send.call_args_list:
+            payload = call.args[1]
+            self.assertEqual(payload["kind"], "graded")
+            self.assertEqual(payload["title"], "E3｜作業已評分")
+            self.assertIn("submitted homework", payload["body"])
+            if call.args[0]["channel"] == "line":
+                self.assertIn("分數：85 / 100", payload["body"])
+                self.assertIn("評語：推導完整，請補充邊界條件。", payload["body"])
+            else:
+                self.assertNotIn("85", payload["body"])
+                self.assertNotIn("邊界條件", payload["body"])
+            self.assertNotIn("截止", payload["body"])
+            self.assertEqual(payload["assignment_url"], item["url"])
+        self.assertTrue(all(row["state"] == "sent" for row in self.job_rows()))
+
+    def test_grading_first_observation_and_explicit_baseline_do_not_send_old_grades(self):
+        self.enable_grading()
+        self.observe(self.result(self.item("existing grade", grade_text="80", completed=True)))
+        self.observe(self.result(self.item("existing grade", grade_text="80", completed=True),
+                                 self.item("first seen graded", grade_text="75")))
+        self.observe(self.result(self.item("baseline", completed=True)))
+        baseline = self.result(self.item("baseline", grade_text="90", completed=True))
+        self.storage.observe_notification_assignments("student", baseline, current_semester_key(), now=self.now, baseline=True)
+        self.observe(baseline)
+        self.assertEqual(self.job_rows(), [])
+
+    def test_grading_missing_grade_and_regrading_never_repeat(self):
+        self.enable_grading()
+        item = self.item("grade changes", completed=True)
+        self.observe(self.result(item))
+        self.observe(self.result({**item, "grade_text": 0}))
+        self.observe(self.result(item))
+        self.observe(self.result({**item, "grade_text": "90"}))
+        self.assertEqual(len(self.job_rows()), 1)
+
+    def test_grading_default_is_opt_in_and_disabled_events_are_not_replayed(self):
+        self.assertFalse(validate_preferences({})["assignment_graded"])
+        with self.assertRaises(ValueError):
+            validate_preferences({"assignment_graded": "true"})
+        self.enable()
+        item = self.item("opt in", completed=True)
+        self.observe(self.result(item))
+        graded = self.result({**item, "grade_text": "70"})
+        self.observe(graded)
+        self.enable_grading()
+        self.observe(graded)
+        self.assertEqual(self.job_rows(), [])
+
+    def test_grading_respects_ignored_and_historical_semesters(self):
+        self.enable_grading()
+        ignored = self.item("ignored grade", completed=True)
+        archived = self.item("archived grade", semester_key="114-2", completed=True)
+        self.observe(self.result(ignored, archived))
+        uid = self.storage.assignment_uid(ignored["course_id"], ignored["title"], ignored["url"])
+        self.storage.save_user_preferences("student", {"ignored_assignment_uids": [uid]})
+        graded = self.result({**ignored, "grade_text": "80"}, {**archived, "grade_text": "90"})
+        self.observe(graded)
+        self.storage.save_user_preferences("student", {"ignored_assignment_uids": []})
+        self.observe(graded)
+        self.assertEqual(self.job_rows(), [])
+
+    def test_queued_grading_is_cancelled_when_ignored_ungraded_archived_or_disabled(self):
+        for change in ("ignored", "ungraded", "archived", "disabled"):
+            with self.subTest(change=change):
+                self.enable_grading()
+                item = self.item("cancel grade " + change, completed=True)
+                self.observe(self.result(item))
+                graded = {**item, "grade_text": "80"}
+                self.observe(self.result(graded))
+                if change == "ignored":
+                    uid = self.storage.assignment_uid(item["course_id"], item["title"], item["url"])
+                    self.storage.save_user_preferences("student", {"ignored_assignment_uids": [uid]})
+                elif change == "ungraded":
+                    graded = item
+                elif change == "archived":
+                    graded = {**graded, "semester_key": "114-2", "course_title": "1142.Test"}
+                else:
+                    self.storage.save_notification_preferences("student", {**self.prefs, "assignment_graded": False})
+                result = self.result(graded)
+                if change == "archived":
+                    result["courses"][0].update(title="1142.Test", semester_key="114-2")
+                self.save(result)
+                with patch.object(self.service, "deliver") as send:
+                    self.service.dispatch(now=self.now)
+                send.assert_not_called()
+                self.assertTrue(all(row["state"] == "cancelled" for row in self.job_rows()))
+
+    def test_grade_observation_is_durable_and_deduplicated_across_workers(self):
+        self.enable_grading()
+        item = self.item("shared grading", completed=True)
+        self.observe(self.result(item))
+        other = PersistentStorage(str(self.storage._engine.url))
+        try:
+            result = self.result({**item, "grade_text": "75"})
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                list(pool.map(lambda repo: repo.observe_notification_assignments(
+                    "student", result, current_semester_key(), now=self.now), [self.storage, other]))
+            other.observe_notification_assignments("student", result, current_semester_key(), now=self.now)
+            self.assertEqual(len(self.job_rows()), 1)
+        finally:
+            other._engine.dispose()
+
+    def test_grading_setting_api_persists_and_older_tabs_do_not_reset_it(self):
+        self.enable_grading()
+        self.save(self.result(self.item("old grade", grade_text="80", completed=True)))
+        response = self.client.post("/api/notifications/settings", json=self.prefs)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json["preferences"]["assignment_graded"])
+        old = {key: value for key, value in self.prefs.items() if key != "assignment_graded"}
+        self.client.post("/api/notifications/settings", json=old)
+        self.assertTrue(self.storage.notification_preferences("student")["preferences"]["assignment_graded"])
+        self.observe(self.result(self.item("old grade", grade_text="80", completed=True)))
+        self.assertEqual(self.job_rows(), [])
+        html = self.client.get("/settings/notifications").get_data(as_text=True)
+        self.assertIn('id="notifyGraded"', html)
+        self.assertIn("作業被評分時", html)
+
+    def test_grading_line_message_links_to_feedback_without_work_reminder_actions(self):
+        item = self.item("line grade", grade_text="80")
+        payload = {**notification_payload(item, "graded"), "kind": "graded", "assignment_url": item["url"]}
+        job = {"id": "a" * 64, "channel": "line", "event_key": "graded:test"}
+        with patch.object(self.service, "line_request") as send:
+            self.service.deliver(job, payload, "U" + "a" * 32)
+        message = send.call_args.args[1]["messages"][0]
+        self.assertIn(item["url"], message["text"])
+        self.assertEqual(message["quickReply"]["items"][0]["action"],
+                         {"type": "uri", "label": "查看評分", "uri": item["url"]})
+        self.assertNotIn("安排", message["text"])
+        self.assertNotIn("查看詳情", message["text"])
+        with patch.object(self.service, "line_request") as send:
+            self.service.deliver(job, {**payload, "assignment_url": "https://evil.test/"}, "U" + "a" * 32)
+        self.assertNotIn("evil.test", str(send.call_args))
+
+    def test_grading_only_preference_still_refreshes_e3_and_records_setting_change(self):
+        self.prefs.update(new_assignment=False, due_reminder=False, assignment_graded=True)
+        response = self.client.post("/api/notifications/settings", json=self.prefs)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("作業評分通知：啟用", self.activities()[-1]["meta"]["action_detail"])
+        fetch = Mock(return_value=(self.result(), None))
+        self.service.refresh_once(fetch, Mock())
+        fetch.assert_called_once()
+
+    def test_teacher_feedback_is_extracted_as_plain_text_not_student_comments(self):
+        for label in ("評語", "回饋評語", "Feedback comments"):
+            for tags in (("th", "td", "tr"), ("dt", "dd", "dl")):
+                first, second, parent = tags
+                html = f'<{parent}><{first}>{label}</{first}><{second}><p>Good <b>work</b>.</p><p>補上引用。</p></{second}></{parent}>'
+                with self.subTest(label=label, tags=tags):
+                    parsed = find_due_and_status_from_assign_page(html, include_feedback=True)
+                    self.assertEqual(parsed[-1], "Good work . 補上引用。")
+                    self.assertEqual(len(find_due_and_status_from_assign_page(html)), 7)
+        for html in ('<dl><dt>Submission comments</dt><dd>My own comment</dd></dl>',
+                     '<table><tr><th>Feedback files</th><td>download.pdf</td></tr></table>',
+                     '<table><tr><th>評語</th><td>-</td></tr></table>'):
+            self.assertIsNone(find_due_and_status_from_assign_page(html, include_feedback=True)[-1])
+
+    def test_feedback_survives_database_restart_and_can_notify_without_numeric_grade(self):
+        self.enable_grading(line=True)
+        item = self.item("feedback only", completed=True)
+        self.observe(self.result(item))
+        graded = self.result({**item, "feedback_text": "合格，論述清楚。"})
+        self.save(graded)
+        self.observe(graded)
+        other = PersistentStorage(str(self.storage._engine.url))
+        try:
+            cache = other.load_user_cache("student")
+            self.assertEqual(cache["result"]["all_assignments"][0]["feedback_text"], "合格，論述清楚。")
+        finally:
+            other._engine.dispose()
+        with patch.object(self.service, "deliver") as send:
+            self.service.dispatch(now=self.now)
+        line = next(call.args[1] for call in send.call_args_list if call.args[0]["channel"] == "line")
+        self.assertIn("評語：合格，論述清楚。", line["body"])
+        self.assertNotIn("分數：", line["body"])
+
+    def test_line_grading_details_are_bounded_and_zero_score_is_displayed(self):
+        payload = notification_payload({"title": "HW", "grade_text": 0, "feedback_text": "好" * 4000},
+                                       "graded", include_grading_details=True)
+        self.assertIn("分數：0", payload["body"])
+        self.assertIn("評語：" + "好" * 799 + "…", payload["body"])
+        self.assertLess(len(payload["body"]), 1000)
+
+    def test_collection_keeps_undated_submissions_and_their_grading_feedback(self):
+        url = "https://e3p.nycu.edu.tw/mod/assign/view.php?id=12"
+        for graded in (False, True):
+            html = '<table><tr><th>Submission status</th><td>Submitted for grading</td></tr>'
+            if graded:
+                html += '<tr><th>Grade</th><td>85 / 100</td></tr><tr><th>Feedback comments</th><td>Nice work.</td></tr>'
+            html += '</table>'
+            with self.subTest(graded=graded), patch(
+                "e3_tracker.assignments.services.collector.gather_my_courses",
+                return_value=[{"id": 1, "title": "1151.Test", "semester_key": current_semester_key()}],
+            ), patch("e3_tracker.assignments.services.collector.safe_request", return_value=Mock(text=html)), patch(
+                "e3_tracker.assignments.services.collector.gather_assign_links_from_list_page",
+                return_value=[("Undated homework", url, None, None, None)],
+            ):
+                result = collect_assignments(CollectOptions(base_url="https://e3p.nycu.edu.tw", moodle_session="test", include_completed=True))
+            self.assertEqual(result["errors"], [])
+            item = result["all_assignments"][0]
+            self.assertIsNone(item["due_ts"])
+            self.assertTrue(item["completed"])
+            if graded:
+                self.assertEqual(item["grade_text"], "85 / 100")
+                self.assertEqual(item["feedback_text"], "Nice work.")
+                self.save(result)
+                self.observe(result)
+                self.assertEqual(len(self.job_rows()), 1)
+            else:
+                self.enable_grading()
+                self.observe(result)
+                self.assertEqual(self.job_rows(), [])
 
     def test_multiple_due_thresholds_and_nearest_catchup(self):
         self.enable()

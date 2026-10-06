@@ -1,6 +1,13 @@
 """Assignments-owned additive upgrades for existing installations."""
 
 
+def upgrade_grading_notifications(conn, add_columns):
+    add_columns(conn, "assignment_notification_seen", {
+        "graded_observed": "INTEGER NOT NULL DEFAULT 0",
+    })
+    add_columns(conn, "assignments", {"feedback_text": "TEXT"})
+
+
 def upgrade_legacy_columns(conn, add_columns):
     definitions = {
         "user_preferences": {

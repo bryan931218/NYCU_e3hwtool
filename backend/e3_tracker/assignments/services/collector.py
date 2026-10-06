@@ -778,7 +778,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                 if options.debug:
                     _save_debug_file(f"debug_assign_{cid}_{idx}.html", resp.text, created_debug)
                 
-                is_complete, is_incomplete, due_dt, raw_status, grade_text, submitted_dt, remaining_text = find_due_and_status_from_assign_page(resp.text)
+                is_complete, is_incomplete, due_dt, raw_status, grade_text, submitted_dt, remaining_text, feedback_text = find_due_and_status_from_assign_page(resp.text, include_feedback=True)
                 if not due_dt and due_text_from_list:
                     due_dt = parse_due_text_to_dt(due_text_from_list)
 
@@ -788,11 +788,9 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                     is_incomplete = True
 
                 if is_incomplete or (is_complete and options.include_completed):
-                    if not due_dt:
-                        continue
-                    due_str = due_dt.astimezone(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
+                    due_str = due_dt.astimezone(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M") if due_dt else ""
                     overdue = bool(due_dt and due_dt < now)
-                    due_ts = int(due_dt.timestamp())
+                    due_ts = int(due_dt.timestamp()) if due_dt else None
                     submitted_ts = int(submitted_dt.timestamp()) if submitted_dt else None
                     item = {
                         "course_id": cid,
@@ -810,6 +808,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "completed": bool(is_complete),
                         "raw_status_text": raw_status,
                         "grade_text": grade_text,
+                        "feedback_text": feedback_text,
                         "submitted_count": submitted_count,
                         "participant_count": participant_count,
                     }
@@ -835,6 +834,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "completed": False,
                         "raw_status_text": f"解析失敗：{exc}",
                         "grade_text": None,
+                        "feedback_text": None,
                         "submitted_count": None,
                         "participant_count": None,
                     }

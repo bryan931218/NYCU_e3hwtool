@@ -9,6 +9,7 @@ from e3_tracker.platform.persistence.schema import metadata
 from e3_tracker.study.persistence import extensions_schema
 from e3_tracker.assignments.persistence.migrations import (
     upgrade_legacy_columns as upgrade_assignment_columns,
+    upgrade_grading_notifications,
 )
 from e3_tracker.study.persistence.migrations import (
     upgrade_legacy_columns as upgrade_study_columns,
@@ -137,6 +138,10 @@ def _assignment_actions(conn):
         table.create(conn, checkfirst=True)
 
 
+def _grading_notifications(conn):
+    upgrade_grading_notifications(conn, _add_columns)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -153,6 +158,7 @@ MIGRATIONS = (
     ("0013_course_mail", _course_mail),
     ("0014_repair_department_profile_names", _repair_department_profile_names),
     ("0015_assignment_actions", _assignment_actions),
+    ("0016_grading_notifications", _grading_notifications),
 )
 
 

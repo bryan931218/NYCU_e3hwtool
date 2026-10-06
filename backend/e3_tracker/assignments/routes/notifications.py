@@ -73,7 +73,7 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                 data = request.get_json(silent=True)
                 if isinstance(data, dict):
                     # Older open settings tabs must not silently reset new preferences.
-                    data = {**{key: previous['preferences'][key] for key in ('new_announcement', 'new_mail', 'deadline_changes')}, **data}
+                    data = {**{key: previous['preferences'][key] for key in ('new_announcement', 'new_mail', 'deadline_changes', 'assignment_graded')}, **data}
                 prefs = validate_preferences(data)
                 if prefs["browser_enabled"] and not service.browser_ready:
                     raise ValueError("瀏覽器推播服務尚未啟用")

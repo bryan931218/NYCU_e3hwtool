@@ -17,6 +17,7 @@ def notification_setting_changes(before, after):
         "browser_enabled": "瀏覽器通知",
         "line_enabled": "LINE 通知",
         "new_assignment": "新作業通知",
+        "assignment_graded": "作業評分通知",
         "new_announcement": "課程公告通知",
         "new_mail": "課程信件通知",
         "deadline_changes": "期限異動提醒",

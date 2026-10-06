@@ -12,6 +12,8 @@ from e3_tracker.assignments.domain.assignment_actions import safe_assignment_url
 import requests
 from e3_tracker.assignments.domain.notifications import (
     active_assignments,
+    semester_assignments,
+    is_assignment_graded,
     validate_subscription,
 )
 from e3_tracker.assignments.services.collector import (
@@ -108,6 +110,13 @@ class NotificationService:
             destination = urljoin(self.home_url.rstrip('/') + '/', payload['url'].lstrip('/'))
             text = f"{payload['title']}\n\n{payload['body']}\n\n查看詳情\n{destination}"
             message = {'type': 'text', 'text': text}
+            if payload.get('kind') == 'graded':
+                url = safe_assignment_url(payload.get('assignment_url'))
+                if url:
+                    message['text'] = f"{payload['title']}\n\n{payload['body']}\n\n查看評分\n{url}"
+                    message['quickReply'] = {'items': [{'type': 'action', 'action': {
+                        'type': 'uri', 'label': '查看評分', 'uri': url,
+                    }}]}
             if self.actions and payload.get('kind') in {'new', 'due', 'scheduled'} and not payload.get('custom_todo'):
                 key = payload.get('uid_hash')
                 actions = []
@@ -228,7 +237,8 @@ class NotificationService:
                     annotate_result_semesters(result)
                     from e3_tracker.assignments.domain.assignment_actions import effective_result
                     result = effective_result(result, self.storage.personal_deadline_overrides(username), self.storage.assignment_uid, now=now)
-                    items = active_assignments(
+                    selector = semester_assignments if payload.get('kind') == 'graded' else active_assignments
+                    items = selector(
                         result,
                         current_semester_key(),
                         self.storage.assignment_uid,
@@ -237,7 +247,7 @@ class NotificationService:
                         ),
                     )
                     item = items.get(payload["uid_hash"])
-                    if not item or (
+                    if not item or (payload['kind'] == 'graded' and not is_assignment_graded(item)) or (
                         payload["kind"] == 'due'
                         and item.get("due_ts") != payload["due_ts"]
                     ):
@@ -253,9 +263,10 @@ class NotificationService:
                         from e3_tracker.assignments.domain.notifications import notification_payload
                         payload = {**payload, **notification_payload(item, 'due'), 'title': 'E3｜你安排的作業提醒',
                                    'kind': 'scheduled', 'url': payload['url'], 'due_ts': item.get('due_ts')}
-                    elif payload['kind'] == 'new':
+                    elif payload['kind'] in {'new', 'graded'}:
                         from e3_tracker.assignments.domain.notifications import notification_payload
-                        payload = {**payload, **notification_payload(item, 'new')}
+                        payload = {**payload, **notification_payload(item, payload['kind'],
+                                   include_grading_details=job['channel'] == 'line')}
                     payload['assignment_url'] = safe_assignment_url(item.get('url'))
 
                 self.deliver(job, payload, target)

@@ -58,6 +58,7 @@ assignments_table = Table(
     Column("completed", Integer, nullable=False, default=0),
     Column("raw_status_text", Text),
     Column("grade_text", Text),
+    Column("feedback_text", Text),
     Column("submitted_at", String(64)),
     Column("submitted_ts", Integer),
     Column("remaining_text", Text),
