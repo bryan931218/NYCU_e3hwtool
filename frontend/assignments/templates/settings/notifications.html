@@ -23,12 +23,12 @@
     <form id="notificationForm">
         <section aria-labelledby="triggerHeading">
             <h2 id="triggerHeading">提醒條件</h2>
-            <label class="setting-row"><span><strong>新作業出現時</strong><small>當期課程新增作業時通知</small></span><input type="checkbox" role="switch" id="notifyNew" name="new_assignment"></label>
-            <label class="setting-row"><span><strong>作業被評分時</strong><small>LINE 顯示分數與評語；不補送既有成績</small></span><input type="checkbox" role="switch" id="notifyGraded" name="assignment_graded"></label>
+            <label class="setting-row"><span><strong>新作業出現時</strong></span><input type="checkbox" role="switch" id="notifyNew" name="new_assignment"></label>
+            <label class="setting-row"><span><strong>作業被評分時</strong></span><input type="checkbox" role="switch" id="notifyGraded" name="assignment_graded"></label>
             <label class="setting-row"><span><strong>新課程公告</strong></span><input type="checkbox" role="switch" id="notifyAnnouncement" name="new_announcement"></label>
             <label class="setting-row"><span><strong>新課程信件</strong></span><input type="checkbox" role="switch" id="notifyMail" name="new_mail"></label>
-            <label class="setting-row"><span><strong>可能有作業期限異動</strong><small>公告與信件提到新日期時提醒，確認後才更新個人期限</small></span><input type="checkbox" role="switch" id="notifyDeadlineChanges" name="deadline_changes"></label>
-            <label class="setting-row"><span><strong>到期前提醒</strong><small>已完成、已評分與忽略的作業不會提醒</small></span><input type="checkbox" role="switch" id="notifyDue" name="due_reminder"></label>
+            <label class="setting-row"><span><strong>可能有作業期限異動</strong><small>公告與信件提到新日期時提醒</small></span><input type="checkbox" role="switch" id="notifyDeadlineChanges" name="deadline_changes"></label>
+            <label class="setting-row"><span><strong>作業到期前提醒</strong></span><input type="checkbox" role="switch" id="notifyDue" name="due_reminder"></label>
             <fieldset class="reminder-days" id="reminderDays">
                 <legend>到期前幾天</legend>
                 <div class="day-input-row"><div id="dayInputs"></div><button class="outline-button" id="addDay" type="button" aria-label="新增提醒時間" title="新增提醒時間"><span aria-hidden="true">＋</span></button></div>
@@ -52,7 +52,7 @@
                 </div>
             </div>
         </section>
-        <p class="sync-note" id="syncNote">提醒使用當期作業的個人期限；未修改時以 E3 期限為準。E3 登入失效時，請重新登入以繼續同步。</p>
+        <p class="sync-note" id="syncNote" role="status" aria-live="polite" hidden></p>
         <footer class="settings-footer"><button class="save-button" type="submit" id="saveNotifications">儲存設定</button><p id="notificationMessage" role="status" aria-live="polite"></p></footer>
     </form>
 </main>

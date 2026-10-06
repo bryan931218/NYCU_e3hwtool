@@ -99,7 +99,8 @@ function renderChannels() {
     byId("lineLinkPanel").hidden = true;
     clearInterval(linePoll); linePoll = null;
   }
-  if (state.sync_error) byId("syncNote").textContent = "目前無法更新 E3 作業，請重新登入。既有作業仍會依設定提醒。";
+  byId("syncNote").hidden = !state.sync_error;
+  byId("syncNote").textContent = state.sync_error ? "目前無法更新 E3 作業，請重新登入。既有作業仍會依設定提醒。" : "";
 }
 
 function applyPreferences(prefs) {

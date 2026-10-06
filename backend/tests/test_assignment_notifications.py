@@ -321,6 +321,21 @@ class NotificationTests(unittest.TestCase):
         self.assertIn('id="notifyGraded"', html)
         self.assertIn("作業被評分時", html)
 
+    def test_notification_settings_copy_is_concise_and_keeps_switches_and_error_notice(self):
+        from bs4 import BeautifulSoup
+        page = BeautifulSoup(self.client.get("/settings/notifications").get_data(as_text=True), "html.parser")
+        rows = page.select("#notificationForm section:first-of-type > label.setting-row")
+        self.assertEqual([row.select_one("strong").get_text() for row in rows], [
+            "新作業出現時", "作業被評分時", "新課程公告", "新課程信件", "可能有作業期限異動", "作業到期前提醒",
+        ])
+        self.assertEqual([row.select_one("small").get_text() if row.select_one("small") else None for row in rows],
+                         [None, None, None, None, "公告與信件提到新日期時提醒", None])
+        self.assertEqual(len(page.select('#notificationForm section:first-of-type input[role="switch"]')), 6)
+        note = page.select_one("#syncNote")
+        self.assertEqual(note.get_text(), "")
+        self.assertTrue(note.has_attr("hidden"))
+        self.assertEqual(note["role"], "status")
+
     def test_grading_line_message_links_to_feedback_without_work_reminder_actions(self):
         item = self.item("line grade", grade_text="80")
         payload = {**notification_payload(item, "graded"), "kind": "graded", "assignment_url": item["url"]}

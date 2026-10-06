@@ -50,7 +50,7 @@
 #lineCode { min-width: 0; width: 100%; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; font: 13px ui-monospace, monospace; }
 .code-row button { flex-shrink: 0; }
 .sync-note { color: var(--muted); font-size: 12px; margin: 20px 0; }
-.settings-footer { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-top: 6px; }
+.settings-footer { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-top: 20px; }
 .save-button { color: #fff; background: var(--primary-2); border-color: var(--primary-2); padding: 9px 20px; }
 #notificationMessage { margin: 0; color: var(--primary); font-size: 13px; }
 #notificationMessage[data-error="true"] { color: var(--err-fg); }

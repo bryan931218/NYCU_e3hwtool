@@ -7,6 +7,29 @@ import { createPushDiagnostics } from '../assignments/static/js/browser-notifica
 const tag = `test:${'a'.repeat(32)}`;
 const scriptURL = 'https://example.test/assignment-notifications-sw.js';
 
+test('settings keep the sync notice empty and hidden until an error, and clear it on recovery', () => {
+  const source = readFileSync(new URL('../assignments/static/js/notifications.js', import.meta.url), 'utf8');
+  const render = source.slice(source.indexOf('function renderChannels()'), source.indexOf('function applyPreferences('));
+  const elements = new Map();
+  const byId = id => {
+    if (!elements.has(id)) elements.set(id, {});
+    return elements.get(id);
+  };
+  const state = { browser_ready: false, line_ready: false, line_linked: false, sync_error: null };
+  const context = vm.createContext({ state, byId, subscription: null, supported: false });
+  vm.runInContext(render + '\nrenderChannels();', context);
+  assert.equal(byId('syncNote').hidden, true);
+  assert.equal(byId('syncNote').textContent, '');
+  state.sync_error = 'session_expired';
+  vm.runInContext('renderChannels();', context);
+  assert.equal(byId('syncNote').hidden, false);
+  assert.match(byId('syncNote').textContent, /請重新登入/);
+  state.sync_error = null;
+  vm.runInContext('renderChannels();', context);
+  assert.equal(byId('syncNote').hidden, true);
+  assert.equal(byId('syncNote').textContent, '');
+});
+
 function workerBridge() {
   let listener;
   return {
