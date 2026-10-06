@@ -5,16 +5,18 @@
 {% include 'shared/components/page-transitions.html' %}
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>設定提醒時間 | E3作業追蹤系統</title>
-<script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
-<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+{% include 'shared/components/e3-page-head.html' %}
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/notifications.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/assignment-actions.css') }}">
 <script nonce="{{ csp_nonce() }}" type="application/json" id="assignment-plan-config">{{ plan_config|tojson }}</script>
 <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/assignment-plan.js') }}"></script>
 </head>
-<body class="notification-page"><main class="notification-shell">
-<header class="notification-header"><a class="back-link" href="{{ url_for('index') }}">返回作業</a><a class="text-button" href="{{ url_for('notification_settings_page') }}">通知設定</a></header>
-<h1>設定提醒時間</h1>
+<body class="notification-page e3-page">
+{% from 'shared/components/e3-page-header.html' import page_header with context %}
+<main class="notification-shell page-shell page-shell-narrow">
+{% call page_header('設定提醒時間', url_for('index')) %}
+<a class="btn" href="{{ url_for('notification_settings_page') }}">通知設定</a>
+{% endcall %}
 {% if item %}
 <section class="plan-subject"><p>{{ item.course_title }}</p><h2>{{ item.title }}</h2><p>截止：{{ item.due_at or '未設定' }}</p></section>
 <form id="assignmentPlanForm" class="plan-form">

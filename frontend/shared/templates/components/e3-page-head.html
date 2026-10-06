@@ -1,0 +1,4 @@
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/e3-pages.css') }}">
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/e3-page-theme.js') }}" defer></script>

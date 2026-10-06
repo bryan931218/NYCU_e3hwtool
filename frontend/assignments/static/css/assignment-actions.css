@@ -3,7 +3,7 @@
 .plan-form { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 18px; align-items: center; padding: 28px 0; }
 .plan-form > input, .plan-form > select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--fg); background: var(--card); color-scheme: dark; }
 [data-theme="light"] .plan-form > input, [data-theme="light"] .plan-form > select { color-scheme: light; }
-.plan-calendar, .plan-submit { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.notification-page .plan-calendar, .plan-submit { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .plan-calendar a { color: var(--primary); }
 .plan-submit p { margin: 0; color: var(--primary); }
 .plan-submit p[data-error="true"] { color: var(--err-fg); }

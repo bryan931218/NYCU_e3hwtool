@@ -8,28 +8,15 @@
 <title>E3 作業追蹤系統｜服務條款</title>
 <meta name="description" content="E3 作業追蹤系統的使用規範、責任與免責聲明。" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%233730a3'/%3E%3Cpath fill='%23fff' d='M20 18h24v8H28v6h14v8H28v8h16v8H20z'/%3E%3C/svg%3E" />
-<style>
-body{margin:0;background:#020617;color:#e2e8f0;font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft JhengHei","Noto Sans TC",sans-serif}
-.wrap{max-width:900px;margin:0 auto;padding:48px 20px 70px}
-header{margin-bottom:32px}
-header a{color:#c3dafe;text-decoration:none;font-weight:600}
-header h1{margin:12px 0 0;font-size:32px}
-section{margin-bottom:28px;padding:24px;border-radius:16px;background:#0b1224;border:1px solid rgba(99,102,241,.3)}
-section h2{margin:0 0 12px;font-size:22px}
-section p{margin:0 0 10px;line-height:1.7}
-ol{margin:0;padding-left:20px}
-ol li{margin-bottom:6px;line-height:1.6}
-footer{margin-top:28px;display:flex;flex-wrap:wrap;gap:16px;font-size:14px;color:#94a3b8}
-footer a{color:#a5b4fc;text-decoration:none}
-</style>
+{% include 'shared/components/e3-page-head.html' %}
 </head>
-<body>
-<div class="wrap">
-    <header>
-        <a href="{{ app_home_url }}">← 返回首頁</a>
-        <h1>服務條款</h1>
+<body class="e3-page legal-page">
+{% from 'shared/components/e3-page-header.html' import page_header with context %}
+<main class="page-shell page-shell-legal">
+    {{ page_header('服務條款', app_home_url, '返回首頁') }}
+    <div class="page-meta">
         <p>歡迎使用 E3 作業追蹤系統（以下簡稱「本服務」）。透過存取或使用本服務，即表示您同意下列條款。</p>
-    </header>
+    </div>
 
     <section>
         <h2>1. 服務內容</h2>
@@ -76,6 +63,6 @@ footer a{color:#a5b4fc;text-decoration:none}
         <a href="{{ url_for('privacy_policy') }}">隱私權政策</a>
         <a href="{{ url_for('feedback') }}">回報問題</a>
     </footer>
-</div>
+</main>
 </body>
 </html>

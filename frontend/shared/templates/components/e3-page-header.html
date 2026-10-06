@@ -1,0 +1,13 @@
+{% macro page_header(title, back_url, back_label='返回作業') -%}
+<header class="page-header">
+    <div class="page-brand">
+        <span class="page-brand-mark" aria-hidden="true">E3</span>
+        <div><small>E3作業追蹤系統</small><h1>{{ title }}</h1></div>
+    </div>
+    <div class="page-actions">
+        {% if caller is defined %}{{ caller() }}{% endif %}
+        <a class="btn" href="{{ back_url }}"><span class="page-icon page-icon-back" aria-hidden="true"></span>{{ back_label }}</a>
+        <button class="page-theme" type="button" data-e3-theme title="切換主題" aria-label="切換主題"><span class="page-icon page-icon-theme" aria-hidden="true"></span></button>
+    </div>
+</header>
+{%- endmacro %}

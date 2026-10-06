@@ -1,63 +1,21 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-theme>
 <head>
 {% include 'shared/components/security.html' %}
 {% include 'shared/components/page-transitions.html' %}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>網站流量分析｜E3 作業追蹤系統</title>
-<style>
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:#050816;color:#e2e8f0;font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft JhengHei","Noto Sans TC",sans-serif;line-height:1.5}
-.wrap{max-width:1180px;margin:0 auto;padding:28px 18px 56px}
-.card{background:#11142d;border:1px solid rgba(99,102,241,.38);border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 18px 45px rgba(2,6,23,.42)}
-.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
-h1,h2,h3{margin-top:0}
-h1{font-size:28px;margin-bottom:6px}
-h2{font-size:20px;margin-bottom:12px}
-.muted{color:#94a3b8;font-size:13px}
-.actions,.filters{display:flex;gap:8px;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 13px;border:1px solid rgba(255,255,255,.22);border-radius:10px;color:#e2e8f0;text-decoration:none;font-weight:700;background:rgba(15,23,42,.35)}
-.btn:hover{background:rgba(99,102,241,.17)}
-.btn.active{background:#4f46e5;border-color:#818cf8;color:#fff}
-.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.metric{padding:16px;border-radius:14px;background:rgba(15,23,42,.62);border:1px solid rgba(148,163,184,.2)}
-.metric strong{display:block;font-size:28px;color:#fff;margin-top:4px}
-.metric small{color:#94a3b8}
-.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
-.list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
-.list li{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:10px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(15,23,42,.55)}
-.label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.count{flex:none;font-variant-numeric:tabular-nums;background:rgba(99,102,241,.2);color:#c7d2fe;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800}
-.chart-scroll{overflow-x:auto;padding-bottom:6px}
-.chart{height:230px;min-width:700px;display:flex;align-items:flex-end;gap:5px;padding:12px 8px 0;border-left:1px solid rgba(148,163,184,.25);border-bottom:1px solid rgba(148,163,184,.25)}
-.day{height:100%;flex:1;min-width:16px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px}
-.bar-wrap{height:180px;width:100%;display:flex;align-items:flex-end;justify-content:center}
-.bar{width:min(18px,80%);min-height:0;background:linear-gradient(180deg,#818cf8,#4f46e5);border-radius:6px 6px 2px 2px}
-.day small{font-size:10px;color:#94a3b8;white-space:nowrap;transform:rotate(-45deg);transform-origin:top center;margin-top:5px}
-.day .tip{font-size:10px;color:#cbd5e1;white-space:nowrap}
-.table-wrap{overflow:auto}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:10px 12px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
-.notice{border-left:3px solid #6366f1;padding-left:12px;color:#cbd5e1}
-@media(max-width:760px){.grid2{grid-template-columns:1fr}.wrap{padding:18px 12px 40px}.card{padding:16px}h1{font-size:24px}}
-</style>
+{% include 'shared/components/e3-page-head.html' %}
 </head>
-<body>
-<div class="wrap">
-    <div class="card">
-        <div class="top">
-            <div>
-                <h1>網站流量分析</h1>
-                <div class="muted">更新時間：{{ generated_at }} · 僅限管理員 · 保留最近 {{ retention_days }} 天</div>
-            </div>
-            <div class="actions">
-                <a class="btn" href="{{ url_for('admin_traffic') }}">既有流量面板</a>
-                <a class="btn" href="{{ url_for('index') }}">返回主頁</a>
-            </div>
-        </div>
+<body class="e3-page analytics-page">
+{% from 'shared/components/e3-page-header.html' import page_header with context %}
+<main class="page-shell">
+    {% call page_header('網站流量分析', url_for('index')) %}
+        <a class="btn" href="{{ url_for('admin_traffic') }}">流量監控</a>
+    {% endcall %}
+    <p class="muted page-meta">更新時間：{{ generated_at }} · 僅限管理員 · 保留最近 {{ retention_days }} 天</p>
+    <section class="page-section">
         <p class="notice">這裡統計真正的 HTML 頁面瀏覽，不保存查詢字串或完整來源網址；匿名訪客以伺服器端雜湊識別，不另外寫入原始 IP。</p>
         <div class="filters">
             {% for window in windows %}
@@ -66,9 +24,9 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
             </a>
             {% endfor %}
         </div>
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="page-section">
         <h2>總覽</h2>
         <div class="metrics">
             <div class="metric">
@@ -102,9 +60,9 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
                 <small>{{ top_source.count if top_source else 0 }} 次</small>
             </div>
         </div>
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="page-section">
         <h2>每日瀏覽趨勢</h2>
         <div class="chart-scroll">
             <div class="chart">
@@ -117,10 +75,10 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
                 {% endfor %}
             </div>
         </div>
-    </div>
+    </section>
 
     <div class="grid2">
-        <div class="card">
+        <section class="page-section">
             <h2>熱門頁面</h2>
             <ul class="list">
                 {% if top_pages %}
@@ -131,8 +89,8 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
                     <li><span class="muted">尚無資料</span></li>
                 {% endif %}
             </ul>
-        </div>
-        <div class="card">
+        </section>
+        <section class="page-section">
             <h2>流量來源</h2>
             <ul class="list">
                 {% if top_sources %}
@@ -143,11 +101,11 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
                     <li><span class="muted">尚無資料</span></li>
                 {% endif %}
             </ul>
-        </div>
+        </section>
     </div>
 
     <div class="grid2">
-        <div class="card">
+        <section class="page-section">
             <h2>裝置類型</h2>
             <ul class="list">
                 {% for item in devices %}
@@ -156,8 +114,8 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
                 <li><span class="muted">尚無資料</span></li>
                 {% endfor %}
             </ul>
-        </div>
-        <div class="card">
+        </section>
+        <section class="page-section">
             <h2>瀏覽器</h2>
             <ul class="list">
                 {% for item in browsers %}
@@ -166,10 +124,10 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
                 <li><span class="muted">尚無資料</span></li>
                 {% endfor %}
             </ul>
-        </div>
+        </section>
     </div>
 
-    <div class="card">
+    <section class="page-section">
         <h2>最近頁面瀏覽</h2>
         <div class="table-wrap">
             <table>
@@ -193,7 +151,7 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#a5b4fc}
                 </tbody>
             </table>
         </div>
-    </div>
-</div>
+    </section>
+</main>
 </body>
 </html>

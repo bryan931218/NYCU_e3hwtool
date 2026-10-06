@@ -1,0 +1,60 @@
+.login-page { margin: 0; padding: 40px 20px; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--bg); color: var(--fg); font: 14px/1.6 system-ui, -apple-system, "Microsoft JhengHei", sans-serif; letter-spacing: 0; }
+.login-page *, .login-page *::before, .login-page *::after { box-sizing: border-box; }
+.login-page .card { width: min(540px, 100%); padding: 30px; display: flex; flex-direction: column; gap: 22px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-sm); }
+.login-page .card h2 { margin: 0; font-size: 26px; line-height: 1.4; }
+.login-page label { display: block; font-weight: 600; margin: 10px 0 6px; }
+.login-page input:not([type="checkbox"]), .login-page textarea { width: 100%; min-width: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-2); color: var(--fg); font: inherit; }
+.login-page textarea { min-height: 110px; resize: vertical; }
+.login-page input::placeholder, .login-page textarea::placeholder { color: var(--muted); opacity: .8; }
+.login-page :is(input, textarea, button, a):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.login-page .btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 18px; min-height: 42px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--fg); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+.login-page .btn.primary { width: 100%; margin-top: 14px; background: var(--primary-2); border-color: var(--primary-2); color: #fff; }
+.login-page .btn:hover { filter: brightness(1.08); }
+.login-page .btn:disabled { opacity: .55; cursor: wait; }
+.login-page .legal-footer { width: min(540px, 100%); margin-top: 22px; text-align: center; font-size: 12px; color: var(--muted); line-height: 2; }
+.login-page .legal-footer a { color: var(--muted); text-decoration: none; white-space: nowrap; }
+.login-page .legal-footer a:hover { color: var(--primary); }
+.login-page .muted { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 0; }
+.login-page .cb { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 400; }
+.login-page .cb input { margin: 0; accent-color: var(--primary-2); width: 16px; height: 16px; }
+.login-page .remember-row { margin-top: 4px; }
+.login-page .title-row { display: flex; flex-direction: column; gap: 18px; }
+.login-page .title-controls { display: flex; align-items: center; gap: 10px; }
+.login-page .stats { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+.login-page .chip { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+.login-page .chip + .chip { border-left: 1px solid var(--border); padding-left: 8px; }
+.login-page .chip strong { color: var(--fg); font-variant-numeric: tabular-nums; }
+.login-page .icon-button { width: 36px; height: 36px; flex: 0 0 36px; display: inline-flex; align-items: center; justify-content: center; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--muted); cursor: pointer; }
+.login-page .icon-button:hover { background: var(--card-2); color: var(--fg); }
+.login-page .icon-button svg { width: 18px; height: 18px; }
+.login-page .toggle-group { display: flex; width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 3px; gap: 3px; background: var(--card-2); }
+.login-page .toggle-btn { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 10px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.login-page .toggle-btn.active { background: var(--card); color: var(--primary); box-shadow: 0 1px 3px rgb(0 0 0 / 8%); }
+.login-page .toggle-session-option { flex: 1; min-width: 0; display: flex; position: relative; }
+.login-page .toggle-session-option .toggle-btn { padding-right: 40px; }
+.login-page .help-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--card); color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.login-page .help-btn:hover { color: var(--primary); border-color: var(--primary); }
+.login-page .mode-section { display: none; flex-direction: column; gap: 4px; }
+.login-page .mode-section.active { display: flex; }
+.login-page .hidden { display: none !important; }
+.login-page .toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 50; width: min(420px, calc(100% - 32px)); }
+.login-page .toast { position: relative; display: flex; align-items: center; gap: 10px; overflow: hidden; padding: 12px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--fg); box-shadow: var(--shadow); animation: login-toast-in .2s ease; }
+.login-page .toast.closing { animation: login-toast-out .2s ease forwards; }
+.login-page .toast-icon { flex: 0 0 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: var(--info-fg); background: var(--info-bg); }
+.login-page .toast-content { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.login-page .toast-close { border: 0; background: transparent; font-size: 18px; cursor: pointer; color: var(--muted); }
+.login-page .toast-progress { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--primary); animation: login-toast-progress 5s linear forwards; }
+.login-page .toast.success .toast-icon { color: var(--ok-fg); background: var(--ok-bg); }
+.login-page .toast.error .toast-icon { color: var(--err-fg); background: var(--err-bg); }
+.login-page .toast.warning .toast-icon { color: var(--warn-fg); background: var(--warn-bg); }
+@keyframes login-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes login-toast-out { to { opacity: 0; transform: translateY(-8px); } }
+@keyframes login-toast-progress { from { width: 100%; } to { width: 0; } }
+@media (max-width: 600px) {
+  .login-page { justify-content: flex-start; padding: 24px 16px; }
+  .login-page .card { padding: 24px 20px; }
+  .login-page .card h2 { font-size: 24px; }
+  .login-page .toggle-btn { font-size: 13px; padding-left: 8px; padding-right: 8px; }
+  .login-page .chip + .chip { border-left: 0; padding-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .login-page .toast, .login-page .toast.closing { animation-duration: .01s; } .login-page .toast-progress { animation: none; } }

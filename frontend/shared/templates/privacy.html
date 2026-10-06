@@ -8,30 +8,16 @@
 <title>E3 作業追蹤系統｜隱私權政策</title>
 <meta name="description" content="說明 E3 作業追蹤系統如何收集、使用與保護使用者資料。" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%233730a3'/%3E%3Cpath fill='%23fff' d='M20 18h24v8H28v6h14v8H28v8h16v8H20z'/%3E%3C/svg%3E" />
-<style>
-body{margin:0;background:#0f172a;color:#e2e8f0;font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft JhengHei","Noto Sans TC",sans-serif}
-.wrap{max-width:900px;margin:0 auto;padding:48px 20px 64px}
-header{margin-bottom:32px}
-header a{color:#c3dafe;text-decoration:none;font-weight:600}
-header h1{margin:12px 0 0;font-size:32px}
-section{margin-bottom:32px;padding:24px;border-radius:16px;background:#111c3a;border:1px solid rgba(148,163,184,.35)}
-section h2{margin:0 0 12px;font-size:22px}
-section p{margin:0 0 10px;line-height:1.7}
-ul{margin:0;padding-left:20px}
-li{margin-bottom:6px;line-height:1.6}
-footer{margin-top:32px;font-size:14px;color:#94a3b8;display:flex;flex-wrap:wrap;gap:16px;align-items:center}
-footer a{color:#c3dafe;text-decoration:none}
-.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(99,102,241,.5);background:#1e1b4b;color:#a5b4fc;border-radius:999px;padding:6px 14px;font-size:14px;font-weight:600}
-</style>
+{% include 'shared/components/e3-page-head.html' %}
 </head>
-<body>
-<div class="wrap">
-    <header>
-        <a href="{{ app_home_url }}">← 返回首頁</a>
-        <h1>隱私權政策</h1>
+<body class="e3-page legal-page">
+{% from 'shared/components/e3-page-header.html' import page_header with context %}
+<main class="page-shell page-shell-legal">
+    {{ page_header('隱私權政策', app_home_url, '返回首頁') }}
+    <div class="page-meta">
         <p class="badge">生效日期：{{ effective_date }}</p>
         <p>本政策由 {{ legal_entity_name }} 制定，並適用於所有使用 E3 作業追蹤系統（以下簡稱「本服務」）的學生與訪客。</p>
-    </header>
+    </div>
 
     <section>
         <h2>1. 我們收集的資料</h2>
@@ -93,6 +79,6 @@ footer a{color:#c3dafe;text-decoration:none}
         <a href="{{ url_for('terms_of_service') }}">服務條款</a>
         <a href="{{ url_for('feedback') }}">回報問題</a>
     </footer>
-</div>
+</main>
 </body>
 </html>
