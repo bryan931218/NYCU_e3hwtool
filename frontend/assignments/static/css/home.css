@@ -105,7 +105,7 @@ html[data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
 .stat-icon { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 8px; color: var(--stat-accent); background: color-mix(in srgb, var(--stat-accent) 8%, transparent); }
 .stat-icon svg { width: 18px; height: 18px; }
 .home-stats dd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin: 18px 0 0; font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace; font-size: 48px; line-height: 1.1; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: 0; overflow-wrap: anywhere; }
-.home-stats dd span { margin-left: auto; font-family: ui-sans-serif, system-ui, "Microsoft JhengHei", sans-serif; font-size: 12px; color: var(--muted); font-weight: 400; }
+.home-stats dd span:not([data-traffic-stat]) { margin-left: auto; font-family: ui-sans-serif, system-ui, "Microsoft JhengHei", sans-serif; font-size: 12px; color: var(--muted); font-weight: 400; }
 .home-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px 0 28px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
 .home-footer nav { display: flex; gap: 23px; }
 @media (max-width: 1000px) {

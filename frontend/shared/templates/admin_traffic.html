@@ -244,7 +244,7 @@
 
     <section class="admin-section" id="recent-activity" aria-labelledby="activityTitle">
         <h2 id="activityTitle">近期動態</h2>
-        <p class="muted">作業操作、通知設定與 LINE 綁定紀錄</p>
+        <p class="muted">作業操作、通知設定與 LINE 綁定紀錄 · 保留 {{ activity_retention_days }} 天</p>
         <ul class="events">
             {% if events %}
                 {% for item in events %}
@@ -259,6 +259,12 @@
                 <li><span class="time">-</span><span class="muted">尚無操作紀錄</span></li>
             {% endif %}
         </ul>
+        {% if activity_before or activity_next %}
+        <nav class="activity-pagination" aria-label="近期動態分頁">
+            {% if activity_before %}<a class="btn" href="{{ traffic_link(activity_before=None) }}#recent-activity">最新紀錄</a>{% endif %}
+            {% if activity_next %}<a class="btn" href="{{ traffic_link(activity_before=activity_next) }}#recent-activity">較早紀錄 <span class="admin-icon" data-icon="right" aria-hidden="true"></span></a>{% endif %}
+        </nav>
+        {% endif %}
     </section>
 </main>
 

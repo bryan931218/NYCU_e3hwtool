@@ -72,6 +72,39 @@ class AssignmentAnalyticsTests(unittest.TestCase):
         self.assertEqual(student_identity({"username": "Session-112550103"}), "")
         self.assertEqual(student_identity({"username": "１１２５５０１０３"}), "")
 
+    def test_daily_users_are_taipei_calendar_days_persistent_and_deduplicated(self):
+        midnight = TAIPEI_TZ.localize(datetime(2026, 10, 6)).timestamp()
+        for username, action, ts in (
+            ("114513001", "usage_calendar", midnight - 1),
+            ("112550103", "login_success", midnight + 1),
+            ("Session-one", "heartbeat", midnight + 2),
+            ("113550092", "usage_search", midnight + 3),
+            ("Session-unknown", "heartbeat", midnight + 4),
+        ):
+            self.storage.record_assignment_usage(username, action, meta={"site": "assignments"}, now=ts)
+        self.storage.record_assignment_usage("訪客_demo", "heartbeat", now=midnight + 5)
+        self.storage.record_assignment_usage("114513001", "study_plan_saved", meta={"site": "study"}, now=midnight + 5)
+        self.storage.record_assignment_usage("114513001", "notification_line_linked", meta={"activity_only": True}, now=midnight + 5)
+        self.assertEqual(self.storage.assignment_daily_user_count(now=midnight - 1), 1)
+        self.assertEqual(self.storage.assignment_daily_user_count(now=midnight + 100), 3)
+        self.assertEqual(self.storage.assignment_daily_user_count(now=midnight + 86400), 0)
+        self.storage.clear_traffic_events()
+        other = PersistentStorage(str(self.storage._engine.url))
+        try:
+            self.assertEqual(other.assignment_daily_user_count(now=midnight + 100), 3)
+        finally:
+            other._engine.dispose()
+        self.assertTrue(all(row["feature"] != "__presence" for row in self.storage.assignment_usage_snapshot("2026-10-06", "2026-10-06")["usage"]))
+
+    def test_quiet_feature_usage_updates_public_daily_users_without_activity_noise(self):
+        self.login("analytics-second")
+        self.client.post("/ui-event", json={"action": "usage_calendar"})
+        self.client.post("/ui-event", json={"action": "usage_calendar"})
+        self.assertEqual(self.storage.recent_traffic_events(500), [])
+        response = self.app.test_client().get("/")
+        values = BeautifulSoup(response.get_data(as_text=True), "html.parser").select(".home-stats dd")
+        self.assertEqual(values[0].get_text(strip=True), "1人")
+
     def test_bindings_count_people_not_devices_and_only_effective_enabled_channels(self):
         ids = self.ids()
         with self.storage._engine.begin() as conn:

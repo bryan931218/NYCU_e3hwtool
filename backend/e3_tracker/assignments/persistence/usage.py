@@ -9,27 +9,31 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.persistence.core_schema import users_table, traffic_events_table, web_sessions_table
 from e3_tracker.platform.persistence.guest_cleanup import guest_account_condition
 from e3_tracker.platform.guest_privacy import is_guest_identity
-from e3_tracker.assignments.domain.usage import feature_for_event
+from e3_tracker.assignments.domain.usage import feature_for_event, student_identity
 from .usage_schema import feature_usage, usage_state
 from .notification_schema import line_bindings, push_subscriptions, notification_settings
 from .schema import google_tokens_table
 
 
-def increment_usage(conn, user_id, feature, day):
+def increment_usage(conn, user_id, feature, day, *, once=False):
     values = {"user_id": user_id, "feature": feature, "day": day, "count": 1}
     if conn.dialect.name == "mysql":
         from sqlalchemy.dialects.mysql import insert
         statement = insert(feature_usage).values(**values)
-        statement = statement.on_duplicate_key_update(count=feature_usage.c.count + 1)
+        statement = statement.on_duplicate_key_update(count=feature_usage.c.count if once else feature_usage.c.count + 1)
     else:
         if conn.dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import insert
         else:
             from sqlalchemy.dialects.sqlite import insert
-        statement = insert(feature_usage).values(**values).on_conflict_do_update(
-            index_elements=["user_id", "day", "feature"],
-            set_={"count": feature_usage.c.count + 1},
-        )
+        statement = insert(feature_usage).values(**values)
+        if once:
+            statement = statement.on_conflict_do_nothing(index_elements=["user_id", "day", "feature"])
+        else:
+            statement = statement.on_conflict_do_update(
+                index_elements=["user_id", "day", "feature"],
+                set_={"count": feature_usage.c.count + 1},
+            )
     conn.execute(statement)
 
 
@@ -62,8 +66,12 @@ def migrate_usage(conn):
 
 class AssignmentUsageStorage:
     def record_assignment_usage(self, username, action, status="success", meta=None, *, now=None):
-        feature = feature_for_event(action, status, meta or {})
-        if not feature or not username or is_guest_identity(username):
+        meta = meta or {}
+        feature = feature_for_event(action, status, meta)
+        if (not username or is_guest_identity(username) or meta.get("is_guest")
+                or meta.get("site") not in {None, "", "assignments"}
+                or str(action or "").strip().lower().startswith(("study_", "public_study_"))
+                or meta.get("activity_only") or status not in {"success", "info"}):
             return
         day = datetime.fromtimestamp(time.time() if now is None else now, TAIPEI_TZ).date().isoformat()
         with self._lock, self._engine.begin() as conn:
@@ -91,7 +99,20 @@ class AssignmentUsageStorage:
                     users_table.c.username == username, ~guest_account_condition(),
                 )).scalar()
             if user_id is not None:
-                increment_usage(conn, user_id, feature, day)
+                if feature:
+                    increment_usage(conn, user_id, feature, day)
+                else:
+                    # Presence survives event rotation and is separate from feature counters.
+                    increment_usage(conn, user_id, "__presence", day, once=True)
+
+    def assignment_daily_user_count(self, *, now=None):
+        day = datetime.fromtimestamp(time.time() if now is None else now, TAIPEI_TZ).date().isoformat()
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(select(users_table.c.username, users_table.c.student_number).where(
+                ~guest_account_condition(),
+                users_table.c.id.in_(select(feature_usage.c.user_id).where(feature_usage.c.day == day)),
+            )).mappings().all()
+        return len({student_identity(row) or row["username"] for row in rows})
 
     def assignment_usage_snapshot(self, start, end):
         cutoff = (datetime.now(TAIPEI_TZ).date() - timedelta(days=729)).isoformat()
@@ -105,6 +126,7 @@ class AssignmentUsageStorage:
                 func.sum(feature_usage.c.count).label("count"),
             ).where(
                 feature_usage.c.day >= start, feature_usage.c.day <= end,
+                feature_usage.c.feature != "__presence",
             ).group_by(feature_usage.c.user_id, feature_usage.c.feature)).mappings()]
             state = dict(conn.execute(select(usage_state)).mappings().first())
             # Select only ownership IDs; never load/decrypt notification targets or tokens.

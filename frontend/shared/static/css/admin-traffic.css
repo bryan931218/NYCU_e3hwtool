@@ -105,6 +105,7 @@
 .events .event-content strong { display: block; font-weight: 500; }
 .events .event-detail { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
 .events .status-badge { justify-self: end; }
+.activity-pagination { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .admin-traffic :is(a, button, input, select, summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .admin-traffic .assignment-analytics { --analytics-surface: var(--card); --analytics-border: var(--border); --analytics-fg: var(--fg); --analytics-muted: var(--muted); --analytics-accent: var(--primary); }
 .admin-traffic .analytics-distribution[data-distribution="department"] { --analytics-accent: var(--info-fg); }

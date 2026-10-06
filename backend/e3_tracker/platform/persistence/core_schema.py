@@ -113,6 +113,7 @@ traffic_events_table = Table(
     Column("is_guest", Integer),
     Column("is_admin", Integer),
     Column("meta", Text),
+    Column("retained_activity", Integer, nullable=False, server_default="0"),
 )
 
 Index("ix_traffic_events_username", traffic_events_table.c.username)
@@ -120,6 +121,8 @@ Index("ix_traffic_events_username", traffic_events_table.c.username)
 Index("ix_traffic_events_ts", traffic_events_table.c.ts)
 
 Index("ix_traffic_events_action", traffic_events_table.c.action)
+Index("ix_traffic_events_activity_id", traffic_events_table.c.retained_activity, traffic_events_table.c.id)
+Index("ix_traffic_events_activity_ts", traffic_events_table.c.retained_activity, traffic_events_table.c.ts)
 
 data_repairs = Table(
     "e3_data_repairs",

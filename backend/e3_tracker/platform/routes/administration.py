@@ -1,6 +1,6 @@
 """Administration routes and their feature helpers."""
 
-from e3_tracker.platform.services.traffic import is_recent_activity_event
+from e3_tracker.platform.services.traffic import ACTIVITY_RETENTION_DAYS, is_recent_activity_event
 from e3_tracker.platform.services.traffic_trends import build_traffic_trend
 from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics
 from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
@@ -110,7 +110,14 @@ def register_administration_routes(*,
             if is_recent_activity_event(ev)
         ]
         formatted_events = []
-        for ev in reversed(filtered_events[-200:]):
+        activity_before = request.args.get("activity_before", type=int)
+        if activity_before is not None and not 0 < activity_before <= 9223372036854775807:
+            activity_before = None
+        activity_page = storage.recent_activity_events(101, before_id=activity_before)
+        activity_has_older = len(activity_page) > 100
+        activity_page = activity_page[:100]
+        activity_next = activity_page[-1]["id"] if activity_has_older else None
+        for ev in activity_page:
             meta = ev.get("meta") or {}
             role = "訪客" if meta.get("is_guest") else ("管理員" if meta.get("is_admin") else "一般使用者")
             detail_parts: List[str] = []
@@ -206,6 +213,8 @@ def register_administration_routes(*,
             storage.assignment_usage_snapshot(window["start"], window["end"]), window,
         )
         traffic_query = {**trend["query"], "trend": trend["resolution"], "usage_range": window["range"]}
+        if activity_before is not None:
+            traffic_query["activity_before"] = activity_before
         if requested_view_username in {item["username"] for item in admin_view_options}:
             traffic_query["view_user"] = requested_view_username
 
@@ -218,6 +227,9 @@ def register_administration_routes(*,
             stats_version=current_stats_version(),
             user_rows=account_rows,
             events=formatted_events,
+            activity_retention_days=ACTIVITY_RETENTION_DAYS,
+            activity_before=activity_before,
+            activity_next=activity_next,
             generated_at=_fmt_ts(time.time()),
             admin_user=user,
             trend=trend,

@@ -76,6 +76,8 @@ def register_platform_routes(
             "version": current_stats_version(),
             "online": stats["online"],
             "total": stats["total"],
+            "daily_users": stats["daily_users"],
+            "total_users": stats["total_users"],
         }
         return payload, 200, {"Cache-Control": "no-store, max-age=0"}
 

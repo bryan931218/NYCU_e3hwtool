@@ -251,13 +251,13 @@ test('cache polling pauses in background, rejects overlap and recovers after fai
   }
 });
 
-function trafficHarness(fetch, hidden = false) {
-  const nodes = { online: { textContent: '1' }, total: { textContent: '20' } };
+function trafficHarness(fetch, hidden = false, extraNodes = {}) {
+  const nodes = { online: { textContent: '1' }, total: { textContent: '20' }, ...extraNodes };
   const handlers = {};
   let interval;
   const document = { hidden, body: { dataset: { trafficStatsUrl: '/traffic/stats' } },
     addEventListener: (name, handler) => { handlers[name] = handler; },
-    querySelectorAll: selector => selector.includes('online') ? [nodes.online] : [nodes.total] };
+    querySelectorAll: selector => { const node = nodes[selector.match(/"([^"]+)"/)[1]]; return node ? [node] : []; } };
   const context = { document, fetch,
     setInterval: (callback, delay) => { assert.equal(delay, 45000); interval = callback; },
     window: { location: { reload: () => assert.fail('traffic must not reload the page') } } };
@@ -295,6 +295,20 @@ test('traffic polling pauses in background, avoids overlap and retains counts on
   await new Promise(done => setImmediate(done));
   await failing.poll();
   assert.equal(failing.nodes.online.textContent, '1');
+});
+
+test('public home counts update in place and reset daily usage at midnight', async () => {
+  let daily = 12;
+  const harness = trafficHarness(async () => ({ ok: true, json: async () => ({
+    daily_users: daily, total_users: 67, online: 1, total: 3920,
+  }) }), false, { daily_users: { textContent: '2' }, total_users: { textContent: '60' } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(harness.nodes.daily_users.textContent, '12');
+  assert.equal(harness.nodes.total_users.textContent, '67');
+  daily = 0;
+  await harness.poll();
+  assert.equal(harness.nodes.daily_users.textContent, '0');
+  assert.equal(harness.nodes.total.textContent, '3920');
 });
 
 test('invalid traffic counts cannot replace the displayed values with markup or negative numbers', async () => {

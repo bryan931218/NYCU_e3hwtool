@@ -3,8 +3,10 @@
 from e3_tracker.platform.guest_privacy import sanitize_traffic_event, without_guest_traffic
 
 import json
+import time
 from typing import Any, Dict, List, Optional
 from sqlalchemy import delete, insert, func, select, update
+from e3_tracker.platform.services.traffic import ACTIVITY_RETENTION_DAYS, is_recent_activity_event
 
 from e3_tracker.platform.persistence.core_schema import (
     users_table,
@@ -263,6 +265,7 @@ class CommunityStorage:
                         else None
                     ),
                     meta=meta_json,
+                    retained_activity=int(record.get("ts") is not None and is_recent_activity_event(record)),
                 )
             )
             event_id = (
@@ -272,9 +275,37 @@ class CommunityStorage:
                 conn.execute(
                     delete(traffic_events_table).where(
                         traffic_events_table.c.id
-                        <= max(0, int(event_id) - max(1, int(max_events)))
+                        <= max(0, int(event_id) - max(1, int(max_events))),
+                        traffic_events_table.c.retained_activity == 0,
                     )
                 )
+            conn.execute(delete(traffic_events_table).where(
+                traffic_events_table.c.retained_activity == 1,
+                traffic_events_table.c.ts < time.time() - ACTIVITY_RETENTION_DAYS * 86400,
+            ))
+
+    def recent_activity_events(self, limit: int = 100, *, before_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Read a bounded, newest-first page independently of the traffic cache."""
+        stmt = select(traffic_events_table).where(
+            traffic_events_table.c.retained_activity == 1,
+            traffic_events_table.c.ts >= time.time() - ACTIVITY_RETENTION_DAYS * 86400,
+        )
+        if before_id is not None:
+            stmt = stmt.where(traffic_events_table.c.id < before_id)
+        with self._lock, self._engine.connect() as conn:
+            rows = conn.execute(stmt.order_by(traffic_events_table.c.id.desc()).limit(max(1, min(int(limit), 201)))).mappings().all()
+        events = []
+        for row in rows:
+            try:
+                meta = json.loads(row["meta"] or "{}")
+                if not isinstance(meta, dict):
+                    continue
+                event = sanitize_traffic_event({**row, "meta": meta})
+            except (TypeError, ValueError):
+                continue
+            if event and is_recent_activity_event(event):
+                events.append({**event, "id": row["id"]})
+        return events
 
     def recent_traffic_events(self, limit: int) -> List[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:

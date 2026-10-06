@@ -13,7 +13,7 @@
       const response = await fetch(endpoint, options);
       if (!response.ok) return;
       const data = await response.json();
-      for (const key of ["online", "total"]) {
+      for (const key of ["online", "total", "daily_users", "total_users"]) {
         const value = data[key];
         if (!Number.isSafeInteger(value) || value < 0) continue;
         document.querySelectorAll(`[data-traffic-stat="${key}"]`).forEach(node => {

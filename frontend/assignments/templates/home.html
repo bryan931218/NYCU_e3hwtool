@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/home.css') }}">
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='assignments/js/home.js') }}" defer></script>
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/traffic-stats.js') }}" defer></script>
 </head>
 {% macro icon(name) -%}
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -30,7 +31,7 @@
 {% endif %}
 </svg>
 {%- endmacro %}
-<body class="home-page">
+<body class="home-page" data-traffic-stats-url="{{ url_for('traffic_stats') }}">
 <div class="home-stationery" aria-hidden="true"><span class="stationery-paper"></span><span class="stationery-paper"></span><span class="stationery-paper"></span><span class="stationery-paper"></span></div>
 <a class="skip-link" href="#main">跳至主要內容</a>
 <div class="home-shell">
@@ -45,10 +46,10 @@
         <section class="home-hero" aria-label="首頁">
             <div class="home-community hero-copy">
                 <dl class="home-stats" aria-label="網站使用統計">
-                    <div><dt>今日使用<span class="stat-icon">{{ icon('calendar') }}</span></dt><dd>{{ stats.daily_users if stats and stats.daily_users is not none else 0 }}<span>人</span></dd></div>
-                    <div><dt>目前在線<span class="stat-icon">{{ icon('radio') }}</span></dt><dd>{{ stats.online_users if stats and stats.online_users is not none else 0 }}<span>人</span></dd></div>
-                    <div><dt>總用戶<span class="stat-icon">{{ icon('users') }}</span></dt><dd>{{ stats.total_users if stats and stats.total_users is not none else 0 }}<span>人</span></dd></div>
-                    <div><dt>累積訪問<span class="stat-icon">{{ icon('pointer') }}</span></dt><dd>{{ stats.total if stats and stats.total is not none else 0 }}<span>次</span></dd></div>
+                    <div><dt>今日使用<span class="stat-icon">{{ icon('calendar') }}</span></dt><dd><span data-traffic-stat="daily_users">{{ stats.daily_users if stats and stats.daily_users is not none else 0 }}</span><span>人</span></dd></div>
+                    <div><dt>目前在線<span class="stat-icon">{{ icon('radio') }}</span></dt><dd><span data-traffic-stat="online">{{ stats.online_users if stats and stats.online_users is not none else 0 }}</span><span>人</span></dd></div>
+                    <div><dt>總用戶<span class="stat-icon">{{ icon('users') }}</span></dt><dd><span data-traffic-stat="total_users">{{ stats.total_users if stats and stats.total_users is not none else 0 }}</span><span>人</span></dd></div>
+                    <div><dt>累積訪問<span class="stat-icon">{{ icon('pointer') }}</span></dt><dd><span data-traffic-stat="total">{{ stats.total if stats and stats.total is not none else 0 }}</span><span>次</span></dd></div>
                 </dl>
                 <div class="hero-actions"><a class="home-button button-primary" href="{{ url_for('login') }}">登入 <span class="login-arrow" aria-hidden="true">{{ icon('arrow') }}</span></a></div>
             </div>

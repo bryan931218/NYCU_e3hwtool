@@ -15,6 +15,7 @@ from e3_tracker.platform.guest_privacy import (
 )
 
 PASSIVE_TRAFFIC_ACTIONS = {"heartbeat", "refresh_assignments"}
+ACTIVITY_RETENTION_DAYS = 90
 QUIET_ACTIVITY_ACTIONS = {
     "usage_due_view", "usage_course_view", "usage_calendar",
     "usage_search", "usage_filters", "usage_notification_settings",
@@ -57,6 +58,7 @@ class TrafficTracker:
         event_loader: Optional[Callable[[int], List[Dict[str, Any]]]] = None,
         event_writer: Optional[Callable[[Dict[str, Any]], None]] = None,
         event_clearer: Optional[Callable[[], None]] = None,
+        daily_user_loader: Optional[Callable[[], int]] = None,
     ) -> None:
         self._activity_window = activity_window
         self._count_interval = count_interval
@@ -86,6 +88,7 @@ class TrafficTracker:
         self._event_loader = event_loader
         self._event_writer = event_writer
         self._event_clearer = event_clearer
+        self._daily_user_loader = daily_user_loader
         if self._storage_path:
             self._storage_path.parent.mkdir(parents=True, exist_ok=True)
         if self._log_path:
@@ -269,23 +272,16 @@ class TrafficTracker:
             for username in self._active_users.keys():
                 if not self._is_guest_user(username):
                     unique_users.add(username)
-            cutoff = now - 86400
-            daily_users: Set[str] = set()
-            for ev in self._recent_events:
-                ts = ev.get("ts")
-                if not ts or ts < cutoff:
-                    continue
-                meta = ev.get("meta") or {}
-                if meta.get("activity_only"):
-                    continue
-                username = meta.get("username")
-                if username and not meta.get("is_guest"):
-                    daily_users.add(str(username))
+            cutoff = datetime.fromtimestamp(now, TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            daily_count = sum(1 for username, ts in self._user_last_seen.items()
+                              if cutoff <= ts <= now and not self._is_guest_user(username))
+            if self._daily_user_loader:
+                daily_count = self._daily_user_loader()
             return {
                 "online": user_count,
                 "total": self._total_hits,
                 "total_users": len(unique_users),
-                "daily_users": len(daily_users),
+                "daily_users": daily_count,
                 "online_users": user_count,
             }
 

@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -135,7 +136,7 @@ class TrafficActivityTests(unittest.TestCase):
         ):
             self.storage.append_traffic_event(
                 {
-                    "ts": index + 1,
+                    "ts": time.time() + index,
                     "action": action,
                     "status": "success",
                     "meta": {"username": "test-admin"},
@@ -163,6 +164,31 @@ class TrafficActivityTests(unittest.TestCase):
         self.record("study_plan_replanned")
         self.assertIn("尚無操作紀錄", self.activity_text())
 
+    def test_activity_pages_are_bounded_stable_and_preserve_filters(self):
+        now = time.time()
+        for index in range(105):
+            self.storage.append_traffic_event({"ts": now, "action": "login_success", "meta": {
+                "username": "test-admin", "info": f"history-{index:03d}", "site": "assignments",
+            }}, 2)
+        response = self.client.get("/admin/traffic?range=30d&trend=day&usage_range=90d")
+        page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+        self.assertEqual(len(page.select(".events li")), 100)
+        self.assertIn("history-104", page.select_one(".events").get_text())
+        self.assertNotIn("history-004", page.select_one(".events").get_text())
+        older = page.select_one(".activity-pagination a")['href']
+        self.assertIn("range=30d", older)
+        self.assertIn("usage_range=90d", older)
+        self.storage.append_traffic_event({"ts": now, "action": "login_success", "meta": {"info": "newest"}}, 2)
+        page = BeautifulSoup(self.client.get(older).get_data(as_text=True), "html.parser")
+        self.assertEqual(len(page.select(".events li")), 5)
+        self.assertIn("history-004", page.select_one(".events").get_text())
+        self.assertNotIn("history-005", page.select_one(".events").get_text())
+        self.assertNotIn("newest", page.select_one(".events").get_text())
+        self.assertNotIn("activity_before", page.select_one(".activity-pagination a")['href'])
+        for cursor in ("bad", "-1", "0", "9999999999999999999999999"):
+            self.assertEqual(self.client.get('/admin/traffic?activity_before=' + cursor).status_code, 200)
+        self.assertEqual(self.app.test_client().get(older).status_code, 302)
+
     def test_browsing_telemetry_keeps_feature_statistics_without_filling_activity_history(self):
         self.storage.save_user_profile("test-admin", "Test", "T")
         for action in QUIET_ACTIVITY_ACTIONS:
@@ -177,7 +203,7 @@ class TrafficActivityTests(unittest.TestCase):
 
     def test_old_browsing_events_are_hidden_on_reload_without_rewriting_stored_history(self):
         for index, action in enumerate(["usage_calendar", "usage_due_view", "notification_line_linked"]):
-            self.storage.append_traffic_event({"ts": index + 1, "action": action, "status": "success", "meta": {"username": "test-admin", "site": "assignments"}}, max_events=500)
+            self.storage.append_traffic_event({"ts": time.time() + index, "action": action, "status": "success", "meta": {"username": "test-admin", "site": "assignments"}}, max_events=500)
         app = create_app()
         try:
             client = csrf_client(app)

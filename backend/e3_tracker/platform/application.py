@@ -199,6 +199,7 @@ def create_app(
             event, traffic_event_limit
         ),
         event_clearer=storage.clear_traffic_events,
+        daily_user_loader=storage.assignment_daily_user_count,
     )
 
     def _start_web_session(

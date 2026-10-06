@@ -37,6 +37,7 @@ def _add_columns(conn, table, definitions):
 
 def _core_schema(conn):
     metadata.create_all(conn)
+    _add_columns(conn, "traffic_events", {"retained_activity": "INTEGER NOT NULL DEFAULT 0"})
     upgrade_assignment_columns(conn, _add_columns)
     upgrade_study_columns(conn, _add_columns)
 
@@ -142,6 +143,40 @@ def _grading_notifications(conn):
     upgrade_grading_notifications(conn, _add_columns)
 
 
+def _traffic_activity_retention(conn):
+    import json
+    import time
+    from .core_schema import traffic_events_table, users_table
+    from e3_tracker.platform.services.traffic import ACTIVITY_RETENTION_DAYS, is_assignment_event, is_recent_activity_event
+    from e3_tracker.platform.guest_privacy import sanitize_traffic_event
+    from e3_tracker.platform.constants import TAIPEI_TZ
+    from e3_tracker.assignments.persistence.usage import increment_usage
+
+    _add_columns(conn, "traffic_events", {"retained_activity": "INTEGER NOT NULL DEFAULT 0"})
+    now = time.time()
+    cutoff = now - ACTIVITY_RETENTION_DAYS * 86400
+    today = datetime.fromtimestamp(now, TAIPEI_TZ).date()
+    accounts = {row.username: row.id for row in conn.execute(select(users_table.c.id, users_table.c.username).where(users_table.c.is_guest == 0))}
+    rows = conn.execute(select(traffic_events_table).where(traffic_events_table.c.ts >= cutoff)).mappings().all()
+    for row in rows:
+        try:
+            meta = json.loads(row["meta"] or "{}")
+            if not isinstance(meta, dict):
+                continue
+            event = sanitize_traffic_event({**row, "meta": meta})
+            day = datetime.fromtimestamp(row["ts"], TAIPEI_TZ).date()
+        except (TypeError, ValueError, OverflowError, OSError):
+            continue
+        if event and is_recent_activity_event(event):
+            conn.execute(traffic_events_table.update().where(traffic_events_table.c.id == row["id"]).values(retained_activity=1))
+        if (event and day == today and is_assignment_event(event)
+                and event.get("status") in {"success", "info"} and not meta.get("activity_only")
+                and not meta.get("is_guest") and meta.get("username") in accounts):
+            increment_usage(conn, accounts[meta["username"]], "__presence", day.isoformat(), once=True)
+    for index in traffic_events_table.indexes:
+        index.create(conn, checkfirst=True)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -159,6 +194,7 @@ MIGRATIONS = (
     ("0014_repair_department_profile_names", _repair_department_profile_names),
     ("0015_assignment_actions", _assignment_actions),
     ("0016_grading_notifications", _grading_notifications),
+    ("0017_traffic_activity_retention", _traffic_activity_retention),
 )
 
 
