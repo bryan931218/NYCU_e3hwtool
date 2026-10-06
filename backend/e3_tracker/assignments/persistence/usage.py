@@ -107,12 +107,26 @@ class AssignmentUsageStorage:
 
     def assignment_daily_user_count(self, *, now=None):
         day = datetime.fromtimestamp(time.time() if now is None else now, TAIPEI_TZ).date().isoformat()
+        return self.assignment_daily_user_counts(start=day, end=day, now=now).get(day, 0)
+
+    def assignment_daily_user_counts(self, *, start=None, end=None, now=None):
+        today = datetime.fromtimestamp(time.time() if now is None else now, TAIPEI_TZ).date()
+        start = start or (today - timedelta(days=729)).isoformat()
+        end = end or today.isoformat()
         with self._lock, self._engine.connect() as conn:
-            rows = conn.execute(select(users_table.c.username, users_table.c.student_number).where(
+            rows = conn.execute(select(feature_usage.c.day, users_table.c.username, users_table.c.student_number).join(
+                users_table, users_table.c.id == feature_usage.c.user_id,
+            ).where(
                 ~guest_account_condition(),
-                users_table.c.id.in_(select(feature_usage.c.user_id).where(feature_usage.c.day == day)),
-            )).mappings().all()
-        return len({student_identity(row) or row["username"] for row in rows})
+                feature_usage.c.day >= start, feature_usage.c.day <= end,
+            ).distinct()).mappings().all()
+        members = {}
+        for row in rows:
+            members.setdefault(row["day"], set()).add(student_identity(row) or row["username"])
+        counts = {day: len(identities) for day, identities in members.items()}
+        if start <= today.isoformat() <= end:
+            counts.setdefault(today.isoformat(), 0)
+        return counts
 
     def assignment_usage_snapshot(self, start, end):
         cutoff = (datetime.now(TAIPEI_TZ).date() - timedelta(days=729)).isoformat()

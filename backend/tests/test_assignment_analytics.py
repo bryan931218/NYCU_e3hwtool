@@ -104,6 +104,17 @@ class AssignmentAnalyticsTests(unittest.TestCase):
         response = self.app.test_client().get("/")
         values = BeautifulSoup(response.get_data(as_text=True), "html.parser").select(".home-stats dd")
         self.assertEqual(values[0].get_text(strip=True), "1人")
+        self.login("analytics-admin")
+        chart = self.client.get('/admin/traffic?range=today&trend=day').get_data(as_text=True)
+        self.assertIn('const chartValues = [1];', chart)
+        self.assertIn('新用戶包含於活躍人數', chart)
+        self.assertEqual(self.storage.assignment_daily_user_counts().get(datetime.now(TAIPEI_TZ).date().isoformat()), 1)
+
+    def test_chart_preserves_pre_upgrade_history_and_uses_durable_counts_after_upgrade(self):
+        yesterday = datetime.now(TAIPEI_TZ).date() - timedelta(days=1)
+        self.storage.record_assignment_usage('113550092', 'usage_calendar', now=TAIPEI_TZ.localize(datetime.combine(yesterday, datetime.min.time())).timestamp())
+        self.assertEqual(self.storage.assignment_daily_user_counts(start=self.storage.assignment_daily_tracking_start_day()),
+                         {datetime.now(TAIPEI_TZ).date().isoformat(): 0})
 
     def test_bindings_count_people_not_devices_and_only_effective_enabled_channels(self):
         ids = self.ids()

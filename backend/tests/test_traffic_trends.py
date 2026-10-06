@@ -11,8 +11,25 @@ class TrafficTrendTests(unittest.TestCase):
     def timestamp(self, day, hour):
         return int(TAIPEI_TZ.localize(datetime(2026, 1, day, hour)).timestamp())
 
-    def build(self, buckets=None, series=None, events=None, memberships=(), **params):
-        return build_traffic_trend(series or [], buckets or {}, events or [], params, memberships=memberships, now=self.now)
+    def build(self, buckets=None, series=None, events=None, memberships=(), daily_counts=None, **params):
+        return build_traffic_trend(series or [], buckets or {}, events or [], params, memberships=memberships, daily_counts=daily_counts, now=self.now)
+
+    def test_daily_chart_uses_homepage_source_without_adding_new_users(self):
+        buckets = {self.timestamp(2, 8): {str(index) for index in range(13)}}
+        members = [self.member(str(index), 2, 8) for index in range(3)]
+        for count in (0, 13, 16):
+            trend = self.build(buckets=buckets, memberships=members, daily_counts={'2026-01-02': count}, range='today', trend='day')
+            self.assertEqual(trend['values'], [count])
+            self.assertEqual(trend['new_values'], [3])
+            self.assertEqual(trend['active_label'], '活躍人數')
+
+    def test_persisted_daily_counts_keep_older_history_and_do_not_change_hourly_series(self):
+        buckets = {self.timestamp(1, 8): {'legacy'}, self.timestamp(2, 8): {'alice'}}
+        trend = self.build(buckets=buckets, daily_counts={'2026-01-02': 3, 'bad': 5, '2026-01-03': 99})
+        self.assertEqual(trend['values'][-2:], [1, 3])
+        hourly = self.build(buckets=buckets, daily_counts={'2026-01-02': 3}, range='today', trend='hour')
+        self.assertEqual(hourly['values'][8], 1)
+        self.assertEqual(hourly['active_label'], '活躍帳號數')
 
     def member(self, key, day, hour, **changes):
         return {'identity_key': key, 'joined_at': self.timestamp(day, hour), 'is_new': True, **changes}

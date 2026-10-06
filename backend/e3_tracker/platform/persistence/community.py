@@ -4,9 +4,11 @@ from e3_tracker.platform.guest_privacy import sanitize_traffic_event, without_gu
 
 import json
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy import delete, insert, func, select, update
 from e3_tracker.platform.services.traffic import ACTIVITY_RETENTION_DAYS, is_recent_activity_event
+from e3_tracker.platform.constants import TAIPEI_TZ
 
 from e3_tracker.platform.persistence.core_schema import (
     users_table,
@@ -283,6 +285,16 @@ class CommunityStorage:
                 traffic_events_table.c.retained_activity == 1,
                 traffic_events_table.c.ts < time.time() - ACTIVITY_RETENTION_DAYS * 86400,
             ))
+
+    def assignment_daily_tracking_start_day(self) -> str:
+        from .migrations import history
+
+        # Earlier feature aggregates do not include all visits. Preserve legacy charts.
+        with self._lock, self._engine.connect() as conn:
+            started_at = conn.execute(select(history.c.applied_at).where(
+                history.c.version == "0017_traffic_activity_retention",
+            )).scalar_one()
+        return datetime.fromisoformat(started_at).astimezone(TAIPEI_TZ).date().isoformat()
 
     def recent_activity_events(self, limit: int = 100, *, before_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Read a bounded, newest-first page independently of the traffic cache."""

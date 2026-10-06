@@ -86,7 +86,7 @@
         <div class="trend-header">
             <div>
                 <h2 id="trend-title">帳號訪問趨勢</h2>
-                <p class="muted">活躍帳號每{{ trend.unit }}計一次 · 新用戶依首次登入 · 不含訪客</p>
+                <p class="muted">{% if trend.resolution == 'day' %}每天使用人數去重 · 新用戶包含於活躍人數{% else %}活躍帳號每小時計一次 · 新用戶依首次登入{% endif %} · 不含訪客</p>
             </div>
             <div class="trend-peak">
                 <span class="muted">區間最高</span> <strong>{{ trend.peak }}</strong> <span class="muted">個帳號</span>
@@ -131,7 +131,7 @@
         </div>
         <div class="chart-wrap">
             <div class="chart-plot">
-                <canvas id="visitChart" class="chart-canvas" role="img" aria-label="{{ trend.start }} 至 {{ trend.end }}，每{{ trend.unit }}活躍帳號與新用戶數；詳細數值見下方表格" {% if not trend.has_data %}hidden{% endif %}></canvas>
+                <canvas id="visitChart" class="chart-canvas" role="img" aria-label="{{ trend.start }} 至 {{ trend.end }}，每{{ trend.unit }}{{ trend.active_label }}與新用戶數；詳細數值見下方表格" {% if not trend.has_data %}hidden{% endif %}></canvas>
                 <div class="chart-empty" id="chartEmpty" {% if trend.has_data %}hidden{% endif %}>
                     <p>{{ '這個區間沒有帳號訪問或新用戶紀錄' if trend.has_history else '目前尚無帳號訪問或新用戶紀錄' }}</p>
                     {% if trend.has_history and trend.range != 'all' %}<a class="btn" href="{{ traffic_link(range='all', _anchor='visit-trend') }}">查看全部紀錄</a>{% endif %}
@@ -145,8 +145,8 @@
             <summary>查看詳細數值</summary>
             <div class="table-wrap">
                 <table>
-                    <caption class="muted">{{ trend.start }} — {{ trend.end }} 的每{{ trend.unit }}活躍帳號與新用戶數</caption>
-                    <thead><tr><th scope="col">{{ '日期與時間' if trend.resolution == 'hour' else '日期' }}</th><th scope="col">活躍帳號數</th><th scope="col">新用戶數</th></tr></thead>
+                    <caption class="muted">{{ trend.start }} — {{ trend.end }} 的每{{ trend.unit }}{{ trend.active_label }}與新用戶數</caption>
+                    <thead><tr><th scope="col">{{ '日期與時間' if trend.resolution == 'hour' else '日期' }}</th><th scope="col">{{ trend.active_label }}</th><th scope="col">新用戶數</th></tr></thead>
                     <tbody>{% for row in trend.rows %}<tr><td>{{ row.label }}</td><td>{{ row.count }}</td><td>{{ row.new_users }}</td></tr>{% endfor %}</tbody>
                 </table>
             </div>
@@ -273,7 +273,8 @@
 const chartLabels = {{ trend.labels|tojson }};
 const chartValues = {{ trend['values']|tojson }};
 const chartNewValues = {{ trend.new_values|tojson }};
-const chartSeriesLabel = {{ ('每' ~ trend.unit ~ '活躍帳號數')|tojson }};
+const chartSeriesLabel = {{ ('每' ~ trend.unit ~ trend.active_label)|tojson }};
+const chartActiveLabel = {{ trend.active_label|tojson }};
 const chartHourly = {{ (trend.resolution == 'hour')|tojson }};
 const chartHasData = {{ trend.has_data|tojson }};
 const chartCanvas = document.getElementById('visitChart');
@@ -357,7 +358,7 @@ if (chartHasData && typeof Chart !== 'undefined') {
                     displayColors: true,
                     callbacks: {
                         title(items) { return `${items[0].label}（台北時間）`; },
-                        label(item) { return `${item.datasetIndex === 1 ? '新用戶' : '活躍帳號'}：${item.parsed.y} ${item.datasetIndex === 1 ? '人' : '個'}`; }
+                        label(item) { return `${item.datasetIndex === 1 ? '新用戶' : chartActiveLabel}：${item.parsed.y} ${item.datasetIndex === 1 || !chartHourly ? '人' : '個'}`; }
                     }
                 }
             }

@@ -6,7 +6,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS
 
 
-def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, memberships=(), now=None):
+def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, memberships=(), daily_counts=None, now=None):
     now = (now or datetime.now(TAIPEI_TZ)).astimezone(TAIPEI_TZ)
     today = now.astimezone(TAIPEI_TZ).date()
     current_hour = now.replace(minute=0, second=0, microsecond=0)
@@ -61,9 +61,20 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, member
     if not daily_members:
         daily_members = fallback_days
 
+    persisted_daily = {}
+    for day, count in (daily_counts or {}).items():
+        try:
+            day = date.fromisoformat(day)
+            count = int(count)
+        except (TypeError, ValueError):
+            continue
+        if day <= today and count >= 0:
+            persisted_daily[day] = count
+
     history_days = [datetime.fromtimestamp(ts, tz=TAIPEI_TZ).date() for ts in hourly_counts]
     history_days.extend(daily_members)
     history_days.extend(new_days)
+    history_days.extend(persisted_daily)
     first_day = min(history_days, default=today)
     selection = params.get("range", "7d")
     if selection not in {"today", "7d", "30d", "all", "custom"}:
@@ -99,7 +110,7 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, member
     step = timedelta(hours=1) if resolution == "hour" else timedelta(days=1)
     while cursor <= last:
         count = (hourly_counts.get(int(cursor.timestamp()), 0) if resolution == "hour"
-                 else len(daily_members.get(cursor.date(), set())))
+                 else persisted_daily.get(cursor.date(), len(daily_members.get(cursor.date(), set()))))
         label = cursor.strftime("%Y-%m-%d %H:00" if resolution == "hour" else "%Y-%m-%d")
         labels.append(label)
         values.append(count)
@@ -122,6 +133,7 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, member
         "new_values": new_values, "new_total": sum(new_values),
         "has_data": any(values) or any(new_values), "has_history": bool(history_days),
         "unit": "小時" if resolution == "hour" else "天",
+        "active_label": "活躍帳號數" if resolution == "hour" else "活躍人數",
         "peak": peak, "peak_label": labels[values.index(peak)] if peak else "—",
         "active_periods": sum(value > 0 for value in values),
         "previous": ({"start": (start - timedelta(days=days)).isoformat(),
