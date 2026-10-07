@@ -6,7 +6,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS
 
 
-def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, memberships=(), daily_counts=None, now=None):
+def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, memberships=(), daily_counts=None, now=None, identity_key=str):
     now = (now or datetime.now(TAIPEI_TZ)).astimezone(TAIPEI_TZ)
     today = now.astimezone(TAIPEI_TZ).date()
     current_hour = now.replace(minute=0, second=0, microsecond=0)
@@ -54,8 +54,8 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, member
             except (KeyError, TypeError, ValueError, OverflowError, OSError):
                 continue
             hour = int(moment.replace(minute=0, second=0, microsecond=0).timestamp())
-            fallback_hours.setdefault(hour, set()).add(str(username))
-            fallback_days.setdefault(moment.date(), set()).add(str(username))
+            fallback_hours.setdefault(hour, set()).add(identity_key(username))
+            fallback_days.setdefault(moment.date(), set()).add(identity_key(username))
     if not hourly_counts:
         hourly_counts = {timestamp: len(names) for timestamp, names in fallback_hours.items()}
     if not daily_members:

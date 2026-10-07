@@ -2,6 +2,7 @@
 
 from e3_tracker.platform.services.traffic import ACTIVITY_RETENTION_DAYS, is_recent_activity_event
 from e3_tracker.platform.services.traffic_trends import build_traffic_trend
+from e3_tracker.platform.services.account_identity import AccountIdentities
 from e3_tracker.platform.page_analytics import build_page_sources, clear_page_sources
 from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics
 from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
@@ -47,13 +48,14 @@ def register_administration_routes(*,
             return redirect(url_for("index"))
         admin_view_options = list_admin_view_options()
         profiles = storage.list_user_profiles()
+        identities = AccountIdentities(profiles)
         memberships = storage.assignment_membership_snapshot(profiles)
         now = time.time()
-        names = {row["username"]: row["profile_name"] or "" for row in profiles}
         student_numbers = {row["username"]: row["student_number"] or "" for row in profiles}
         for option in admin_view_options:
-            option["profile_name"] = names.get(option["username"], "")
-            option["student_number"] = student_numbers.get(option["username"], "")
+            profile = identities.profile(option["username"])
+            option["profile_name"] = profile["profile_name"]
+            option["student_number"] = profile["student_number"]
         selected_view_username = user["username"]
         requested_view_username = (request.args.get("view_user") or "").strip()
         if requested_view_username:
@@ -96,8 +98,8 @@ def register_administration_routes(*,
         formatted_users = [
             {
                 "username": entry["username"],
-                "profile_name": names.get(entry["username"], ""),
-                "student_number": student_numbers.get(entry["username"], ""),
+                "profile_name": entry["profile_name"],
+                "student_number": entry["student_number"],
                 "count": entry["count"],
                 "online": entry["online"],
                 "last_seen": _fmt_ts(entry.get("last_seen")),
@@ -159,6 +161,7 @@ def register_administration_routes(*,
                           'identity_key': student_identity(profile) or memberships[profile['username']]['identity_key']}
                          for profile in profiles if profile['username'] in memberships],
             daily_counts=storage.assignment_daily_user_counts(start=storage.assignment_daily_tracking_start_day()),
+            identity_key=identities.key,
         )
         action_counter: Counter = Counter()
         for ev in filtered_events:
@@ -169,7 +172,7 @@ def register_administration_routes(*,
             meta = ev.get("meta") or {}
             username = meta.get("username")
             if username and not meta.get("is_guest"):
-                recent_unique_keys.add(username)
+                recent_unique_keys.add(identities.key(username))
             elif not username and ev.get("ip"):
                 recent_unique_keys.add(ev.get("ip"))
         summary = {
@@ -192,7 +195,7 @@ def register_administration_routes(*,
         summary["guest_total"] = guest_overview.get("total", 0)
         summary["guest_online"] = guest_overview.get("online", 0)
         # Keep student name mappings; Session identities require traffic records.
-        known_users = {row["username"] for row in formatted_users}
+        known_users = {identities.key(row["username"]) for row in formatted_users}
         account_rows = formatted_users + [
             {
                 "username": row["username"],
@@ -203,11 +206,12 @@ def register_administration_routes(*,
                 "last_seen": "-",
             }
             for row in profiles
-            if row["username"] not in known_users
+            if identities.key(row["username"]) not in known_users
             and not row["username"].startswith("Session-")
         ]
         for row in account_rows:
-            member = memberships.get(row["username"])
+            related = [memberships[name] for name in identities.members(row["username"]) if name in memberships]
+            member = min(related, key=lambda item: item["joined_at"]) if related else None
             row["joined_at"] = _fmt_ts(member["joined_at"]) if member else "-"
             row["is_new_user"] = bool(member and member["is_new"] and 0 <= now - member["joined_at"] < 7 * 86400)
         window = analytics_window(request.args)

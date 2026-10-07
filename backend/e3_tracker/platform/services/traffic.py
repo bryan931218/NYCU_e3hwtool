@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from e3_tracker.platform.constants import TAIPEI_TZ
+from e3_tracker.platform.services.account_identity import AccountIdentities
 from e3_tracker.platform.guest_privacy import (
     is_guest_event,
     is_guest_identity,
@@ -59,6 +60,7 @@ class TrafficTracker:
         event_writer: Optional[Callable[[Dict[str, Any]], None]] = None,
         event_clearer: Optional[Callable[[], None]] = None,
         daily_user_loader: Optional[Callable[[], int]] = None,
+        profile_loader: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     ) -> None:
         self._activity_window = activity_window
         self._count_interval = count_interval
@@ -89,6 +91,9 @@ class TrafficTracker:
         self._event_writer = event_writer
         self._event_clearer = event_clearer
         self._daily_user_loader = daily_user_loader
+        self._profile_loader = profile_loader
+        self._identities = AccountIdentities()
+        self._identity_refresh_at = 0
         if self._storage_path:
             self._storage_path.parent.mkdir(parents=True, exist_ok=True)
         if self._log_path:
@@ -106,6 +111,19 @@ class TrafficTracker:
             self._load_recent_events()
         sanitized = [sanitize_traffic_event(event) for event in self._recent_events]
         self._recent_events = [event for event in sanitized if event is not None]
+
+    def refresh_identities(self, *, force=False):
+        # Read storage outside the tracker lock; storage has its own lock.
+        if self._profile_loader and (force or time.monotonic() >= self._identity_refresh_at):
+            try:
+                identities = AccountIdentities(self._profile_loader())
+            except Exception:
+                return
+            with self._lock:
+                if self._identities.profiles != identities.profiles:
+                    self._version += 1
+                self._identities = identities
+                self._identity_refresh_at = time.monotonic() + 5
 
     def _purge_expired(self, now: float) -> bool:
         expired_ips = [ip for ip, ts in self._active_ips.items() if now - ts > self._activity_window]
@@ -195,6 +213,7 @@ class TrafficTracker:
     ) -> None:
         if not action:
             return
+        self.refresh_identities(force=str(action).lower() == "login_success")
         event = sanitize_traffic_event(
             {
                 "ts": time.time(), "ip": ip, "action": action, "status": status,
@@ -258,6 +277,7 @@ class TrafficTracker:
             self._save_to_disk()
 
     def snapshot(self) -> Dict[str, int]:
+        self.refresh_identities()
         now = time.time()
         with self._lock:
             self._purge_expired(now)
@@ -265,16 +285,16 @@ class TrafficTracker:
             unique_users: Set[str] = set()
             for username in self._user_total_hits.keys():
                 if not self._is_guest_user(username):
-                    unique_users.add(username)
+                    unique_users.add(self._identities.key(username))
             for username in self._user_last_seen.keys():
                 if not self._is_guest_user(username):
-                    unique_users.add(username)
+                    unique_users.add(self._identities.key(username))
             for username in self._active_users.keys():
                 if not self._is_guest_user(username):
-                    unique_users.add(username)
+                    unique_users.add(self._identities.key(username))
             cutoff = datetime.fromtimestamp(now, TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-            daily_count = sum(1 for username, ts in self._user_last_seen.items()
-                              if cutoff <= ts <= now and not self._is_guest_user(username))
+            daily_count = len({self._identities.key(username) for username, ts in self._user_last_seen.items()
+                               if cutoff <= ts <= now and not self._is_guest_user(username)})
             if self._daily_user_loader:
                 daily_count = self._daily_user_loader()
             return {
@@ -509,7 +529,7 @@ class TrafficTracker:
         active_ips = [
             ip for ip, ts in self._active_ips.items() if ts and now - ts <= self._activity_window
         ]
-        return len(active_usernames), len(active_ips)
+        return len({self._identities.key(username) for username in active_usernames}), len(active_ips)
 
     def ip_summary(self) -> Dict[str, int]:
         now = time.time()
@@ -611,12 +631,15 @@ class TrafficTracker:
             return list(self._concurrent_history)
 
     def hourly_series(self) -> List[Dict[str, Any]]:
+        self.refresh_identities()
         with self._lock:
-            return list(self._hourly_series)
+            return [{**row, "count": len({self._identities.key(name) for name in self._hourly_buckets[row["ts"]]})}
+                    if self._hourly_buckets.get(row["ts"]) else dict(row) for row in self._hourly_series]
 
     def hourly_buckets(self) -> Dict[int, Set[str]]:
+        self.refresh_identities()
         with self._lock:
-            return {ts: set(names) for ts, names in self._hourly_buckets.items()}
+            return {ts: {self._identities.key(name) for name in names} for ts, names in self._hourly_buckets.items()}
 
     def _store_concurrent_snapshot(self, now: float) -> None:
         user_count, _ = self._online_counts(now)
@@ -652,6 +675,7 @@ class TrafficTracker:
                     if ts in self._hourly_buckets:
                         self._hourly_buckets.pop(ts, None)
     def user_breakdown(self) -> List[Dict[str, Any]]:
+        self.refresh_identities(force=True)
         now = time.time()
         with self._lock:
             aggregated: Dict[str, Dict[str, Any]] = {}
@@ -700,9 +724,7 @@ class TrafficTracker:
                 if username in self._user_total_hits:
                     entry["count"] = self._user_total_hits.get(username, entry.get("count", 0))
 
-            entries = list(aggregated.values())
-            entries.sort(key=lambda item: item["count"], reverse=True)
-            return entries
+            return self._identities.traffic_rows(aggregated.values())
 
     def ip_breakdown(self) -> List[Dict[str, Any]]:
         now = time.time()

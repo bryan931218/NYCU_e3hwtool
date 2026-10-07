@@ -8,6 +8,7 @@ from e3_tracker.assignments.services.notifications import NotificationService
 from e3_tracker.assignments.services.assignment_actions import AssignmentActions
 from e3_tracker.assignments.domain.assignment_actions import effective_result
 from e3_tracker.assignments.services.session_identity import SessionIdentitySync
+from e3_tracker.platform.services.account_identity import AccountIdentities
 import base64
 import json
 import secrets
@@ -344,7 +345,7 @@ def register_assignment_site(
                     "course_count": course_count,
                 }
             )
-        return items
+        return AccountIdentities(storage.list_user_profiles()).view_options(items, get_viewed_username())
 
     def get_user_preferences(username: Optional[str] = None) -> Dict[str, Any]:
         prefs = dict(DEFAULT_PREFERENCES)

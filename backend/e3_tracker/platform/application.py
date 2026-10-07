@@ -200,6 +200,7 @@ def create_app(
         ),
         event_clearer=storage.clear_traffic_events,
         daily_user_loader=storage.assignment_daily_user_count,
+        profile_loader=storage.list_user_profiles,
     )
 
     def _start_web_session(

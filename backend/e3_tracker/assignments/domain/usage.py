@@ -1,6 +1,6 @@
 """Fixed, non-sensitive assignment feature names for aggregate telemetry."""
 
-import re
+from e3_tracker.platform.services.account_identity import student_identity
 
 FEATURE_LABELS = {
     "due_view": "到期日列表", "course_view": "依課程列表", "calendar": "作業日曆",
@@ -23,10 +23,3 @@ def feature_for_event(action, status, meta):
     if meta.get("site") not in {None, "", "assignments"}:
         return None
     return ACTION_FEATURES.get(action)
-
-
-def student_identity(account):
-    for value in (account.get("username"), account.get("student_number")):
-        if isinstance(value, str) and re.fullmatch(r"[0-9]{9}", value):
-            return value
-    return ""
