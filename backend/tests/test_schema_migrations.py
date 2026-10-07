@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -126,8 +127,9 @@ class SchemaMigrationTests(unittest.TestCase):
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 2)
         self.assertFalse(target.exists())
-        with sqlite3.connect(target) as conn:
-            conn.execute('CREATE TABLE preserved (id INTEGER)')
+        with closing(sqlite3.connect(target)) as conn:
+            with conn:
+                conn.execute('CREATE TABLE preserved (id INTEGER)')
         before = target.read_bytes()
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
