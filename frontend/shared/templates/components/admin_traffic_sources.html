@@ -7,6 +7,7 @@
             {% endfor %}
         </nav>
     </div>
+    {% if page_sources.total %}<p class="muted">已辨識 {{ page_sources.identified }} · 推測 {{ page_sources.inferred }} · 無線索 {{ page_sources.unknown }}</p>{% endif %}
     {% if page_sources.rows %}
     <ul class="source-grid">
         {% for row in page_sources.rows %}
@@ -19,6 +20,16 @@
     {% else %}<p class="muted">這個區間尚無造訪紀錄</p>{% endif %}
     <p class="muted">書籤、手動輸入或未提供來源的連結，歸為「直接／來源不明」。</p>
     <details class="source-history">
+        <summary>取得分享來源連結</summary>
+        <div class="source-share" data-share-base="{{ source_share_url }}">
+            <label for="sourceShareChannel">分享平台</label>
+            <select id="sourceShareChannel"><option value="dcard">Dcard</option><option value="line">LINE</option><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="threads">Threads</option><option value="ptt">PTT</option><option value="bookmark">書籤</option></select>
+            <input id="sourceShareLink" type="text" readonly aria-label="可追蹤的分享連結">
+            <button type="button" class="btn" id="sourceShareCopy">複製連結</button>
+            <span class="muted" id="sourceShareStatus" role="status"></span>
+        </div>
+    </details>
+    <details class="source-history" id="sourceVisitHistory">
         <summary>最近 {{ page_sources.visits|length }} 次造訪</summary>
         {% if page_sources.visits %}
         <div class="source-filter"><label for="sourceFilter">來源</label><select id="sourceFilter">
@@ -26,9 +37,9 @@
             {% for row in page_sources.rows %}<option value="{{ row.label }}">{{ row.label }}</option>{% endfor %}
         </select></div>
         <div class="table-wrap source-visits"><table>
-            <thead><tr><th scope="col">時間</th><th scope="col">來源</th><th scope="col">頁面</th></tr></thead>
+            <thead><tr><th scope="col">時間</th><th scope="col">來源</th><th scope="col">頁面</th><th scope="col">辨識依據</th></tr></thead>
             <tbody id="sourceVisits">{% for visit in page_sources.visits %}
-                <tr data-source="{{ visit.source_label }}"><td>{{ visit.time_label }}</td><td>{{ visit.source_label }}</td><td>{{ visit.path }}</td></tr>
+                <tr data-source="{{ visit.source_label }}"><td>{{ visit.time_label }}</td><td>{{ visit.source_label }}</td><td>{{ visit.path }}</td><td>{{ visit.method }}{% if visit.evidence %} · {{ visit.evidence }}{% endif %}<small class="source-device">{{ visit.device }}／{{ visit.browser }}</small></td></tr>
             {% endfor %}</tbody>
         </table></div>
         <p class="muted" id="sourceFilterEmpty" hidden>最近紀錄沒有此來源</p>

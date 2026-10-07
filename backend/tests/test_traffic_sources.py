@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 from flask import redirect
+from itsdangerous import URLSafeTimedSerializer
 from sqlalchemy import select
 
 from e3_tracker.platform.application import create_app
@@ -14,7 +15,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.page_analytics import (
     build_page_sources, page_analytics_table, register_page_analytics,
 )
-from e3_tracker.platform.services.traffic_sources import arrival_source, stored_source_label
+from e3_tracker.platform.services.traffic_sources import arrival_source, detect_arrival, source_info, stored_source_label
 from tests.security_helpers import csrf_client
 
 
@@ -22,17 +23,41 @@ class SourceClassificationTests(unittest.TestCase):
     def test_referrers_tags_and_legacy_records(self):
         for domain, label in (("www.dcard.tw", "Dcard"), ("www.google.com.tw", "Google"),
                               ("l.facebook.com", "Facebook"), ("lin.ee", "LINE"),
-                              ("google.com.evil.example", "其他來源"), ("evildcard.tw", "其他來源")):
+                              ("google.com.evil.example", "google.com.evil.example"), ("evildcard.tw", "evildcard.tw")):
             with self.subTest(domain=domain):
                 self.assertEqual(arrival_source("https://" + domain + "/?secret=private"), label)
                 self.assertEqual(stored_source_label(domain), label)
         for tag, label in (("Dcard", "Dcard"), ("google", "Google"), ("fb", "Facebook"),
-                           ("bookmark", "直接／來源不明"), ("newsletter", "其他來源")):
+                           ("bookmark", "書籤（來源標記）"), ("newsletter", "來源標記：newsletter")):
             self.assertEqual(arrival_source("https://google.com", tag), label)
         self.assertEqual(arrival_source("https://[invalid"), "直接／來源不明")
         self.assertEqual(arrival_source(""), "直接／來源不明")
         self.assertEqual(stored_source_label("直接開啟 / 書籤"), "直接／來源不明")
         self.assertEqual(arrival_source("https://example.com/a", site_hosts={"example.com"}), "站內導覽")
+
+    def test_app_hints_are_inferred_and_stronger_evidence_wins(self):
+        options = dict(query={}, site_hosts={"localhost"})
+        for ua, source in (("Mozilla/5.0 Line/15.0", "LINE（推測）"), ("Mozilla/5.0 Instagram 300", "Instagram（推測）"),
+                           ("Mozilla/5.0 [FBAN/FB4A;FBAV/12]", "Facebook（推測）"), ("Dcard/2.0", "Dcard（推測）")):
+            value = detect_arrival("", user_agent=ua, **options)
+            self.assertEqual(stored_source_label(value), source)
+            self.assertTrue(source_info(value)["inferred"])
+        self.assertEqual(detect_arrival("", user_agent="Chrome/100 Safari/600", **options), "直接／來源不明")
+        self.assertEqual(stored_source_label(detect_arrival("https://google.com/", user_agent="Line/15", **options)), "Google")
+        self.assertEqual(stored_source_label(detect_arrival("android-app://jp.naver.line.android", **options)), "LINE")
+        self.assertEqual(detect_arrival("", fetch_site="same-origin", **options), "站內導覽")
+        self.assertEqual(detect_arrival("http://localhost/privacy", query={"utm_source":"dcard"}, site_hosts={"localhost"}), "站內導覽")
+        self.assertEqual(detect_arrival("", query={"utm_source":"dcard"}, site_hosts={"localhost"}, fetch_site="same-origin"), "站內導覽")
+
+    def test_click_tags_custom_domains_and_invalid_encodings(self):
+        self.assertEqual(detect_arrival("", query={"gclid": "private"}, site_hosts=set()), "click:Google")
+        self.assertEqual(detect_arrival("", query={"gclid": "private"}, site_hosts=set(), user_agent="Instagram 300"), "click:Google")
+        self.assertEqual(detect_arrival("", query={"fbclid": "private"}, site_hosts=set()), "click:Meta")
+        self.assertEqual(detect_arrival("", query={"from": "line"}, site_hosts=set()), "tag:line")
+        self.assertEqual(detect_arrival("", query={"ref": "private-token"}, site_hosts=set()), "直接／來源不明")
+        self.assertEqual(stored_source_label("ref:news.example"), "news.example")
+        self.assertEqual(stored_source_label("app:invalid"), "其他來源")
+        self.assertEqual(stored_source_label("https://bad"), "bad")
 
 
 class TrafficSourceTests(unittest.TestCase):
@@ -73,7 +98,7 @@ class TrafficSourceTests(unittest.TestCase):
         register_page_analytics(self.app)  # Factory/WSGI compatibility must not double-register.
         self.client.get("/source-entry?utm_source=dcard", follow_redirects=True, headers={"Sec-Fetch-Dest": "document"})
         self.assertEqual(len(self.rows()), 1)
-        self.assertEqual(self.rows()[0]["source"], "Dcard")
+        self.assertEqual(stored_source_label(self.rows()[0]["source"]), "Dcard")
         self.assertEqual(self.rows()[0]["path"], "/login")
 
     def test_background_admin_head_and_error_requests_are_excluded(self):
@@ -90,13 +115,47 @@ class TrafficSourceTests(unittest.TestCase):
     def test_real_pages_classify_and_strip_queries(self):
         self.client.get("/privacy?token=private", headers={"Referer": "https://google.com.tw/search?q=private"})
         self.client.get("/terms", headers={"Referer": "http://localhost/privacy?token=private"})
-        self.assertEqual([row["source"] for row in self.rows()], ["Google", "站內導覽"])
+        self.assertEqual([stored_source_label(row["source"]) for row in self.rows()], ["Google", "站內導覽"])
         self.assertNotIn("private", str(self.rows()))
 
     def test_new_arrival_does_not_inherit_abandoned_redirect(self):
         self.client.get("/source-entry?utm_source=dcard")
         self.client.get("/login", headers={"Referer": "https://google.com/"})
-        self.assertEqual(self.rows()[0]["source"], "Google")
+        self.assertEqual(stored_source_label(self.rows()[0]["source"]), "Google")
+
+    def report(self, row, **fields):
+        token = URLSafeTimedSerializer(self.app.secret_key, salt="e3-page-arrival").dumps({"id": row["id"]})
+        return self.client.post("/traffic/arrival", json={"token": token, "navigation": "navigate", "referrer": "", **fields})
+
+    def test_client_referrer_recovers_unknown_and_navigation_does_not_duplicate(self):
+        self.client.get("/login")
+        row = self.rows()[0]
+        self.assertEqual(self.report(row, referrer="https://www.dcard.tw").status_code, 200)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(self.rows()[0]["source"], "ref:www.dcard.tw")
+        self.assertEqual(self.report(row, navigation="reload").status_code, 200)
+        self.assertEqual(build_page_sources(self.storage, since=0, until=time.time()+60)["total"], 0)
+        self.report(row, referrer="https://google.com")
+        self.assertEqual(self.rows()[0]["source"], "nav:reload")
+
+    def test_reports_require_csrf_signature_and_same_visitor(self):
+        response = self.client.get("/login")
+        self.assertIn("data-arrival-token=", response.get_data(as_text=True))
+        self.assertEqual(self.client.post("/traffic/arrival", json={"token":"fake"}).status_code, 400)
+        row = self.rows()[0]
+        self.assertEqual(self.report(row, navigation=[]).status_code, 400)
+        token = URLSafeTimedSerializer(self.app.secret_key, salt="e3-page-arrival").dumps({"id":row["id"]})
+        anonymous = self.app.test_client()
+        self.assertEqual(anonymous.post("/traffic/arrival", json={"token":token}).status_code, 400)
+        self.assertEqual(self.report(row, referrer="https://google.com").status_code, 200)
+
+    def test_reports_cannot_overwrite_known_sources_or_another_visitor(self):
+        self.client.get("/login?utm_source=dcard")
+        row = self.rows()[0]
+        self.report(row, referrer="https://google.com")
+        self.assertEqual(self.rows()[0]["source"], "tag:dcard")
+        self.admin()
+        self.assertEqual(self.report(row, referrer="https://google.com").status_code, 404)
 
     def test_latest_page_and_access_control(self):
         self.client.get("/login?utm_source=dcard")
@@ -121,7 +180,10 @@ class TrafficSourceTests(unittest.TestCase):
         self.seed(ts=now.replace(hour=0, minute=0).timestamp(), source="Google")
         self.seed(ts=(now + timedelta(days=1)).replace(hour=0, minute=0).timestamp())
         self.admin()
-        with patch("e3_tracker.platform.routes.administration.time.time", return_value=now.timestamp()):
+        # Freeze the dashboard clock without making freshly signed session
+        # cookies appear to come from the future later in the day.
+        with patch("e3_tracker.platform.routes.administration.time", wraps=time) as clock:
+            clock.time.return_value = now.timestamp()
             response = self.client.get("/admin/traffic?source_days=1&usage_range=7d&range=30d")
         soup = BeautifulSoup(response.get_data(as_text=True), "html.parser")
         self.assertEqual(soup.select_one("#pageVisitTotal").text, "1")
@@ -145,6 +207,19 @@ class TrafficSourceTests(unittest.TestCase):
         self.assertEqual(len(summary["visits"]), 200)
         self.assertEqual(summary["rows"], [{"label": "Dcard", "count": 205, "percent": 100.0}])
         self.assertTrue(all(visit["source_label"] == "Dcard" for visit in summary["visits"]))
+
+    def test_evidence_quality_and_legacy_domains_are_visible(self):
+        sources = ["news.example", "ref:another.example", "app:LINE", "tag:dcard", "direct", "其他來源"]
+        for source in sources:
+            self.seed(source=source)
+        summary = build_page_sources(self.storage, since=0, until=time.time()+60)
+        self.assertEqual((summary["identified"], summary["inferred"], summary["unknown"]), (3, 1, 2))
+        self.assertEqual({row["label"] for row in summary["rows"]},
+                         {"news.example", "another.example", "LINE（推測）", "Dcard", "直接／來源不明", "其他來源"})
+        visits = {visit["source_label"]: visit for visit in summary["visits"]}
+        self.assertEqual(visits["another.example"]["evidence"], "another.example")
+        self.assertEqual(visits["LINE（推測）"]["method"], "App 瀏覽器線索")
+        self.assertEqual([row["source"] for row in self.rows()], sources)
 
     def test_reset_includes_sources_and_keeps_study_history(self):
         self.seed(visitor_key="user:student")

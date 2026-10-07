@@ -22,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 
 from flask import current_app, redirect, render_template, request, session, url_for
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import (
     Column,
     Float,
@@ -33,11 +34,12 @@ from sqlalchemy import (
     delete,
     func,
     select,
+    update,
 )
 
 from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.services.traffic_sources import (
-    DIRECT_SOURCE, INTERNAL_SOURCE, arrival_source, hostname, stored_source_label,
+    DIRECT_SOURCE, INTERNAL_SOURCE, OTHER_SOURCE, detect_arrival, hostname, source_info, stored_source_label,
 )
 
 
@@ -122,12 +124,17 @@ def _device_family(user_agent: str) -> str:
     return "Unknown"
 
 
-def _source_label() -> str:
+def _site_hosts():
     hosts = {hostname(request.host_url), hostname(current_app.config.get("E3_APP_HOME_URL", ""))}
     for host in tuple(hosts):
         if host:
             hosts.add(host[4:] if host.startswith("www.") else "www." + host)
-    label = arrival_source(request.referrer, request.args.get("utm_source", ""), site_hosts=hosts)
+    return hosts
+
+
+def _source_label() -> str:
+    label = detect_arrival(request.referrer, query=request.args, site_hosts=_site_hosts(),
+                           user_agent=request.headers.get("User-Agent", ""), fetch_site=request.headers.get("Sec-Fetch-Site", ""))
     pending = session.pop("_traffic_redirect_source", None)
     if (isinstance(pending, dict) and pending.get("target") == request.path
             and time.time() - pending.get("ts", 0) < 60 and not request.args.get("utm_source")
@@ -196,7 +203,7 @@ def _trim(storage, now: float) -> None:
                 )
 
 
-def _record_pageview(app, storage, source) -> None:
+def _record_pageview(app, storage, source) -> int:
     user_agent = request.headers.get("User-Agent", "")
     browser = _browser_family(user_agent)
     device = _device_family(user_agent)
@@ -210,10 +217,12 @@ def _record_pageview(app, storage, source) -> None:
         "visitor_key": _visitor_key(app, storage),
     }
     with storage._lock, storage._engine.begin() as conn:
-        conn.execute(page_analytics_table.insert().values(**row))
+        result = conn.execute(page_analytics_table.insert().values(**row))
+        record_id = result.inserted_primary_key[0]
 
     if int(now) % 97 == 0:
         _trim(storage, now)
+    return record_id
 
 
 def _window_days() -> int:
@@ -269,12 +278,17 @@ def build_page_sources(storage, *, since, until):
             and stored_source_label(row["source"]) != INTERNAL_SOURCE]
     counts = Counter(stored_source_label(row["source"]) for row in rows)
     total = len(rows)
+    unknown = sum(1 for row in rows if stored_source_label(row["source"]) in {DIRECT_SOURCE, OTHER_SOURCE})
+    inferred = sum(1 for row in rows if source_info(row["source"])["inferred"])
     return {
         "total": total, "retention_days": RETENTION_DAYS,
+        "unknown": unknown, "inferred": inferred, "identified": total - unknown - inferred,
         "rows": [{"label": label, "count": count, "percent": round(count * 100 / total, 1)}
                  for label, count in counts.most_common()],
         "visits": [{"time_label": _fmt_ts(row["ts"]), "path": row["path"],
-                    "source_label": stored_source_label(row["source"])} for row in reversed(rows[-200:])],
+                    "source_label": stored_source_label(row["source"]),
+                    "method": source_info(row["source"])["method"], "evidence": source_info(row["source"])["evidence"],
+                    "device": row["device"], "browser": row["browser"]} for row in reversed(rows[-200:])],
     }
 
 
@@ -331,6 +345,44 @@ def register_page_analytics(app) -> None:
         return
     _ensure_table(storage)
     app.extensions["e3_page_analytics"] = True
+    signer = URLSafeTimedSerializer(app.secret_key, salt="e3-page-arrival")
+
+    @app.post("/traffic/arrival")
+    def report_page_arrival():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get("token"), str) or len(payload["token"]) > 2048:
+            return {"ok": False}, 400
+        try:
+            record_id = signer.loads(payload["token"], max_age=1800)["id"]
+        except (BadSignature, KeyError, TypeError):
+            return {"ok": False}, 400
+        visitor_key = _visitor_key(app, storage)
+        nav_type = payload.get("navigation")
+        if nav_type not in ("navigate", "reload", "back_forward"):
+            return {"ok": False}, 400
+        with storage._lock, storage._engine.begin() as conn:
+            record = conn.execute(select(page_analytics_table).where(
+                page_analytics_table.c.id == record_id,
+                page_analytics_table.c.visitor_key == visitor_key,
+            )).mappings().first()
+            if not record:
+                return {"ok": False}, 404
+            if nav_type in {"reload", "back_forward"}:
+                source = "nav:" + nav_type
+            elif record["source"].startswith("nav:"):
+                return {"ok": True}
+            elif (stored_source_label(record["source"]) in {DIRECT_SOURCE, OTHER_SOURCE}
+                  or source_info(record["source"])["inferred"]):
+                referrer = payload.get("referrer")
+                if not isinstance(referrer, str) or len(referrer) > 512:
+                    return {"ok": False}, 400
+                source = detect_arrival(referrer, query={}, site_hosts=_site_hosts())
+                if source == DIRECT_SOURCE:
+                    return {"ok": True}
+            else:
+                return {"ok": True}
+            conn.execute(update(page_analytics_table).where(page_analytics_table.c.id == record_id).values(source=source))
+        return {"ok": True}
 
     @app.after_request
     def capture_page_view(response):
@@ -346,7 +398,13 @@ def register_page_analytics(app) -> None:
                         "host": hostname(request.referrer),
                     }
             if _should_record(response):
-                _record_pageview(app, storage, _source_label())
+                record_id = _record_pageview(app, storage, _source_label())
+                if record_id:
+                    script = render_template("shared/components/traffic_arrival.html", arrival_token=signer.dumps({"id": record_id}))
+                    html = response.get_data(as_text=True)
+                    position = html.lower().rfind("</body>")
+                    if position >= 0:
+                        response.set_data(html[:position] + script + html[position:])
         except Exception:
             pass
         return response

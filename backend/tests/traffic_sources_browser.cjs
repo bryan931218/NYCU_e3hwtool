@@ -29,12 +29,17 @@ const fixture = (...args) => execFileSync(process.argv[2] || 'python', [path.joi
                     : {contentType:'application/json', body:'{"version":0}'});
             });
             await page.goto('http://traffic.test/admin/traffic');
+            await page.getByText('取得分享來源連結', {exact:true}).click();
+            assert.match(await page.locator('#sourceShareLink').inputValue(), /utm_source=dcard/);
+            await page.locator('#sourceShareChannel').selectOption('line');
+            assert.match(await page.locator('#sourceShareLink').inputValue(), /utm_source=line/);
+            await page.getByText('取得分享來源連結', {exact:true}).click();
             assert.equal(await page.locator('.admin-brand h1').innerText(), '流量監控');
             assert.equal(await page.locator('#pageVisitTotal').innerText(), '8');
             assert.equal(await page.locator('.source-row').count(), 5);
             assert.match(await page.locator('.source-row[data-source=Dcard]').innerText(), /3 次\s+37.5%/);
             assert.equal((await page.locator('#trafficSources').innerText()).includes('站內導覽'), false);
-            await page.locator('.source-history summary').click();
+            await page.locator('#sourceVisitHistory summary').click();
             assert.equal(await page.locator('#sourceVisits tr:visible').count(), 8);
             await page.locator('#sourceFilter').selectOption('Google');
             assert.equal(await page.locator('#sourceVisits tr:visible').count(), 2);
@@ -42,7 +47,7 @@ const fixture = (...args) => execFileSync(process.argv[2] || 'python', [path.joi
             assert.equal(await page.locator('#sourceVisits tr:visible').count(), 8);
             assert.equal((await page.locator('#trafficSources').innerText()).includes('never-store'), false);
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Mobile page must not overflow');
-            await page.locator('.source-history summary').click();
+            await page.locator('#sourceVisitHistory summary').click();
             for (const theme of ['light', 'dark']) {
                 await page.locator(`[data-admin-theme=${theme}]`).click();
                 await page.locator('#trafficSources').scrollIntoViewIfNeeded();
@@ -51,6 +56,37 @@ const fixture = (...args) => execFileSync(process.argv[2] || 'python', [path.joi
             }
             await context.close();
         }
+        const reports = [];
+        const landingHTML = fixture('--landing');
+        const landing = await browser.newPage();
+        landing.on('pageerror', err => errors.push(err.message));
+        await landing.route('**/*', route => {
+            const url = new URL(route.request().url());
+            if (url.origin !== 'http://traffic.test') return route.abort();
+            if (url.pathname === '/traffic/arrival') {
+                reports.push(route.request().postDataJSON());
+                return route.fulfill({contentType:'application/json',body:'{"ok":true}'});
+            }
+            const assetMatch = url.pathname.match(/^\/assets\/(shared|assignments)\/(.+)$/);
+            if (assetMatch) {
+                const asset = path.join(root, `frontend/${assetMatch[1]}/static`, assetMatch[2]);
+                return route.fulfill({contentType:asset.endsWith('.css')?'text/css':'text/javascript',body:fs.readFileSync(asset)});
+            }
+            if (url.pathname === '/source') return route.fulfill({contentType:'text/html',body:'<a href="/login">Open</a>'});
+            if (route.request().isNavigationRequest()) return route.fulfill({contentType:'text/html',body:landingHTML});
+            return route.fulfill({contentType:'application/json',body:'{"version":0}'});
+        });
+        await landing.goto('http://traffic.test/source?private=never-send');
+        const firstReport = landing.waitForResponse(response => response.url().endsWith('/traffic/arrival'));
+        await landing.getByText('Open', {exact:true}).click();
+        await firstReport;
+        assert.equal(reports[0].referrer, 'http://traffic.test');
+        assert.equal(reports[0].navigation, 'navigate');
+        const reloadReport = landing.waitForResponse(response => response.url().endsWith('/traffic/arrival'));
+        await landing.reload();
+        await reloadReport;
+        assert.equal(reports[1].navigation, 'reload');
+        assert.equal(JSON.stringify(reports).includes('never-send'), false);
         assert.deepEqual(errors, []);
         console.log('Current traffic page: sources, filters, mobile, theme switching and privacy passed.');
     } finally { await browser.close(); }

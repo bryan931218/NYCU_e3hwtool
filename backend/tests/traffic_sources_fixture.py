@@ -15,6 +15,9 @@ with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
     storage = app.extensions["e3_storage"]
     try:
         client = app.test_client()
+        if "--landing" in sys.argv:
+            print(client.get("/login").get_data(as_text=True))
+            sys.exit(0)
         if "--empty" not in sys.argv:
             for source in ("dcard", "dcard", "dcard", "google", "google", "line"):
                 client.get("/login?utm_source=" + source)

@@ -1,0 +1,1 @@
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/traffic-arrival.js') }}" data-arrival-token="{{ arrival_token }}" data-arrival-url="{{ url_for('report_page_arrival') }}" data-arrival-csrf="{{ csrf_token() }}" defer></script>

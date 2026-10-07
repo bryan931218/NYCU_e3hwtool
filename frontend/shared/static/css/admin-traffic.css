@@ -45,6 +45,10 @@
 .source-history summary { cursor: pointer; font-size: 12px; color: var(--primary); }
 .source-filter { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .source-filter select { max-width: 220px; }
+.source-share { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.source-share select { max-width: 150px; }
+.source-share input { flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--fg); }
+.source-device { display: block; color: var(--muted); }
 .source-visits { max-height: 360px; }
 .source-visits th { position: sticky; top: 0; }
 .source-visits td { min-width: 110px; overflow-wrap: anywhere; }
