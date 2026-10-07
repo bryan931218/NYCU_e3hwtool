@@ -1,6 +1,7 @@
 # Audited deployment dependency constraints, 2026-09-26.
 # Refresh deliberately, then rerun tests and pip-audit.
 # Notification transport dependencies audited 2026-09-27.
+# Werkzeug security patch updated 2026-10-08.
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.3
 aiosignal==1.4.0
@@ -53,7 +54,7 @@ typing-extensions==4.16.0
 tzdata==2026.4
 urllib3==2.8.0
 websockets==16.1.1
-werkzeug==3.1.8
+werkzeug==3.1.9
 wtforms==3.2.2
 yt-dlp==2026.8.19
 yt-dlp-ejs==0.8.0
