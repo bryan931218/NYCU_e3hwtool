@@ -265,7 +265,8 @@ def _rows(storage, since: float, until: Optional[float] = None) -> List[Dict[str
 
 def build_page_sources(storage, *, since, until):
     rows = [row for row in _rows(storage, since, until)
-            if row["device"] != "Bot" and not row["path"].startswith("/study")]
+            if row["device"] != "Bot" and not row["path"].startswith("/study")
+            and stored_source_label(row["source"]) != INTERNAL_SOURCE]
     counts = Counter(stored_source_label(row["source"]) for row in rows)
     total = len(rows)
     return {
@@ -366,7 +367,8 @@ def register_page_analytics(app) -> None:
         bot_views = len(rows) - len(human_rows)
 
         page_counter = Counter(row["path"] for row in human_rows)
-        source_counter = Counter(stored_source_label(row["source"]) for row in human_rows)
+        source_counter = Counter(stored_source_label(row["source"]) for row in human_rows
+                                 if stored_source_label(row["source"]) != INTERNAL_SOURCE)
         device_counter = Counter(row["device"] for row in human_rows)
         browser_counter = Counter(row["browser"] for row in human_rows)
         visitor_count = len({row["visitor_key"] for row in human_rows})

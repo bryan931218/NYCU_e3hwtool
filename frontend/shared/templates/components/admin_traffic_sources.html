@@ -1,6 +1,6 @@
 <section class="admin-section" id="trafficSources" aria-labelledby="sourceTitle">
     <div class="admin-section-head">
-        <div><h2 id="sourceTitle">造訪來源</h2><p class="muted">頁面造訪 <strong id="pageVisitTotal">{{ page_sources.total }}</strong> 次 · 保留 {{ page_sources.retention_days }} 天</p></div>
+        <div><h2 id="sourceTitle">造訪來源</h2><p class="muted">進站造訪 <strong id="pageVisitTotal">{{ page_sources.total }}</strong> 次 · 保留 {{ page_sources.retention_days }} 天</p></div>
         <nav class="trend-presets" aria-label="來源統計區間">
             {% for days, label in [(1, '今天'), (7, '近 7 天'), (30, '近 30 天'), (90, '近 90 天')] %}
             <a href="{{ traffic_link(source_days=days, _anchor='trafficSources') }}" class="{{ 'active' if source_days == days else '' }}" {% if source_days == days %}aria-current="true"{% endif %}>{{ label }}</a>

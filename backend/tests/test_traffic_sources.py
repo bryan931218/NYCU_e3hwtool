@@ -136,10 +136,15 @@ class TrafficSourceTests(unittest.TestCase):
         self.seed(device="Bot")
         self.seed(path="/study/recall")
         self.seed(ts=now - 91 * 86400)
+        # Exclude historical internal navigation before calculating totals or
+        # taking the last 200 arrivals, even when internal views dominate.
+        for _ in range(205):
+            self.seed(source="站內導覽")
         summary = build_page_sources(self.storage, since=now - 90 * 86400, until=now + 60)
         self.assertEqual(summary["total"], 205)
         self.assertEqual(len(summary["visits"]), 200)
         self.assertEqual(summary["rows"], [{"label": "Dcard", "count": 205, "percent": 100.0}])
+        self.assertTrue(all(visit["source_label"] == "Dcard" for visit in summary["visits"]))
 
     def test_reset_includes_sources_and_keeps_study_history(self):
         self.seed(visitor_key="user:student")
