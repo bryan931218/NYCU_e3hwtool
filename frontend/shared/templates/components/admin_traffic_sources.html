@@ -1,0 +1,37 @@
+<section class="admin-section" id="trafficSources" aria-labelledby="sourceTitle">
+    <div class="admin-section-head">
+        <div><h2 id="sourceTitle">造訪來源</h2><p class="muted">頁面造訪 <strong id="pageVisitTotal">{{ page_sources.total }}</strong> 次 · 保留 {{ page_sources.retention_days }} 天</p></div>
+        <nav class="trend-presets" aria-label="來源統計區間">
+            {% for days, label in [(1, '今天'), (7, '近 7 天'), (30, '近 30 天'), (90, '近 90 天')] %}
+            <a href="{{ traffic_link(source_days=days, _anchor='trafficSources') }}" class="{{ 'active' if source_days == days else '' }}" {% if source_days == days %}aria-current="true"{% endif %}>{{ label }}</a>
+            {% endfor %}
+        </nav>
+    </div>
+    {% if page_sources.rows %}
+    <ul class="source-grid">
+        {% for row in page_sources.rows %}
+        <li class="source-row" data-source="{{ row.label }}">
+            <div class="source-row-header"><strong>{{ row.label }}</strong><span>{{ row.count }} 次 <small>{{ row.percent }}%</small></span></div>
+            <div class="source-meter" role="meter" aria-label="{{ row.label }}占比" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ row.percent }}"><span style="width:{{ row.percent }}%"></span></div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}<p class="muted">這個區間尚無造訪紀錄</p>{% endif %}
+    <p class="muted">書籤、手動輸入或未提供來源的連結，歸為「直接／來源不明」。</p>
+    <details class="source-history">
+        <summary>最近 {{ page_sources.visits|length }} 次造訪</summary>
+        {% if page_sources.visits %}
+        <div class="source-filter"><label for="sourceFilter">來源</label><select id="sourceFilter">
+            <option value="">全部來源</option>
+            {% for row in page_sources.rows %}<option value="{{ row.label }}">{{ row.label }}</option>{% endfor %}
+        </select></div>
+        <div class="table-wrap source-visits"><table>
+            <thead><tr><th scope="col">時間</th><th scope="col">來源</th><th scope="col">頁面</th></tr></thead>
+            <tbody id="sourceVisits">{% for visit in page_sources.visits %}
+                <tr data-source="{{ visit.source_label }}"><td>{{ visit.time_label }}</td><td>{{ visit.source_label }}</td><td>{{ visit.path }}</td></tr>
+            {% endfor %}</tbody>
+        </table></div>
+        <p class="muted" id="sourceFilterEmpty" hidden>最近紀錄沒有此來源</p>
+        {% endif %}
+    </details>
+</section>

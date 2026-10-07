@@ -2,13 +2,14 @@
 
 from e3_tracker.platform.services.traffic import ACTIVITY_RETENTION_DAYS, is_recent_activity_event
 from e3_tracker.platform.services.traffic_trends import build_traffic_trend
+from e3_tracker.platform.page_analytics import build_page_sources, clear_page_sources
 from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics
 from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
 from e3_tracker.assignments.domain.usage import FEATURE_LABELS, student_identity
 import json
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from flask import flash, redirect, render_template_string, request, url_for
 from e3_tracker.platform.constants import TAIPEI_TZ
@@ -214,6 +215,16 @@ def register_administration_routes(*,
             storage.assignment_usage_snapshot(window["start"], window["end"]), window,
         )
         traffic_query = {**trend["query"], "trend": trend["resolution"], "usage_range": window["range"]}
+        try:
+            source_days = int(request.args.get("source_days", "30"))
+        except ValueError:
+            source_days = 30
+        if source_days not in {1, 7, 30, 90}:
+            source_days = 30
+        source_end = datetime.fromtimestamp(now, tz=TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        page_sources = build_page_sources(storage, since=(source_end - timedelta(days=source_days)).timestamp(),
+                                         until=source_end.timestamp())
+        traffic_query["source_days"] = source_days
         if activity_before is not None:
             traffic_query["activity_before"] = activity_before
         if requested_view_username in {item["username"] for item in admin_view_options}:
@@ -238,6 +249,8 @@ def register_administration_routes(*,
             top_users=formatted_users[:5],
             summary=summary,
             assignment_analytics=analytics,
+            page_sources=page_sources,
+            source_days=source_days,
             traffic_query=traffic_query,
             traffic_link=traffic_link,
             ip_summary=ip_overview,
@@ -254,6 +267,7 @@ def register_administration_routes(*,
             return redirect(url_for("index"))
         traffic_tracker.reset()
         storage.clear_assignment_usage()
+        clear_page_sources(storage)
         flash("已清除所有流量統計與累積訪問次數。", "success")
         record_ui_event("reset_traffic", "success")
         return redirect(url_for("admin_traffic"))
@@ -272,7 +286,8 @@ def register_administration_routes(*,
         removed = traffic_tracker.remove_user_stats(target)
         deleted_events = storage.delete_traffic_events_for_user(target)
         deleted_usage = storage.clear_assignment_usage(target)
-        if removed or deleted_events or deleted_usage:
+        deleted_pages = clear_page_sources(storage, target)
+        if removed or deleted_events or deleted_usage or deleted_pages:
             flash(f"已清除 {target} 的統計與事件紀錄（移除 {deleted_events} 筆事件）。", "success")
             record_ui_event("reset_traffic_user", meta={"target": target, "events_removed": deleted_events})
         else:

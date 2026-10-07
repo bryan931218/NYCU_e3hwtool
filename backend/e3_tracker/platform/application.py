@@ -531,4 +531,7 @@ def create_app(
         storage=storage,
     )
 
+    from e3_tracker.platform.page_analytics import register_page_analytics
+    app.config["E3_APP_HOME_URL"] = app_home_url
+    register_page_analytics(app)
     return app

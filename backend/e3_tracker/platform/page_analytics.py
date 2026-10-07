@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 
-from flask import redirect, render_template, request, session, url_for
+from flask import current_app, redirect, render_template, request, session, url_for
 from sqlalchemy import (
     Column,
     Float,
@@ -36,6 +36,9 @@ from sqlalchemy import (
 )
 
 from e3_tracker.platform.constants import TAIPEI_TZ
+from e3_tracker.platform.services.traffic_sources import (
+    DIRECT_SOURCE, INTERNAL_SOURCE, arrival_source, hostname, stored_source_label,
+)
 
 
 RETENTION_DAYS = 90
@@ -120,30 +123,44 @@ def _device_family(user_agent: str) -> str:
 
 
 def _source_label() -> str:
-    raw = str(request.referrer or "").strip()
-    if not raw:
-        return "直接開啟 / 書籤"
-    try:
-        parsed = urlparse(raw)
-        hostname = (parsed.hostname or "").lower().strip(".")
-    except Exception:
-        return "其他來源"
-    if not hostname:
-        return "其他來源"
-    current_host = (request.host.split(":", 1)[0] or "").lower().strip(".")
-    if hostname == current_host or hostname.endswith(f".{current_host}"):
-        return "站內導覽"
-    if hostname.startswith("www."):
-        hostname = hostname[4:]
-    return hostname[:255]
+    hosts = {hostname(request.host_url), hostname(current_app.config.get("E3_APP_HOME_URL", ""))}
+    for host in tuple(hosts):
+        if host:
+            hosts.add(host[4:] if host.startswith("www.") else "www." + host)
+    label = arrival_source(request.referrer, request.args.get("utm_source", ""), site_hosts=hosts)
+    pending = session.pop("_traffic_redirect_source", None)
+    if (isinstance(pending, dict) and pending.get("target") == request.path
+            and time.time() - pending.get("ts", 0) < 60 and not request.args.get("utm_source")
+            and (label in {DIRECT_SOURCE, INTERNAL_SOURCE} or hostname(request.referrer) == pending.get("host"))):
+        label = pending.get("source", label)
+    return label
+
+
+def _is_navigation() -> bool:
+    if request.method != "GET" or not request.endpoint:
+        return False
+    if request.path.startswith(("/assets/", "/static/", "/admin/", "/api/", "/_", "/google/")):
+        return False
+    destination = request.headers.get("Sec-Fetch-Dest")
+    if destination is not None and destination not in {"document", "iframe"}:
+        return False
+    accept = request.headers.get("Accept", "")
+    if destination is None and accept and "text/html" not in accept.lower():
+        return False
+    if request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest":
+        return False
+    purpose = request.headers.get("Purpose", "") + request.headers.get("Sec-Purpose", "")
+    return "prefetch" not in purpose.lower()
 
 
 def _should_record(response) -> bool:
-    if request.method not in {"GET", "HEAD"}:
+    if not _is_navigation():
         return False
-    if response.status_code >= 400:
+    if not 200 <= response.status_code < 300:
         return False
     if (response.mimetype or "").lower() != "text/html":
+        return False
+    if "attachment" in response.headers.get("Content-Disposition", "").lower():
         return False
     path = request.path or "/"
     if path.startswith(("/assets/", "/static/", "/admin/")):
@@ -179,7 +196,7 @@ def _trim(storage, now: float) -> None:
                 )
 
 
-def _record_pageview(app, storage) -> None:
+def _record_pageview(app, storage, source) -> None:
     user_agent = request.headers.get("User-Agent", "")
     browser = _browser_family(user_agent)
     device = _device_family(user_agent)
@@ -187,7 +204,7 @@ def _record_pageview(app, storage) -> None:
     row = {
         "ts": now,
         "path": (request.path or "/")[:512],
-        "source": _source_label(),
+        "source": source,
         "device": device,
         "browser": browser,
         "visitor_key": _visitor_key(app, storage),
@@ -228,7 +245,7 @@ def _friendly_path(path: str) -> str:
     return labels.get(path, path)
 
 
-def _rows(storage, since: float) -> List[Dict[str, Any]]:
+def _rows(storage, since: float, until: Optional[float] = None) -> List[Dict[str, Any]]:
     with storage._lock, storage._engine.connect() as conn:
         records = conn.execute(
             select(
@@ -240,9 +257,32 @@ def _rows(storage, since: float) -> List[Dict[str, Any]]:
                 page_analytics_table.c.visitor_key,
             )
             .where(page_analytics_table.c.ts >= since)
+            .where(page_analytics_table.c.ts < until if until is not None else True)
             .order_by(page_analytics_table.c.ts.asc())
         ).fetchall()
     return [dict(row._mapping) for row in records]
+
+
+def build_page_sources(storage, *, since, until):
+    rows = [row for row in _rows(storage, since, until)
+            if row["device"] != "Bot" and not row["path"].startswith("/study")]
+    counts = Counter(stored_source_label(row["source"]) for row in rows)
+    total = len(rows)
+    return {
+        "total": total, "retention_days": RETENTION_DAYS,
+        "rows": [{"label": label, "count": count, "percent": round(count * 100 / total, 1)}
+                 for label, count in counts.most_common()],
+        "visits": [{"time_label": _fmt_ts(row["ts"]), "path": row["path"],
+                    "source_label": stored_source_label(row["source"])} for row in reversed(rows[-200:])],
+    }
+
+
+def clear_page_sources(storage, username=None):
+    statement = delete(page_analytics_table).where(~page_analytics_table.c.path.startswith("/study"))
+    if username is not None:
+        statement = statement.where(page_analytics_table.c.visitor_key == f"user:{username}")
+    with storage._lock, storage._engine.begin() as conn:
+        return conn.execute(statement).rowcount
 
 
 def _counter_rows(counter: Counter, limit: int = 8) -> List[Dict[str, Any]]:
@@ -286,13 +326,26 @@ def register_page_analytics(app) -> None:
     storage = app.extensions.get("e3_storage")
     if storage is None:
         raise RuntimeError("E3 storage must be configured before page analytics")
+    if app.extensions.get("e3_page_analytics"):
+        return
     _ensure_table(storage)
+    app.extensions["e3_page_analytics"] = True
 
     @app.after_request
     def capture_page_view(response):
         try:
+            if _is_navigation() and 300 <= response.status_code < 400 and response.location:
+                source = _source_label()
+                target = urlparse(response.location)
+                if not target.netloc or hostname(response.location) in {
+                    hostname(request.host_url), hostname(app.config.get("E3_APP_HOME_URL", "")),
+                }:
+                    session["_traffic_redirect_source"] = {
+                        "target": target.path or "/", "ts": time.time(), "source": source,
+                        "host": hostname(request.referrer),
+                    }
             if _should_record(response):
-                _record_pageview(app, storage)
+                _record_pageview(app, storage, _source_label())
         except Exception:
             pass
         return response
@@ -313,7 +366,7 @@ def register_page_analytics(app) -> None:
         bot_views = len(rows) - len(human_rows)
 
         page_counter = Counter(row["path"] for row in human_rows)
-        source_counter = Counter(row["source"] for row in human_rows)
+        source_counter = Counter(stored_source_label(row["source"]) for row in human_rows)
         device_counter = Counter(row["device"] for row in human_rows)
         browser_counter = Counter(row["browser"] for row in human_rows)
         visitor_count = len({row["visitor_key"] for row in human_rows})
@@ -335,7 +388,7 @@ def register_page_analytics(app) -> None:
             {
                 "ts": _fmt_ts(row["ts"]),
                 "path": _friendly_path(row["path"]),
-                "source": row["source"],
+                "source": stored_source_label(row["source"]),
                 "device": row["device"],
                 "browser": row["browser"],
             }

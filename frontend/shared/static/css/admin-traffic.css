@@ -34,6 +34,22 @@
 .admin-section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
 .muted { color: var(--muted); font-size: 12px; }
 .inline-form { margin: 0; }
+.source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 32px; list-style: none; padding: 0; margin: 20px 0; }
+.source-row-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.source-row-header strong { font-weight: 500; }
+.source-row-header span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.source-row-header small { color: var(--muted); margin-left: 8px; }
+.source-meter { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.source-meter span { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
+.source-history { margin-top: 16px; }
+.source-history summary { cursor: pointer; font-size: 12px; color: var(--primary); }
+.source-filter { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.source-filter select { max-width: 220px; }
+.source-visits { max-height: 360px; }
+.source-visits th { position: sticky; top: 0; }
+.source-visits td { min-width: 110px; overflow-wrap: anywhere; }
+.source-visits td:first-child { min-width: 165px; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .source-grid { grid-template-columns: minmax(0, 1fr); } }
 .admin-view-panel { display: flex; justify-content: space-between; align-items: end; flex-wrap: wrap; gap: 18px; }
 .admin-view-copy { min-width: 0; }
 .admin-view-copy h2 { font-size: 16px; }
