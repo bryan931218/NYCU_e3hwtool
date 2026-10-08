@@ -22,9 +22,11 @@ from e3_tracker.assignments.routes.custom_todo_notifications import (
     register_custom_todo_notification_routes,
 )
 from e3_tracker.assignments.routes.assignment_actions import register_assignment_action_routes
+from e3_tracker.assignments.services.line_reminder_menu import LineReminderMenu
 
 
 def register_notification_routes(app, storage, current_user, login_required, service, record_activity):
+    line_menu = LineReminderMenu(storage, service)
     def activity(username, action, detail="", status="success"):
         if not username or is_guest_identity(username) or action not in NOTIFICATION_ACTION_LABELS:
             return
@@ -202,9 +204,13 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                 if event.get('type') == 'postback':
                     try:
                         postback = event.get('postback') or {}
-                        message = service.actions.handle_line_postback(postback.get('data'), target, postback.get('params'))
+                        data = postback.get('data')
+                        if isinstance(data, str) and data.startswith('lr:'):
+                            message = line_menu.handle_postback(data, target, postback.get('params'))
+                        else:
+                            message = service.actions.handle_line_postback(data, target, postback.get('params'))
                     except ValueError as error:
-                        message = {'type': 'text', 'text': str(error)}
+                        message = line_menu.error(error)
                     if event.get('replyToken') and not event.get('deliveryContext', {}).get('isRedelivery'):
                         try:
                             service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [message]})
@@ -213,6 +219,18 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                     continue
                 message = event.get("message") or {}
                 if event.get("type") != "message" or message.get("type") != "text":
+                    continue
+                text = str(message.get('text', ''))
+                if text.strip() in line_menu.COMMANDS:
+                    try:
+                        response = line_menu.handle_text(text, target)
+                    except ValueError as error:
+                        response = line_menu.error(error)
+                    if event.get('replyToken') and not event.get('deliveryContext', {}).get('isRedelivery'):
+                        try:
+                            service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [response]})
+                        except Exception:
+                            app.logger.warning('LINE reminder menu reply unavailable')
                     continue
                 match = re.fullmatch(r"E3\s+([A-Za-z0-9_-]{24})", str(message.get("text", "")).strip())
                 owner = storage.consume_line_link_code(match[1], target, return_username=True) if match else None

@@ -117,11 +117,14 @@ class AssignmentActionStorage:
             targets.extend(('browser', key) for key in conn.execute(select(push_subscriptions.c.endpoint_hash).where(push_subscriptions.c.user_id == uid)).scalars())
         return prefs, targets
 
-    def schedule_assignment_plan(self, username, key, item, item_hash, start, *, line_job=None):
+    def schedule_assignment_plan(self, username, key, item, item_hash, start, *, line_job=None, line_target_hash=None):
         with self._lock, self._engine.begin() as conn:
             uid = self._announcement_user(conn, username, write=True)
             if not uid:
                 raise ValueError('請登入 E3 帳號。')
+            prefs, targets = self._action_targets(conn, uid)
+            if line_target_hash is not None and ('line', line_target_hash) not in targets:
+                raise ValueError('LINE 綁定或通知設定已變更，請重新選擇作業。')
             if line_job:
                 owner = conn.execute(select(jobs.c.id).join(line_bindings, line_bindings.c.user_id == jobs.c.user_id).where(
                     jobs.c.id == line_job['id'], jobs.c.user_id == uid, line_bindings.c.target_hash == line_job['target_hash'],
@@ -133,7 +136,6 @@ class AssignmentActionStorage:
                 if old['state'] == 'cancelled':
                     raise ValueError('這項提醒已取消，請重新安排。')
                 return {**self._action_payload(work_plans, uid, key, old['payload']), 'duplicate': True}
-            prefs, targets = self._action_targets(conn, uid)
             if not targets:
                 raise ValueError('請先在通知設定啟用 LINE 或瀏覽器通知。')
             plan = {'uid_hash': item_hash, 'title': item['title'], 'course_title': item.get('course_title', ''),

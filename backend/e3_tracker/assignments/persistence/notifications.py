@@ -28,6 +28,26 @@ from .notification_schema import (
 
 
 class NotificationStorage:
+    def line_reminder_owner(self, target_hash):
+        with self._lock, self._engine.connect() as conn:
+            owner = conn.execute(select(users_table.c.username).join(
+                bindings, bindings.c.user_id == users_table.c.id,
+            ).where(bindings.c.target_hash == target_hash, users_table.c.is_guest == 0)).scalar()
+        return owner if owner and not is_guest_identity(owner) else None
+
+    def enable_line_reminders(self, username, target_hash):
+        with self._lock, self._engine.begin() as conn:
+            uid = self._notification_user(conn, username)
+            if not uid or not conn.execute(select(bindings.c.user_id).where(
+                bindings.c.user_id == uid, bindings.c.target_hash == target_hash,
+            )).first():
+                raise ValueError('帳號綁定已失效，請重新綁定 LINE。')
+            raw = conn.execute(select(settings.c.preferences).where(settings.c.user_id == uid)).scalar()
+            prefs = {**DEFAULT_NOTIFICATION_PREFERENCES, **json.loads(raw or '{}'), 'line_enabled': True}
+            values = {'preferences': json.dumps(prefs), 'sync_after': 0}
+            if not conn.execute(update(settings).where(settings.c.user_id == uid).values(**values)).rowcount:
+                conn.execute(insert(settings).values(user_id=uid, initialized=0, **values))
+
     def _notification_user(self, conn, username):
         return (
             conn.execute(

@@ -88,13 +88,14 @@ class AssignmentActions:
             return '請確認 Google 日曆已連結，或稍後重試同步。'
         return ''
 
-    def schedule(self, username, key, start, *, request_id, google=False, line_job=None):
+    def schedule(self, username, key, start, *, request_id, google=False, line_job=None, line_target_hash=None):
         item = self.item(username, key)
         validate_future_time(start)
         if item.get('due_ts') and start >= item['due_ts']:
             raise ValueError('提醒時間必須在截止時間之前。')
         plan_id = digest(f'{key}:{request_id}')
-        plan = self.storage.schedule_assignment_plan(username, plan_id, item, key, start, line_job=line_job)
+        plan = self.storage.schedule_assignment_plan(username, plan_id, item, key, start,
+                                                     line_job=line_job, line_target_hash=line_target_hash)
         if plan.get('duplicate') and plan['start_ts'] != start:
             raise ValueError('這次安排已提交，請重新開啟頁面。')
         error = self.sync_calendar(username, item, plan={**plan, 'id': plan_id}) if google else ''

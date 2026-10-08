@@ -97,7 +97,10 @@ class NotificationService:
                 "messages": [
                     {
                         "type": "text",
-                        "text": "E3 帳號已綁定。請回到網站的通知設定，開啟 LINE 通知。",
+                        "text": "E3 帳號已綁定。點下方「設定提醒」，即可在 LINE 選作業與提醒時間。自動通知條件可在網站的通知設定調整。",
+                        "quickReply": {"items": [{"type": "action", "action": {
+                            "type": "message", "label": "設定提醒", "text": "設定作業提醒",
+                        }}]},
                     }
                 ],
             },

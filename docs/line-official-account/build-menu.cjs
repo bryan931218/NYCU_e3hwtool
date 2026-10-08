@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '../..');
 const items = [
   ['我的作業', 'frontend/shared/static/icons/check.svg', '#e4f4ee', '#23755c'],
   ['課程訊息', 'frontend/shared/static/icons/inbox.svg', '#edf3fb', '#476fa2'],
-  ['提醒設定', 'frontend/shared/static/icons/settings-2.svg', '#f5efe3', '#8c6b31'],
+  ['設定提醒', 'frontend/shared/static/icons/settings-2.svg', '#f5efe3', '#8c6b31'],
   ['綁定教學', 'frontend/shared/static/icons/shield-check.svg', '#edf3f0', '#557369'],
   ['通知說明', 'frontend/shared/static/icons/folder-open.svg', '#f2eff8', '#796492'],
   ['回報問題', 'frontend/assignments/static/vendor/lucide-calendar/pencil.svg', '#faeeea', '#a26453'],
