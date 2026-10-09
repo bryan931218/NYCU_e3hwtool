@@ -1,22 +1,22 @@
 {% set analytics = assignment_analytics %}
 <section id="assignment-analytics" class="assignment-analytics" aria-labelledby="assignmentAnalyticsTitle">
     <header class="analytics-header">
-        <div><h2 id="assignmentAnalyticsTitle">作業系統使用分析</h2><p>目前綁定與已保存的用戶資料</p></div>
+        <div><h2 id="assignmentAnalyticsTitle">{{ '帳號與通知' if ga4_primary else '作業系統使用分析' }}</h2><p>目前綁定與已保存的用戶資料</p></div>
         <span class="analytics-scope">同學號合併計算 · 不含訪客</span>
     </header>
     <div class="analytics-metrics">
         {% for key, label, value, detail in [
             ('users', '用戶數（學號去重）', analytics.total, '未識別學號以帳號計算'),
-            ('identified', '已識別學號', analytics.identified, '未識別帳號 ' ~ analytics.unidentified),
+            (('online', '目前在線', summary.online_users, '已識別學號 ' ~ analytics.identified) if ga4_primary else ('identified', '已識別學號', analytics.identified, '未識別帳號 ' ~ analytics.unidentified)),
             ('line', 'LINE 綁定成功', analytics.line, '已啟用通知 ' ~ analytics.enabled.line),
             ('browser', '瀏覽器推播訂閱', analytics.browser, '已啟用通知 ' ~ analytics.enabled.browser),
             ('google', 'Google 日曆綁定', analytics.google, '目前保有授權'),
             ('reminders', '到期提醒已啟用', analytics.enabled.due_reminder, '新作業通知 ' ~ analytics.enabled.new_assignment)
         ] %}
-        <article class="analytics-metric" data-metric="{{ key }}"><span>{{ label }}</span><strong>{{ value }}<small>人</small></strong><p>{{ detail }}</p></article>
+        <article class="analytics-metric" data-metric="{{ key }}"><span>{{ label }}</span><strong><span {% if key == 'online' %}data-traffic-stat="online"{% endif %}>{{ value }}</span><small>人</small></strong><p>{{ detail }}</p></article>
         {% endfor %}
     </div>
-    <section class="analytics-features" aria-labelledby="featureUsageTitle">
+    {% if not ga4_primary %}<section class="analytics-features" aria-labelledby="featureUsageTitle">
         <header class="analytics-header">
             <div><h3 id="featureUsageTitle">功能使用</h3><p>{{ analytics.start }} 至 {{ analytics.end }}</p></div>
             <form method="get" action="{{ url_for('admin_traffic', _anchor='assignment-analytics') }}" class="analytics-range">
@@ -31,7 +31,7 @@
             <tbody>{% for row in analytics.features %}<tr data-feature="{{ row.key }}"><th scope="row">{{ row.label }}</th><td><span data-users>{{ row.users }}</span><small class="analytics-mobile-rate">{{ row.percent }}%</small></td><td>{{ row.count }}</td><td><div class="analytics-rate"><meter value="{{ row.percent }}" min="0" max="100" aria-label="{{ row.label }}使用率">{{ row.percent }}%</meter><span>{{ row.percent }}%</span></div></td></tr>{% endfor %}</tbody>
         </table></div>
         <p class="analytics-note">自 {{ analytics.started_at }} 起累積；啟用前僅回填保留的 {{ analytics.legacy_samples }} 筆有效操作。最多保留 730 天，不代表完整歷史。操作次數為功能使用紀錄，非完成作業數。</p>
-    </section>
+    </section>{% endif %}
     <div class="analytics-distributions">
         {% for key, title, rows, note in [('cohort', '入學碼分布', analytics.cohorts, '學號前三碼，不代表目前在學年級。'), ('department', '科系碼分布', analytics.departments, '學號第 4–6 碼；未核對科系名稱。')] %}
         <section class="analytics-distribution" data-distribution="{{ key }}" aria-labelledby="{{ key }}DistributionTitle">

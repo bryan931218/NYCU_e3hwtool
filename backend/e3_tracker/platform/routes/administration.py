@@ -218,6 +218,7 @@ def register_administration_routes(*,
         usage_snapshot = storage.assignment_usage_snapshot(window["start"], window["end"])
         analytics = build_assignment_analytics(usage_snapshot, window)
         engagement = build_account_engagement(usage_snapshot, memberships, window)
+        ga4 = app.extensions["e3_google_analytics"].status()
         traffic_query = {**trend["query"], "trend": trend["resolution"], "usage_range": window["range"]}
         try:
             source_days = int(request.args.get("source_days", "30"))
@@ -226,8 +227,8 @@ def register_administration_routes(*,
         if source_days not in {1, 7, 30, 90}:
             source_days = 30
         source_end = datetime.fromtimestamp(now, tz=TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        page_sources = build_page_sources(storage, since=(source_end - timedelta(days=source_days)).timestamp(),
-                                         until=source_end.timestamp())
+        page_sources = None if ga4["reports_ready"] else build_page_sources(
+            storage, since=(source_end - timedelta(days=source_days)).timestamp(), until=source_end.timestamp())
         traffic_query["source_days"] = source_days
         if activity_before is not None:
             traffic_query["activity_before"] = activity_before
@@ -254,7 +255,7 @@ def register_administration_routes(*,
             summary=summary,
             assignment_analytics=analytics,
             account_engagement=engagement,
-            ga4=app.extensions["e3_google_analytics"].status(),
+            ga4=ga4,
             page_sources=page_sources,
             source_share_url=app_home_url,
             source_days=source_days,

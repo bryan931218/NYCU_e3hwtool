@@ -37,10 +37,15 @@ const reports = {
         return route.fulfill(route.request().isNavigationRequest() ? { contentType: 'text/html', body: html } : { json: { version: 0 } });
       });
       await page.goto('http://traffic.test/admin/traffic');
-      assert.equal(calls, 0, 'Do not fetch Google reports at page entry');
+      assert.equal(await page.locator('#trafficSources, #system-summary, .analytics-feature-table').count(), 0, 'Remove legacy duplicate statistics');
+      assert.equal(await page.locator('a[href="/admin/analytics"]').count(), 0, 'Remove the duplicate page analytics entry');
+      assert.equal(await page.locator('#usageRange').count(), 1, 'Keep one account-range control');
       await page.locator('#google-analytics').scrollIntoViewIfNeeded();
       await page.locator('#ga4Report').waitFor({ state: 'visible' });
+      assert.ok(calls >= 1, 'Load visible GA4 reports without blocking the page');
       assert.match(await page.locator('#ga4Metrics').innerText(), /66 秒/);
+      assert.match(await page.locator('#ga4-features').innerText(), /作業日曆/);
+      assert.doesNotMatch(await page.locator('#ga4-features').innerText(), /自訂代辦/);
       assert.match(await page.locator('#ga4-login_funnel').innerText(), /54/);
       assert.match(await page.locator('#ga4-line_funnel').innerText(), /暫時無法提供/);
       await page.locator('#ga4Range').selectOption('7');

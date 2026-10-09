@@ -1,14 +1,3 @@
-<section id="account-engagement" class="admin-section assignment-analytics" aria-labelledby="engagementTitle">
-  <header class="analytics-header"><div><h2 id="engagementTitle">帳號回訪與啟用</h2><p>{{ assignment_analytics.start }} 至 {{ assignment_analytics.end }} · 本站帳號去重</p></div></header>
-  <div class="engagement-grid">
-    <section><h3>回訪情況</h3><dl class="engagement-values">
-      <div><dt>區間使用人數</dt><dd>{{ account_engagement.active }}<small>人</small></dd></div>
-      <div><dt>跨日回訪</dt><dd>{{ account_engagement.repeat }}<small>人</small></dd></div>
-      <div><dt>新用戶 7 日內回訪率</dt><dd>{{ (account_engagement.retention|string ~ '%') if account_engagement.retention is not none else '—' }}</dd></div>
-    </dl><p class="analytics-note">加入隔日至第 7 日曾回訪：{{ account_engagement.retained }} / {{ account_engagement.eligible }} 人。僅計已完整觀察的新用戶；{{ account_engagement.pending }} 人尚未滿 7 日。</p></section>
-    <section><h3>LINE 啟用進度</h3><ol class="adoption-steps">{% for row in account_engagement.line_steps %}<li><div><span>{{ row.label }}</span><strong>{{ row.count }} 人 <small>{{ row.percent }}%</small></strong></div><meter min="0" max="100" value="{{ row.percent }}" aria-label="{{ row.label }}占全部帳號">{{ row.percent }}%</meter></li>{% endfor %}</ol><p class="analytics-note">目前帳號狀態，不是歷史轉換漏斗。解除綁定或停用後會更新。</p></section>
-  </div>
-</section>
 <section id="google-analytics" class="admin-section assignment-analytics" aria-labelledby="ga4Title" data-ga4-url="{{ url_for('google_analytics_report') }}" data-ready="{{ 'true' if ga4.reports_ready else 'false' }}">
   <header class="analytics-header"><div><h2 id="ga4Title">Google Analytics</h2><p>同意分析的瀏覽器訪客 · 與本站帳號數分開</p></div><div class="analytics-range"><label for="ga4Range">區間</label><select id="ga4Range"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option></select></div></header>
   <p id="ga4Status" role="status">{% if ga4.reports_ready %}報表待載入{% elif ga4.collection_ready %}追蹤 ID 已設定；尚未連接報表{% else %}尚未連接 GA4{% endif %}</p>

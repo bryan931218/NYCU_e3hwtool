@@ -2,7 +2,7 @@
 <nav class="admin-data-nav" aria-label="E3 數據後台">
   <div class="admin-data-group"><span>本站統計</span><div>
     <a href="{{ url_for('admin_traffic') }}" {% if request.endpoint == 'admin_traffic' %}aria-current="page"{% endif %}>流量監控</a>
-    <a href="{{ url_for('admin_page_analytics') }}" {% if request.endpoint == 'admin_page_analytics' %}aria-current="page"{% endif %}>頁面分析</a>
+    {% if ga4 is not defined or not ga4.reports_ready %}<a href="{{ url_for('admin_page_analytics') }}" {% if request.endpoint == 'admin_page_analytics' %}aria-current="page"{% endif %}>頁面分析</a>{% endif %}
   </div></div>
   <div class="admin-data-group"><span>Google Analytics</span><div>
     <a href="{{ url_for('admin_traffic', _anchor='google-analytics') }}">整合報表</a>

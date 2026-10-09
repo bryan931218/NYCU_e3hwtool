@@ -417,6 +417,10 @@ def register_page_analytics(app) -> None:
         if not user.get("is_admin"):
             return redirect(url_for("index"))
 
+        ga4 = current_app.extensions.get("e3_google_analytics")
+        if ga4 and ga4.status()["reports_ready"]:
+            return redirect(url_for("admin_traffic", _anchor="google-analytics"))
+
         days = _window_days()
         now = time.time()
         today = datetime.fromtimestamp(now, TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0)

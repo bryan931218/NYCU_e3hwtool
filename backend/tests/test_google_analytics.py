@@ -66,7 +66,7 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json, {"status": "not_configured"})
         self.assertIn("no-store", response.headers["Cache-Control"])
         html = self.client.get("/admin/traffic").get_data(as_text=True)
-        self.assertIn("帳號回訪與啟用", html)
+        self.assertIn("帳號回訪", html)
         self.assertIn('aria-label="E3 數據後台"', html)
         self.assertIn('href="/admin/analytics"', html)
         page_html = self.client.get("/admin/analytics").get_data(as_text=True)
@@ -76,6 +76,22 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         self.assertIn("尚未連接報表", html)
         self.assertNotIn('id="googleAnalyticsConfig"', html)
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/").get_data(as_text=True))
+
+    def test_connected_reports_replace_duplicate_dashboards_without_losing_account_controls(self):
+        self.login(admin=True)
+        self.app.extensions["e3_google_analytics"].config["property_id"] = "466307937"
+        with patch.dict(os.environ, {"E3_GA4_SERVICE_ACCOUNT_JSON": "configured"}), \
+                patch("e3_tracker.platform.routes.administration.build_page_sources", side_effect=AssertionError("Legacy sources must not be queried")):
+            html = self.client.get("/admin/traffic").get_data(as_text=True)
+            self.assertIn('id="ga4-features"', html)
+            for obsolete in ['id="system-summary"', 'id="trafficSources"', 'class="analytics-feature-table"', 'href="/admin/analytics"', 'Top 5 使用者', '熱門操作', 'LINE 啟用進度']:
+                self.assertNotIn(obsolete, html)
+            for retained in ['id="account-usage"', 'id="recent-activity"', 'id="visit-trend"', 'id="usageRange"', 'LINE 綁定成功', '科系碼分布', 'data-traffic-stat="online"']:
+                self.assertIn(retained, html)
+            self.assertLess(html.index('id="google-analytics"'), html.index('id="assignment-analytics"'))
+            response = self.client.get("/admin/analytics")
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.location, "/admin/traffic#google-analytics")
 
     def test_retention_observes_following_week_without_expanding_usage_window(self):
         self.login()

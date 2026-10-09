@@ -1,0 +1,18 @@
+<section id="account-engagement" class="admin-section assignment-analytics" aria-labelledby="engagementTitle">
+  <header class="analytics-header"><div><h2 id="engagementTitle">帳號回訪</h2><p>{{ assignment_analytics.start }} 至 {{ assignment_analytics.end }} · 本站帳號去重</p></div>
+    {% if ga4_primary %}<form method="get" action="{{ url_for('admin_traffic', _anchor='account-engagement') }}" class="analytics-range">
+      {% for key, value in traffic_query.items() if key != 'usage_range' %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <label for="usageRange">帳號統計區間</label>
+      <select id="usageRange" name="usage_range">{% for value, label in [('7d','近 7 天'),('30d','近 30 天'),('90d','近 90 天'),('all','全部保留紀錄')] %}<option value="{{ value }}" {% if assignment_analytics.range == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <button type="submit">套用</button>
+    </form>{% endif %}
+  </header>
+  <div class="engagement-grid{% if ga4_primary %} engagement-grid-single{% endif %}">
+    <section><h3>回訪情況</h3><dl class="engagement-values">
+      <div><dt>區間使用人數</dt><dd>{{ account_engagement.active }}<small>人</small></dd></div>
+      <div><dt>跨日回訪</dt><dd>{{ account_engagement.repeat }}<small>人</small></dd></div>
+      <div><dt>新用戶 7 日內回訪率</dt><dd>{{ (account_engagement.retention|string ~ '%') if account_engagement.retention is not none else '—' }}</dd></div>
+    </dl><p class="analytics-note">加入隔日至第 7 日曾回訪：{{ account_engagement.retained }} / {{ account_engagement.eligible }} 人。僅計已完整觀察的新用戶；{{ account_engagement.pending }} 人尚未滿 7 日。</p></section>
+    {% if not ga4_primary %}<section><h3>LINE 啟用進度</h3><ol class="adoption-steps">{% for row in account_engagement.line_steps %}<li><div><span>{{ row.label }}</span><strong>{{ row.count }} 人 <small>{{ row.percent }}%</small></strong></div><meter min="0" max="100" value="{{ row.percent }}" aria-label="{{ row.label }}占全部帳號">{{ row.percent }}%</meter></li>{% endfor %}</ol><p class="analytics-note">目前帳號狀態，不是歷史轉換漏斗。解除綁定或停用後會更新。</p></section>{% endif %}
+  </div>
+</section>

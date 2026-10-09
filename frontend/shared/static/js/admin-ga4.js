@@ -32,8 +32,8 @@
     table("devices", ["裝置", "訪客", "工作階段"], reports.devices.map(r => [{ desktop: "電腦", mobile: "手機", tablet: "平板" }[r.deviceCategory] || r.deviceCategory, format(r.activeUsers), format(r.sessions)]));
     table("returning", ["類型", "訪客", "工作階段"], reports.returning.map(r => [{ new: "新訪客", returning: "回訪訪客", "(not set)": "未識別" }[r.newVsReturning] || r.newVsReturning, format(r.activeUsers), format(r.sessions)]));
     const rows = new Map(reports.events.map(r => [r.eventName, r]));
-    table("events", ["步驟", "訪客", "次數"], Object.entries(events).map(([key, label]) => [label, format(rows.get(key)?.totalUsers), format(rows.get(key)?.eventCount)]));
-    table("features", ["功能", "訪客", "次數"], Object.entries(features).map(([key, label]) => [label, format(rows.get(`feature_${key}`)?.totalUsers), format(rows.get(`feature_${key}`)?.eventCount)]));
+    table("events", ["步驟", "訪客", "次數"], Object.entries(events).filter(([key]) => rows.has(key)).map(([key, label]) => [label, format(rows.get(key).totalUsers), format(rows.get(key).eventCount)]));
+    table("features", ["功能", "訪客", "次數"], Object.entries(features).filter(([key]) => rows.has(`feature_${key}`)).map(([key, label]) => [label, format(rows.get(`feature_${key}`).totalUsers), format(rows.get(`feature_${key}`).eventCount)]));
     for (const key of ["login_funnel", "line_funnel"]) {
       const funnel = reports[key];
       table(key, ["步驟", "訪客", "至下一步"], (funnel || []).map((r, index) => [r.funnelStepName, format(r.activeUsers), index === funnel.length - 1 ? "—" : `${format(r.funnelStepCompletionRate * 100)}%`]));

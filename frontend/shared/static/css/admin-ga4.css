@@ -1,4 +1,5 @@
 .engagement-grid, .ga4-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.engagement-grid-single { grid-template-columns: minmax(0, 1fr); }
 .engagement-grid > section, .ga4-tables > section { min-width: 0; }
 .engagement-grid h3, .ga4-tables h3 { margin: 0 0 16px; font-size: 16px; }
 .engagement-values { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
