@@ -145,6 +145,9 @@ form.addEventListener("submit", async (event) => {
       days_before: [...byId("dayInputs").querySelectorAll("input")].map((input) => Number(input.value)),
     });
     applyPreferences(state.preferences);
+    for (const channel of ["line", "browser"]) {
+      if (state.preferences[`${channel}_enabled`]) window.e3Analytics?.track("notification_enable", { channel });
+    }
     message(state.preferences.browser_enabled || state.preferences.line_enabled ? "通知設定已儲存" : "設定已儲存，尚未開啟通知方式");
   });
 });
@@ -162,6 +165,7 @@ byId("enableBrowser").addEventListener("click", () => action(byId("enableBrowser
     userVisibleOnly: true, applicationServerKey: vapidBytes(state.vapid_public_key),
   });
   state = await api("browser", "POST", subscription.toJSON());
+  window.e3Analytics?.track("browser_subscribe");
   await hashSubscription();
   byId("notifyBrowser").checked = true; message("此裝置已啟用，請儲存通知設定");
 }));
@@ -186,7 +190,7 @@ byId("linkLine").addEventListener("click", () => action(byId("linkLine"), async 
     if (document.hidden) return;
     try {
       state = await api("settings"); renderChannels();
-      if (state.line_linked) { byId("notifyLine").checked = true; message("LINE 已綁定，請儲存通知設定"); }
+      if (state.line_linked) { window.e3Analytics?.track("line_link_success"); byId("notifyLine").checked = true; message("LINE 已綁定，請儲存通知設定"); }
     } catch { /* Keep the pending link available during brief connection failures. */ }
   }, 5000);
 }));

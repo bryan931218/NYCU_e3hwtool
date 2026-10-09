@@ -1,0 +1,34 @@
+<section id="account-engagement" class="admin-section assignment-analytics" aria-labelledby="engagementTitle">
+  <header class="analytics-header"><div><h2 id="engagementTitle">帳號回訪與啟用</h2><p>{{ assignment_analytics.start }} 至 {{ assignment_analytics.end }} · 本站帳號去重</p></div></header>
+  <div class="engagement-grid">
+    <section><h3>回訪情況</h3><dl class="engagement-values">
+      <div><dt>區間使用人數</dt><dd>{{ account_engagement.active }}<small>人</small></dd></div>
+      <div><dt>跨日回訪</dt><dd>{{ account_engagement.repeat }}<small>人</small></dd></div>
+      <div><dt>新用戶 7 日內回訪率</dt><dd>{{ (account_engagement.retention|string ~ '%') if account_engagement.retention is not none else '—' }}</dd></div>
+    </dl><p class="analytics-note">加入隔日至第 7 日曾回訪：{{ account_engagement.retained }} / {{ account_engagement.eligible }} 人。僅計已完整觀察的新用戶；{{ account_engagement.pending }} 人尚未滿 7 日。</p></section>
+    <section><h3>LINE 啟用進度</h3><ol class="adoption-steps">{% for row in account_engagement.line_steps %}<li><div><span>{{ row.label }}</span><strong>{{ row.count }} 人 <small>{{ row.percent }}%</small></strong></div><meter min="0" max="100" value="{{ row.percent }}" aria-label="{{ row.label }}占全部帳號">{{ row.percent }}%</meter></li>{% endfor %}</ol><p class="analytics-note">目前帳號狀態，不是歷史轉換漏斗。解除綁定或停用後會更新。</p></section>
+  </div>
+</section>
+<section id="google-analytics" class="admin-section assignment-analytics" aria-labelledby="ga4Title" data-ga4-url="{{ url_for('google_analytics_report') }}" data-ready="{{ 'true' if ga4.reports_ready else 'false' }}">
+  <header class="analytics-header"><div><h2 id="ga4Title">Google Analytics</h2><p>同意分析的瀏覽器訪客 · 與本站帳號數分開</p></div><div class="analytics-range"><label for="ga4Range">區間</label><select id="ga4Range"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option></select></div></header>
+  <p id="ga4Status" role="status">{% if ga4.reports_ready %}報表待載入{% elif ga4.collection_ready %}追蹤 ID 已設定；尚未連接報表{% else %}尚未連接 GA4{% endif %}</p>
+  <div id="ga4Report" hidden>
+    <div class="ga4-metrics" id="ga4Metrics"></div>
+    <div class="ga4-tables">
+      {% for key, title in [('sources','來源與宣傳活動'),('pages','熱門頁面'),('devices','裝置'),('returning','新訪客與回訪訪客'),('login_funnel','首頁至登入漏斗'),('line_funnel','登入至 LINE 通知漏斗'),('events','登入方式與通知操作'),('features','功能使用')] %}
+      <section><h3>{{ title }}</h3><div class="analytics-table-wrap" id="ga4-{{ key }}"></div></section>
+      {% endfor %}
+    </div>
+    <p class="analytics-note">漏斗依同一瀏覽器依序完成，每步限 7 日；未經網站確認的 LINE 操作不列入 GA4。登入方式表為各事件獨立訪客數。功能操作不等於作業完成。報表可能延遲 24–48 小時，沒有接入前的歷史資料。</p>
+  </div>
+  <details class="ga4-setup" {% if not ga4.reports_ready %}open{% endif %}><summary>連接設定</summary>
+    <ol>
+      <li>在 <a href="https://analytics.google.com/" target="_blank" rel="noopener">Google Analytics</a> 建立 E3 專用資源；時區選台北，新增網站資料串流 <code>https://www.e3hwtool.space</code>。</li>
+      <li>關閉串流的「加強型評估」，避免自動取得表單、搜尋字詞與網址參數。</li>
+      <li>Railway 新增 <code>E3_GA4_MEASUREMENT_ID</code>（<code>G-...</code>）與 <code>E3_GA4_PROPERTY_ID</code>（數字資源 ID）。</li>
+      <li>在 <a href="https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com" target="_blank" rel="noopener">Google Cloud</a> 啟用 Analytics Data API、建立服務帳戶。在 GA4 資源存取管理將服務帳戶電子郵件加為「檢視者」。</li>
+      <li>服務帳戶的 JSON 金鑰僅存入 Railway 的 <code>E3_GA4_SERVICE_ACCOUNT_JSON</code>，不要貼到聊天或 Git。儲存後重新部署。</li>
+    </ol>
+    <p class="analytics-note">追蹤 {{ '已設定' if ga4.collection_ready else '未設定' }} · 報表 {{ '已設定，待驗證連線' if ga4.reports_ready else '未設定' }}。管理員、代看模式與考研站不送出分析事件。用戶可在頁尾撤回分析同意。</p>
+  </details>
+</section>

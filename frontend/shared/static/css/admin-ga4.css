@@ -1,0 +1,30 @@
+.engagement-grid, .ga4-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.engagement-grid > section, .ga4-tables > section { min-width: 0; }
+.engagement-grid h3, .ga4-tables h3 { margin: 0 0 16px; font-size: 16px; }
+.engagement-values { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.engagement-values dt { font-size: 12px; color: var(--muted); }
+.engagement-values dd { margin: 10px 0 0; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.engagement-values small { font-size: 12px; margin-left: 6px; font-weight: 400; color: var(--muted); }
+.adoption-steps { padding: 0; margin: 0; list-style: none; }
+.adoption-steps li { margin-bottom: 14px; }
+.adoption-steps li > div { display: flex; justify-content: space-between; font-size: 13px; gap: 12px; }
+.adoption-steps small { color: var(--muted); margin-left: 6px; font-weight: 400; }
+.adoption-steps meter { width: 100%; height: 9px; margin-top: 6px; }
+.adoption-steps meter::-webkit-meter-bar { background: var(--border); border: 0; }
+.adoption-steps meter::-webkit-meter-optimum-value { background: var(--primary); }
+.adoption-steps meter::-moz-meter-bar { background: var(--primary); }
+.ga4-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0 28px; }
+.ga4-metrics article { background: var(--card); border: 1px solid var(--border); padding: 16px; border-radius: 6px; min-width: 0; }
+.ga4-metrics span { color: var(--muted); font-size: 12px; }
+.ga4-metrics strong { display: block; font-size: 26px; margin-top: 10px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ga4-setup { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 16px; font-size: 13px; }
+.ga4-setup summary { cursor: pointer; color: var(--primary); }
+.ga4-setup ol { padding-left: 22px; line-height: 1.8; }
+.ga4-setup li { margin-bottom: 12px; overflow-wrap: anywhere; }
+.ga4-setup code { font-size: 12px; }
+#ga4Status { color: var(--muted); font-size: 13px; }
+.ga4-tables table { table-layout: fixed; }
+.ga4-tables :is(th, td) { overflow-wrap: anywhere; }
+#google-analytics [hidden] { display: none; }
+@media (max-width: 850px) { .engagement-grid, .ga4-tables { grid-template-columns: minmax(0, 1fr); } .ga4-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .engagement-values { grid-template-columns: minmax(0, 1fr); gap: 12px; } .engagement-values > div { display: flex; justify-content: space-between; align-items: center; } .engagement-values dd { margin: 0; font-size: 24px; } }

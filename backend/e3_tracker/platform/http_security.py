@@ -128,15 +128,19 @@ def configure_http_security(app, storage):
     @app.after_request
     def security_headers(response):
         nonce = getattr(g, "csp_nonce", "")
+        analytics_connect = ""
+        analytics = app.extensions.get("e3_google_analytics")
+        if analytics and analytics.config["measurement_id"]:
+            analytics_connect = " https://www.google-analytics.com https://region1.google-analytics.com https://www.googletagmanager.com"
         response.headers.setdefault(
             "Content-Security-Policy",
             (
                 "default-src 'self'; "
                 f"script-src 'nonce-{nonce}' 'strict-dynamic' 'self' https://cdn.jsdelivr.net https://www.youtube.com; "
                 "script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
-                "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com; "
+                f"img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com{analytics_connect}; "
                 "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; "
-                "connect-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; "
+                f"connect-src 'self' https://www.youtube.com https://www.youtube-nocookie.com{analytics_connect}; "
                 "frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
                 "worker-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
             ),

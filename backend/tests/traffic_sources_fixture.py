@@ -10,6 +10,9 @@ from e3_tracker.platform.application import create_app
 
 with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
     "E3_CACHE_DIR": folder, "E3_DATABASE_URL": "", "E3_SESSION_COOKIE_SECURE": "0", "E3_CANONICAL_HOST": "",
+    "E3_GA4_MEASUREMENT_ID": "G-TEST1234" if "--ga4" in sys.argv else "",
+    "E3_GA4_PROPERTY_ID": "123" if "--ga4" in sys.argv else "",
+    "E3_GA4_SERVICE_ACCOUNT_JSON": "fixture-only" if "--ga4" in sys.argv else "",
 }):
     app = create_app()
     storage = app.extensions["e3_storage"]

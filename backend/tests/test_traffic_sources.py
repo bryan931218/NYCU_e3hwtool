@@ -118,6 +118,25 @@ class TrafficSourceTests(unittest.TestCase):
         self.assertEqual([stored_source_label(row["source"]) for row in self.rows()], ["Google", "站內導覽"])
         self.assertNotIn("private", str(self.rows()))
 
+    def test_page_dashboard_excludes_study_pages_and_has_e3_data_navigation(self):
+        self.seed(path='/login')
+        self.seed(path='/study-progress', visitor_key='anon:study')
+        self.seed(path='/public/study-progress', visitor_key='anon:study2')
+        self.admin()
+        html = self.client.get('/admin/analytics').get_data(as_text=True)
+        self.assertIn('E3 數據後台', html)
+        self.assertIn('不含考研站', html)
+        self.assertNotIn('/study-progress', html)
+
+    def test_today_page_dashboard_uses_taipei_midnight(self):
+        midnight = datetime.now(TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        self.seed(path='/yesterday', ts=midnight - 1)
+        self.seed(path='/today', ts=midnight)
+        self.admin()
+        html = self.client.get('/admin/analytics?days=1').get_data(as_text=True)
+        self.assertIn('/today', html)
+        self.assertNotIn('/yesterday', html)
+
     def test_new_arrival_does_not_inherit_abandoned_redirect(self):
         self.client.get("/source-entry?utm_source=dcard")
         self.client.get("/login", headers={"Referer": "https://google.com/"})

@@ -1,0 +1,7 @@
+.analytics-consent { position: fixed; bottom: 18px; left: 18px; z-index: 1100; width: min(420px, calc(100% - 36px)); box-sizing: border-box; padding: 18px; border: 1px solid var(--border, #6b7280); border-radius: 8px; background: var(--card, #fff); color: var(--fg, #17212b); box-shadow: 0 4px 20px #0002; font: 14px/1.6 system-ui; letter-spacing: 0; }
+.analytics-consent[hidden] { display: none; }
+.analytics-consent p { margin: 0 0 12px; }
+.analytics-consent div { display: flex; justify-content: flex-end; gap: 12px; }
+.analytics-consent button { padding: 6px 14px; font: inherit; color: inherit; background: transparent; border: 1px solid var(--border, #6b7280); border-radius: 5px; cursor: pointer; }
+.analytics-consent button:focus-visible, .analytics-privacy:focus-visible { outline: 2px solid var(--primary, #0f766e); outline-offset: 3px; }
+.analytics-privacy { position: relative; display: block; margin: 20px auto; background: none; border: none; color: var(--muted, #64748b); font: 12px system-ui; cursor: pointer; }

@@ -130,6 +130,7 @@ class AssignmentUsageStorage:
 
     def assignment_usage_snapshot(self, start, end):
         cutoff = (datetime.now(TAIPEI_TZ).date() - timedelta(days=729)).isoformat()
+        observation_end = (datetime.fromisoformat(end).date() + timedelta(days=7)).isoformat()
         with self._lock, self._engine.begin() as conn:
             conn.execute(delete(feature_usage).where(feature_usage.c.day < cutoff))
             accounts = [dict(row) for row in conn.execute(select(
@@ -143,6 +144,9 @@ class AssignmentUsageStorage:
                 feature_usage.c.feature != "__presence",
             ).group_by(feature_usage.c.user_id, feature_usage.c.feature)).mappings()]
             state = dict(conn.execute(select(usage_state)).mappings().first())
+            daily = [dict(row) for row in conn.execute(select(
+                feature_usage.c.user_id, feature_usage.c.day,
+            ).where(feature_usage.c.day >= start, feature_usage.c.day <= observation_end).distinct()).mappings()]
             # Select only ownership IDs; never load/decrypt notification targets or tokens.
             linked = {
                 "line": set(conn.execute(select(line_bindings.c.user_id)).scalars()),
@@ -155,7 +159,7 @@ class AssignmentUsageStorage:
             settings = [dict(row) for row in conn.execute(select(
                 notification_settings.c.user_id, notification_settings.c.preferences,
             )).mappings()]
-        return {"accounts": accounts, "usage": usage, "state": state, "linked": linked, "settings": settings}
+        return {"accounts": accounts, "usage": usage, "daily": daily, "state": state, "linked": linked, "settings": settings}
 
     def clear_assignment_usage(self, username=None):
         with self._lock, self._engine.begin() as conn:

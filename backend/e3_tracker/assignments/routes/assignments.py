@@ -15,6 +15,7 @@ from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOP
 from e3_tracker.assignments.services.http import apply_cookie, login_with_password
 from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
 from e3_tracker.platform.services.account_labels import account_label
+from e3_tracker.platform.analytics_integration import consent_choice
 
 
 ASSIGNMENT_REFRESH_BROADCAST_VERSION = "2026-09-12-course-scope-v1"
@@ -80,6 +81,8 @@ def register_assignments_routes(*,
             app.logger.warning("Assignment first-login record unavailable")
             is_new_user = False
         record_ui_event("login_success", "success", {"username": username, "is_new_user": is_new_user})
+        if consent_choice() == "granted":
+            session["ga4_login_events"] = [{"method": "session" if request.form.get("login_type") == "session" else "password"}]
 
     @app.route("/login", methods=["GET", "POST"])
     def login():

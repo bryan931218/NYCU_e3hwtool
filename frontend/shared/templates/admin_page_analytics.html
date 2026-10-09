@@ -14,7 +14,8 @@
     {% call page_header('網站流量分析', url_for('index')) %}
         <a class="btn" href="{{ url_for('admin_traffic') }}">流量監控</a>
     {% endcall %}
-    <p class="muted page-meta">更新時間：{{ generated_at }} · 僅限管理員 · 保留最近 {{ retention_days }} 天</p>
+    {% include 'shared/components/admin_data_navigation.html' %}
+    <p class="muted page-meta">更新時間：{{ generated_at }} · 台北日期 · E3 作業系統 · 不含考研站 · 保留最近 {{ retention_days }} 天</p>
     <section class="page-section">
         <p class="notice">這裡統計真正的 HTML 頁面瀏覽，不保存查詢字串或完整來源網址；匿名訪客以伺服器端雜湊識別，不另外寫入原始 IP。</p>
         <div class="filters">

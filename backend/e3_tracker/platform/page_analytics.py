@@ -419,8 +419,10 @@ def register_page_analytics(app) -> None:
 
         days = _window_days()
         now = time.time()
-        since = now - days * 86400
-        rows = _rows(storage, since)
+        today = datetime.fromtimestamp(now, TAIPEI_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        since = (today - timedelta(days=days - 1)).timestamp()
+        rows = [row for row in _rows(storage, since)
+                if not row.get("path", "").startswith(("/study", "/public/study"))]
         human_rows = [row for row in rows if row.get("device") != "Bot"]
         bot_views = len(rows) - len(human_rows)
 

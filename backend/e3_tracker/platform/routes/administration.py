@@ -4,7 +4,7 @@ from e3_tracker.platform.services.traffic import ACTIVITY_RETENTION_DAYS, is_rec
 from e3_tracker.platform.services.traffic_trends import build_traffic_trend
 from e3_tracker.platform.services.account_identity import AccountIdentities
 from e3_tracker.platform.page_analytics import build_page_sources, clear_page_sources
-from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics
+from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics, build_account_engagement
 from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
 from e3_tracker.assignments.domain.usage import FEATURE_LABELS, student_identity
 import json
@@ -215,9 +215,9 @@ def register_administration_routes(*,
             row["joined_at"] = _fmt_ts(member["joined_at"]) if member else "-"
             row["is_new_user"] = bool(member and member["is_new"] and 0 <= now - member["joined_at"] < 7 * 86400)
         window = analytics_window(request.args)
-        analytics = build_assignment_analytics(
-            storage.assignment_usage_snapshot(window["start"], window["end"]), window,
-        )
+        usage_snapshot = storage.assignment_usage_snapshot(window["start"], window["end"])
+        analytics = build_assignment_analytics(usage_snapshot, window)
+        engagement = build_account_engagement(usage_snapshot, memberships, window)
         traffic_query = {**trend["query"], "trend": trend["resolution"], "usage_range": window["range"]}
         try:
             source_days = int(request.args.get("source_days", "30"))
@@ -253,6 +253,8 @@ def register_administration_routes(*,
             top_users=formatted_users[:5],
             summary=summary,
             assignment_analytics=analytics,
+            account_engagement=engagement,
+            ga4=app.extensions["e3_google_analytics"].status(),
             page_sources=page_sources,
             source_share_url=app_home_url,
             source_days=source_days,

@@ -2,8 +2,14 @@ export function register(ctx) {}
 
 export function initialize(ctx) {
   if (ctx.IS_GUEST || ctx.IS_READONLY_VIEW) return;
-  const log = (feature) => ctx.logUiEvent?.(`usage_${feature}`);
+  const log = (feature) => {
+    ctx.logUiEvent?.(`usage_${feature}`);
+    globalThis.e3Analytics?.track("feature_use", { feature });
+  };
   log({ calendar: "calendar", course: "course_view", due: "due_view" }[ctx.currentViewMode] || "due_view");
+  document.addEventListener("e3-analytics-ready", () => {
+    globalThis.e3Analytics?.track("feature_use", { feature: { calendar: "calendar", course: "course_view", due: "due_view" }[ctx.currentViewMode] || "due_view" });
+  });
   document.addEventListener("click", (event) => {
     const target = event.target;
     const selectors = [

@@ -60,3 +60,46 @@ def build_assignment_analytics(snapshot, window):
         "started_at": datetime.fromtimestamp(snapshot["state"]["started_at"], TAIPEI_TZ).strftime("%Y-%m-%d %H:%M"),
         "legacy_samples": snapshot["state"]["legacy_samples"],
     }
+
+
+def build_account_engagement(snapshot, memberships, window, *, now=None):
+    """First-party adoption and fully observed seven-calendar-day new-user cohorts."""
+    today = (now or datetime.now(TAIPEI_TZ)).astimezone(TAIPEI_TZ).date()
+    identities = {row["id"]: student_identity(row) or f"account:{row['id']}" for row in snapshot["accounts"]}
+    member_rows = {}
+    for account in snapshot["accounts"]:
+        member = memberships.get(account["username"])
+        key = identities[account["id"]]
+        if member and (key not in member_rows or member["joined_at"] < member_rows[key]["joined_at"]):
+            member_rows[key] = member
+    days = {}
+    for row in snapshot.get("daily", []):
+        key = identities.get(row["user_id"])
+        if key:
+            days.setdefault(key, set()).add(datetime.fromisoformat(row["day"]).date())
+    interval_days = {key: {day for day in values if window["start"] <= day.isoformat() <= window["end"]}
+                     for key, values in days.items()}
+    tracking_day = datetime.fromtimestamp(snapshot["state"]["started_at"], TAIPEI_TZ).date()
+    eligible, retained, pending = set(), set(), set()
+    for key, member in member_rows.items():
+        joined = datetime.fromtimestamp(member["joined_at"], TAIPEI_TZ).date()
+        if (not member["is_new"] or member["joined_at"] < snapshot["state"]["started_at"]
+                or not max(window["start"], tracking_day.isoformat()) <= joined.isoformat() <= window["end"]):
+            continue
+        if joined + timedelta(days=7) >= today:
+            pending.add(key)
+            continue
+        eligible.add(key)
+        if any(1 <= (day - joined).days <= 7 for day in days.get(key, set())):
+            retained.add(key)
+    adoption = build_assignment_analytics(snapshot, window)
+    total = adoption["total"]
+    return {
+        "active": sum(bool(value) for value in interval_days.values()),
+        "repeat": sum(len(value) > 1 for value in interval_days.values()),
+        "eligible": len(eligible), "retained": len(retained), "pending": len(pending),
+        "retention": round(100 * len(retained) / len(eligible), 1) if eligible else None,
+        "line_steps": [{"label": label, "count": count,
+                        "percent": round(count * 100 / total, 1) if total else 0}
+                       for label, count in [("已建立帳號", total), ("目前綁定 LINE", adoption["line"]),
+                                            ("LINE 通知已啟用", adoption["enabled"]["line"])]]}

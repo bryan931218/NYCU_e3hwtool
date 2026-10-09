@@ -535,4 +535,6 @@ def create_app(
     from e3_tracker.platform.page_analytics import register_page_analytics
     app.config["E3_APP_HOME_URL"] = app_home_url
     register_page_analytics(app)
+    from e3_tracker.platform.analytics_integration import register_google_analytics
+    register_google_analytics(app)
     return app
