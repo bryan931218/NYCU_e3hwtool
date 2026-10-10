@@ -1,4 +1,4 @@
-"""Opt-in E3 analytics, isolated from study pages and administrator inspection."""
+"""Default-enabled E3 analytics with saved opt-outs and isolated collection."""
 
 from flask import current_app, redirect, render_template, request, session, url_for
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -36,6 +36,7 @@ def register_google_analytics(app):
         if request.path == "/privacy" and reports.config["measurement_id"]:
             context["analytics_preferences"] = {
                 "measurement": reports.config["measurement_id"], "consent": consent_choice(),
+                "default_enabled": True,
                 "campaigns": [], "events": [], "path": "/privacy", "title": "隱私權政策",
                 "settings": True,
             }
@@ -98,7 +99,7 @@ def register_google_analytics(app):
         snippet = render_template("shared/components/google_analytics.html", analytics={
             "measurement": config["measurement_id"], "campaigns": config["campaigns"],
             "consent": choice, "path": request.path, "title": page,
-            "events": events if choice == "granted" else [],
+            "default_enabled": True, "events": events if choice != "denied" else [],
         })
         html = response.get_data(as_text=True)
         position = html.lower().rfind("</body>")

@@ -6,8 +6,11 @@
   let loaded = false;
   const features = new Set(["due_view", "course_view", "calendar", "search", "filters", "open_e3", "ignore", "refresh", "custom_todo", "deadline_edit", "messages", "notification_settings"]);
   const simpleEvents = new Set(["landing_view", "login_view", "login_submit", "login", "line_link_success", "browser_subscribe", "notification_enable"]);
+  function enabled() {
+    return choice === "granted" || (choice === "" && config.default_enabled === true);
+  }
   function track(name, params = {}) {
-    if (choice !== "granted" || !loaded) return;
+    if (!enabled() || !loaded) return;
     const safe = {};
     if (name === "feature_use" && features.has(params.feature)) name = `feature_${params.feature}`;
     else if (!simpleEvents.has(name)) return;
@@ -18,7 +21,7 @@
     if (name === "notification_enable" && safe.channel) window.gtag("event", `${safe.channel}_notification_enable`, safe);
   }
   function start() {
-    if (loaded || choice !== "granted" || config.settings) return;
+    if (loaded || !enabled() || config.settings) return;
     loaded = true;
     window[`ga-disable-${config.measurement}`] = false;
     window.dataLayer = window.dataLayer || [];
@@ -89,7 +92,7 @@
     const method = new FormData(event.target).get("login_type");
     track("login_submit", { method: method === "session" ? "session" : "password" });
   });
-  if (choice === "granted" && !config.settings) {
+  if (enabled() && !config.settings) {
     if ("requestIdleCallback" in window) window.requestIdleCallback(start, { timeout: 2000 });
     else setTimeout(start, 0);
   }

@@ -66,14 +66,14 @@
             <li>國立陽明交通大學 E3 平台：作業、課程公告及課程信件的資料來源。</li>
             <li>Google Calendar API：在授權範圍 <code>{{ google_scope }}</code> 內建立行事曆事件。</li>
             <li>瀏覽器推播服務與 LINE Messaging API：僅在您啟用對應通知時寄送作業提醒；訂閱與 LINE 識別碼在後端加密保存，您可在通知設定中移除。</li>
-            <li>Google Analytics 4：網站配置後，僅在您同意分析時載入。分析頁面、來源、裝置與固定功能事件，不傳送學號、姓名、密碼、MoodleSession、LINE 識別碼、搜尋內容或課程內容；網址參數與來源路徑會移除或依允許清單處理。Google 會接收連線所需的 IP 與瀏覽器資料，並使用分析 Cookie 辨認瀏覽器訪客；不啟用廣告個人化或 Google signals。您可在本頁啟用、停用或撤回同意。拒絕分析不影響作業與通知功能。</li>
+            <li>Google Analytics 4：網站配置後預設啟用，已選擇停用的瀏覽器不會載入。分析頁面、來源、裝置與固定功能事件，不傳送學號、姓名、密碼、MoodleSession、LINE 識別碼、搜尋內容或課程內容；網址參數與來源路徑會移除或依允許清單處理。Google 會接收連線所需的 IP 與瀏覽器資料，並使用分析 Cookie 辨認瀏覽器訪客；不啟用廣告個人化或 Google signals。您可在本頁啟用或停用分析，停用不影響作業與通知功能。</li>
         </ul>
         <p>我們不會販售個資；僅為提供您選擇的功能，向對應服務傳送必要資料。</p>
         {% if analytics_preferences is defined %}
         <div class="analytics-settings" id="analyticsConsent" aria-label="Google Analytics 選擇">
             <button type="button" data-analytics-choice="granted">啟用分析</button>
             <button type="button" data-analytics-choice="denied">停用分析</button>
-            <p id="analyticsPreferenceStatus" role="status">{% if analytics_preferences.consent == 'granted' %}已啟用{% else %}未啟用{% endif %}</p>
+            <p id="analyticsPreferenceStatus" role="status">{% if analytics_preferences.consent == 'denied' %}已停用{% elif analytics_preferences.consent == 'granted' %}已啟用{% else %}預設啟用{% endif %}</p>
         </div>
         {% endif %}
     </section>

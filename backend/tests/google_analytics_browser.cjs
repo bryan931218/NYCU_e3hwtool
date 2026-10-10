@@ -88,7 +88,11 @@ const reports = {
     });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://traffic.test/login?username=112550103&session=secret');
-    assert.equal(google.length, 0);
+    await page.waitForFunction(() => window.dataLayer?.length > 0);
+    await page.waitForLoadState('networkidle');
+    assert.equal(google.length, 1, 'Default collection starts without a consent prompt');
+    assert.ok(!JSON.stringify(await page.evaluate(() => Array.from(window.dataLayer).map(args => Array.from(args)))).includes('112550103'));
+    const initialGoogleRequests = google.length;
     assert.equal(await page.locator('#analyticsConsent, #analyticsPrivacy, a[href="/study/progress"]').count(), 0);
     assert.doesNotMatch(await page.locator('body').innerText(), /公開學習進度|分析隱私設定|允許 Google Analytics/);
     for (const width of [1440, 390]) {
@@ -100,14 +104,15 @@ const reports = {
     await page.waitForURL('**/privacy');
     await page.locator('[data-analytics-choice=granted]').click();
     await page.locator('#analyticsPreferenceStatus').filter({ hasText: '已啟用' }).waitFor();
-    assert.equal(google.length, 0, 'Privacy preferences never load Google');
+    assert.equal(google.length, initialGoogleRequests, 'Privacy preferences never load Google');
     await page.locator('[data-analytics-choice=denied]').click();
     await page.locator('#analyticsPreferenceStatus').filter({ hasText: '已停用' }).waitFor();
     assert.equal(await page.locator('#analyticsConsent').isVisible(), true);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.locator('#analyticsConsent').screenshot({ path: path.join(root, 'output/playwright/analytics-preferences-mobile.png') });
     await page.goto('http://traffic.test/login');
-    assert.equal(google.length, 0, 'Saved denial stays disabled on login');
+    await page.waitForLoadState('networkidle');
+    assert.equal(google.length, initialGoogleRequests, 'Saved denial stays disabled on login');
     assert.deepEqual(errors, []);
     console.log('GA4 desktop/mobile themes, deferred reports, alpha failure and consent privacy passed.');
   } finally { await browser.close(); }

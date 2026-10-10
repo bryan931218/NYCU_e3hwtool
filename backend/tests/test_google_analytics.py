@@ -1,4 +1,4 @@
-"""Opt-in collection, administrator isolation and non-blocking report failures."""
+"""Collection preferences, administrator isolation and non-blocking reports."""
 
 import json
 import os
@@ -40,12 +40,13 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         with self.client.session_transaction() as state:
             state["session_token"] = "analytics-web"
 
-    def test_default_denied_and_granted_are_explicit_without_private_urls(self):
+    def test_default_enabled_preserves_explicit_choices_without_private_urls(self):
         html = self.client.get("/login?moodle_session=secret&username=112550103").get_data(as_text=True)
         self.assertIn('id="googleAnalyticsConfig"', html)
         snippet = html.split('id="googleAnalyticsConfig">')[1].split('</script>')[0]
         config = json.loads(snippet)
         self.assertEqual(config["consent"], "")
+        self.assertTrue(config["default_enabled"])
         self.assertEqual(config["path"], "/login")
         self.assertNotIn("secret", snippet)
         self.assertNotIn("112550103", snippet)
@@ -135,6 +136,8 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         config = json.loads(privacy.split('id="googleAnalyticsConfig">')[1].split('</script>')[0])
         self.assertTrue(config["settings"])
         self.assertEqual(config["consent"], "")
+        self.assertTrue(config["default_enabled"])
+        self.assertIn("預設啟用", privacy)
         self.assertIn('id="analyticsPreferenceStatus"', privacy)
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/?view_user=113550092").get_data(as_text=True))
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/study").get_data(as_text=True))
@@ -147,6 +150,7 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
             config = json.loads(html.split('id="googleAnalyticsConfig">')[1].split('</script>')[0])
             self.assertEqual(config["consent"], choice)
             self.assertTrue(config["settings"])
+            self.assertIn("已停用" if choice == "denied" else "已啟用", html)
             self.assertNotIn("e3_analytics_consent", response.headers.get("Set-Cookie", ""))
 
     def test_missing_configuration_hides_privacy_preferences(self):
@@ -167,6 +171,18 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         self.assertEqual(config["events"], [{"method": "session"}])
         second = self.client.get("/login").get_data(as_text=True)
         self.assertIn('"events": []', second)
+
+    def test_default_login_events_are_consumed_once_but_opted_out_events_are_not_sent(self):
+        for choice in ("", "denied"):
+            if choice:
+                self.client.post("/analytics/consent", json={"choice": choice})
+            with self.client.session_transaction() as state:
+                state["ga4_login_events"] = [{"method": "session"}]
+            html = self.client.get("/login").get_data(as_text=True)
+            config = json.loads(html.split('id="googleAnalyticsConfig">')[1].split('</script>')[0])
+            self.assertEqual(config["consent"], choice)
+            self.assertEqual(config["events"], [] if choice == "denied" else [{"method": "session"}])
+            self.assertIn('"events": []', self.client.get("/login").get_data(as_text=True))
 
     def test_missing_config_changes_neither_pages_nor_csp(self):
         self.app.extensions["e3_google_analytics"].config["measurement_id"] = ""

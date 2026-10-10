@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../shared/static/js/google-analytics.js', import.meta.url), 'utf8');
 function setup(consent = '', options = {}) {
   const events = {}, scripts = [], requests = [], cookies = [];
-  const config = { consent, measurement: 'G-TEST1234', path: '/login', title: '登入', campaigns: ['dcard-115-1'], events: [], settings: options.settings };
+  const config = { consent, measurement: 'G-TEST1234', path: '/login', title: '登入', campaigns: ['dcard-115-1'], events: [], settings: options.settings, default_enabled: options.defaultEnabled ?? true };
   const panel = { hidden: false, addEventListener: (key, handler) => { events[`panel-${key}`] = handler; } };
   const status = { textContent: '' };
   const document = { getElementById: (id) => id === 'googleAnalyticsConfig' ? { textContent: JSON.stringify(config), nonce: 'nonce' } : id === 'analyticsConsent' ? (options.noPanel ? null : panel) : id === 'analyticsPreferenceStatus' ? status : null,
@@ -20,13 +20,21 @@ function setup(consent = '', options = {}) {
   return { events, scripts, requests, cookies, panel, window, status };
 }
 
-test('no Google network or events before consent, including denial', () => {
-  for (const choice of ['', 'denied']) {
-    const result = setup(choice);
+test('saved denial and disabled default never load Google or send events', () => {
+  for (const [choice, options] of [['denied', {}], ['', { defaultEnabled: false }]]) {
+    const result = setup(choice, options);
     result.window.e3Analytics.track('feature_use', { feature: 'search' });
     assert.equal(result.scripts.length, 0);
     assert.equal(result.window.dataLayer, undefined);
   }
+});
+test('default collection starts without manufacturing a saved consent choice', () => {
+  const result = setup('');
+  assert.equal(result.scripts.length, 1);
+  result.window.e3Analytics.track('feature_use', { feature: 'calendar' });
+  assert.match(JSON.stringify(result.window.dataLayer), /feature_calendar/);
+  assert.equal(result.requests.length, 0);
+  assert.equal(result.cookies.length, 0);
 });
 test('sanitizes URLs, title and referrer and allowlists event params', () => {
   const result = setup('granted');
@@ -50,7 +58,7 @@ test('free-form campaigns and sources are not sent', () => {
 test('pages without consent UI honor saved preferences without errors', () => {
   for (const choice of ['', 'denied', 'granted']) {
     const result = setup(choice, { noPanel: true });
-    assert.equal(result.scripts.length, choice === 'granted' ? 1 : 0);
+    assert.equal(result.scripts.length, choice !== 'denied' ? 1 : 0);
     assert.equal(result.requests.length, 0);
   }
 });
