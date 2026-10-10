@@ -28,27 +28,40 @@ class SessionIdentitySync:
         try:
             if not self.storage.claim_student_number_sync(username, time.time(), force=force):
                 return
+            diagnostics = {}
             with requests.Session() as sess:
                 apply_cookie(sess, self.base_url, user["moodle_session"])
-                identity = fetch_session_identity(sess, self.base_url, timeout=self.timeout)
+                identity = fetch_session_identity(sess, self.base_url, timeout=self.timeout, diagnostics=diagnostics)
             number = identity["student_number"]
             if number and self.storage.save_student_number(username, number):
                 name = identity["name"]
                 if name:
                     self.storage.save_user_profile(username, name, profile_surname(name))
+                return True
+            reason = "identity_conflict" if number else diagnostics.get("reason", "identity_missing")
+            logger.warning("E3 Session identity unavailable (reason=%s); will retry later", reason)
+        except requests.Timeout:
+            logger.warning("E3 Session identity unavailable (reason=upstream_timeout); will retry later")
+        except requests.RequestException:
+            logger.warning("E3 Session identity unavailable (reason=upstream_request); will retry later")
         except Exception:
             # Upstream exception text can contain cookies or personal data.
-            logger.warning("E3 Session identity unavailable; will retry later")
+            logger.warning("E3 Session identity unavailable (reason=internal_error); will retry later")
+        return False
 
     def backfill_once(self):
         now = time.time()
+        checked = updated = 0
         for username in self.storage.list_session_identity_users(now):
             try:
                 user = self.storage.load_session_identity_user(username, now)
                 if user:
-                    self.refresh_user(user)
+                    checked += 1
+                    updated += bool(self.refresh_user(user))
             except Exception:
                 logger.warning("E3 Session identity backfill will retry later")
+        if checked:
+            logger.info("E3 Session identity backfill checked=%d updated=%d", checked, updated)
 
     def start(self, app):
         enabled = os.getenv("E3_SESSION_PROFILE_WORKER", "1" if production_mode() else "0")

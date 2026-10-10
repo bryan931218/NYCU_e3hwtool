@@ -22,6 +22,7 @@ BASE = "https://e3.example"
 MENU = '<div class="usermenu"><a href="/user/profile.php?id=42">Profile</a></div>'
 PROFILE = '<header id="page-header"><h1>王小明</h1></header><a href="/user/edit.php?id=42&amp;returnto=profile">Edit</a>'
 LOCKED = '<input id="id_idnumber" name="idnumber" value="112550101" disabled readonly>'
+EDIT_FORM = '<form action="/user/edit.php"><input type="hidden" name="id" value="42">' + LOCKED + '</form>'
 IDENTITY = {"name": "王小明", "student_number": "112550101"}
 
 
@@ -32,7 +33,7 @@ def response(html, status=200):
 class IdentityParsingTests(unittest.TestCase):
     def test_session_name_does_not_use_the_trailing_department(self):
         with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
-            response(MENU), response(PROFILE.replace('王小明', '王小明 / 藥學系')), response(LOCKED),
+            response(MENU), response(PROFILE.replace('王小明', '王小明 / 藥學系')), response(EDIT_FORM),
         ]):
             self.assertEqual(fetch_session_identity(Mock(), BASE), IDENTITY)
 
@@ -42,10 +43,11 @@ class IdentityParsingTests(unittest.TestCase):
         for number in ('', '１２３４５６７８９', '<script>', '123'):
             self.assertEqual(account_label('Session-demo', number), 'Session-demo')
 
-    def test_only_locked_nine_ascii_digit_field_is_accepted(self):
+    def test_only_readonly_nine_ascii_digit_field_is_accepted(self):
         self.assertEqual(parse_student_number(LOCKED), '112550101')
+        self.assertEqual(parse_student_number(LOCKED.replace(' disabled', '')), '112550101')
         for invalid in (
-            LOCKED.replace(' disabled', ''), LOCKED.replace(' readonly', ''),
+            LOCKED.replace(' readonly', ''),
             LOCKED.replace('112550101', '11598'), LOCKED.replace('112550101', '１２３４５６７８９'),
             LOCKED.replace('id_idnumber', 'id_username'),
             '<h1>112550101</h1>', '<input name="username" value="112550101">',
@@ -55,7 +57,7 @@ class IdentityParsingTests(unittest.TestCase):
 
     def test_own_edit_page_is_read_without_redirects_or_submitting_data(self):
         with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
-            response(MENU), response(PROFILE), response(LOCKED),
+            response(MENU), response(PROFILE), response(EDIT_FORM),
         ]) as request:
             self.assertEqual(fetch_session_identity(Mock(), BASE), IDENTITY)
         self.assertEqual([call.args[2] for call in request.call_args_list], [
@@ -88,9 +90,104 @@ class IdentityParsingTests(unittest.TestCase):
 
     def test_failed_edit_response_does_not_supply_identity(self):
         with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
-            response(MENU), response(PROFILE), response(LOCKED, 302),
+            response(MENU), response(PROFILE), response(EDIT_FORM, 302),
         ]):
             self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '')
+
+    def test_moodle_readonly_form_and_implicit_own_edit_url_are_supported(self):
+        for href in ('/user/edit.php', '/user/edit.php?course=1', '/user/edit.php?course=1&returnto=profile'):
+            with self.subTest(href=href), patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
+                response(MENU), response(PROFILE.replace('/user/edit.php?id=42&amp;returnto=profile', href)),
+                response(EDIT_FORM.replace(' disabled', '')),
+            ]) as request:
+                diagnostics = {}
+                self.assertEqual(fetch_session_identity(Mock(), BASE, diagnostics=diagnostics), IDENTITY)
+                self.assertEqual(diagnostics['reason'], 'success')
+                self.assertEqual(request.call_count, 3)
+                self.assertTrue(all(call.args[1] == 'GET' for call in request.call_args_list))
+
+    def test_edit_owner_and_field_must_match_even_for_explicit_links(self):
+        cases = [
+            (LOCKED, 'edit_owner_mismatch'),
+            (EDIT_FORM.replace('value="42"', 'value="99"'), 'edit_owner_mismatch'),
+            (EDIT_FORM.replace('type="hidden"', 'type="text"'), 'edit_owner_mismatch'),
+            (EDIT_FORM.replace('type="hidden" name="id" value="42"', 'type="hidden" name="userid" value="42"'), 'edit_owner_mismatch'),
+            (EDIT_FORM.replace('/user/edit.php', 'https://evil.example/user/edit.php'), 'edit_owner_mismatch'),
+            (EDIT_FORM.replace(LOCKED, ''), 'student_number_field_missing'),
+            (EDIT_FORM.replace(' readonly', ''), 'student_number_unlocked'),
+            (EDIT_FORM.replace('112550101', 'not-a-number'), 'student_number_invalid'),
+            (EDIT_FORM.replace(LOCKED, LOCKED + LOCKED), 'student_number_field_missing'),
+        ]
+        for html, reason in cases:
+            with self.subTest(reason=reason), patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
+                response(MENU), response(PROFILE), response(html),
+            ]):
+                diagnostics = {}
+                self.assertEqual(fetch_session_identity(Mock(), BASE, diagnostics=diagnostics)['student_number'], '')
+                self.assertEqual(diagnostics['reason'], reason)
+
+    def test_identity_outside_own_edit_form_is_not_used(self):
+        form = EDIT_FORM.replace(LOCKED, '') + LOCKED
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(MENU), response(PROFILE), response(form)]):
+            self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '')
+
+    def test_invalid_implicit_urls_and_get_actions_are_not_requested(self):
+        for href in ('/user/edit.php?id=', '/user/edit.php?id=99', '/user/edit.php?course=1&course=2',
+                     '/user/edit.php?userid=99', '/user/edit.php?cancelemailchange=1',
+                     '/user/edit.php?returnto=profile&returnto=preferences', '/user/edit.php#id=99'):
+            with self.subTest(href=href), patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
+                response(MENU), response(PROFILE.replace('/user/edit.php?id=42&amp;returnto=profile', href)),
+            ]) as request:
+                self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '')
+                self.assertEqual(request.call_count, 2)
+
+    def test_alternative_edit_link_is_tried_after_first_has_no_field(self):
+        profile = PROFILE + '<a href="/user/edit.php?course=1">Edit</a>'
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
+            response(MENU), response(profile), response(EDIT_FORM.replace(LOCKED, '')), response(EDIT_FORM),
+        ]):
+            self.assertEqual(fetch_session_identity(Mock(), BASE), IDENTITY)
+
+    def test_failed_stages_and_login_page_have_nonpersonal_diagnostics(self):
+        cases = [
+            ([response(MENU, 302)], 'dashboard_unavailable'),
+            ([response('<form action="/login/index.php"></form>')], 'login_required'),
+            ([response('<div>Not a dashboard</div>')], 'profile_link_missing'),
+            ([response(MENU), response(PROFILE, 302)], 'profile_unavailable'),
+            ([response(MENU), response('<h1>Name</h1>')], 'edit_link_missing'),
+            ([response(MENU), response(PROFILE), response(EDIT_FORM, 302)], 'edit_unavailable'),
+        ]
+        for responses, reason in cases:
+            with self.subTest(reason=reason), patch('e3_tracker.assignments.services.profile.safe_request', side_effect=responses):
+                diagnostics = {}
+                self.assertEqual(fetch_session_identity(Mock(), BASE, diagnostics=diagnostics)['student_number'], '')
+                self.assertEqual(diagnostics, {'reason': reason})
+
+    def test_login_redirect_and_access_denied_are_distinguished_without_following(self):
+        redirect = response('', 302)
+        redirect.headers = {'Location': '/login/index.php?session=never-log-this'}
+        denied = requests.HTTPError('private-cookie-and-url', response=response('', 403))
+        for result, expected in ((redirect, 'login_required'), (denied, 'access_denied')):
+            with self.subTest(reason=expected), patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[result]) as read:
+                diagnostics = {}
+                self.assertEqual(fetch_session_identity(Mock(), BASE, diagnostics=diagnostics)['student_number'], '')
+                self.assertEqual(diagnostics, {'reason': expected})
+                self.assertEqual(read.call_count, 1)
+
+    def test_duplicate_edit_links_are_not_read_repeatedly(self):
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
+            response(MENU), response(PROFILE + PROFILE), response(EDIT_FORM.replace(LOCKED, '')),
+        ]) as read:
+            self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '')
+            self.assertEqual(read.call_count, 3)
+
+    def test_candidate_edit_reads_are_bounded(self):
+        profile = ''.join(f'<a href="/user/edit.php?course={n}">Edit</a>' for n in range(10))
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
+            response(MENU), response(profile), *[response(EDIT_FORM.replace(LOCKED, '')) for _ in range(3)],
+        ]) as read:
+            self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '')
+            self.assertEqual(read.call_count, 5)
 
 
 class SessionIdentityTests(unittest.TestCase):
@@ -190,6 +287,18 @@ class SessionIdentityTests(unittest.TestCase):
         with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', return_value=IDENTITY):
             self.sync.backfill_once()
         self.assertEqual(self.storage.load_student_number(self.username), '112550101')
+
+    def test_empty_identity_logs_reason_without_credentials_or_personal_details(self):
+        def missing(*args, diagnostics, **kwargs):
+            diagnostics['reason'] = 'student_number_field_missing'
+            return {'name': '王小明', 'student_number': ''}
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', side_effect=missing), \
+                self.assertLogs('e3_tracker.assignments.services.session_identity', level='WARNING') as logs:
+            self.sync.refresh_user(self.storage.load_web_session('identity-test'))
+        output = ''.join(logs.output)
+        self.assertIn('reason=student_number_field_missing', output)
+        for private in ('opaque-cookie', '王小明', self.username):
+            self.assertNotIn(private, output)
 
     def test_admin_number_does_not_grant_roles_or_merge_accounts(self):
         self.storage.save_user_profile('112550103', '李小明', '李')
