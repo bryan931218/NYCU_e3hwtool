@@ -30,6 +30,6 @@ with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
         storage.save_web_session("traffic-preview-token", "traffic-preview", is_admin=True)
         with client.session_transaction() as session:
             session.update(username="traffic-preview", session_token="traffic-preview-token")
-        print(client.get("/admin/traffic").get_data(as_text=True))
+        print(client.get("/admin/ga4" if "--ga4-page" in sys.argv else "/admin/traffic").get_data(as_text=True))
     finally:
         storage._engine.dispose()

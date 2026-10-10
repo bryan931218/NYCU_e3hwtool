@@ -59,8 +59,10 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
 
     def test_reports_are_admin_only_and_never_expose_credentials(self):
         self.assertEqual(self.client.get("/admin/analytics/ga4").status_code, 403)
+        self.assertEqual(self.client.get("/admin/ga4").location, "/login")
         self.login()
         self.assertEqual(self.client.get("/admin/analytics/ga4").status_code, 403)
+        self.assertEqual(self.client.get("/admin/ga4").location, "/")
         self.login(admin=True)
         response = self.client.get("/admin/analytics/ga4?days=999")
         self.assertEqual(response.json, {"status": "not_configured"})
@@ -73,7 +75,13 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         self.assertIn('href="/admin/traffic"', page_html)
         self.assertIn('href="https://analytics.google.com/analytics/web/"', page_html)
         self.assertNotIn('href="/admin/study-home"', page_html)
-        self.assertIn("尚未連接報表", html)
+        self.assertNotIn('id="google-analytics"', html)
+        self.assertNotIn('shared/js/admin-ga4.js', html)
+        ga4_page = self.client.get("/admin/ga4")
+        self.assertEqual(ga4_page.status_code, 200)
+        self.assertIn("no-store", ga4_page.headers["Cache-Control"])
+        self.assertIn("尚未連接報表", ga4_page.get_data(as_text=True))
+        self.assertNotIn('id="googleAnalyticsConfig"', ga4_page.get_data(as_text=True))
         self.assertNotIn('id="googleAnalyticsConfig"', html)
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/").get_data(as_text=True))
 
@@ -83,15 +91,31 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         with patch.dict(os.environ, {"E3_GA4_SERVICE_ACCOUNT_JSON": "configured"}), \
                 patch("e3_tracker.platform.routes.administration.build_page_sources", side_effect=AssertionError("Legacy sources must not be queried")):
             html = self.client.get("/admin/traffic").get_data(as_text=True)
-            self.assertIn('id="ga4-features"', html)
+            self.assertIn('href="/admin/ga4"', html)
+            self.assertNotIn('id="google-analytics"', html)
+            self.assertNotIn('shared/js/admin-ga4.js', html)
             for obsolete in ['id="system-summary"', 'id="trafficSources"', 'class="analytics-feature-table"', 'href="/admin/analytics"', 'Top 5 使用者', '熱門操作', 'LINE 啟用進度']:
                 self.assertNotIn(obsolete, html)
             for retained in ['id="account-usage"', 'id="recent-activity"', 'id="visit-trend"', 'id="usageRange"', 'LINE 綁定成功', '科系碼分布', 'data-traffic-stat="online"']:
                 self.assertIn(retained, html)
-            self.assertLess(html.index('id="google-analytics"'), html.index('id="assignment-analytics"'))
+            ga4_html = self.client.get("/admin/ga4").get_data(as_text=True)
+            self.assertIn('id="ga4-features"', ga4_html)
+            self.assertIn('href="/admin/ga4" aria-current="page"', ga4_html)
+            self.assertNotIn('id="account-usage"', ga4_html)
+            self.assertNotIn('shared/js/traffic-stats.js', ga4_html)
+            self.assertNotIn('chart.umd', ga4_html)
             response = self.client.get("/admin/analytics")
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.location, "/admin/traffic#google-analytics")
+            self.assertEqual(response.location, "/admin/ga4")
+
+    def test_guest_or_expired_admin_cannot_open_ga4_page(self):
+        self.storage.save_web_session("analytics-web", "guest-preview", is_admin=True, is_guest=True)
+        with self.client.session_transaction() as state:
+            state["session_token"] = "analytics-web"
+        self.assertEqual(self.client.get("/admin/ga4").location, "/")
+        self.assertEqual(self.client.get("/admin/analytics/ga4").status_code, 403)
+        self.storage.save_web_session("analytics-web", "112550103", is_admin=True, lifetime=-1)
+        self.assertEqual(self.client.get("/admin/ga4").location, "/login")
 
     def test_retention_observes_following_week_without_expanding_usage_window(self):
         self.login()

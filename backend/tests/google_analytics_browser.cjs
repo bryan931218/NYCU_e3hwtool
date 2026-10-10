@@ -21,7 +21,8 @@ const reports = {
   const errors = [];
   fs.mkdirSync(path.join(root, 'output/playwright'), { recursive: true });
   try {
-    const html = fixture();
+    const trafficHtml = fixture();
+    const html = fixture('--ga4-page');
     for (const width of [1440, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 1000 } });
       page.on('pageerror', error => errors.push(error.message));
@@ -34,12 +35,18 @@ const reports = {
           return route.fulfill({ contentType: asset.endsWith('.css') ? 'text/css' : 'text/javascript', body: fs.readFileSync(asset) });
         }
         if (url.pathname === '/admin/analytics/ga4') { calls++; return route.fulfill({ json: { status: 'ready', updated_at: '2026-10-10 12:00', reports } }); }
-        return route.fulfill(route.request().isNavigationRequest() ? { contentType: 'text/html', body: html } : { json: { version: 0 } });
+        return route.fulfill(route.request().isNavigationRequest() ? { contentType: 'text/html', body: url.pathname === '/admin/ga4' ? html : trafficHtml } : { json: { version: 0 } });
       });
       await page.goto('http://traffic.test/admin/traffic');
       assert.equal(await page.locator('#trafficSources, #system-summary, .analytics-feature-table').count(), 0, 'Remove legacy duplicate statistics');
       assert.equal(await page.locator('a[href="/admin/analytics"]').count(), 0, 'Remove the duplicate page analytics entry');
       assert.equal(await page.locator('#usageRange').count(), 1, 'Keep one account-range control');
+      assert.equal(await page.locator('#google-analytics').count(), 0, 'GA4 is not embedded in traffic monitoring');
+      assert.equal(calls, 0, 'Traffic monitoring never requests Google reports');
+      await page.locator('.admin-data-nav a[href="/admin/ga4"]').click();
+      await page.waitForURL('**/admin/ga4');
+      assert.equal(await page.locator('.admin-data-nav a[href="/admin/ga4"][aria-current="page"]').count(), 1);
+      assert.equal(await page.locator('#account-usage, #recent-activity').count(), 0, 'Account data stays on traffic monitoring');
       await page.locator('#google-analytics').scrollIntoViewIfNeeded();
       await page.locator('#ga4Report').waitFor({ state: 'visible' });
       assert.ok(calls >= 1, 'Load visible GA4 reports without blocking the page');
@@ -54,8 +61,13 @@ const reports = {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No viewport overflow');
       for (const theme of ['light', 'dark']) {
         await page.locator(`[data-admin-theme=${theme}]`).click();
+        assert.equal(await page.locator(`[data-admin-theme=${theme}]`).getAttribute('aria-pressed'), 'true');
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No theme viewport overflow');
         await page.locator('#google-analytics').screenshot({ path: path.join(root, `output/playwright/ga4-${width}-${theme}.png`) });
       }
+      await page.locator('.admin-data-nav a[href="/admin/traffic"]').click();
+      await page.waitForURL('**/admin/traffic');
+      assert.equal(await page.locator('#google-analytics').count(), 0);
       await page.close();
     }
     const page = await browser.newPage();

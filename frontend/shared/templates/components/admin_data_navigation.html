@@ -5,7 +5,7 @@
     {% if ga4 is not defined or not ga4.reports_ready %}<a href="{{ url_for('admin_page_analytics') }}" {% if request.endpoint == 'admin_page_analytics' %}aria-current="page"{% endif %}>頁面分析</a>{% endif %}
   </div></div>
   <div class="admin-data-group"><span>Google Analytics</span><div>
-    <a href="{{ url_for('admin_traffic', _anchor='google-analytics') }}">整合報表</a>
+    <a href="{{ url_for('admin_google_analytics') }}" {% if request.endpoint == 'admin_google_analytics' %}aria-current="page"{% endif %}>GA4 報表</a>
     <a href="https://analytics.google.com/analytics/web/" title="{% if ga4 is defined and ga4.property_id %}GA4 資源 {{ ga4.property_id }}{% else %}Google Analytics{% endif %}" target="_blank" rel="noopener noreferrer">Google 數據後台 <span class="admin-data-external" aria-hidden="true">↗</span></a>
   </div></div>
 </nav>

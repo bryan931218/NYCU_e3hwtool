@@ -35,9 +35,8 @@
     {% include 'shared/components/admin_data_navigation.html' %}
     {% set ga4_primary = ga4 is defined and ga4.reports_ready %}
     <nav class="admin-nav" aria-label="監控區域">
-        {% if ga4_primary %}<a href="#google-analytics">GA4</a><a href="#assignment-analytics">帳號與通知</a>{% else %}<a href="#system-summary">總覽</a><a href="#assignment-analytics">功能分析</a><a href="#google-analytics">GA4</a><a href="#trafficSources">造訪來源</a>{% endif %}<a href="#account-engagement">帳號回訪</a><a href="#visit-trend">帳號趨勢</a><a href="#account-usage">帳號</a><a href="#recent-activity">近期動態</a>
+        {% if ga4_primary %}<a href="#assignment-analytics">帳號與通知</a>{% else %}<a href="#system-summary">總覽</a><a href="#assignment-analytics">功能分析</a><a href="#trafficSources">造訪來源</a>{% endif %}<a href="#account-engagement">帳號回訪</a><a href="#visit-trend">帳號趨勢</a><a href="#account-usage">帳號</a><a href="#recent-activity">近期動態</a>
     </nav>
-    {% if ga4_primary %}{% include 'shared/components/admin_google_analytics.html' %}{% endif %}
     <section class="admin-section">
         <div class="admin-view-panel">
             <div class="admin-view-copy">
@@ -87,7 +86,6 @@
     {% include 'shared/components/admin_assignment_analytics.html' %}
     {% include 'shared/components/admin_account_engagement.html' %}
     {% if not ga4_primary %}
-    {% include 'shared/components/admin_google_analytics.html' %}
     {% include 'shared/components/admin_traffic_sources.html' %}
     {% endif %}
 
@@ -422,6 +420,5 @@ syncAdminTheme();
 </script>
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/traffic-stats.js') }}" defer></script>
 {% if not ga4_primary %}<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/traffic-sources.js') }}" defer></script>{% endif %}
-<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/admin-ga4.js') }}" defer></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 """Opt-in E3 analytics, isolated from study pages and administrator inspection."""
 
-from flask import current_app, render_template, request, session
+from flask import current_app, redirect, render_template, request, session, url_for
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from .services.google_analytics import GoogleAnalyticsReports, analytics_config
@@ -52,6 +52,17 @@ def register_google_analytics(app):
         if not user or not user.get("is_admin") or user.get("is_guest"):
             return {"error": "forbidden"}, 403
         response = app.json.response(reports.get(request.args.get("days", 30, type=int)))
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
+    @app.get("/admin/ga4")
+    def admin_google_analytics():
+        user = app.extensions["e3_storage"].load_web_session(session.get("session_token", ""))
+        if not user:
+            return redirect(url_for("login"))
+        if not user.get("is_admin") or user.get("is_guest"):
+            return redirect(url_for("index"))
+        response = app.make_response(render_template("shared/admin_google_analytics.html", admin_user=user))
         response.headers["Cache-Control"] = "private, no-store"
         return response
 

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+{% include 'shared/components/security.html' %}
+{% include 'shared/components/page-transitions.html' %}
+<meta charset="utf-8">
+<title>GA4 報表｜E3 作業追蹤系統</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/admin-traffic.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/admin-assignment-analytics.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/admin-ga4.css') }}">
+</head>
+<body class="admin-traffic">
+<main class="admin-shell">
+  <header class="admin-header">
+    <div class="top-row">
+      <div class="admin-brand">
+        <span class="admin-brand-mark" aria-hidden="true">E3</span>
+        <div><small>E3 作業追蹤系統</small><h1>GA4 報表</h1></div>
+      </div>
+      <div class="actions">
+        <a class="btn" href="{{ url_for('admin_traffic') }}">流量監控</a>
+        <a class="btn" href="{{ url_for('index') }}">返回主頁</a>
+        <div class="theme-segment" role="group" aria-label="介面主題">
+          <button class="icon-button" type="button" data-admin-theme="light" aria-label="淺色模式" aria-pressed="false" title="淺色模式"><span class="admin-icon" data-icon="sun" aria-hidden="true"></span></button>
+          <button class="icon-button" type="button" data-admin-theme="dark" aria-label="深色模式" aria-pressed="false" title="深色模式"><span class="admin-icon" data-icon="moon" aria-hidden="true"></span></button>
+        </div>
+      </div>
+    </div>
+  </header>
+  {% include 'shared/components/admin_data_navigation.html' %}
+  {% include 'shared/components/admin_google_analytics.html' %}
+</main>
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}">
+(() => {
+  const syncTheme = () => document.querySelectorAll('[data-admin-theme]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.adminTheme === document.documentElement.dataset.theme));
+  });
+  document.querySelectorAll('[data-admin-theme]').forEach(button => button.addEventListener('click', () => {
+    const theme = button.dataset.adminTheme;
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    try { localStorage.setItem('e3_theme', theme); } catch (_) {}
+    syncTheme();
+  }));
+  syncTheme();
+})();
+</script>
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/admin-ga4.js') }}" defer></script>
+</body>
+</html>
