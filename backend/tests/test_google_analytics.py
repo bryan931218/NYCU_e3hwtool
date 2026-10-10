@@ -50,6 +50,9 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         self.assertNotIn("secret", snippet)
         self.assertNotIn("112550103", snippet)
         self.assertNotIn('src="https://www.googletagmanager.com', html)
+        for removed in ('id="analyticsConsent"', 'id="analyticsPrivacy"', '公開學習進度', '分析隱私設定'):
+            self.assertNotIn(removed, html)
+        self.assertNotIn("e3_analytics_consent", self.client.get("/login").headers.get("Set-Cookie", ""))
         self.assertEqual(self.client.post("/analytics/consent", json={"choice": "granted"}).status_code, 200)
         self.assertIn('"consent": "granted"', self.client.get("/login").get_data(as_text=True))
         self.client.post("/analytics/consent", json={"choice": "denied"})
@@ -128,9 +131,29 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         self.assertTrue(all(row["count"] == 1 for row in snapshot["usage"]))
 
     def test_unknown_study_and_readonly_pages_do_not_track(self):
-        self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/privacy").get_data(as_text=True))
+        privacy = self.client.get("/privacy").get_data(as_text=True)
+        config = json.loads(privacy.split('id="googleAnalyticsConfig">')[1].split('</script>')[0])
+        self.assertTrue(config["settings"])
+        self.assertEqual(config["consent"], "")
+        self.assertIn('id="analyticsPreferenceStatus"', privacy)
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/?view_user=113550092").get_data(as_text=True))
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/study").get_data(as_text=True))
+
+    def test_privacy_preferences_keep_saved_choices_and_do_not_create_consent(self):
+        for choice in ("granted", "denied"):
+            self.client.post("/analytics/consent", json={"choice": choice})
+            response = self.client.get("/privacy")
+            html = response.get_data(as_text=True)
+            config = json.loads(html.split('id="googleAnalyticsConfig">')[1].split('</script>')[0])
+            self.assertEqual(config["consent"], choice)
+            self.assertTrue(config["settings"])
+            self.assertNotIn("e3_analytics_consent", response.headers.get("Set-Cookie", ""))
+
+    def test_missing_configuration_hides_privacy_preferences(self):
+        self.app.extensions["e3_google_analytics"].config["measurement_id"] = ""
+        html = self.client.get("/privacy").get_data(as_text=True)
+        self.assertNotIn('id="analyticsConsent"', html)
+        self.assertNotIn('id="googleAnalyticsConfig"', html)
 
     def test_consent_survives_auth_session_rotation_and_login_is_consumed_once(self):
         response = self.client.post("/analytics/consent", json={"choice": "granted"})

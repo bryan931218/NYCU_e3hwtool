@@ -18,7 +18,7 @@
     if (name === "notification_enable" && safe.channel) window.gtag("event", `${safe.channel}_notification_enable`, safe);
   }
   function start() {
-    if (loaded || choice !== "granted") return;
+    if (loaded || choice !== "granted" || config.settings) return;
     loaded = true;
     window[`ga-disable-${config.measurement}`] = false;
     window.dataLayer = window.dataLayer || [];
@@ -54,17 +54,18 @@
     document.head.append(script);
   }
   window.e3Analytics = { track };
-  document.getElementById("analyticsPrivacy").addEventListener("click", () => { panel.hidden = false; });
-  panel.addEventListener("click", async (event) => {
+  const status = document.getElementById("analyticsPreferenceStatus");
+  panel?.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-analytics-choice]");
     if (!button) return;
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     button.disabled = true;
     try {
       const response = await fetch("/analytics/consent", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-CSRFToken": token || "" }, body: JSON.stringify({ choice: button.dataset.analyticsChoice }) });
-      if (!response.ok) return;
+      if (!response.ok) throw new Error("save failed");
       choice = button.dataset.analyticsChoice;
-      panel.hidden = true;
+      if (!config.settings) panel.hidden = true;
+      if (status) status.textContent = choice === "granted" ? "已啟用" : "已停用";
       if (choice === "granted") start();
       else {
         window[`ga-disable-${config.measurement}`] = true;
@@ -77,7 +78,10 @@
         // Unload Google's listeners as well as disabling future sends.
         if (loaded) location.reload();
       }
-    } catch { button.title = "連線失敗，請重試"; }
+    } catch {
+      button.title = "連線失敗，請重試";
+      if (status) status.textContent = "儲存失敗，請重試";
+    }
     finally { button.disabled = false; }
   });
   document.addEventListener("submit", (event) => {
@@ -85,7 +89,7 @@
     const method = new FormData(event.target).get("login_type");
     track("login_submit", { method: method === "session" ? "session" : "password" });
   });
-  if (choice === "granted") {
+  if (choice === "granted" && !config.settings) {
     if ("requestIdleCallback" in window) window.requestIdleCallback(start, { timeout: 2000 });
     else setTimeout(start, 0);
   }

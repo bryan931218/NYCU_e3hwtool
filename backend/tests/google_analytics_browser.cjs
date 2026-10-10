@@ -72,26 +72,42 @@ const reports = {
     }
     const page = await browser.newPage();
     const landing = fixture('--landing');
+    const deniedLanding = fixture('--landing', '--denied');
+    const privacy = fixture('--privacy');
     const google = [];
+    let denied = false;
     await page.route('**/*', route => {
       const url = new URL(route.request().url());
       if (url.hostname === 'www.googletagmanager.com') { google.push(url.href); return route.fulfill({ body: '', contentType: 'text/javascript' }); }
       if (url.origin !== 'http://traffic.test') return route.abort();
       const match = url.pathname.match(/^\/assets\/(shared|assignments)\/(.+)$/);
       if (match) return route.fulfill({ contentType: match[2].endsWith('.css') ? 'text/css' : 'text/javascript', body: fs.readFileSync(path.join(root, `frontend/${match[1]}/static`, match[2])) });
-      if (route.request().isNavigationRequest()) return route.fulfill({ body: landing, contentType: 'text/html' });
+      if (route.request().isNavigationRequest()) return route.fulfill({ body: url.pathname === '/privacy' ? privacy : denied ? deniedLanding : landing, contentType: 'text/html' });
+      if (url.pathname === '/analytics/consent') denied = route.request().postDataJSON().choice === 'denied';
       return route.fulfill({ json: { ok: true, version: 0 } });
     });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://traffic.test/login?username=112550103&session=secret');
     assert.equal(google.length, 0);
-    await page.locator('[data-analytics-choice=denied]').click();
-    await page.locator('#analyticsConsent').waitFor({ state: 'hidden' });
-    assert.equal(google.length, 0);
-    await page.locator('#analyticsPrivacy').click();
+    assert.equal(await page.locator('#analyticsConsent, #analyticsPrivacy, a[href="/study/progress"]').count(), 0);
+    assert.doesNotMatch(await page.locator('body').innerText(), /公開學習進度|分析隱私設定|允許 Google Analytics/);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.screenshot({ path: path.join(root, `output/playwright/login-clean-${width}.png`), fullPage: true });
+    }
+    await page.locator('a[href="/privacy"]').click();
+    await page.waitForURL('**/privacy');
     await page.locator('[data-analytics-choice=granted]').click();
-    await page.waitForFunction(() => window.dataLayer?.length > 0);
-    assert.ok(!JSON.stringify(await page.evaluate(() => Array.from(window.dataLayer).map(args => Array.from(args)))).includes('112550103'));
+    await page.locator('#analyticsPreferenceStatus').filter({ hasText: '已啟用' }).waitFor();
+    assert.equal(google.length, 0, 'Privacy preferences never load Google');
+    await page.locator('[data-analytics-choice=denied]').click();
+    await page.locator('#analyticsPreferenceStatus').filter({ hasText: '已停用' }).waitFor();
+    assert.equal(await page.locator('#analyticsConsent').isVisible(), true);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.locator('#analyticsConsent').screenshot({ path: path.join(root, 'output/playwright/analytics-preferences-mobile.png') });
+    await page.goto('http://traffic.test/login');
+    assert.equal(google.length, 0, 'Saved denial stays disabled on login');
     assert.deepEqual(errors, []);
     console.log('GA4 desktop/mobile themes, deferred reports, alpha failure and consent privacy passed.');
   } finally { await browser.close(); }

@@ -18,8 +18,12 @@ with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
     storage = app.extensions["e3_storage"]
     try:
         client = app.test_client()
-        if "--landing" in sys.argv:
-            print(client.get("/login").get_data(as_text=True))
+        if "--landing" in sys.argv or "--privacy" in sys.argv:
+            if "--denied" in sys.argv:
+                from itsdangerous import URLSafeTimedSerializer
+                from e3_tracker.platform.analytics_integration import CONSENT_COOKIE
+                client.set_cookie(CONSENT_COOKIE, URLSafeTimedSerializer(app.secret_key, salt="e3-analytics-consent").dumps("denied"))
+            print(client.get("/privacy" if "--privacy" in sys.argv else "/login").get_data(as_text=True))
             sys.exit(0)
         if "--empty" not in sys.argv:
             for source in ("dcard", "dcard", "dcard", "google", "google", "line"):

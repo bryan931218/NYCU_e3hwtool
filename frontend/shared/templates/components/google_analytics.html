@@ -1,8 +1,2 @@
-<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/google-analytics.css') }}">
-<aside class="analytics-consent" id="analyticsConsent" aria-label="使用分析" {% if analytics.consent %}hidden{% endif %}>
-  <p>允許 Google Analytics 分析網站使用情況？不傳送學號、姓名或課程內容。</p>
-  <div><button type="button" data-analytics-choice="denied">不同意</button><button type="button" data-analytics-choice="granted">同意</button></div>
-</aside>
-<button class="analytics-privacy" id="analyticsPrivacy" type="button">分析隱私設定</button>
 <script nonce="{{ csp_nonce() }}" type="application/json" id="googleAnalyticsConfig">{{ analytics|tojson }}</script>
 <script nonce="{{ csp_nonce() }}" defer src="{{ url_for('frontend_asset', filename='shared/js/google-analytics.js') }}"></script>

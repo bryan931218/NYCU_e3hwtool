@@ -32,7 +32,14 @@ def register_google_analytics(app):
 
     @app.context_processor
     def analytics_navigation_context():
-        return {"ga4": reports.status()}
+        context = {"ga4": reports.status()}
+        if request.path == "/privacy" and reports.config["measurement_id"]:
+            context["analytics_preferences"] = {
+                "measurement": reports.config["measurement_id"], "consent": consent_choice(),
+                "campaigns": [], "events": [], "path": "/privacy", "title": "隱私權政策",
+                "settings": True,
+            }
+        return context
 
     @app.post("/analytics/consent")
     def analytics_consent():
