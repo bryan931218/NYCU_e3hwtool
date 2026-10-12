@@ -1,59 +1,190 @@
-(() => {
-  const root = document.getElementById("google-analytics");
-  if (!root || root.dataset.ready !== "true") return;
+import { number, format, percent, metrics, engagement, sorted, sourceLabel, campaignLabel, pageLabel, eventRows, featureLabels, eventLabels } from "./admin-ga4-model.js";
+
+const root = document.getElementById("google-analytics");
+if (root) {
   const status = document.getElementById("ga4Status");
+  const updated = document.getElementById("ga4Updated");
   const range = document.getElementById("ga4Range");
-  let revision = 0;
-  const format = (value) => Number(value || 0).toLocaleString("zh-TW", { maximumFractionDigits: 1 });
-  const events = { login_submit_password: "送出帳密登入", login_password: "帳密登入成功", login_submit_session: "送出 Session 登入", login_session: "Session 登入成功", line_link_success: "LINE 綁定完成", browser_subscribe: "瀏覽器訂閱成功", notification_enable: "通知設定啟用" };
-  const features = { due_view: "到期日列表", course_view: "依課程列表", calendar: "作業日曆", search: "搜尋", filters: "篩選", open_e3: "前往 E3", ignore: "忽略／恢復", refresh: "更新作業", custom_todo: "自訂代辦", deadline_edit: "調整期限", messages: "課程訊息", notification_settings: "通知設定" };
+  const refresh = document.getElementById("ga4Refresh");
+  const report = document.getElementById("ga4Report");
+  const loading = document.getElementById("ga4Loading");
+  const tabs = Array.from(root.querySelectorAll("[data-ga4-tab]"));
+  let revision = 0, controller, timer;
+  function selectTab(tab, focus = false) {
+    for (const button of tabs) {
+      const selected = button === tab;
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      document.getElementById(button.getAttribute("aria-controls")).hidden = !selected;
+    }
+    if (focus) tab.focus();
+  }
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => selectTab(tab));
+    tab.addEventListener("keydown", event => {
+      const next = { ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index + tabs.length - 1) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+      if (next == null) return;
+      event.preventDefault();
+      selectTab(tabs[next], true);
+    });
+  });
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text != null) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+  function empty(container, text = "這段期間沒有紀錄") {
+    container.replaceChildren(element("p", text, "analytics-empty"));
+  }
+  function meter(value, maximum, label) {
+    const node = element("meter");
+    node.min = 0; node.max = Math.max(1, maximum); node.value = number(value) ?? 0;
+    node.setAttribute("aria-label", label);
+    return node;
+  }
+  function ranking(id, rows, key, labelFor, unit, limit = 5) {
+    const container = document.getElementById(`ga4-${id}`);
+    const ranked = sorted(rows, key).slice(0, limit);
+    if (!ranked.length) return empty(container);
+    const list = element("ol", null, "ga4-ranking");
+    const maximum = Math.max(...ranked.map(row => number(row[key]) ?? 0), 1);
+    for (const row of ranked) {
+      const label = labelFor(row), item = element("li"), line = element("div", null, "ga4-ranking-line");
+      line.append(element("span", label), element("strong", `${format(row[key])} ${unit}`));
+      item.append(line, meter(row[key], maximum, `${label} ${format(row[key])} ${unit}`));
+      list.append(item);
+    }
+    container.replaceChildren(list);
+  }
   function table(id, headings, rows) {
     const container = document.getElementById(`ga4-${id}`);
-    container.replaceChildren();
-    if (!rows.length) { const text = document.createElement("p"); text.className = "analytics-empty"; text.textContent = "此區間尚無資料"; container.append(text); return; }
-    const table = document.createElement("table");
-    const head = table.createTHead().insertRow();
-    for (const label of headings) { const th = document.createElement("th"); th.scope = "col"; th.textContent = label; head.append(th); }
-    const body = table.createTBody();
-    for (const row of rows) { const tr = body.insertRow(); for (const value of row) tr.insertCell().textContent = String(value); }
-    container.append(table);
+    if (!rows.length) return empty(container);
+    const node = element("table");
+    const head = node.createTHead().insertRow();
+    headings.forEach(label => { const th = element("th", label); th.scope = "col"; head.append(th); });
+    const body = node.createTBody();
+    for (const values of rows) {
+      const row = body.insertRow();
+      values.forEach((value, index) => {
+        const cell = index === 0 ? element("th") : element("td");
+        if (index === 0) cell.scope = "row";
+        if (value && typeof value === "object") {
+          cell.append(element("span", value.label));
+          if (value.detail) cell.append(element("small", value.detail));
+        } else cell.textContent = String(value);
+        row.append(cell);
+      });
+    }
+    container.replaceChildren(node);
+  }
+  function funnel(id, rows) {
+    const container = document.getElementById(`ga4-${id}`);
+    if (!Array.isArray(rows)) return empty(container, "暫時無法提供流程資料");
+    if (!rows.length) return empty(container);
+    const maximum = Math.max(...rows.map(row => number(row.activeUsers) ?? 0), 1);
+    const list = element("ol", null, "ga4-funnel");
+    rows.forEach((row, index) => {
+      const label = String(row.funnelStepName || "未命名步驟").replace(/^\d+\.\s*/, "");
+      const item = element("li"), marker = element("span", index + 1, "ga4-step-index");
+      const content = element("div"), line = element("div", null, "ga4-ranking-line");
+      line.append(element("span", label), element("strong", `${format(row.activeUsers)} 人`));
+      content.append(line, meter(row.activeUsers, maximum, `${label} ${format(row.activeUsers)} 人`));
+      if (index < rows.length - 1) content.append(element("small", `下一步完成率 ${percent(row.funnelStepCompletionRate)}`));
+      item.append(marker, content); list.append(item);
+    });
+    container.replaceChildren(list);
   }
   function render(data) {
     const reports = data.reports;
-    if (!reports) return;
-    const summary = reports.summary[0] || {};
-    const metrics = document.getElementById("ga4Metrics"); metrics.replaceChildren();
-    for (const [label, value] of [["活躍訪客", format(summary.activeUsers)], ["新訪客", format(summary.newUsers)], ["工作階段", format(summary.sessions)], ["頁面瀏覽", format(summary.screenPageViews)], ["參與率", `${format(summary.engagementRate * 100)}%`], ["平均參與時間／活躍訪客", `${format(summary.activeUsers ? summary.userEngagementDuration / summary.activeUsers : 0)} 秒`]]) {
-      const article = document.createElement("article"), span = document.createElement("span"), strong = document.createElement("strong");
-      span.textContent = label; strong.textContent = value; article.append(span, strong); metrics.append(article);
-    }
-    table("sources", ["來源／活動", "工作階段", "參與率"], reports.sources.map(r => [`${r.sessionSourceMedium} · ${r.sessionCampaignName}`, format(r.sessions), `${format(r.engagementRate * 100)}%`]));
-    table("pages", ["頁面", "瀏覽", "訪客"], reports.pages.map(r => [r.pagePath, format(r.screenPageViews), format(r.activeUsers)]));
-    table("devices", ["裝置", "訪客", "工作階段"], reports.devices.map(r => [{ desktop: "電腦", mobile: "手機", tablet: "平板" }[r.deviceCategory] || r.deviceCategory, format(r.activeUsers), format(r.sessions)]));
-    table("returning", ["類型", "訪客", "工作階段"], reports.returning.map(r => [{ new: "新訪客", returning: "回訪訪客", "(not set)": "未識別" }[r.newVsReturning] || r.newVsReturning, format(r.activeUsers), format(r.sessions)]));
-    const rows = new Map(reports.events.map(r => [r.eventName, r]));
-    table("events", ["步驟", "訪客", "次數"], Object.entries(events).filter(([key]) => rows.has(key)).map(([key, label]) => [label, format(rows.get(key).totalUsers), format(rows.get(key).eventCount)]));
-    table("features", ["功能", "訪客", "次數"], Object.entries(features).filter(([key]) => rows.has(`feature_${key}`)).map(([key, label]) => [label, format(rows.get(`feature_${key}`).totalUsers), format(rows.get(`feature_${key}`).eventCount)]));
-    for (const key of ["login_funnel", "line_funnel"]) {
-      const funnel = reports[key];
-      table(key, ["步驟", "訪客", "至下一步"], (funnel || []).map((r, index) => [r.funnelStepName, format(r.activeUsers), index === funnel.length - 1 ? "—" : `${format(r.funnelStepCompletionRate * 100)}%`]));
-      if (funnel == null) document.getElementById(`ga4-${key}`).textContent = "Google 漏斗 API 暫時無法提供資料";
-    }
-    document.getElementById("ga4Report").hidden = false;
+    if (!reports || typeof reports !== "object") return false;
+    const summary = reports.summary?.[0] || {};
+    const metricRoot = document.getElementById("ga4Metrics");
+    metricRoot.replaceChildren(...metrics(summary).map(metric => {
+      const node = element("article");
+      const value = element("strong", metric.value);
+      value.append(element("small", metric.unit));
+      node.append(element("span", metric.label), value, element("p", metric.note));
+      return node;
+    }));
+    document.getElementById("ga4Engagement").replaceChildren(...engagement(summary).map(metric => {
+      const node = element("div");
+      node.append(element("span", metric.label), element("strong", metric.value), element("small", metric.note));
+      return node;
+    }));
+    const sources = sorted(reports.sources, "sessions"), pages = sorted(reports.pages, "screenPageViews");
+    const features = eventRows(reports.events, featureLabels, "feature_");
+    ranking("top-sources", sources, "sessions", row => sourceLabel(row.sessionSourceMedium).label, "次");
+    ranking("top-features", features, "totalUsers", row => row.label, "人");
+    ranking("devices", reports.devices, "activeUsers", row => ({ desktop: "電腦", mobile: "手機", tablet: "平板" }[row.deviceCategory] || "其他裝置"), "人");
+    ranking("returning", reports.returning, "activeUsers", row => ({ new: "新訪客", returning: "回訪訪客" }[row.newVsReturning] || "未辨識"), "人");
+    table("sources", ["來源／活動", "訪客人數", "造訪次數", "互動比例"], sources.map(row => {
+      const label = sourceLabel(row.sessionSourceMedium);
+      return [{ label: label.label, detail: [label.detail, campaignLabel(row.sessionCampaignName)].filter(Boolean).join(" · ") }, format(row.activeUsers), format(row.sessions), percent(row.engagementRate)];
+    }));
+    table("pages", ["頁面", "瀏覽次數", "訪客人數"], pages.map(row => [{ label: pageLabel(row.pagePath), detail: row.pagePath }, format(row.screenPageViews), format(row.activeUsers)]));
+    table("features", ["功能", "使用人數", "操作次數"], features.map(row => [row.label, format(row.totalUsers), format(row.eventCount)]));
+    table("events", ["操作", "使用人數", "操作次數"], eventRows(reports.events, eventLabels).map(row => [row.label, format(row.totalUsers), format(row.eventCount)]));
+    funnel("login_funnel", reports.login_funnel);
+    funnel("line_funnel", reports.line_funnel);
+    report.hidden = false;
+    updated.textContent = data.updated_at ? `資料更新 ${data.updated_at}` : "";
+    return true;
   }
-  async function load(attempt = 0, version = ++revision) {
+  function finish() {
+    root.setAttribute("aria-busy", "false");
+    loading.hidden = true;
+    refresh.disabled = false;
+  }
+  async function load(attempt = 0, version) {
+    if (version == null) {
+      version = ++revision;
+      clearTimeout(timer);
+      controller?.abort();
+      controller = new AbortController();
+      report.hidden = true;
+      updated.textContent = "";
+      loading.hidden = false;
+      root.setAttribute("aria-busy", "true");
+      status.textContent = "正在讀取報表…";
+    }
+    refresh.disabled = true;
+    const requestController = controller;
+    const timeout = setTimeout(() => requestController.abort(), 15000);
     try {
-      const response = await fetch(`${root.dataset.ga4Url}?days=${range.value}`, { credentials: "same-origin", signal: AbortSignal.timeout(15000) });
+      const response = await fetch(`${root.dataset.ga4Url}?days=${range.value}`, { credentials: "same-origin", signal: requestController.signal });
       if (!response.ok) throw new Error("report");
       const data = await response.json();
       if (version !== revision) return;
-      render(data);
-      status.textContent = { loading: "GA4 報表讀取中…", not_configured: "尚未連接報表", unavailable: "無法取得 GA4 報表，請檢查資源 ID、API 與檢視者權限", stale: `GA4 暫時無法更新，顯示 ${data.updated_at || "先前"} 的快取`, ready: `GA4 資料更新 ${data.updated_at}` }[data.status] || "報表尚未提供";
-      if (data.status === "loading" && attempt < 12) setTimeout(() => { if (version === revision) load(attempt + 1, version); }, 5000);
-      else if (data.status === "loading") status.textContent = "GA4 尚未回應，請稍後再試";
-    } catch { if (version === revision) status.textContent = "GA4 暫時無法連線，本站統計不受影響"; }
+      const shown = render(data);
+      status.dataset.state = data.status;
+      status.textContent = {
+        loading: shown ? "正在更新，暫時顯示先前資料" : "正在讀取報表…",
+        not_configured: "尚未連接報表", unavailable: "暫時無法取得資料，請稍後重試",
+        stale: "更新暫時失敗，顯示先前資料", ready: shown ? "已更新 · 今日資料尚未完整" : "暫時無法取得資料，請稍後重試",
+      }[data.status] || "暫時無法取得資料，請稍後重試";
+      if (data.status === "loading" && attempt < 12) {
+        loading.hidden = shown;
+        timer = setTimeout(() => { if (version === revision) load(attempt + 1, version); }, 5000);
+      } else {
+        if (data.status === "loading") status.textContent = "讀取較久，請稍後重試";
+        finish();
+      }
+    } catch {
+      if (version !== revision) return;
+      status.dataset.state = "error";
+      status.textContent = "暫時無法連線，請稍後重試";
+      finish();
+    } finally { clearTimeout(timeout); }
   }
-  range.addEventListener("change", () => { document.getElementById("ga4Report").hidden = true; load(); });
-  const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { observer.disconnect(); load(); } });
-  observer.observe(root);
-})();
+  if (root.dataset.ready === "true") {
+    range.addEventListener("change", () => load());
+    refresh.addEventListener("click", () => load());
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) { observer.disconnect(); load(); }
+      });
+      observer.observe(root);
+    } else load();
+  }
+}

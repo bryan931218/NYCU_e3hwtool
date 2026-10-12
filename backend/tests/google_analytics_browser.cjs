@@ -8,11 +8,11 @@ const root = path.resolve(__dirname, '../..');
 const fixture = (...args) => execFileSync(process.argv[2] || 'python', [path.join(__dirname, 'traffic_sources_fixture.py'), '--ga4', ...args], { encoding: 'utf8', env: { ...process.env, PYTHONUTF8: '1', E3_ENV: 'development', RAILWAY_ENVIRONMENT_ID: '', RAILWAY_ENVIRONMENT_NAME: '', E3_NOTIFICATIONS_WORKER: '0', E3_YOUTUBE_AUTO_SYNC_ENABLED: '0', E3_SESSION_PROFILE_WORKER: '0' } });
 const reports = {
   summary: [{ activeUsers: 100, newUsers: 24, sessions: 130, screenPageViews: 350, engagementRate: 0.74, userEngagementDuration: 6600 }],
-  sources: [{ sessionSourceMedium: 'dcard / social', sessionCampaignName: 'dcard-115-1', sessions: 60, activeUsers: 45, engagementRate: 0.8 }],
-  pages: [{ pagePath: '/', screenPageViews: 200, activeUsers: 100 }],
-  devices: [{ deviceCategory: 'mobile', activeUsers: 75, sessions: 90 }],
-  returning: [{ newVsReturning: 'returning', activeUsers: 50, sessions: 60 }],
-  events: [{ eventName: 'feature_calendar', totalUsers: 30, eventCount: 90 }, { eventName: 'login_password', totalUsers: 40, eventCount: 50 }],
+  sources: [{ sessionSourceMedium: 'dcard / social', sessionCampaignName: 'dcard-115-1', sessions: 60, activeUsers: 45, engagementRate: 0.8 }, { sessionSourceMedium: '(direct) / (none)', sessions: 42, activeUsers: 30, engagementRate: .7 }, { sessionSourceMedium: 'google / organic', sessions: 28, activeUsers: 25, engagementRate: .6 }],
+  pages: [{ pagePath: '/', screenPageViews: 200, activeUsers: 100 }, { pagePath: '/login', screenPageViews: 90, activeUsers: 70 }, { pagePath: '/settings/notifications', screenPageViews: 60, activeUsers: 35 }],
+  devices: [{ deviceCategory: 'mobile', activeUsers: 75, sessions: 90 }, { deviceCategory: 'desktop', activeUsers: 25, sessions: 40 }],
+  returning: [{ newVsReturning: 'returning', activeUsers: 76, sessions: 102 }, { newVsReturning: 'new', activeUsers: 24, sessions: 28 }],
+  events: [{ eventName: 'feature_calendar', totalUsers: 30, eventCount: 90 }, { eventName: 'feature_search', totalUsers: 50, eventCount: 150 }, { eventName: 'feature_messages', totalUsers: 24, eventCount: 48 }, { eventName: 'login_password', totalUsers: 40, eventCount: 50 }, { eventName: 'line_link_success', totalUsers: 12, eventCount: 12 }],
   login_funnel: [{ funnelStepName: '1. 首頁', activeUsers: 90, funnelStepCompletionRate: 0.8 }, { funnelStepName: '2. 登入頁', activeUsers: 72, funnelStepCompletionRate: 0.75 }, { funnelStepName: '3. 登入成功', activeUsers: 54, funnelStepCompletionRate: 0 }],
   line_funnel: null,
 };
@@ -27,15 +27,30 @@ const reports = {
       const page = await browser.newPage({ viewport: { width, height: 1000 } });
       page.on('pageerror', error => errors.push(error.message));
       let calls = 0;
+      let mode = 'ready';
       await page.route('**/*', route => {
         const url = new URL(route.request().url());
         if (url.origin !== 'http://traffic.test') return route.abort();
         if (url.pathname.startsWith('/assets/shared/')) {
           const asset = path.join(root, 'frontend/shared/static', url.pathname.slice('/assets/shared/'.length));
-          return route.fulfill({ contentType: asset.endsWith('.css') ? 'text/css' : 'text/javascript', body: fs.readFileSync(asset) });
+          return route.fulfill({ contentType: asset.endsWith('.css') ? 'text/css' : asset.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript', body: fs.readFileSync(asset) });
         }
-        if (url.pathname === '/admin/analytics/ga4') { calls++; return route.fulfill({ json: { status: 'ready', updated_at: '2026-10-10 12:00', reports } }); }
-        return route.fulfill(route.request().isNavigationRequest() ? { contentType: 'text/html', body: url.pathname === '/admin/ga4' ? html : trafficHtml } : { json: { version: 0 } });
+        if (url.pathname === '/admin/analytics/ga4') {
+          calls++;
+          if (mode === 'offline') return route.abort();
+          if (mode === 'empty') return route.fulfill({ json: { status: 'ready', reports: { summary: [], sources: [], events: [], login_funnel: [], line_funnel: [] } } });
+          if (mode === 'zero') return route.fulfill({ json: { status: 'ready', reports: { summary: [{ activeUsers: 0, newUsers: 0, sessions: 0, screenPageViews: 0, engagementRate: 0, userEngagementDuration: 0 }] } } });
+          if (mode === 'loading') return route.fulfill({ json: { status: 'loading' } });
+          return route.fulfill({ json: { status: mode, updated_at: '2026-10-12 12:00', reports } });
+        }
+        if (route.request().isNavigationRequest()) {
+          const body = url.pathname === '/admin/ga4' ? html : trafficHtml;
+          const nonce = body.match(/nonce="([^"]+)"/)[1];
+          return route.fulfill({ contentType: 'text/html', body, headers: {
+            'Content-Security-Policy': `default-src 'self'; script-src 'nonce-${nonce}' 'strict-dynamic' 'self'; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'`,
+          } });
+        }
+        return route.fulfill({ json: { version: 0 } });
       });
       await page.goto('http://traffic.test/admin/traffic');
       assert.equal(await page.locator('#trafficSources, #system-summary, .analytics-feature-table').count(), 0, 'Remove legacy duplicate statistics');
@@ -50,11 +65,23 @@ const reports = {
       await page.locator('#google-analytics').scrollIntoViewIfNeeded();
       await page.locator('#ga4Report').waitFor({ state: 'visible' });
       assert.ok(calls >= 1, 'Load visible GA4 reports without blocking the page');
-      assert.match(await page.locator('#ga4Metrics').innerText(), /66 秒/);
+      assert.match(await page.locator('#ga4Engagement').innerText(), /1 分 6 秒/);
+      assert.equal(await page.locator('#ga4Metrics article').count(), 4);
+      assert.equal(await page.locator('[role=tabpanel]:visible').count(), 1);
+      assert.match(await page.locator('#ga4-top-sources').innerText(), /Dcard|直接造訪/);
+      assert.ok(await page.locator('#ga4-top-sources meter').first().evaluate(el => el.value > 0));
+      await page.locator('[data-ga4-tab=usage]').click();
       assert.match(await page.locator('#ga4-features').innerText(), /作業日曆/);
       assert.doesNotMatch(await page.locator('#ga4-features').innerText(), /自訂代辦/);
+      assert.equal(await page.locator('#ga4-features tbody tr').first().locator('th').innerText(), '搜尋');
+      await page.locator('[data-ga4-tab=conversion]').click();
       assert.match(await page.locator('#ga4-login_funnel').innerText(), /54/);
       assert.match(await page.locator('#ga4-line_funnel').innerText(), /暫時無法提供/);
+      await page.locator('[data-ga4-tab=acquisition]').click();
+      assert.match(await page.locator('#ga4-pages').innerText(), /通知設定/);
+      assert.match(await page.locator('#ga4-sources').innerText(), /社群/);
+      await page.locator('[data-ga4-tab=acquisition]').press('Home');
+      assert.equal(await page.locator('[data-ga4-tab=overview]').getAttribute('aria-selected'), 'true');
       await page.locator('#ga4Range').selectOption('7');
       await page.locator('#ga4Report').waitFor({ state: 'visible' });
       assert.ok(calls >= 2);
@@ -64,12 +91,45 @@ const reports = {
         assert.equal(await page.locator(`[data-admin-theme=${theme}]`).getAttribute('aria-pressed'), 'true');
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No theme viewport overflow');
         await page.locator('#google-analytics').screenshot({ path: path.join(root, `output/playwright/ga4-${width}-${theme}.png`) });
+        for (const name of ['acquisition', 'usage', 'conversion']) {
+          await page.locator(`[data-ga4-tab=${name}]`).click();
+          assert.equal(await page.locator('[role=tabpanel]:visible').count(), 1);
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'All report tabs fit the viewport');
+          await page.locator('#google-analytics').screenshot({ path: path.join(root, `output/playwright/ga4-${name}-${width}-${theme}.png`) });
+        }
+        await page.locator('[data-ga4-tab=overview]').click();
       }
+      mode = 'empty';
+      await page.locator('#ga4Refresh').click();
+      await page.locator('#ga4Report').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#ga4Metrics').innerText(), /—/);
+      assert.match(await page.locator('#ga4-top-features').innerText(), /沒有紀錄/);
+      mode = 'zero';
+      await page.locator('#ga4Refresh').click();
+      await page.locator('#ga4Report').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#ga4Engagement').innerText(), /0%/);
+      mode = 'loading';
+      await page.locator('#ga4Refresh').click();
+      await page.locator('#ga4Loading').waitFor({ state: 'visible' });
+      mode = 'stale';
+      await page.locator('#ga4Range').selectOption('90');
+      await page.locator('#ga4Report').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#ga4Status').innerText(), /先前資料/);
+      mode = 'offline';
+      await page.locator('#ga4Refresh').click();
+      await page.locator('#ga4Status').filter({ hasText: '暫時無法連線' }).waitFor();
+      assert.equal(await page.locator('#ga4Report').isVisible(), false, 'Failed requests cannot show the wrong date range');
+      mode = 'ready';
+      await page.locator('#ga4Refresh').click();
+      await page.locator('#ga4Report').waitFor({ state: 'visible' });
       await page.locator('.admin-data-nav a[href="/admin/traffic"]').click();
       await page.waitForURL('**/admin/traffic');
       assert.equal(await page.locator('#google-analytics').count(), 0);
       await page.close();
     }
+    assert.deepEqual(errors, []);
+    console.log('GA4 report tabs, desktop/mobile themes, empty data, loading cancellation and retry passed.');
+    if (process.argv.includes('--reports-only')) return;
     const page = await browser.newPage();
     const landing = fixture('--landing');
     const deniedLanding = fixture('--landing', '--denied');

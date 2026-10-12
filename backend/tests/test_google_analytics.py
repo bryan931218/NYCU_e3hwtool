@@ -104,6 +104,12 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
                 self.assertIn(retained, html)
             ga4_html = self.client.get("/admin/ga4").get_data(as_text=True)
             self.assertIn('id="ga4-features"', ga4_html)
+            for key in ("overview", "acquisition", "usage", "conversion"):
+                self.assertIn(f'id="ga4-tab-{key}"', ga4_html)
+                self.assertIn(f'id="ga4-panel-{key}"', ga4_html)
+            self.assertIn('id="ga4Refresh"', ga4_html)
+            self.assertIn('type="module"', ga4_html)
+            self.assertNotIn('class="ga4-setup"', ga4_html)
             self.assertIn('href="/admin/ga4" aria-current="page"', ga4_html)
             self.assertNotIn('id="account-usage"', ga4_html)
             self.assertNotIn('shared/js/traffic-stats.js', ga4_html)

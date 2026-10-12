@@ -14,18 +14,72 @@
 .adoption-steps meter::-webkit-meter-bar { background: var(--border); border: 0; }
 .adoption-steps meter::-webkit-meter-optimum-value { background: var(--primary); }
 .adoption-steps meter::-moz-meter-bar { background: var(--primary); }
-.ga4-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0 28px; }
-.ga4-metrics article { background: var(--card); border: 1px solid var(--border); padding: 16px; border-radius: 6px; min-width: 0; }
+#google-analytics { margin: 0; border-bottom: 0; }
+#google-analytics .analytics-range { width: auto; }
+#google-analytics .analytics-range select { width: 130px; }
+#google-analytics .analytics-range .icon-button { padding: 8px; }
+.ga4-status-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px 16px; min-height: 24px; margin-bottom: 20px; color: var(--muted); font-size: 12px; }
+#ga4Status { margin: 0; }
+#ga4Status[data-state="error"], #ga4Status[data-state="stale"], #ga4Status[data-state="unavailable"] { color: var(--warn-fg); }
+.ga4-tabs { display: flex; border-bottom: 1px solid var(--border); gap: 24px; margin-bottom: 24px; }
+.ga4-tabs button { border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted); font: inherit; font-weight: 500; padding: 12px 0; cursor: pointer; white-space: nowrap; }
+.ga4-tabs button[aria-selected="true"] { color: var(--primary); border-bottom-color: var(--primary); }
+.ga4-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 20px; }
+.ga4-metrics article { background: var(--card); border: 1px solid var(--border); border-top: 2px solid var(--primary); padding: 18px; border-radius: 6px; min-width: 0; }
+.ga4-metrics article:nth-child(2) { border-top-color: var(--info-fg); }
+.ga4-metrics article:nth-child(3) { border-top-color: var(--ok-fg); }
+.ga4-metrics article:nth-child(4) { border-top-color: var(--warn-fg); }
 .ga4-metrics span { color: var(--muted); font-size: 12px; }
-.ga4-metrics strong { display: block; font-size: 26px; margin-top: 10px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.ga4-setup { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 16px; font-size: 13px; }
-.ga4-setup summary { cursor: pointer; color: var(--primary); }
-.ga4-setup ol { padding-left: 22px; line-height: 1.8; }
-.ga4-setup li { margin-bottom: 12px; overflow-wrap: anywhere; }
-.ga4-setup code { font-size: 12px; }
-#ga4Status { color: var(--muted); font-size: 13px; }
-.ga4-tables table { table-layout: fixed; }
-.ga4-tables :is(th, td) { overflow-wrap: anywhere; }
+.ga4-metrics strong { display: block; font-size: 30px; margin: 8px 0; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ga4-metrics strong small { font-size: 12px; margin-left: 6px; font-weight: 400; color: var(--muted); }
+.ga4-metrics article p { color: var(--muted); font-size: 11px; }
+.ga4-engagement { display: flex; flex-wrap: wrap; gap: 20px 44px; padding: 0 0 22px; border-bottom: 1px solid var(--border); }
+.ga4-engagement > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
+.ga4-engagement span, .ga4-engagement small { font-size: 12px; color: var(--muted); }
+.ga4-engagement strong { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ga4-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 48px; }
+.ga4-block { min-width: 0; padding: 24px 0; border-bottom: 1px solid var(--border); }
+.ga4-block header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 18px; }
+#google-analytics .ga4-block h3 { margin: 0; font-size: 15px; }
+.ga4-block header > span, .ga4-caption { color: var(--muted); font-size: 11px; }
+#google-analytics .ga4-caption { margin: -10px 0 20px; }
+.ga4-ranking { list-style: none; margin: 0; padding: 0; }
+.ga4-ranking li + li { margin-top: 18px; }
+.ga4-ranking-line { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; font-size: 13px; }
+.ga4-ranking-line > span { min-width: 0; overflow-wrap: anywhere; }
+.ga4-ranking-line strong { flex: none; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#google-analytics meter { display: block; width: 100%; height: 7px; margin-top: 8px; }
+#google-analytics meter::-webkit-meter-bar { background: var(--border); border: 0; border-radius: 2px; }
+#google-analytics meter::-webkit-meter-optimum-value { background: var(--primary); border-radius: 2px; }
+#google-analytics meter::-moz-meter-bar { background: var(--primary); }
+#ga4-top-features meter::-webkit-meter-optimum-value, #ga4-devices meter::-webkit-meter-optimum-value { background: var(--info-fg); }
+#ga4-top-features meter::-moz-meter-bar, #ga4-devices meter::-moz-meter-bar { background: var(--info-fg); }
+.ga4-funnel { list-style: none; padding: 0; margin: 0; }
+.ga4-funnel li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; }
+.ga4-funnel li + li { margin-top: 20px; }
+.ga4-step-index { display: grid; place-items: center; width: 28px; height: 28px; background: var(--card-2); border: 1px solid var(--border); border-radius: 50%; color: var(--muted); font-size: 12px; }
+.ga4-funnel small { display: block; margin-top: 8px; color: var(--muted); font-size: 11px; }
+#google-analytics table { table-layout: fixed; }
+#google-analytics th:first-child { width: 44%; }
+#google-analytics :is(th, td) { overflow-wrap: anywhere; }
+#google-analytics :is(th, td):not(:first-child) { text-align: right; }
+#google-analytics table small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.ga4-loading { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ga4-loading div { min-height: 128px; background: var(--card-2); border: 1px solid var(--border); border-radius: 6px; }
 #google-analytics [hidden] { display: none; }
 @media (max-width: 850px) { .engagement-grid, .ga4-tables { grid-template-columns: minmax(0, 1fr); } .ga4-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 460px) { .engagement-values { grid-template-columns: minmax(0, 1fr); gap: 12px; } .engagement-values > div { display: flex; justify-content: space-between; align-items: center; } .engagement-values dd { margin: 0; font-size: 24px; } }
+@media (max-width: 700px) {
+  .ga4-tabs { gap: 0; justify-content: space-between; }
+  .ga4-tabs button { font-size: 12px; }
+  .ga4-grid { grid-template-columns: minmax(0, 1fr); }
+  .ga4-metrics { gap: 9px; }
+  .ga4-metrics article { padding: 14px; }
+  .ga4-metrics strong { font-size: 26px; }
+  .ga4-engagement { gap: 12px; }
+  .ga4-engagement > div { width: 100%; }
+  #google-analytics :is(th, td) { padding: 10px 6px; font-size: 12px; }
+  #google-analytics th:first-child { width: 40%; }
+  #google-analytics thead th { font-size: 10px; }
+  .ga4-loading { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

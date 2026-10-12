@@ -48,6 +48,6 @@
   syncTheme();
 })();
 </script>
-<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/admin-ga4.js') }}" defer></script>
+<script type="module" nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/admin-ga4.js') }}"></script>
 </body>
 </html>

@@ -1,23 +1,32 @@
 <section id="google-analytics" class="admin-section assignment-analytics" aria-labelledby="ga4Title" data-ga4-url="{{ url_for('google_analytics_report') }}" data-ready="{{ 'true' if ga4.reports_ready else 'false' }}">
-  <header class="analytics-header"><div><h2 id="ga4Title">Google Analytics</h2><p>同意分析的瀏覽器訪客 · 與本站帳號數分開</p></div><div class="analytics-range"><label for="ga4Range">區間</label><select id="ga4Range"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option></select></div></header>
-  <p id="ga4Status" role="status">{% if ga4.reports_ready %}報表待載入{% elif ga4.collection_ready %}追蹤 ID 已設定；尚未連接報表{% else %}尚未連接 GA4{% endif %}</p>
+  <header class="analytics-header">
+    <div><h2 id="ga4Title">網站使用分析</h2><p>瀏覽器訪客統計，非會員人數</p></div>
+    <div class="analytics-range"><label for="ga4Range">期間</label><select id="ga4Range"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option></select><button id="ga4Refresh" class="icon-button" type="button" aria-label="重新讀取報表" title="重新讀取報表" {% if not ga4.reports_ready %}disabled{% endif %}><span class="admin-icon" data-icon="refresh" aria-hidden="true"></span></button></div>
+  </header>
+  <div class="ga4-status-row"><p id="ga4Status" role="status">{% if ga4.reports_ready %}正在讀取報表…{% else %}尚未連接報表{% endif %}</p><span id="ga4Updated"></span></div>
+  <nav class="ga4-tabs" role="tablist" aria-label="分析分類">
+    {% for key, label in [('overview','概覽'),('acquisition','來源與頁面'),('usage','功能使用'),('conversion','登入與通知')] %}
+    <button type="button" role="tab" id="ga4-tab-{{ key }}" aria-controls="ga4-panel-{{ key }}" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ '0' if loop.first else '-1' }}" data-ga4-tab="{{ key }}">{{ label }}</button>
+    {% endfor %}
+  </nav>
+  <div id="ga4Loading" class="ga4-loading" {% if not ga4.reports_ready %}hidden{% endif %} aria-hidden="true"><div></div><div></div><div></div><div></div></div>
   <div id="ga4Report" hidden>
-    <div class="ga4-metrics" id="ga4Metrics"></div>
-    <div class="ga4-tables">
-      {% for key, title in [('sources','來源與宣傳活動'),('pages','熱門頁面'),('devices','裝置'),('returning','新訪客與回訪訪客'),('login_funnel','首頁至登入漏斗'),('line_funnel','登入至 LINE 通知漏斗'),('events','登入方式與通知操作'),('features','功能使用')] %}
-      <section><h3>{{ title }}</h3><div class="analytics-table-wrap" id="ga4-{{ key }}"></div></section>
-      {% endfor %}
-    </div>
-    <p class="analytics-note">漏斗依同一瀏覽器依序完成，每步限 7 日；未經網站確認的 LINE 操作不列入 GA4。登入方式表為各事件獨立訪客數。功能操作不等於作業完成。報表可能延遲 24–48 小時，沒有接入前的歷史資料。</p>
+    <section role="tabpanel" id="ga4-panel-overview" aria-labelledby="ga4-tab-overview" tabindex="0">
+      <div class="ga4-metrics" id="ga4Metrics"></div>
+      <div class="ga4-engagement" id="ga4Engagement"></div>
+      <div class="ga4-grid"><section class="ga4-block"><header><h3>主要造訪來源</h3><span>造訪次數</span></header><div id="ga4-top-sources"></div></section><section class="ga4-block"><header><h3>熱門功能</h3><span>使用人數</span></header><div id="ga4-top-features"></div></section></div>
+      <div class="ga4-grid"><section class="ga4-block"><header><h3>使用裝置</h3><span>訪客人數</span></header><div id="ga4-devices"></div></section><section class="ga4-block"><header><h3>新訪客與回訪訪客</h3><span>訪客人數</span></header><div id="ga4-returning"></div></section></div>
+    </section>
+    <section role="tabpanel" id="ga4-panel-acquisition" aria-labelledby="ga4-tab-acquisition" tabindex="0" hidden>
+      <section class="ga4-block"><header><h3>來源與宣傳活動</h3></header><div class="analytics-table-wrap" id="ga4-sources"></div></section>
+      <section class="ga4-block"><header><h3>熱門頁面</h3></header><div class="analytics-table-wrap" id="ga4-pages"></div></section>
+    </section>
+    <section role="tabpanel" id="ga4-panel-usage" aria-labelledby="ga4-tab-usage" tabindex="0" hidden>
+      <section class="ga4-block"><header><h3>功能使用排行</h3><span>操作次數不代表作業完成</span></header><div class="analytics-table-wrap" id="ga4-features"></div></section>
+    </section>
+    <section role="tabpanel" id="ga4-panel-conversion" aria-labelledby="ga4-tab-conversion" tabindex="0" hidden>
+      <div class="ga4-grid"><section class="ga4-block"><header><h3>從首頁到登入</h3></header><p class="ga4-caption">同一訪客依序完成，各步間隔最多 7 天</p><div id="ga4-login_funnel"></div></section><section class="ga4-block"><header><h3>從登入到 LINE 通知</h3></header><p class="ga4-caption">只計入網站確認的綁定與啟用操作</p><div id="ga4-line_funnel"></div></section></div>
+      <section class="ga4-block"><header><h3>登入與通知操作</h3><span>各操作分別計算人數</span></header><div class="analytics-table-wrap" id="ga4-events"></div></section>
+    </section>
   </div>
-  <details class="ga4-setup" {% if not ga4.reports_ready %}open{% endif %}><summary>連接設定</summary>
-    <ol>
-      <li>在 <a href="https://analytics.google.com/" target="_blank" rel="noopener">Google Analytics</a> 建立 E3 專用資源；時區選台北，新增網站資料串流 <code>https://www.e3hwtool.space</code>。</li>
-      <li>關閉串流的「加強型評估」，避免自動取得表單、搜尋字詞與網址參數。</li>
-      <li>Railway 新增 <code>E3_GA4_MEASUREMENT_ID</code>（<code>G-...</code>）與 <code>E3_GA4_PROPERTY_ID</code>（數字資源 ID）。</li>
-      <li>在 <a href="https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com" target="_blank" rel="noopener">Google Cloud</a> 啟用 Analytics Data API、建立服務帳戶。在 GA4 資源存取管理將服務帳戶電子郵件加為「檢視者」。</li>
-      <li>服務帳戶的 JSON 金鑰僅存入 Railway 的 <code>E3_GA4_SERVICE_ACCOUNT_JSON</code>，不要貼到聊天或 Git。儲存後重新部署。</li>
-    </ol>
-    <p class="analytics-note">追蹤 {{ '已設定' if ga4.collection_ready else '未設定' }} · 報表 {{ '已設定，待驗證連線' if ga4.reports_ready else '未設定' }}。管理員、代看模式與考研站不送出分析事件。用戶可在頁尾撤回分析同意。</p>
-  </details>
 </section>
