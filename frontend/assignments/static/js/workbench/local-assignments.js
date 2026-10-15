@@ -221,14 +221,16 @@ export function register(ctx) {
     document.querySelectorAll("tr[data-uid]").forEach((row) => {
       const dueTs = Number(row.dataset.dueTs || "0");
       if (row.dataset.completed !== "1" && row.dataset.graded !== "1") {
-        row.dataset.overdue =
+        const overdue =
           row.dataset.hasDue === "1" && dueTs < Math.floor(Date.now() / 1000)
             ? "1"
             : "0";
-        row.dataset.primaryStatus = ctx.computePrimaryStatus(
+        const primaryStatus = ctx.computePrimaryStatus(
           row,
           row.dataset.hasDue === "1" ? dueTs : null,
         );
+        if (row.dataset.overdue !== overdue) row.dataset.overdue = overdue;
+        if (row.dataset.primaryStatus !== primaryStatus) row.dataset.primaryStatus = primaryStatus;
         ctx.renderStatusBadges(row);
       }
       ctx.updateRemainingForRow(row);

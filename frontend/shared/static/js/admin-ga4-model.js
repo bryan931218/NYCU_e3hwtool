@@ -31,6 +31,9 @@ export function sourceLabel(value) {
 export function campaignLabel(value) {
   return !value || ["(not set)", "(direct)", "(organic)"].includes(value) ? "" : String(value);
 }
+export function newVisitorSources(rows) {
+  return sorted(rows, "newUsers").filter(row => number(row.newUsers) > 0);
+}
 export function pageLabel(value) {
   const labels = { "/": "首頁／作業頁", "/login": "登入", "/settings/notifications": "通知設定", "/courses/messages": "課程訊息", "/courses/announcements": "課程公告", "/courses/mail": "課程信件", "/feedback": "問題回報" };
   return labels[value] || value || "未辨識頁面";

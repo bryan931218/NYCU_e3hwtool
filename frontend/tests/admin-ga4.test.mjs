@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { number, format, percent, duration, sorted, sourceLabel, campaignLabel, pageLabel, eventRows, featureLabels, metrics, engagement } from '../shared/static/js/admin-ga4-model.js';
+import { number, format, percent, duration, sorted, sourceLabel, campaignLabel, pageLabel, eventRows, featureLabels, metrics, engagement, newVisitorSources } from '../shared/static/js/admin-ga4-model.js';
+
+test('acquisition counts only new visitors, never returning-user sessions', () => {
+  const rows = [{ newUsers: 0, sessions: 900 }, { newUsers: 2, sessions: 100 },
+    { newUsers: '8' }, { activeUsers: 99 }, { newUsers: -1 }, null];
+  assert.deepEqual(newVisitorSources(rows).map(row => row.newUsers), ['8', 2]);
+  assert.deepEqual(newVisitorSources(null), []);
+  assert.equal(rows[0].newUsers, 0);
+});
 
 test('missing values are not misrepresented as zero', () => {
   for (const value of [undefined, null, '', NaN, Infinity, -1, true, 'bad']) {

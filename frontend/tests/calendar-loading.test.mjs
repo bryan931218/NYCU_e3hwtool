@@ -44,3 +44,14 @@ test('workbench starts its module in the head without a blocking calendar script
   for(const mode of ['due','course']) assert.match(template,new RegExp(`initial_view != '${mode}'`));
   assert.match(read('../assignments/templates/components/deadline-calendar.html'), /initial_view != 'calendar'/);
 });
+
+test('workbench module preloads cover its direct dependencies and preserve CSP nonces', () => {
+  const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+  const head = read('../assignments/templates/web.html').split('</head>')[0];
+  const entry = read('../assignments/static/js/workbench/index.js');
+  assert.match(head, /rel="modulepreload" nonce="/);
+  for (const [, name] of entry.matchAll(/from "\.\/(.+)\.js"/g)) {
+    assert.ok(head.includes(`'workbench/${name}'`), `Preload ${name} without an import waterfall`);
+  }
+  for (const name of ['content-motion', 'course-message-unread']) assert.ok(head.includes(`'${name}'`));
+});

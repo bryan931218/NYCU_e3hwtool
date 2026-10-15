@@ -19,6 +19,9 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/workbench.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-picker.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/deadline-calendar.css') }}">
+{% for module in ['workbench/feedback', 'workbench/cache', 'workbench/filter-state', 'workbench/course-filter', 'workbench/course-colors', 'workbench/search', 'workbench/local-assignments', 'workbench/custom-todo-notifications', 'workbench/filters', 'workbench/calendar', 'workbench/deadline-calendar', 'workbench/interactions', 'workbench/cache-events', 'workbench/calendar-events', 'workbench/startup', 'workbench/announcements', 'workbench/profile', 'workbench/usage-events', 'workbench/course-messages', 'content-motion', 'course-message-unread'] %}
+<link rel="modulepreload" nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" href="{{ url_for('frontend_asset', filename='assignments/js/' ~ module ~ '.js') }}">
+{% endfor %}
 <script id="workbench-script" nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/workbench/index.js') }}"></script>
 </head>
 <body data-traffic-stats-url="{{ url_for('traffic_stats') }}" data-has-cache="{{ 1 if result else 0 }}" data-cache-ts="{{ cache_ts or 0 }}" data-readonly-view="{{ 1 if is_admin_view else 0 }}" data-view-user="{{ viewed_username or '' }}">
@@ -340,10 +343,11 @@
                     <col class="course-col-link">
                 </colgroup>
                 <thead><tr><th scope="col">作業名稱</th><th scope="col">截止時間</th><th scope="col" class="assignment-center">繳交人數</th><th scope="col" class="assignment-center">狀態</th><th scope="col" class="assignment-center">操作</th></tr></thead>
-                <tbody>
-                    {% for item in course.assignments %}
+                {% set render_course_rows = initial_view == 'course' and (course.semester_key or 'other') == selected_semester %}
+                <tbody{% if not render_course_rows %} data-lazy-course-rows{% endif %}>
+                    {% if render_course_rows %}{% for item in course.assignments %}
                     {{ render_assignment_row(item, course.title, item.semester_key or course.semester_key) }}
-                    {% endfor %}
+                    {% endfor %}{% endif %}
                 </tbody>
                 </table>
                 </div>

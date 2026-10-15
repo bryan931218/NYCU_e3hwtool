@@ -1,4 +1,4 @@
-import { number, format, percent, metrics, engagement, sorted, sourceLabel, campaignLabel, pageLabel, eventRows, featureLabels, eventLabels } from "./admin-ga4-model.js";
+import { number, format, percent, metrics, engagement, sorted, sourceLabel, campaignLabel, pageLabel, eventRows, featureLabels, eventLabels, newVisitorSources } from "./admin-ga4-model.js";
 
 const root = document.getElementById("google-analytics");
 if (root) {
@@ -112,15 +112,22 @@ if (root) {
       node.append(element("span", metric.label), element("strong", metric.value), element("small", metric.note));
       return node;
     }));
-    const sources = sorted(reports.sources, "sessions"), pages = sorted(reports.pages, "screenPageViews");
+    const sources = newVisitorSources(reports.sources), pages = sorted(reports.pages, "screenPageViews");
+    const sourceTotals = new Map();
+    sources.forEach(row => {
+      const key = row.firstUserSourceMedium;
+      const total = sourceTotals.get(key) || { firstUserSourceMedium: key, newUsers: 0 };
+      total.newUsers += number(row.newUsers);
+      sourceTotals.set(key, total);
+    });
     const features = eventRows(reports.events, featureLabels, "feature_");
-    ranking("top-sources", sources, "sessions", row => sourceLabel(row.sessionSourceMedium).label, "次");
+    ranking("top-sources", [...sourceTotals.values()], "newUsers", row => sourceLabel(row.firstUserSourceMedium).label, "人");
     ranking("top-features", features, "totalUsers", row => row.label, "人");
     ranking("devices", reports.devices, "activeUsers", row => ({ desktop: "電腦", mobile: "手機", tablet: "平板" }[row.deviceCategory] || "其他裝置"), "人");
     ranking("returning", reports.returning, "activeUsers", row => ({ new: "新訪客", returning: "回訪訪客" }[row.newVsReturning] || "未辨識"), "人");
-    table("sources", ["來源／活動", "訪客人數", "造訪次數", "互動比例"], sources.map(row => {
-      const label = sourceLabel(row.sessionSourceMedium);
-      return [{ label: label.label, detail: [label.detail, campaignLabel(row.sessionCampaignName)].filter(Boolean).join(" · ") }, format(row.activeUsers), format(row.sessions), percent(row.engagementRate)];
+    table("sources", ["首次造訪來源／活動", "新訪客人數"], sources.map(row => {
+      const label = sourceLabel(row.firstUserSourceMedium);
+      return [{ label: label.label, detail: [label.detail, campaignLabel(row.firstUserCampaignName)].filter(Boolean).join(" · ") }, format(row.newUsers)];
     }));
     table("pages", ["頁面", "瀏覽次數", "訪客人數"], pages.map(row => [{ label: pageLabel(row.pagePath), detail: row.pagePath }, format(row.screenPageViews), format(row.activeUsers)]));
     table("features", ["功能", "使用人數", "操作次數"], features.map(row => [row.label, format(row.totalUsers), format(row.eventCount)]));

@@ -72,6 +72,23 @@ export function calendarEventsInRange(items, start, end) {
   }));
 }
 
+export function calendarPreviewEvents(items, start, end) {
+  const byDay = new Map();
+  for (const event of calendarEventsInRange(items, start, end)) {
+    if (!byDay.has(event.start)) byDay.set(event.start, []);
+    byDay.get(event.start).push(event);
+  }
+  return [...byDay].flatMap(([day, events]) => {
+    const preview = events.slice(0, 2);
+    if (events.length > 2) preview.push({
+      id: `overflow:${day}`, title: `+${events.length - 2} 件`, start: day, allDay: true,
+      classNames: ['calendar-event-more'],
+      extendedProps: { day, overflow: true, deadlineTs: Infinity },
+    });
+    return preview;
+  });
+}
+
 export function safeCalendarUrl(value, base) {
   if (!value || value === "#") return "";
   try {
@@ -305,7 +322,7 @@ export function register(ctx) {
     if (!ctx.deadlineCalendar) {
       ctx.deadlineCalendar = new window.FullCalendar.Calendar(root, {
         // Let the library request only the visible date range, not years of history.
-        events: (range, success) => success(calendarEventsInRange(ctx.deadlineAssignments, range.startStr.slice(0, 10), range.endStr.slice(0, 10))),
+        events: (range, success) => success(calendarPreviewEvents(ctx.deadlineAssignments, range.startStr.slice(0, 10), range.endStr.slice(0, 10))),
         initialView: "dayGridMonth",
         initialDate: ctx.calendarSelectedDay,
         now: () => taipeiDeadline(Date.now() / 1000).iso,
@@ -316,7 +333,8 @@ export function register(ctx) {
         height: ctx.calendarHeight(),
         fixedWeekCount: false,
         expandRows: true,
-        dayMaxEvents: 2,
+        // Prepare the visible preview directly, avoiding layout of hidden events.
+        dayMaxEvents: false,
         eventOrder: "deadlineTs,title",
         eventTimeFormat: { hour: "2-digit", minute: "2-digit", hour12: false },
         dayHeaderContent: (arg) => ["日", "一", "二", "三", "四", "五", "六"][arg.date.getUTCDay()],
@@ -328,8 +346,9 @@ export function register(ctx) {
           return true;
         },
         dateClick: (arg) => ctx.selectCalendarDay(arg.dateStr.slice(0, 10)),
-        eventClick: (arg) => ctx.selectCalendarDay(arg.event.extendedProps.day, arg.event.id),
+        eventClick: (arg) => ctx.selectCalendarDay(arg.event.extendedProps.day, arg.event.extendedProps.overflow ? "" : arg.event.id),
         eventContent: (arg) => {
+          if (arg.event.extendedProps.overflow) return { domNodes: [element("span", "calendar-more-label", arg.event.title)] };
           const wrapper = element("span", "calendar-event-content");
           wrapper.append(element("span", "calendar-event-time", arg.event.extendedProps.time));
           wrapper.append(element("span", "calendar-event-title", arg.event.title));
@@ -342,15 +361,15 @@ export function register(ctx) {
         },
         eventDidMount: (arg) => {
           const { course, courseKey, time, status } = arg.event.extendedProps;
-          arg.el.title = `${time} ${arg.event.title}｜${course}｜${ctx.STATUS_FILTER_LABELS[status] || "待處理"}`;
-          arg.el.style.setProperty("--course-accent", ctx.courseAccent(courseKey));
+          arg.el.title = arg.event.extendedProps.overflow ? `${arg.event.extendedProps.day} ${arg.event.title}，查看全部作業` : `${time} ${arg.event.title}｜${course}｜${ctx.STATUS_FILTER_LABELS[status] || "待處理"}`;
+          if (!arg.event.extendedProps.overflow) arg.el.style.setProperty("--course-accent", ctx.courseAccent(courseKey));
           arg.el.setAttribute("role", "button");
           arg.el.setAttribute("tabindex", "0");
           arg.el.setAttribute("aria-label", arg.el.title);
           arg.el.addEventListener("keydown", (event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
-              ctx.selectCalendarDay(arg.event.extendedProps.day, arg.event.id);
+              ctx.selectCalendarDay(arg.event.extendedProps.day, arg.event.extendedProps.overflow ? "" : arg.event.id);
             }
           });
         },

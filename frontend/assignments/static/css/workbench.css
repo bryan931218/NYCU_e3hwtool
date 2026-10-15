@@ -1734,9 +1734,14 @@ html[data-theme="dark"] #flatTable .assignment-new-badge {
 }
 #flatTable tbody tr[data-uid] {
   min-height: 80px;
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 80px;
   transition:
     background-color 0.16s ease,
     box-shadow 0.16s ease;
+}
+@media print {
+  #flatTable tbody tr[data-uid] { content-visibility: visible; contain-intrinsic-block-size: none; }
 }
 #flatTable tbody tr[data-uid]:hover {
   z-index: 1;
@@ -1902,6 +1907,7 @@ html[data-theme="dark"]
 }
 
 @media (max-width: 680px) {
+  #flatTable tbody tr[data-uid] { contain-intrinsic-block-size: auto 170px; }
   .container {
     padding: 0 15px 34px;
   }

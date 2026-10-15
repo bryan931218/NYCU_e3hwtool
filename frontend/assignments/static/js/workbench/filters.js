@@ -133,6 +133,7 @@ export function register(ctx) {
   };
 
   ctx.applyFilters = function applyFilters() {
+    ctx.ensureCourseRows?.();
     ctx.syncCourseColors?.();
     ctx.syncCourseFilter?.();
     const ignoredSet = ctx.getIgnoredAssignmentUidSet();

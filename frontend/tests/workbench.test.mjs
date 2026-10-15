@@ -6,7 +6,7 @@ import { semesterCourseTitles, register as registerCourses, initialize as initia
 import { register as registerFilters, initialize as initializeFilters } from '../assignments/static/js/workbench/filter-state.js';
 import { register as registerAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
-import { calendarAssignments, calendarEventsInRange, register as registerDeadlineCalendar, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay } from '../assignments/static/js/workbench/deadline-calendar.js';
+import { calendarAssignments, calendarEventsInRange, calendarPreviewEvents, register as registerDeadlineCalendar, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay } from '../assignments/static/js/workbench/deadline-calendar.js';
 import { register as registerGoogleCalendar } from '../assignments/static/js/workbench/calendar.js';
 import { register as registerInteractions, initializeMoreMenu } from '../assignments/static/js/workbench/interactions.js';
 import { register as registerWorkspaceFilters } from '../assignments/static/js/workbench/filters.js';
@@ -49,6 +49,37 @@ test('calendar event source processes only visible days, including adjacent mont
   const events = calendarEventsInRange(items,'2026-09-28','2026-11-02');
   assert.deepEqual(events.map(event=>event.id),['1','2','3']);
   assert.equal(events.every(event=>event.allDay),true);
+});
+
+test('month previews bound rendered events without dropping the complete day agenda data', () => {
+  const items = Array.from({length: 12}, (_, index) => ({uid:String(index), title:`Task ${index}`, status:'pending', dueTs:index,
+    deadline:{day:'2026-10-15', time:'23:59'}}));
+  items.push({uid:'next',deadline:{day:'2026-10-16',time:'23:59'}});
+  const preview = calendarPreviewEvents(items, '2026-10-01', '2026-11-01');
+  assert.equal(preview.length, 4);
+  assert.deepEqual(preview.slice(0, 2).map(event => event.id), ['0', '1']);
+  assert.equal(preview[2].title, '+10 件');
+  assert.equal(preview[2].extendedProps.overflow, true);
+  assert.equal(items.length, 13);
+  assert.deepEqual(calendarPreviewEvents(items, '2026-11-01', '2026-12-01'), []);
+});
+
+test('unchanged remaining-time refreshes do not rewrite DOM status attributes', () => {
+  const ctx = {}; registerAssignments(ctx);
+  let writes = 0;
+  const data = {completed:'0', graded:'0', primaryStatus:'pending', overdue:'0', hasDue:'1', dueTs:String(Date.now() / 1000 + 1000)};
+  const row = {dataset:new Proxy(data, {set(target, key, value) { writes++; target[key]=value; return true; }})};
+  ctx.renderStatusBadges = ctx.updateRemainingForRow = () => {};
+  withDocument({querySelectorAll:()=>[row]}, () => {
+    ctx.refreshRemainingTimes({skipApply:true});
+    assert.equal(writes, 0);
+    data.dueTs = '1';
+    ctx.refreshRemainingTimes({skipApply:true});
+    assert.equal(writes, 2);
+    assert.equal(data.primaryStatus, 'overdue');
+    ctx.refreshRemainingTimes({skipApply:true});
+    assert.equal(writes, 2);
+  });
 });
 
 test('unchanged calendar data never rebuilds its event source and replaced table rows stay current', () => {

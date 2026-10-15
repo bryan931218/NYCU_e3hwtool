@@ -1,8 +1,9 @@
 """E3 assignment dashboard entry route."""
 
 import posixpath
+from functools import lru_cache
 
-from flask import abort, render_template, render_template_string, request, send_file
+from flask import abort, render_template, request, send_file
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE
 from e3_tracker.assignments.services.e3_navigation_extension import (
     EXTENSION_FILES, build_extension_archive, extension_details, official_store_url,
@@ -21,6 +22,11 @@ def register_dashboard_routes(
     app_home_url,
     support_email
 ):
+    # Cache compiled template code, never a user's rendered page or context.
+    @lru_cache(maxsize=2)
+    def compiled_dashboard(source):
+        return app.jinja_env.from_string(source)
+
     private_extension_assets = {
         ('assignments/e3-navigation-extension/' + name).casefold()
         for name in EXTENSION_FILES
@@ -71,8 +77,8 @@ def register_dashboard_routes(
     def index():
         user = current_user()
         if not user:
-            return render_template_string(
-                HOME_TEMPLATE,
+            return render_template(
+                compiled_dashboard(HOME_TEMPLATE),
                 stats=usage_stats(),
                 stats_version=current_stats_version(),
                 google_scope=GOOGLE_CALENDAR_SCOPE,
@@ -80,8 +86,8 @@ def register_dashboard_routes(
                 support_email=support_email,
             )
         context = _build_dashboard_context(user)
-        return render_template_string(
-            WEB_TEMPLATE,
+        return render_template(
+            compiled_dashboard(WEB_TEMPLATE),
             **context,
             app_home_url=app_home_url,
             support_email=support_email,

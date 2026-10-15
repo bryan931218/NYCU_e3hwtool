@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '../..');
 const fixture = (...args) => execFileSync(process.argv[2] || 'python', [path.join(__dirname, 'traffic_sources_fixture.py'), '--ga4', ...args], { encoding: 'utf8', env: { ...process.env, PYTHONUTF8: '1', E3_ENV: 'development', RAILWAY_ENVIRONMENT_ID: '', RAILWAY_ENVIRONMENT_NAME: '', E3_NOTIFICATIONS_WORKER: '0', E3_YOUTUBE_AUTO_SYNC_ENABLED: '0', E3_SESSION_PROFILE_WORKER: '0' } });
 const reports = {
   summary: [{ activeUsers: 100, newUsers: 24, sessions: 130, screenPageViews: 350, engagementRate: 0.74, userEngagementDuration: 6600 }],
-  sources: [{ sessionSourceMedium: 'dcard / social', sessionCampaignName: 'dcard-115-1', sessions: 60, activeUsers: 45, engagementRate: 0.8 }, { sessionSourceMedium: '(direct) / (none)', sessions: 42, activeUsers: 30, engagementRate: .7 }, { sessionSourceMedium: 'google / organic', sessions: 28, activeUsers: 25, engagementRate: .6 }],
+  sources: [{ firstUserSourceMedium: 'dcard / social', firstUserCampaignName: 'dcard-115-1', newUsers: 10 }, { firstUserSourceMedium: '(direct) / (none)', newUsers: 6 }, { firstUserSourceMedium: 'google / organic', newUsers: 4 }, { firstUserSourceMedium: 'dcard / social', firstUserCampaignName: 'second-share', newUsers: 4 }, { firstUserSourceMedium: 'returning-only', newUsers: 0, sessions: 999, activeUsers: 888 }],
   pages: [{ pagePath: '/', screenPageViews: 200, activeUsers: 100 }, { pagePath: '/login', screenPageViews: 90, activeUsers: 70 }, { pagePath: '/settings/notifications', screenPageViews: 60, activeUsers: 35 }],
   devices: [{ deviceCategory: 'mobile', activeUsers: 75, sessions: 90 }, { deviceCategory: 'desktop', activeUsers: 25, sessions: 40 }],
   returning: [{ newVsReturning: 'returning', activeUsers: 76, sessions: 102 }, { newVsReturning: 'new', activeUsers: 24, sessions: 28 }],
@@ -69,6 +69,9 @@ const reports = {
       assert.equal(await page.locator('#ga4Metrics article').count(), 4);
       assert.equal(await page.locator('[role=tabpanel]:visible').count(), 1);
       assert.match(await page.locator('#ga4-top-sources').innerText(), /Dcard|直接造訪/);
+      assert.match(await page.locator('#ga4-top-sources').innerText(), /14 人/);
+      assert.equal(await page.locator('#ga4-top-sources li').count(), 3, 'Campaigns from the same source are combined in the overview');
+      assert.doesNotMatch(await page.locator('#ga4-top-sources').innerText(), /returning-only|999|888/);
       assert.ok(await page.locator('#ga4-top-sources meter').first().evaluate(el => el.value > 0));
       await page.locator('[data-ga4-tab=usage]').click();
       assert.match(await page.locator('#ga4-features').innerText(), /作業日曆/);
@@ -80,6 +83,9 @@ const reports = {
       await page.locator('[data-ga4-tab=acquisition]').click();
       assert.match(await page.locator('#ga4-pages').innerText(), /通知設定/);
       assert.match(await page.locator('#ga4-sources').innerText(), /社群/);
+      assert.equal(await page.locator('#ga4-sources thead th').count(), 2);
+      assert.equal(await page.locator('#ga4-sources tbody tr').count(), 4);
+      assert.match(await page.locator('#ga4-sources').innerText(), /新訪客人數/);
       await page.locator('[data-ga4-tab=acquisition]').press('Home');
       assert.equal(await page.locator('[data-ga4-tab=overview]').getAttribute('aria-selected'), 'true');
       await page.locator('#ga4Range').selectOption('7');

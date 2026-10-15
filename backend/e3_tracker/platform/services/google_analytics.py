@@ -14,7 +14,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 
 REPORTS = {
     "summary": ([], ["activeUsers", "newUsers", "sessions", "screenPageViews", "engagementRate", "userEngagementDuration"]),
-    "sources": (["sessionSourceMedium", "sessionCampaignName"], ["sessions", "activeUsers", "engagementRate"]),
+    "sources": (["firstUserSourceMedium", "firstUserCampaignName"], ["newUsers"]),
     "pages": (["pagePath"], ["screenPageViews", "activeUsers", "userEngagementDuration"]),
     "devices": (["deviceCategory"], ["activeUsers", "sessions"]),
     "returning": (["newVsReturning"], ["activeUsers", "sessions"]),
@@ -99,6 +99,9 @@ class GoogleAnalyticsReports:
                 "dimensions": [{"name": name} for name in dimensions],
                 "metrics": [{"name": name} for name in metrics], "limit": "100" if key == "events" else "30",
                 "orderBys": [{"metric": {"metricName": metrics[0]}, "desc": True}],
+                **({"metricFilter": {"filter": {"fieldName": "newUsers", "numericFilter": {
+                    "operation": "GREATER_THAN", "value": {"int64Value": "0"},
+                }}}} if key == "sources" else {}),
             } for key, (dimensions, metrics) in REPORTS.items()]
             payload = []
             for offset in range(0, len(reports), 5):

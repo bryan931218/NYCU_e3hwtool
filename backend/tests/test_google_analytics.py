@@ -234,6 +234,14 @@ class GoogleAnalyticsReportTests(unittest.TestCase):
                 raise TimeoutError('alpha offline')
             items = kwargs['json']['requests']
             self.assertLessEqual(len(items), 5)
+            for item in items:
+                if item['dimensions'] == [{'name': 'firstUserSourceMedium'}, {'name': 'firstUserCampaignName'}]:
+                    self.assertEqual(item['metrics'], [{'name': 'newUsers'}])
+                    self.assertEqual(item['orderBys'][0]['metric']['metricName'], 'newUsers')
+                    self.assertEqual(item['metricFilter'], {'filter': {'fieldName': 'newUsers',
+                        'numericFilter': {'operation': 'GREATER_THAN', 'value': {'int64Value': '0'}}}})
+                else:
+                    self.assertNotIn('metricFilter', item)
             response.json.return_value = {'reports': [{'rows': [{
                 'dimensionValues': [{'value': 'example'} for _ in item['dimensions']],
                 'metricValues': [{'value': '12'} for _ in item['metrics']],
@@ -245,6 +253,7 @@ class GoogleAnalyticsReportTests(unittest.TestCase):
             client.return_value.__enter__.return_value.post.side_effect = response_for
             result = reports._fetch(7)
         self.assertEqual(result['summary'][0]['activeUsers'], 12)
+        self.assertEqual(result['sources'], [{'firstUserSourceMedium': 'example', 'firstUserCampaignName': 'example', 'newUsers': 12}])
         self.assertEqual(result['login_funnel'], None)
         self.assertEqual(len(result), len(REPORTS) + 2)
         self.assertEqual(factory.call_args.kwargs['scopes'], ['https://www.googleapis.com/auth/analytics.readonly'])

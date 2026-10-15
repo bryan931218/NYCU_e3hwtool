@@ -13,6 +13,36 @@ export function semesterCourseTitles(courses, semesters) {
 }
 
 export function register(ctx) {
+  // Reuse canonical rows instead of building both list views at startup.
+  ctx.ensureCourseRows = () => {
+    if (ctx.currentViewMode !== "course") return;
+    const pending = Array.from(document.querySelectorAll("#viewCourse [data-lazy-course-rows]"))
+      .filter(body => ctx.currentSemesterFilters.includes(body.closest(".course-card").dataset.semester || "other"));
+    if (!pending.length) return;
+    const rowsByCourse = new Map();
+    document.querySelectorAll("#flatTable tbody tr[data-uid]").forEach(row => {
+      const key = `${row.dataset.semester}|${row.dataset.courseId ? `id:${row.dataset.courseId}` : `title:${row.dataset.course}`}`;
+      if (!rowsByCourse.has(key)) rowsByCourse.set(key, []);
+      rowsByCourse.get(key).push(row);
+    });
+    pending.forEach(body => {
+      const card = body.closest(".course-card");
+      const rows = [
+        ...(rowsByCourse.get(`${card.dataset.semester}|id:${card.dataset.courseId}`) || []),
+        ...(rowsByCourse.get(`${card.dataset.semester}|title:${card.dataset.courseTitle}`) || []),
+      ];
+      body.replaceChildren(...rows.map(source => {
+        const row = source.cloneNode(true);
+        const remaining = row.querySelector(".remaining-text");
+        row.querySelector("td:first-child")?.remove();
+        row.querySelector(".assignment-eyebrow")?.remove();
+        if (remaining) row.querySelector(".assignment-meta")?.prepend(remaining);
+        return row;
+      }));
+      body.removeAttribute("data-lazy-course-rows");
+    });
+  };
+
   ctx.syncCourseFilter = function syncCourseFilter() {
     if (!ctx.courseFilter) return;
     // Course cards include courses without assignments and survive status filtering.
