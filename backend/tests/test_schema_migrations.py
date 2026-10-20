@@ -46,6 +46,24 @@ class SchemaMigrationTests(unittest.TestCase):
         with self.engine.connect() as conn:
             self.assertEqual(conn.execute(text('SELECT playback_seconds FROM study_plan_video_records')).scalar(), 18)
 
+    def test_pre_usage_database_can_upgrade_without_later_traffic_columns(self):
+        from e3_tracker.platform.persistence.core_schema import traffic_events_table
+        with patch.object(migrations, 'MIGRATIONS', tuple(item for item in migrations.MIGRATIONS if item[0] < '0010')):
+            migrations.run_migrations(self.engine)
+        with self.engine.begin() as conn:
+            for index in traffic_events_table.indexes:
+                if 'retained_activity' in {column.name for column in index.columns}:
+                    index.drop(conn, checkfirst=True)
+            conn.exec_driver_sql('ALTER TABLE traffic_events DROP COLUMN retained_activity')
+            conn.exec_driver_sql("INSERT INTO traffic_events (ts, action, status, meta) VALUES (strftime('%s', 'now'), 'download_excel', 'success', '{}')")
+        completed = migrations.run_migrations(self.engine)
+        self.assertIn('0010_assignment_usage', completed)
+        self.assertIn('0018_course_files', completed)
+        with self.engine.connect() as conn:
+            self.assertEqual(conn.execute(text('SELECT action FROM traffic_events')).scalar(), 'download_excel')
+            self.assertEqual(conn.execute(text('SELECT retained_activity FROM traffic_events')).scalar(), 1)
+        self.assertEqual(migrations.run_migrations(self.engine), [])
+
     def test_grading_notification_upgrade_preserves_existing_seen_assignments(self):
         with self.engine.begin() as conn:
             conn.execute(text('CREATE TABLE assignment_notification_seen (user_id INTEGER NOT NULL, uid_hash VARCHAR(64) NOT NULL, PRIMARY KEY (user_id, uid_hash))'))
@@ -54,7 +72,7 @@ class SchemaMigrationTests(unittest.TestCase):
             conn.execute(text("INSERT INTO assignments (id, course_id, title, grade_text) VALUES (12, 1, 'existing homework', '85')"))
         with patch.object(migrations, 'MIGRATIONS', tuple(item for item in migrations.MIGRATIONS if item[0] < '0016')):
             migrations.run_migrations(self.engine)
-        self.assertEqual(migrations.run_migrations(self.engine), ['0016_grading_notifications', '0017_traffic_activity_retention'])
+        self.assertEqual(migrations.run_migrations(self.engine), ['0016_grading_notifications', '0017_traffic_activity_retention', '0018_course_files'])
         with self.engine.begin() as conn:
             row = conn.execute(text('SELECT * FROM assignment_notification_seen')).mappings().one()
             self.assertEqual(dict(row), {'user_id': 7, 'uid_hash': 'existing-assignment', 'graded_observed': 0})

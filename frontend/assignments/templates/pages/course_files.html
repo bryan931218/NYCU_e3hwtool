@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+{% include 'shared/components/security.html' %}
+{% include 'shared/components/page-transitions.html' %}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>附件收納 | E3作業追蹤系統</title>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-announcements.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-picker.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-files.css') }}">
+<script nonce="{{ csp_nonce() }}" type="application/json" id="course-files-config">{{ files_config|tojson }}</script>
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/course-files.js') }}"></script>
+</head>
+<body>
+<main class="news-shell files-shell">
+    <header class="news-header">
+        <a class="news-brand" href="{{ url_for('index') }}">E3作業追蹤系統</a>
+        <div class="news-header-actions"><a class="btn" href="{{ url_for('index') }}"><span class="news-icon news-back" aria-hidden="true"></span>作業列表</a><button class="icon-button" type="button" id="filesTheme" title="切換主題" aria-label="切換主題"><span class="news-icon news-theme" aria-hidden="true"></span></button></div>
+    </header>
+    <section class="news-heading" aria-labelledby="filesTitle">
+        <div><h1 id="filesTitle">附件收納 <span class="news-count" id="filesCount">0</span></h1><p id="filesUpdated" class="news-updated"></p></div>
+        <button class="btn files-refresh" type="button" id="filesRefresh"><span class="news-icon news-refresh-icon" aria-hidden="true"></span><span id="filesRefreshLabel">更新收納</span></button>
+    </section>
+    <nav class="news-tabs" aria-label="課程資料分類">
+        <a href="{{ url_for('course_messages_page', semester=selected_semester) }}" data-semester-link>課程公告</a>
+        <a href="{{ url_for('course_messages_page', tab='mail', semester=selected_semester) }}" data-semester-link>課程信件</a>
+        <a href="{{ url_for('course_files_page', semester=selected_semester) }}" aria-current="page" data-semester-link>附件收納</a>
+    </nav>
+    <section class="files-toolbar" aria-label="附件篩選">
+        <select id="filesSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>
+        <div class="course-picker"><select class="course-filter" id="courseFilter" aria-label="篩選課程"><option value="">全部課程</option></select><button type="button" class="course-filter course-picker-toggle" id="courseFilterToggle" role="combobox" aria-label="篩選課程" aria-haspopup="listbox" aria-expanded="false" aria-controls="courseFilterOptions" hidden><span id="courseFilterLabel">全部課程</span><span class="course-picker-chevron" aria-hidden="true"></span></button><div class="course-options" id="courseFilterOptions" role="listbox" aria-label="課程" popover="auto" hidden></div></div>
+        <form role="search" id="filesSearchForm" autocomplete="off"><input type="search" id="filesSearch" name="course_file_query" placeholder="搜尋檔名、作業或訊息" aria-label="搜尋附件" autocomplete="off" data-lpignore="true" data-1p-ignore></form>
+        <select id="filesSource" aria-label="篩選來源"><option value="">全部來源</option><option value="course">課程教材</option><option value="assignment">作業</option><option value="announcements">公告</option><option value="mail">信件</option></select>
+        <select id="filesType" aria-label="篩選檔案類型"><option value="">全部類型</option><option value="pdf">PDF</option><option value="slides">簡報</option><option value="document">文件</option><option value="spreadsheet">試算表</option><option value="archive">壓縮檔</option><option value="image">圖片</option><option value="link">連結</option><option value="other">其他檔案</option></select>
+    </section>
+    <p id="filesStatus" class="news-message" role="status" aria-live="polite" hidden></p>
+    <div class="files-list-meta"><span id="filesResult" aria-live="polite">讀取中…</span><label class="files-sort-label">排序<select id="filesSort" aria-label="附件排序"><option value="course">依課程</option><option value="name">依名稱</option></select></label></div>
+    <div class="files-columns" aria-hidden="true"><span>名稱</span><span>課程</span><span>來源</span><span></span></div>
+    <ul class="files-list" id="filesList" aria-label="附件列表" aria-busy="true"></ul>
+    <div class="files-empty" id="filesEmpty" hidden><span class="files-empty-icon" aria-hidden="true"></span><h2 id="filesEmptyTitle">尚無附件</h2><p id="filesEmptyText"></p><button class="btn" type="button" id="filesClear" hidden>清除篩選</button></div>
+    <button class="btn files-more" type="button" id="filesMore" hidden>顯示更多</button>
+    <footer class="files-note">E3 附件需在瀏覽器登入 E3。信件附件於讀取信件後加入。</footer>
+    <noscript><p class="news-message">請啟用 JavaScript 以整理附件。</p></noscript>
+</main>
+</body>
+</html>

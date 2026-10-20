@@ -46,7 +46,11 @@ def migrate_usage(conn):
         select(users_table.c.id, users_table.c.username).where(~guest_account_condition())
     )}
     samples = 0
-    for event in conn.execute(select(traffic_events_table)).mappings():
+    # This backfill runs before later traffic columns exist in legacy databases.
+    for event in conn.execute(select(
+        traffic_events_table.c.ts, traffic_events_table.c.action, traffic_events_table.c.status,
+        traffic_events_table.c.username, traffic_events_table.c.is_guest, traffic_events_table.c.meta,
+    )).mappings():
         try:
             meta = json.loads(event["meta"] or "{}")
             if not isinstance(meta, dict):

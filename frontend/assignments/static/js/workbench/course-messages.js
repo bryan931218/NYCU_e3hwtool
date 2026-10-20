@@ -2,6 +2,7 @@ import { createUnreadUpdater, updateUnreadIndicator } from '../course-message-un
 
 export function register(ctx) {
   const entry = document.querySelector('.workspace-messages');
+  const files = document.querySelector('.workspace-files');
   if (!entry?.dataset.unreadUrl) return;
   const semester = () => ctx.currentSemesterFilters?.[0] || '';
   const refresh = createUnreadUpdater(entry.dataset.unreadUrl, semester, counts => updateUnreadIndicator(entry, counts.unseen?.total || 0, '課程訊息'));
@@ -12,6 +13,11 @@ export function register(ctx) {
     const url = new URL(entry.href);
     if (previous) url.searchParams.set('semester', previous); else url.searchParams.delete('semester');
     entry.href = url.href;
+    if (files) {
+      const target = new URL(files.href);
+      if (previous) target.searchParams.set('semester', previous); else target.searchParams.delete('semester');
+      files.href = target.href;
+    }
     void refresh();
   };
 }

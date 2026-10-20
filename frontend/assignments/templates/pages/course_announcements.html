@@ -28,6 +28,7 @@
     <nav class="news-tabs" aria-label="課程訊息分類">
         <a href="{{ url_for('course_messages_page') }}" data-message-kind="announcements"{% if message_kind == 'announcements' %} aria-current="page"{% endif %}>課程公告<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
         <a href="{{ url_for('course_messages_page', tab='mail') }}" data-message-kind="mail"{% if message_kind == 'mail' %} aria-current="page"{% endif %}>課程信件<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
+        <a href="{{ url_for('course_files_page', semester=selected_semester) }}" data-files-tab>附件收納</a>
     </nav>
     <section class="news-toolbar" aria-label="{{ message_noun }}篩選">
         <select id="newsSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>

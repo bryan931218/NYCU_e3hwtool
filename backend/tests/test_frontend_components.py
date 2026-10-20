@@ -36,7 +36,8 @@ class FrontendComponentTests(unittest.TestCase):
     def test_more_operations_groups_download_calendar_and_extension_with_explicit_disconnect(self):
         page, _uid = self.render(google_ready=True, google_linked=True, excel_data='cHJldmlldw==', admin=True)
         panel = page.select_one('#moreOperationsPanel')
-        self.assertEqual([h.get_text() for h in panel.select('h3')], ['作業資料', 'Google 日曆', '瀏覽器套件'])
+        self.assertEqual([h.get_text() for h in panel.select('h3')], ['課程資料', '作業資料', 'Google 日曆', '瀏覽器套件'])
+        self.assertIsNotNone(panel.select_one('a.workspace-files[href="/course_files_page"]'))
         self.assertIsNone(panel.select_one('.btn'))
         self.assertEqual(panel.select_one('[data-log-action="download_excel"]')['download'], '待繳作業.xlsx')
         self.assertEqual(panel.select_one('#googleSyncBtn').get_text(strip=True), '同步作業到日曆')

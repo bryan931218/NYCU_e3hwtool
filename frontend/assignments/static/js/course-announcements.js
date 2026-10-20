@@ -326,6 +326,8 @@ function initialize(config) {
       for (const tab of tabs) {
         const url = new URL(tab.href); url.searchParams.set('semester', semester.value); tab.href = url.href;
       }
+      const filesTab = document.querySelector('[data-files-tab]');
+      if (filesTab) { const url = new URL(filesTab.href); url.searchParams.set('semester', semester.value); filesTab.href = url.href; }
       byId('newsUpdated').textContent = data.fetched_at ? `上次更新 ${announcementDate(data.fetched_at)}` : '';
       message(data.error || (state.running ? `${noun}更新中…` : ''), !!data.error);
       loading = false;

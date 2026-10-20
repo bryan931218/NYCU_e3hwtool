@@ -1093,6 +1093,7 @@ html[data-theme="dark"] .theme-icon-moon {
 }
 .more-action:hover .more-icon { color: inherit; }
 .more-icon[data-icon="download"] { --more-icon: url('/assets/shared/icons/download.svg'); }
+.more-icon[data-icon="folder"] { --more-icon: url('/assets/shared/icons/folder-open.svg'); }
 .more-icon[data-icon="refresh"] { --more-icon: url('/assets/shared/icons/refresh-cw.svg'); }
 .more-icon[data-icon="unlink"] { --more-icon: url('/assets/shared/icons/unlink.svg'); }
 .more-icon[data-icon="calendar"] { --more-icon: url('../vendor/lucide-calendar/calendar-days.svg'); }

@@ -121,6 +121,11 @@ def _course_mail(conn):
     course_mail_cache.create(conn, checkfirst=True)
 
 
+def _course_files(conn):
+    from e3_tracker.assignments.persistence.course_files import course_file_cache
+    course_file_cache.create(conn, checkfirst=True)
+
+
 def _repair_department_profile_names(conn):
     from e3_tracker.platform.persistence.core_schema import users_table
     from e3_tracker.platform.services.profile_names import is_academic_unit_name
@@ -195,6 +200,7 @@ MIGRATIONS = (
     ("0015_assignment_actions", _assignment_actions),
     ("0016_grading_notifications", _grading_notifications),
     ("0017_traffic_activity_retention", _traffic_activity_retention),
+    ("0018_course_files", _course_files),
 )
 
 
