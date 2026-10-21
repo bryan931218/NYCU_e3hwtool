@@ -7,17 +7,53 @@ from urllib.parse import parse_qs, urlsplit
 import requests
 
 from e3_tracker.assignments.domain.course_announcements import discussion_summaries, moodle_url
-from e3_tracker.assignments.domain.course_files import assignment_files, course_materials, folder_files
+from e3_tracker.assignments.domain.course_files import assignment_files, course_display_name, course_materials, file_index, folder_files
 from e3_tracker.assignments.persistence.course_files import CourseFileStorage
+from .collector import annotate_result_semesters, current_semester_key
 from .course_announcements import AnnouncementSessionExpired, MoodleNewsClient
 
 
 class CourseFileService:
-    def __init__(self, storage, base_url, news_service):
+    def __init__(self, storage, base_url, news_service, message_services=None):
         self.storage = CourseFileStorage(storage)
         self.base_url = base_url.rstrip('/')
         self.news = news_service
         self.slots = news_service.slots
+        self.message_services = message_services or {'announcements': news_service}
+
+    def catalog(self, username, result=None):
+        result = result if result is not None else (self.storage.owner.load_user_cache(username) or {}).get('result') or {}
+        annotate_result_semesters(result, selected_keys=self.storage.owner.load_user_preferences(username).get('semester_filter'))
+        return result
+
+    def scope(self, username, semester=None, *, result=None, prefer_current=False):
+        result = self.catalog(username, result)
+        semesters = result.get('available_semesters') or []
+        valid = {entry['key'] for entry in semesters}
+        if semester is None:
+            semester = current_semester_key() if prefer_current and current_semester_key() in valid else (result.get('selected_semesters') or [''])[0]
+        if not isinstance(semester, str) or semester not in valid:
+            raise ValueError('請先更新作業以取得該學期課程。')
+        courses = [course for course in result.get('courses', []) if course.get('semester_key') == semester]
+        if not courses or len(courses) > 30:
+            raise ValueError('請先更新作業以取得該學期課程。')
+        return semester, courses, semesters
+
+    def messages(self, username, semester, courses):
+        valid = {int(course['id']) for course in courses}
+        return {kind: [item for item in source.storage.load_course_announcements(username, semester)['items']
+                       if item['course_id'] in valid] for kind, source in self.message_services.items()}
+
+    def library(self, username, semester=None, *, result=None, prefer_current=False):
+        semester, courses, semesters = self.scope(username, semester, result=result, prefer_current=prefer_current)
+        cache = self.storage.load(username, semester)
+        running = cache['status'] == 'running' and time.time() - cache['attempt'] < 90
+        items = file_index(cache['sources'], courses, self.messages(username, semester, courses), self.base_url, limit=3001)
+        return {'ok': True, 'semester': semester, 'semesters': semesters,
+            'courses': [{'id': course['id'], 'title': course['title'], 'name': course_display_name(course['title'])} for course in courses],
+            'items': items[:3000], 'limited': len(items) > 3000, 'fetched_at': cache['fetched_at'],
+            'running': running, 'remaining': len(cache['pending']), 'initialized': bool(cache['attempt']),
+            'error': cache['error'] or ('整理逾時，請重新更新。' if cache['status'] == 'running' and not running else '')}
 
     def start(self, app, user, semester, courses, messages):
         if not user.get('moodle_session'):

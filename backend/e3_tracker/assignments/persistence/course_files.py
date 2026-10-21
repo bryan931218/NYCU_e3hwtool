@@ -3,10 +3,12 @@
 import json
 import time
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy import Column, Float, Integer, String, Table, Text, insert, select, update
 
 from e3_tracker.platform.persistence.metadata import metadata
-from e3_tracker.platform.persistence.core_schema import users_table
+from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
+from .notification_schema import line_bindings
 
 
 course_file_cache = Table(
@@ -24,6 +26,23 @@ course_file_cache = Table(
 class CourseFileStorage:
     def __init__(self, owner):
         self.owner = owner
+
+    def line_user(self, username, target_hash):
+        with self.owner._lock, self.owner._engine.connect() as conn:
+            bound = conn.execute(select(users_table.c.id).join(line_bindings,
+                line_bindings.c.user_id == users_table.c.id).where(users_table.c.username == username,
+                users_table.c.is_guest == 0, line_bindings.c.target_hash == target_hash)).scalar()
+            row = conn.execute(select(web_sessions_table.c.moodle_credential).where(
+                web_sessions_table.c.username == username, web_sessions_table.c.is_guest == 0,
+                web_sessions_table.c.expires_at > time.time(), web_sessions_table.c.moodle_credential.is_not(None),
+            ).order_by(web_sessions_table.c.updated_at.desc()).limit(1)).first() if bound else None
+        if not row:
+            return None
+        try:
+            credential = self.owner._credential_cipher.decrypt(row.moodle_credential, f'moodle:{username}')
+        except (ValueError, InvalidToken):
+            return None
+        return {'username': username, 'moodle_session': credential} if credential else None
 
     def _encode(self, value, username, semester):
         return self.owner._credential_cipher.encrypt(json.dumps(value, ensure_ascii=False), f'course-files:{username}:{semester}')

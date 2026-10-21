@@ -4,6 +4,36 @@ The assignment site owns `/courses/files` and `/api/course-files`. Navigation is
 available in the existing course-message tabs and the workbench operations menu.
 No attachment module or remote scan is loaded by the assignment workbench.
 
+## Finding Files
+
+The primary organization is semester, then course. Desktop shows a course
+sidebar; mobile uses the existing accessible course picker. Results are grouped
+under readable course names, with source tabs for materials, assignments,
+announcements and mail. File type and sorting stay inside the optional filter
+panel. Duplicate course/URL entries retain their origins in one expandable row.
+Search matches filenames, course and origin titles, ignoring case, full-width
+characters and filename separators. LINE links can preselect a course and query.
+
+## LINE Lookup
+
+- Send `找附件` to browse courses, or `找附件 HW2` to search the bound account.
+  Results use Flex messages with five files per page and eight courses per page.
+- Website and LINE use the same semester-scoped catalog and encrypted index.
+  LINE prefers the current semester; normal searches do not fetch E3, mark
+  messages read, or change automatic notification preferences.
+- The explicit update action starts the existing bounded background scan, using
+  only the latest unexpired web session belonging to the currently bound account.
+  Expired E3 credentials keep cached files searchable but require website login
+  before refreshing. Existing reply buttons let the user check results later;
+  no unsolicited completion push is sent.
+- Browsing actions expire after 15 minutes and are HMAC-bound to the LINE user
+  and website account. Every action rechecks binding, course and semester scope;
+  group events and redeliveries are ignored. Lookup and refresh have separate
+  per-account rate limits. No credentials are embedded in buttons or file links.
+- E3 file links open the external browser; third-party signed URLs remain intact.
+  Links exceeding LINE's URI limit fall back to the scoped web library. No file
+  content is uploaded to LINE or downloaded by this lookup service.
+
 ## Data and Access
 
 - Each request uses the authenticated account and its cached semester catalog.
@@ -41,6 +71,7 @@ time. Polling runs only while a scan is active and the tab is visible.
 
 ```powershell
 python -m unittest discover -s backend/tests -t backend
+python -m unittest discover -s backend/tests -t backend -p test_line_files.py
 npm --prefix frontend test
 node backend/tests/course_files_browser.cjs
 node backend/tests/workbench_loading_browser.cjs

@@ -10,10 +10,12 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from flask import g, render_template
 from e3_tracker.platform.application import create_app
+from e3_tracker.assignments.domain.course_files import course_display_name
 
 COURSES = [{'id': 42, 'title': '【115上】作業系統 Operating Systems'},
            {'id': 43, 'title': '【115上】計算機網路 Computer Networks'},
            {'id': 44, 'title': '【115上】線性代數 Linear Algebra'}]
+COURSES = [{**course, 'name': course_display_name(course['title'])} for course in COURSES]
 FILES = [
     {'title': 'HW 2 作業規格', 'filename': 'HW2_specification.pdf', 'type': 'pdf', 'extension': 'PDF', 'course': 42,
      'origins': [{'kind': 'assignment', 'title': 'HW 2：CPU 排程模擬', 'url': 'https://e3p.nycu.edu.tw/mod/assign/view.php?id=9'},
@@ -50,6 +52,7 @@ else:
                 g.csp_nonce = 'files-fixture'
                 print(render_template('assignments/pages/course_files.html', user={'is_guest': False},
                     semesters=[{'key': '115-1', 'label': '115 上學期'}, {'key': '114-2', 'label': '114 下學期'}],
-                    selected_semester='115-1', files_config={'dataUrl': '/api/course-files', 'refreshUrl': '/api/course-files/refresh', 'guest': False}))
+                    selected_semester='115-1', files_config={'dataUrl': '/api/course-files', 'refreshUrl': '/api/course-files/refresh', 'guest': False,
+                        'course': '42' if '--scoped' in sys.argv else '', 'query': 'HW2' if '--scoped' in sys.argv else ''}))
         finally:
             app.extensions['e3_storage']._engine.dispose()

@@ -23,10 +23,12 @@ from e3_tracker.assignments.routes.custom_todo_notifications import (
 )
 from e3_tracker.assignments.routes.assignment_actions import register_assignment_action_routes
 from e3_tracker.assignments.services.line_reminder_menu import LineReminderMenu
+from e3_tracker.assignments.services.line_file_menu import LineFileMenu
 
 
-def register_notification_routes(app, storage, current_user, login_required, service, record_activity):
+def register_notification_routes(app, storage, current_user, login_required, service, record_activity, *, file_service):
     line_menu = LineReminderMenu(storage, service)
+    file_menu = LineFileMenu(storage, service, file_service, app)
     def activity(username, action, detail="", status="success"):
         if not username or is_guest_identity(username) or action not in NOTIFICATION_ACTION_LABELS:
             return
@@ -202,15 +204,21 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                     if owner:
                         activity(owner, "notification_line_unlinked", "透過 LINE 取消追蹤")
                 if event.get('type') == 'postback':
+                    is_file = False
                     try:
                         postback = event.get('postback') or {}
                         data = postback.get('data')
-                        if isinstance(data, str) and data.startswith('lr:'):
+                        is_file = isinstance(data, str) and data.startswith('lf:')
+                        if is_file:
+                            if event.get('deliveryContext', {}).get('isRedelivery'):
+                                continue
+                            message = file_menu.handle_postback(data, target)
+                        elif isinstance(data, str) and data.startswith('lr:'):
                             message = line_menu.handle_postback(data, target, postback.get('params'))
                         else:
                             message = service.actions.handle_line_postback(data, target, postback.get('params'))
                     except ValueError as error:
-                        message = line_menu.error(error)
+                        message = file_menu.error(error) if is_file else line_menu.error(error)
                     if event.get('replyToken') and not event.get('deliveryContext', {}).get('isRedelivery'):
                         try:
                             service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [message]})
@@ -221,11 +229,27 @@ def register_notification_routes(app, storage, current_user, login_required, ser
                 if event.get("type") != "message" or message.get("type") != "text":
                     continue
                 text = str(message.get('text', ''))
+                if file_menu.matches(text):
+                    if event.get('deliveryContext', {}).get('isRedelivery'):
+                        continue
+                    try:
+                        response = file_menu.handle_text(text, target)
+                    except ValueError as error:
+                        response = file_menu.error(error)
+                    if event.get('replyToken'):
+                        try:
+                            service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [response]})
+                        except Exception:
+                            app.logger.warning('LINE attachment reply unavailable')
+                    continue
                 if text.strip() in line_menu.COMMANDS:
                     try:
                         response = line_menu.handle_text(text, target)
                     except ValueError as error:
                         response = line_menu.error(error)
+                    choices = response.setdefault('quickReply', {}).setdefault('items', [])
+                    if len(choices) < 13:
+                        choices.append({'type': 'action', 'action': {'type': 'message', 'label': '找附件', 'text': '找附件'}})
                     if event.get('replyToken') and not event.get('deliveryContext', {}).get('isRedelivery'):
                         try:
                             service.line_request('reply', {'replyToken': event['replyToken'], 'messages': [response]})

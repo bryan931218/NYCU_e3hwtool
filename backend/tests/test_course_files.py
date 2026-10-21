@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 from sqlalchemy import delete, select
 
 from e3_tracker.assignments.domain.course_files import (
-    assignment_files, course_materials, file_index, file_metadata, folder_files, safe_file_link,
+    assignment_files, course_display_name, course_materials, file_index, file_metadata, folder_files, safe_file_link,
 )
 from e3_tracker.assignments.persistence.cleanup import delete_assignment_account_data
 from e3_tracker.assignments.persistence.course_files import course_file_cache
@@ -47,6 +47,21 @@ class FileParsingTests(unittest.TestCase):
         self.assertEqual((item['title'], item['filename'], item['type']), ('講義.PDF', '講義.PDF', 'pdf'))
         item = file_metadata({'url': BASE + '/mod/resource/view.php?id=5', 'title': '期末報告.docx'})
         self.assertEqual((item['type'], item['extension']), ('document', 'DOCX'))
+        item = file_metadata({'url': BASE + '/mod/resource/view.php?id=6', 'title': '第一週講義'})
+        self.assertEqual(item['type'], 'other', 'Moodle file resources must not be classified as general links')
+        item = file_metadata({'url': BASE + '/pluginfile.php/1/README', 'title': 'README'})
+        self.assertEqual(item['type'], 'other')
+
+    def test_readable_course_names_remove_codes_without_merging_course_ids(self):
+        for title, expected in [
+            ('【115上】514028娛樂敘事概論 Introduction to Entertainment Narratives', '娛樂敘事概論 Introduction to Entertainment Narratives'),
+            ('1151.535650.視訊壓縮 Video Compression', '視訊壓縮 Video Compression'),
+            ('114X.010029.生成式AI輔助的Python物理模擬實驗', '生成式AI輔助的Python物理模擬實驗'),
+            ('【114下學期】535521 視覺辨識', '視覺辨識'),
+            ('Computer Networks', 'Computer Networks'),
+        ]:
+            with self.subTest(title=title):
+                self.assertEqual(course_display_name(title), expected)
 
     def test_course_materials_exclude_navigation_and_discover_only_assignment_folder_children(self):
         html = '''<nav><a href="https://outside.test/private.pdf">導覽</a></nav><div class="course-content">
@@ -120,6 +135,13 @@ class FileAccountTests(unittest.TestCase):
         self.assertIn("script-src", response.headers['Content-Security-Policy'])
         self.assertIn('/courses/files', self.client.get('/courses/messages').get_data(as_text=True))
         self.assertIn('/courses/files', self.client.get('/').get_data(as_text=True))
+        from bs4 import BeautifulSoup
+        import json
+        for query, course in [('course=42&q=HW2', '42'), ('course=evil%22', '')]:
+            page = BeautifulSoup(self.client.get('/courses/files?' + query).get_data(as_text=True), 'html.parser')
+            config = json.loads(page.select_one('#course-files-config').string)
+            self.assertEqual(config['course'], course)
+            self.assertEqual(config['query'], 'HW2' if course else '')
 
     def test_own_account_semester_only_and_get_does_not_fetch_remote(self):
         self.seed()

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {filterFiles, safeLibraryLink} from '../assignments/static/js/course-files.js';
+import {filterFiles, groupFiles, safeLibraryLink} from '../assignments/static/js/course-files.js';
 
 const items = [
   {id: '1', title: 'HW 2', filename: 'format.pdf', course_id: 42, course_title: '作業系統', type: 'pdf', origins: [{kind: 'assignment', title: 'HW2 規格'}, {kind: 'announcements', title: '報告格式更新'}]},
@@ -16,6 +16,16 @@ test('course, source, type and multi-word search combine without mutating data',
 });
 test('numeric-aware filename sorting and whitespace-only search', () => {
   assert.deepEqual(filterFiles(items.slice(0, 2), {sort: 'name', query: '  '}).map(item => item.title), ['HW 2', 'HW 10']);
+});
+test('full-width homework numbers and separators search consistently', () => {
+  assert.deepEqual(filterFiles(items, {query: 'ＨＷ－２'}).map(item => item.id), ['1']);
+  assert.deepEqual(filterFiles(items, {query: '期末 參考'}).map(item => item.id), ['3']);
+});
+test('course groups retain catalog order and never merge equal course names', () => {
+  const courses = [{id: 43, title: 'Same'}, {id: 42, title: 'Same'}, {id: 44, title: 'Empty'}];
+  const groups = groupFiles(items, courses);
+  assert.deepEqual(groups.map(group => group.id), [43, 42]);
+  assert.deepEqual(groups.map(group => group.items.length), [1, 2]);
 });
 test('safe links reject active protocols, credential URLs and session-token queries', () => {
   for (const url of ['javascript:alert(1)', 'http://example.test/a', '//example.test/a', 'https://user:pass@example.test', 'https://[invalid', 'https://example.test/a?MoodleSession=x', 'https://example.test/a?token=']) {

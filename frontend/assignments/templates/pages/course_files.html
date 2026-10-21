@@ -30,19 +30,26 @@
         <a href="{{ url_for('course_messages_page', tab='mail', semester=selected_semester) }}" data-semester-link>課程信件</a>
         <a href="{{ url_for('course_files_page', semester=selected_semester) }}" aria-current="page" data-semester-link>附件收納</a>
     </nav>
-    <section class="files-toolbar" aria-label="附件篩選">
+    <section class="files-toolbar" aria-label="搜尋附件">
         <select id="filesSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>
-        <div class="course-picker"><select class="course-filter" id="courseFilter" aria-label="篩選課程"><option value="">全部課程</option></select><button type="button" class="course-filter course-picker-toggle" id="courseFilterToggle" role="combobox" aria-label="篩選課程" aria-haspopup="listbox" aria-expanded="false" aria-controls="courseFilterOptions" hidden><span id="courseFilterLabel">全部課程</span><span class="course-picker-chevron" aria-hidden="true"></span></button><div class="course-options" id="courseFilterOptions" role="listbox" aria-label="課程" popover="auto" hidden></div></div>
-        <form role="search" id="filesSearchForm" autocomplete="off"><input type="search" id="filesSearch" name="course_file_query" placeholder="搜尋檔名、作業或訊息" aria-label="搜尋附件" autocomplete="off" data-lpignore="true" data-1p-ignore></form>
-        <select id="filesSource" aria-label="篩選來源"><option value="">全部來源</option><option value="course">課程教材</option><option value="assignment">作業</option><option value="announcements">公告</option><option value="mail">信件</option></select>
-        <select id="filesType" aria-label="篩選檔案類型"><option value="">全部類型</option><option value="pdf">PDF</option><option value="slides">簡報</option><option value="document">文件</option><option value="spreadsheet">試算表</option><option value="archive">壓縮檔</option><option value="image">圖片</option><option value="link">連結</option><option value="other">其他檔案</option></select>
+        <form role="search" id="filesSearchForm" autocomplete="off"><input type="search" id="filesSearch" name="course_file_query" placeholder="搜尋檔名或關鍵字" aria-label="搜尋附件" maxlength="120" autocomplete="off" data-lpignore="true" data-1p-ignore></form>
+        <details class="files-filters" id="filesFilters"><summary class="btn" aria-label="進階篩選"><span class="files-filter-icon" aria-hidden="true"></span>篩選<span class="files-filter-count" id="filesFilterCount" hidden></span></summary><div class="files-filter-panel">
+            <label>檔案類型<select id="filesType" aria-label="篩選檔案類型"><option value="">全部類型</option><option value="pdf">PDF</option><option value="slides">簡報</option><option value="document">文件</option><option value="spreadsheet">試算表</option><option value="archive">壓縮檔</option><option value="image">圖片</option><option value="link">連結</option><option value="other">其他檔案</option></select></label>
+            <label>排序<select id="filesSort" aria-label="附件排序"><option value="name">依檔名</option><option value="updated">最近更新</option></select></label>
+        </div></details>
     </section>
     <p id="filesStatus" class="news-message" role="status" aria-live="polite" hidden></p>
-    <div class="files-list-meta"><span id="filesResult" aria-live="polite">讀取中…</span><label class="files-sort-label">排序<select id="filesSort" aria-label="附件排序"><option value="course">依課程</option><option value="name">依名稱</option></select></label></div>
-    <div class="files-columns" aria-hidden="true"><span>名稱</span><span>課程</span><span>來源</span><span></span></div>
-    <ul class="files-list" id="filesList" aria-label="附件列表" aria-busy="true"></ul>
-    <div class="files-empty" id="filesEmpty" hidden><span class="files-empty-icon" aria-hidden="true"></span><h2 id="filesEmptyTitle">尚無附件</h2><p id="filesEmptyText"></p><button class="btn" type="button" id="filesClear" hidden>清除篩選</button></div>
-    <button class="btn files-more" type="button" id="filesMore" hidden>顯示更多</button>
+    <div class="files-workspace">
+        <aside class="files-sidebar" aria-label="課程分類"><h2>我的課程</h2><nav id="filesCourses" aria-label="選擇課程"></nav></aside>
+        <section class="files-content" aria-label="課程附件">
+            <div class="course-picker files-mobile-course"><select class="course-filter" id="courseFilter" aria-label="篩選課程"><option value="">全部課程</option></select><button type="button" class="course-filter course-picker-toggle" id="courseFilterToggle" role="combobox" aria-label="篩選課程" aria-haspopup="listbox" aria-expanded="false" aria-controls="courseFilterOptions" hidden><span id="courseFilterLabel">全部課程</span><span class="course-picker-chevron" aria-hidden="true"></span></button><div class="course-options" id="courseFilterOptions" role="listbox" aria-label="課程" popover="auto" hidden></div></div>
+            <div class="files-source-tabs" role="group" aria-label="附件來源"><input type="hidden" id="filesSource" value=""><button type="button" data-source="" aria-pressed="true">全部</button><button type="button" data-source="course" aria-pressed="false">教材</button><button type="button" data-source="assignment" aria-pressed="false">作業</button><button type="button" data-source="announcements" aria-pressed="false">公告</button><button type="button" data-source="mail" aria-pressed="false">信件</button></div>
+            <div class="files-list-meta"><span id="filesResult" aria-live="polite">讀取中…</span><button type="button" class="files-clear" id="filesClear" hidden>清除篩選</button></div>
+            <div class="files-list" id="filesList" aria-label="附件列表" aria-busy="true"></div>
+            <div class="files-empty" id="filesEmpty" hidden><span class="files-empty-icon" aria-hidden="true"></span><h2 id="filesEmptyTitle">尚無附件</h2><p id="filesEmptyText"></p></div>
+            <button class="btn files-more" type="button" id="filesMore" hidden>顯示更多</button>
+        </section>
+    </div>
     <footer class="files-note">E3 附件需在瀏覽器登入 E3。信件附件於讀取信件後加入。</footer>
     <noscript><p class="news-message">請啟用 JavaScript 以整理附件。</p></noscript>
 </main>

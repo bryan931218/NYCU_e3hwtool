@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import unicodedata
 from urllib.parse import parse_qs, unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
@@ -19,6 +20,25 @@ FILE_TYPES = {
     'image': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic'},
 }
 TOKEN_KEYS = {'sesskey', 'token', 'wstoken', 'moodlesession', 'access_token', 'auth', 'key'}
+
+
+def course_display_name(title):
+    text = str(title or '').strip()
+    text = re.sub(r'^\s*[【\[](?:\d{2,3})(?:上|下|暑)(?:學期)?[】\]]\s*', '', text)
+    text = re.sub(r'^\s*\d{3}(?:[12Xx]|[-_](?:[12]|summer))[.\s]+', '', text, flags=re.I)
+    text = re.sub(r'^\s*\d{6}[.\s]*', '', text)
+    return text.strip() or str(title or '課程')
+
+
+def file_search_text(value):
+    return re.sub(r'[\W_]+', '', unicodedata.normalize('NFKC', str(value or '')).casefold())
+
+
+def search_files(items, *, course='', query=''):
+    words = [file_search_text(word) for word in str(query or '').split()]
+    return [item for item in items if (not course or str(item['course_id']) == str(course)) and all(
+        word in file_search_text(' '.join([item['title'], item.get('filename', ''), item['course_title'],
+            *[origin['title'] for origin in item['origins']]])) for word in words if word)]
 
 
 def safe_file_link(value, page_url):
@@ -54,7 +74,9 @@ def file_metadata(link):
         extension = title.rsplit('.', 1)[-1].lower()
     if not title or title in {'附件／圖片', '附件', '下載', 'Download'}:
         title = filename or '開啟連結'
-    kind = next((key for key, suffixes in FILE_TYPES.items() if extension in suffixes), 'other' if extension else 'link')
+    path = urlsplit(link['url']).path
+    is_file = path == '/mod/resource/view.php' or '/pluginfile.php/' in path
+    kind = next((key for key, suffixes in FILE_TYPES.items() if extension in suffixes), 'other' if extension or is_file else 'link')
     return {'title': title[:300], 'filename': filename[:300], 'type': kind, 'extension': extension.upper()}
 
 
@@ -137,7 +159,8 @@ def file_index(sources, courses, messages, base_url, *, limit=3000):
             identity = urlunsplit((target.scheme, target.netloc, target.path, '' if target.netloc == urlsplit(base_url).netloc and '/pluginfile.php/' in target.path else target.query, ''))
             key = hashlib.sha256(f'{course_id}:{identity}'.encode()).hexdigest()[:24]
             entry = entries.setdefault(key, {'id': key, 'url': url, **file_metadata({**link, 'url': url}),
-                'course_id': course_id, 'course_title': catalog[course_id]['title'], 'origins': [], 'updated_ts': 0})
+                'course_id': course_id, 'course_title': catalog[course_id]['title'],
+                'course_name': course_display_name(catalog[course_id]['title']), 'origins': [], 'updated_ts': 0})
             origin = {'kind': 'course' if kind == 'folder' else kind,
                       'title': source['title'], 'url': source_url}
             if origin not in entry['origins']:
