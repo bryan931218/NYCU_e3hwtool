@@ -167,8 +167,12 @@ def fetch_session_identity(sess, base_url: str, *, timeout: int = 8, diagnostics
             for candidate in page.select("form"):
                 action = _own_profile_url(base_url, candidate.get("action", ""), "/user/edit.php", user_id, implicit_own=True)
                 owners = candidate.select('input[name="id"]')
-                if (action and len(owners) == 1 and owners[0].get("type", "").lower() == "hidden"
-                        and owners[0].get("value") == user_id):
+                # E3 repeats Moodle's hidden owner field. Accept duplicates only
+                # when every field independently identifies this same profile.
+                if action and owners and all(
+                    owner.get("type", "").lower() == "hidden"
+                    and owner.get("value") == user_id for owner in owners
+                ):
                     form = candidate
                     break
             if form is None:

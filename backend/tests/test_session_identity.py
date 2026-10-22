@@ -140,6 +140,24 @@ class IdentityParsingTests(unittest.TestCase):
                 self.assertEqual(fetch_session_identity(Mock(), BASE, diagnostics=diagnostics)['student_number'], '')
                 self.assertEqual(diagnostics['reason'], reason)
 
+    def test_repeated_hidden_owner_fields_are_accepted_only_when_all_match(self):
+        owner = '<input type="hidden" name="id" value="42">'
+        for second, accepted in (
+            (owner, True),
+            (owner.replace('value="42"', 'value="99"'), False),
+            (owner.replace('value="42"', 'value=""'), False),
+            (owner.replace('type="hidden"', 'type="text"'), False),
+        ):
+            with self.subTest(second=second), patch(
+                'e3_tracker.assignments.services.profile.safe_request',
+                side_effect=[response(MENU), response(PROFILE),
+                             response(EDIT_FORM.replace(owner, owner + second))],
+            ):
+                diagnostics = {}
+                identity = fetch_session_identity(Mock(), BASE, diagnostics=diagnostics)
+                self.assertEqual(identity['student_number'], '112550101' if accepted else '')
+                self.assertEqual(diagnostics['reason'], 'success' if accepted else 'edit_owner_mismatch')
+
     def test_identity_outside_own_edit_form_is_not_used(self):
         form = EDIT_FORM.replace(LOCKED, '') + LOCKED
         with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(MENU), response(PROFILE), response(form)]):

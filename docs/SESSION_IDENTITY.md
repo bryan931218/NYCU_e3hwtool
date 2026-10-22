@@ -5,8 +5,9 @@ and statistics metadata only; enrichment never changes roles or merges credentia
 
 The reader follows the authenticated E3 user menu to its own profile. Edit links
 must remain on the configured origin and `/user/edit.php`. A missing `id` is valid
-for Moodle's own-profile form, but the form action and hidden owner `id` must match
-the profile's Moodle user ID. Duplicate links are skipped and at most three edit
+for Moodle's own-profile form, but the form action and every hidden owner `id` must
+match the profile's Moodle user ID. E3 can repeat this hidden field; missing,
+conflicting, empty or editable owner fields are rejected. Duplicate links are skipped and at most three edit
 pages are requested. No forms are submitted and no login redirects are followed.
 
 Only the form's single `input#id_idnumber[name="idnumber"]` with `readonly` and nine
