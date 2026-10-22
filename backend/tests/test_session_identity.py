@@ -94,6 +94,20 @@ class IdentityParsingTests(unittest.TestCase):
         ]):
             self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '')
 
+    def test_edit_request_failure_keeps_the_authenticated_profile_name(self):
+        for failure, reason in (
+            (requests.Timeout('private-cookie'), 'upstream_timeout'),
+            (requests.ConnectionError('private-url'), 'upstream_request'),
+        ):
+            with self.subTest(reason=reason), patch(
+                'e3_tracker.assignments.services.profile.safe_request',
+                side_effect=[response(MENU), response(PROFILE), failure],
+            ):
+                diagnostics = {}
+                self.assertEqual(fetch_session_identity(Mock(), BASE, diagnostics=diagnostics),
+                                 {'name': '王小明', 'student_number': ''})
+                self.assertEqual(diagnostics['reason'], reason)
+
     def test_moodle_readonly_form_and_implicit_own_edit_url_are_supported(self):
         for href in ('/user/edit.php', '/user/edit.php?course=1', '/user/edit.php?course=1&returnto=profile'):
             with self.subTest(href=href), patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
@@ -275,6 +289,53 @@ class SessionIdentityTests(unittest.TestCase):
             self.assertEqual(self.storage.load_student_number(name), '112550101')
         for name in ('Session-expired', 'Session-no-cookie', 'Session-guest', '112550102'):
             self.assertEqual(self.storage.load_student_number(name), '')
+
+    def test_profile_name_is_saved_even_when_student_number_is_unavailable(self):
+        username = 'Session-name-only'
+        self.storage.save_web_session('name-only-token', username, moodle_session='opaque-cookie')
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity',
+                   return_value={'name': '王小明', 'student_number': ''}) as fetch:
+            self.sync.backfill_once()
+            self.sync.backfill_once()
+        self.assertEqual(self.storage.load_user_profile(username), {'name': '王小明', 'surname': '王'})
+        self.assertEqual(self.storage.load_student_number(username), '')
+        # Missing numbers remain retryable without hammering E3 on every worker tick.
+        self.assertEqual(fetch.call_count, 2)
+        with self.storage._engine.begin() as conn:
+            conn.execute(text('UPDATE users SET student_number_sync_after=0 WHERE username=:name'),
+                         {'name': username})
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', return_value=IDENTITY):
+            self.sync.backfill_once()
+        self.assertEqual(self.storage.load_student_number(username), '112550101')
+
+    def test_known_student_number_with_missing_name_is_backfilled(self):
+        username = 'Session-number-only'
+        self.storage.save_web_session('number-only-token', username, moodle_session='opaque-cookie')
+        self.storage.save_student_number(username, '112550101')
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity',
+                   return_value=IDENTITY) as fetch:
+            self.sync.backfill_once()
+            self.sync.backfill_once()
+        self.assertEqual(self.storage.load_user_profile(username)['name'], '王小明')
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_missing_number_does_not_erase_existing_name(self):
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity',
+                   return_value={'name': '', 'student_number': ''}):
+            self.sync.refresh_user(self.storage.load_web_session('identity-test'))
+        self.assertEqual(self.storage.load_user_profile(self.username)['name'], '王小明')
+
+    def test_conflicting_identity_does_not_update_name(self):
+        self.storage.save_student_number(self.username, '112550101')
+        with self.storage._engine.begin() as conn:
+            conn.execute(text('UPDATE users SET profile_name=NULL, profile_surname=NULL WHERE username=:name'),
+                         {'name': self.username})
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity',
+                   return_value={'name': '李小明', 'student_number': '112550102'}) as fetch:
+            self.sync.refresh_user(self.storage.load_web_session('identity-test'), force=True)
+        fetch.assert_called_once()
+        self.assertEqual(self.storage.load_user_profile(self.username)['name'], '')
+        self.assertEqual(self.storage.load_student_number(self.username), '112550101')
 
     def test_failure_is_throttled_and_later_retried(self):
         with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', side_effect=requests.Timeout()) as fetch:

@@ -53,7 +53,8 @@ class AccountsStorage:
             claim = update(users_table).where(
                 users_table.c.id == uid,
                 users_table.c.is_guest == 0,
-                or_(users_table.c.student_number.is_(None), users_table.c.student_number == ""),
+                or_(users_table.c.student_number.is_(None), users_table.c.student_number == "",
+                    users_table.c.profile_name.is_(None), users_table.c.profile_name == ""),
             )
             if not force:
                 claim = claim.where(users_table.c.student_number_sync_after <= now)
@@ -71,7 +72,8 @@ class AccountsStorage:
                     web_sessions_table.c.is_guest == 0,
                     web_sessions_table.c.expires_at > now,
                     web_sessions_table.c.moodle_credential.is_not(None),
-                    or_(users_table.c.student_number.is_(None), users_table.c.student_number == ""),
+                    or_(users_table.c.student_number.is_(None), users_table.c.student_number == "",
+                        users_table.c.profile_name.is_(None), users_table.c.profile_name == ""),
                     func.coalesce(users_table.c.student_number_sync_after, 0) <= now,
                 ).order_by(web_sessions_table.c.username).limit(limit)
             ).scalars())

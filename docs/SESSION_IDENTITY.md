@@ -14,8 +14,11 @@ ASCII digits is accepted. Moodle's frozen fields do not always have `disabled`.
 Editable fields, mismatched owners, unrelated numbers, names and course content
 are never used to infer identity. Existing verified mappings cannot be replaced.
 
-Active unresolved sessions are retried by the existing worker, in batches of ten
-with a shared one-hour cooldown. A fresh login forces an attempt. Expired credentials
+The authenticated profile name is saved independently of the student-number field.
+If reading the edit form fails, the profile name is retained and the missing number
+remains eligible for retry. A conflicting student number never changes either field.
+Active sessions missing either a name or a student number are retried by the existing
+worker, in batches of ten with a shared one-hour cooldown. A fresh login forces an attempt. Expired credentials
 cannot be recovered automatically and require a new E3 login/session.
 
 Runtime diagnostics record only fixed failure codes, never usernames, student

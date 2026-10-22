@@ -109,10 +109,18 @@ def fetch_session_identity(sess, base_url: str, *, timeout: int = 8, diagnostics
         try:
             response = safe_request(sess, "GET", url, headers=HEADERS,
                                     timeout=timeout, allow_redirects=False)
+        except requests.Timeout:
+            if diagnostics is not None:
+                diagnostics["reason"] = "upstream_timeout"
+            return None
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
             if diagnostics is not None:
                 diagnostics["reason"] = "access_denied" if status == 403 else stage + "_unavailable"
+            return None
+        except requests.RequestException:
+            if diagnostics is not None:
+                diagnostics["reason"] = "upstream_request"
             return None
         if response.status_code != 200:
             if diagnostics is not None:

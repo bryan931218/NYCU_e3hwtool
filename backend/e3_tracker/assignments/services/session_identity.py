@@ -33,12 +33,17 @@ class SessionIdentitySync:
                 apply_cookie(sess, self.base_url, user["moodle_session"])
                 identity = fetch_session_identity(sess, self.base_url, timeout=self.timeout, diagnostics=diagnostics)
             number = identity["student_number"]
-            if number and self.storage.save_student_number(username, number):
-                name = identity["name"]
-                if name:
-                    self.storage.save_user_profile(username, name, profile_surname(name))
+            if number and not self.storage.save_student_number(username, number):
+                logger.warning("E3 Session identity unavailable (reason=identity_conflict); will retry later")
+                return False
+            # The authenticated profile already establishes the display name.
+            # An unavailable edit form must not discard it with the student number.
+            name = identity["name"]
+            if name:
+                self.storage.save_user_profile(username, name, profile_surname(name))
+            if number:
                 return True
-            reason = "identity_conflict" if number else diagnostics.get("reason", "identity_missing")
+            reason = diagnostics.get("reason", "identity_missing")
             logger.warning("E3 Session identity unavailable (reason=%s); will retry later", reason)
         except requests.Timeout:
             logger.warning("E3 Session identity unavailable (reason=upstream_timeout); will retry later")
