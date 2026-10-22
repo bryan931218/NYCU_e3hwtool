@@ -49,6 +49,12 @@ class ProfileParsingTests(unittest.TestCase):
             '藥學系 王小明': '王小明',
             '王小明（藥學系）': '王小明',
             '歐陽小明／資訊工程學系': '歐陽小明',
+            '學士後電子與光子 / DEOP 王小明': '王小明',
+            '王小明／學士後電子與光子': '王小明',
+            '學士後電子與光子學士學位學程 / DEOP 王小明': '王小明',
+            '王學士': '王學士',
+            '學士後電子與光子': '',
+            '學士後電子與光子 / DEOP 王小明 李小明': '',
             '藥學系': '',
             'DCP 資工系': '',
             '電機工程研究所': '',
@@ -94,6 +100,10 @@ class UserProfileTests(unittest.TestCase):
         self.assertEqual(self.storage.load_user_profile('student')['name'], '王小明')
         self.assertEqual(self.storage.load_user_surname('someone-else'), '')
         self.assertIn('王', self.client.get('/').get_data(as_text=True))
+
+    def test_short_post_baccalaureate_program_is_not_saved_as_a_person(self):
+        self.storage.save_user_profile('student', '學士後電子與光子', '學')
+        self.assertEqual(self.storage.load_user_profile('student'), {'name': '', 'surname': ''})
 
     def test_refresh_updates_name_without_affecting_other_accounts(self):
         self.storage.save_user_surname('student', '王')

@@ -16,6 +16,8 @@ Editable fields, mismatched owners, unrelated numbers, names and course content
 are never used to infer identity. Existing verified mappings cannot be replaced.
 
 The authenticated profile name is saved independently of the student-number field.
+Academic-unit labels are excluded, including E3's shortened 學士後 program labels
+that omit a trailing 系 or 學程; ambiguous headings with multiple people remain blank.
 If reading the edit form fails, the profile name is retained and the missing number
 remains eligible for retry. A conflicting student number never changes either field.
 Active sessions missing either a name or a student number are retried by the existing
