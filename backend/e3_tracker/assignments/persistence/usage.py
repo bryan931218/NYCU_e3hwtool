@@ -143,7 +143,7 @@ class AssignmentUsageStorage:
         with self._lock, self._engine.begin() as conn:
             conn.execute(delete(feature_usage).where(feature_usage.c.day < cutoff))
             accounts = [dict(row) for row in conn.execute(select(
-                users_table.c.id, users_table.c.username, users_table.c.student_number,
+                users_table.c.id, users_table.c.username, users_table.c.student_number, users_table.c.profile_metadata,
             ).where(~guest_account_condition())).mappings()]
             usage = [dict(row) for row in conn.execute(select(
                 feature_usage.c.user_id, feature_usage.c.feature,

@@ -167,6 +167,7 @@ def register_assignments_routes(*,
                                 flash("已成功獲取最新資訊。", "success")
                             except Exception as exc:
                                 flash("登入成功但獲取資料失敗，程式將在背景重試。", "warning")
+                        session_identity_sync.schedule_user(raw_username)
                         response = redirect(url_for("index"))
                         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
                         response.headers["Pragma"] = "no-cache"

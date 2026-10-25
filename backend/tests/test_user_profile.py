@@ -161,7 +161,8 @@ class UserProfileTests(unittest.TestCase):
         self.assertIn('姓名', table.get_text())
         rows = {row.select_one('td').get_text(): row for row in table.select('tbody tr')}
         self.assertEqual(rows['112550101'].select('td')[1].get_text(), '王小明')
-        self.assertEqual(rows['112550104'].select('td')[1].get_text(), '尚未取得')
+        self.assertIn('尚未取得', rows['112550104'].select('td')[1].get_text())
+        self.assertIn('等待背景同步', rows['112550104'].select('td')[1].get_text())
         self.assertFalse(rows['112550102'].select('img'))
         self.assertIn('<img src=x onerror=alert(1)>', rows['112550102'].get_text())
         option = soup.select_one('#trafficViewUser option[value="112550101"]')

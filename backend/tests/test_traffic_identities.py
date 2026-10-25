@@ -112,7 +112,8 @@ class TrafficIdentityPageTests(unittest.TestCase):
                 html = BeautifulSoup(admin.get("/admin/traffic").get_data(as_text=True), "html.parser")
                 rows = html.select("#account-usage tbody tr")
                 self.assertEqual(len(rows), 1)
-                self.assertEqual(rows[0].select("td")[3].get_text(strip=True), "3")
+                columns = [cell.get_text(strip=True) for cell in html.select('#account-usage thead th')]
+                self.assertEqual(rows[0].select("td")[columns.index('總訪問次數')].get_text(strip=True), "3")
                 self.assertEqual(html.select_one("#system-summary .metric strong").get_text(strip=True), "1")
                 self.assertIn("王小明", rows[0].get_text())
                 self.assertEqual(len(html.select("#trafficViewUser option")), 1)

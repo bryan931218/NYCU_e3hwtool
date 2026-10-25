@@ -40,6 +40,10 @@ async function routePage(page, {blockChart = false} = {}) {
       page.on('pageerror', e => errors.push(e.message));
       await routePage(page);
       await page.goto('http://traffic.test/admin/traffic');
+      assert.match(await page.locator('[data-distribution="grade"]').innerText(), /年級分布/);
+      assert.match(await page.locator('[data-distribution="department"]').innerText(), /資訊工程學系/);
+      assert.match(await page.locator('.account-usage-table').innerText(), /未核對系所（607）/);
+      assert.match(await page.locator('.account-usage-table').innerText(), /E3 姓名欄位未取得/);
       assert.equal(await page.locator('#visit-trend #trendUniqueUsers').innerText(), '3');
       assert.equal(await page.locator('#trendUniqueUsers').count(), 1, 'No separate duplicate statistics section');
       assert.ok(await page.locator('#visit-trend .trend-presets a[href*="range=30d"]').count());
@@ -64,6 +68,12 @@ async function routePage(page, {blockChart = false} = {}) {
       assert.equal(await page.locator('#trendDatePicker').getAttribute('open'), null, 'Click outside closes date picker');
       for (const theme of ['light','dark']) {
         await page.locator(`[data-admin-theme="${theme}"]`).click();
+        await page.locator('.analytics-distributions').scrollIntoViewIfNeeded();
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Long department labels stay within the page');
+        await page.locator('.analytics-distributions').screenshot({path:path.join(root, `output/playwright/student-distribution-${width}-${theme}.png`)});
+        await page.locator('#account-usage').scrollIntoViewIfNeeded();
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Account table scrolls inside its container');
+        await page.locator('#account-usage').screenshot({path:path.join(root, `output/playwright/student-accounts-${width}-${theme}.png`)});
         await page.locator('#visit-trend').scrollIntoViewIfNeeded();
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No horizontal overflow');
         const canvasPixels = await page.locator('#visitChart').evaluate(canvas => {

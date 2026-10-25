@@ -2,6 +2,8 @@
 
 from typing import Optional
 import hashlib
+import json
+import math
 import re
 import time
 from cryptography.fernet import InvalidToken
@@ -67,15 +69,52 @@ class AccountsStorage:
             claim = update(users_table).where(
                 users_table.c.username == username,
                 users_table.c.is_guest == 0,
-                self._missing_identity(),
             )
             if not force:
                 # Replace legacy hour-long leases without bypassing current five-minute claims.
-                claim = claim.where(or_(users_table.c.student_number_sync_after <= now,
+                claim = claim.where(self._missing_identity(), or_(users_table.c.student_number_sync_after <= now,
                                         users_table.c.student_number_sync_after > now + 300))
             return bool(conn.execute(
                 claim.values(student_number_sync_after=now + 300)
             ).rowcount)
+
+    def save_profile_metadata(self, username, details):
+        """Retain only display metadata and fixed diagnostics, never upstream HTML."""
+        allowed_reasons = {'success', 'name_missing', 'login_required', 'access_denied', 'dashboard_unavailable',
+            'profile_unavailable', 'edit_unavailable', 'profile_link_missing', 'edit_link_missing',
+            'profile_owner_missing', 'edit_owner_mismatch', 'student_number_field_missing',
+            'student_number_unlocked', 'student_number_invalid', 'upstream_timeout', 'upstream_request',
+            'internal_error', 'identity_conflict', 'identity_missing'}
+        clean = {}
+        if (isinstance(details.get('checked_at'), (int, float)) and not isinstance(details['checked_at'], bool)
+                and math.isfinite(details['checked_at']) and details['checked_at'] >= 0):
+            clean['checked_at'] = details['checked_at']
+        if isinstance(details.get('grade'), int) and not isinstance(details['grade'], bool) and 1 <= details['grade'] <= 15:
+            if isinstance(details.get('academic_year'), int) and 100 <= details['academic_year'] <= 199:
+                clean.update(grade=details['grade'], academic_year=details['academic_year'])
+                clean['grade_checked_at'] = clean.get('checked_at', time.time())
+                if details.get('degree_code') in {'1', '2', '3', '4', '5'}:
+                    clean['degree_code'] = details['degree_code']
+        department = str(details.get('department') or '').strip()
+        if department and len(department) <= 128 and not any(char in department for char in '<>@'):
+            clean['department'] = department
+            clean['department_checked_at'] = clean.get('checked_at', time.time())
+        reason = details.get('reason')
+        clean['reason'] = reason if reason in allowed_reasons else 'identity_missing'
+        with self._lock, self._engine.begin() as conn:
+            row = conn.execute(select(users_table.c.id, users_table.c.profile_metadata).where(
+                users_table.c.username == username, ~guest_account_condition())).first()
+            if not row:
+                return
+            try:
+                prior = json.loads(row.profile_metadata or '{}')
+            except (ValueError, TypeError):
+                prior = {}
+            # Failures don't erase earlier useful fields; stale grades are checked
+            # against their academic year by the presentation layer.
+            merged = {**(prior if isinstance(prior, dict) else {}), **clean}
+            conn.execute(update(users_table).where(users_table.c.id == row.id).values(
+                profile_metadata=json.dumps(merged, ensure_ascii=False)))
 
     def save_identity_enrichment(self, username, name, surname, student_number=""):
         """Save independently available fields without recreating deleted accounts."""
@@ -171,7 +210,7 @@ class AccountsStorage:
         with self._lock, self._engine.connect() as conn:
             rows = (
                 conn.execute(
-                    select(users_table.c.username, users_table.c.profile_name, users_table.c.student_number)
+                    select(users_table.c.username, users_table.c.profile_name, users_table.c.student_number, users_table.c.profile_metadata)
                     .where(~guest_account_condition())
                     .order_by(users_table.c.username)
                 ).mappings().all()

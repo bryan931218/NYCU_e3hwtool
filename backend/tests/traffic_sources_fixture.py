@@ -43,6 +43,11 @@ with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
             for name in ('112550101', '113550102', '114550103', 'Session-alice'):
                 storage.save_user_profile(name, 'Synthetic Student', 'S')
             storage.save_student_number('Session-alice', '112550101')
+            from e3_tracker.assignments.domain.student_directory import academic_year
+            storage.save_profile_metadata('112550101', {'department':'資訊工程學系','grade':2,'academic_year':academic_year(),'reason':'success'})
+            storage.save_user_surname('315607001', 'S')
+            storage.save_profile_metadata('315607001', {'reason':'name_missing'})
+            storage.save_user_profile('215952001', 'Synthetic Student', 'S')
             now = time.time()
             with storage._engine.begin() as conn:
                 conn.execute(update(history).where(history.c.version == '0017_traffic_activity_retention').values(

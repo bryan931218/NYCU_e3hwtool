@@ -72,7 +72,8 @@ class SchemaMigrationTests(unittest.TestCase):
             conn.execute(text("INSERT INTO assignments (id, course_id, title, grade_text) VALUES (12, 1, 'existing homework', '85')"))
         with patch.object(migrations, 'MIGRATIONS', tuple(item for item in migrations.MIGRATIONS if item[0] < '0016')):
             migrations.run_migrations(self.engine)
-        self.assertEqual(migrations.run_migrations(self.engine), ['0016_grading_notifications', '0017_traffic_activity_retention', '0018_course_files'])
+        self.assertEqual(migrations.run_migrations(self.engine), ['0016_grading_notifications', '0017_traffic_activity_retention', '0018_course_files', '0019_profile_metadata'])
+
         with self.engine.begin() as conn:
             row = conn.execute(text('SELECT * FROM assignment_notification_seen')).mappings().one()
             self.assertEqual(dict(row), {'user_id': 7, 'uid_hash': 'existing-assignment', 'graded_observed': 0})
@@ -93,6 +94,20 @@ class SchemaMigrationTests(unittest.TestCase):
             self.assertEqual(row['hold_space_rate'], 2.5)
             self.assertEqual(row['default_playback_rate'], 1.0)
             self.assertEqual(row['updated_at'], 'original')
+
+    def test_profile_metadata_upgrade_preserves_existing_accounts_and_credentials(self):
+        with patch.object(migrations, 'MIGRATIONS', tuple(item for item in migrations.MIGRATIONS if item[0] < '0011')):
+            migrations.run_migrations(self.engine)
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql('ALTER TABLE users DROP COLUMN profile_metadata')
+            conn.execute(text("INSERT INTO users (id,username,created_at,is_guest,is_admin,student_number_sync_after,profile_name,student_number) VALUES (91,'Session-fixture','original',0,0,0,'王小明','112550001')"))
+            conn.execute(text("INSERT INTO web_sessions (session_token,username,created_at,updated_at,is_guest,is_admin,expires_at,moodle_credential) VALUES ('fixture','Session-fixture','original','original',0,0,9999999999,'opaque-encrypted-fixture')"))
+        self.assertIn('0019_profile_metadata', migrations.run_migrations(self.engine))
+        with self.engine.connect() as conn:
+            row = conn.execute(text('SELECT id,profile_name,student_number,is_admin,profile_metadata FROM users WHERE id=91')).one()
+            self.assertEqual(tuple(row),(91,'王小明','112550001',0,None))
+            self.assertEqual(conn.execute(text('SELECT moodle_credential FROM web_sessions')).scalar(),'opaque-encrypted-fixture')
+        self.assertEqual(migrations.run_migrations(self.engine),[])
 
     def test_failure_is_not_recorded_and_can_retry(self):
         def broken(conn):

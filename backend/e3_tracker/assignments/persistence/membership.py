@@ -47,7 +47,9 @@ def insert_membership(conn, key, joined_at, is_new):
 def migrate_memberships(conn):
     assignment_memberships.create(conn, checkfirst=True)
     existing = {}
-    accounts = list(conn.execute(select(users_table).where(~guest_account_condition())).mappings())
+    # Later profile columns may not exist yet while upgrading an older schema.
+    accounts = list(conn.execute(select(users_table.c.username, users_table.c.created_at,
+                                       users_table.c.student_number).where(~guest_account_condition())).mappings())
     accounts.extend(conn.execute(select(
         web_sessions_table.c.username, web_sessions_table.c.created_at,
     ).where(web_sessions_table.c.is_guest == 0)).mappings())

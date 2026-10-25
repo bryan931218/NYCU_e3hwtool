@@ -40,6 +40,10 @@
 .analytics-distribution-scroll { max-height: 345px; overflow-y: auto; scrollbar-width: thin; }
 .analytics-distribution thead { position: sticky; top: 0; background: var(--analytics-surface); }
 .analytics-distribution[data-distribution="department"] { --analytics-accent: var(--info-fg); }
+.distribution-source { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 4px; color: var(--analytics-muted); font-size: 11px; font-weight: 400; }
+.distribution-source span { white-space: nowrap; }
+.analytics-distribution th:first-child { width: 55%; overflow-wrap: anywhere; }
+.analytics-distribution .analytics-rate meter { min-width: 24px; }
 .analytics-empty { color: var(--analytics-muted); font-size: 13px; padding: 30px 0; }
 @media (max-width: 1200px) { .analytics-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) {

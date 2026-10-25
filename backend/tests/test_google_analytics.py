@@ -100,7 +100,7 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
             self.assertNotIn('shared/js/admin-ga4.js', html)
             for obsolete in ['id="system-summary"', 'id="trafficSources"', 'class="analytics-feature-table"', 'href="/admin/analytics"', 'Top 5 使用者', '熱門操作', 'LINE 啟用進度']:
                 self.assertNotIn(obsolete, html)
-            for retained in ['id="account-usage"', 'id="recent-activity"', 'id="visit-trend"', 'id="usageRange"', 'LINE 綁定成功', '科系碼分布', 'data-traffic-stat="online"']:
+            for retained in ['id="account-usage"', 'id="recent-activity"', 'id="visit-trend"', 'id="usageRange"', 'LINE 綁定成功', '系所分布', 'data-traffic-stat="online"']:
                 self.assertIn(retained, html)
             ga4_html = self.client.get("/admin/ga4").get_data(as_text=True)
             self.assertIn('id="ga4-features"', ga4_html)

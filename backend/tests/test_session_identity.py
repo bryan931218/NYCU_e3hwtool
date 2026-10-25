@@ -581,7 +581,9 @@ class SessionIdentityTests(unittest.TestCase):
             thread.return_value.start.assert_called_once()
             self.assertTrue(thread.call_args.kwargs['daemon'])
             run = thread.call_args.kwargs['target']
-        with patch.object(self.sync.stop, 'wait', side_effect=[False, True]), patch.object(self.sync, 'backfill_once') as backfill:
+        with patch.object(self.sync._wake, 'wait', return_value=True), \
+                patch.object(self.sync.stop, 'is_set', side_effect=[False, False, True]), \
+                patch.object(self.sync, 'backfill_once') as backfill:
             run()
             backfill.assert_called_once()
 

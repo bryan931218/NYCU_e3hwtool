@@ -7,6 +7,7 @@ from e3_tracker.platform.page_analytics import build_page_sources, clear_page_so
 from e3_tracker.assignments.services.admin_analytics import analytics_window, build_assignment_analytics, build_account_engagement
 from e3_tracker.assignments.domain.notification_activity import NOTIFICATION_ACTION_LABELS
 from e3_tracker.assignments.domain.usage import FEATURE_LABELS, student_identity
+from e3_tracker.assignments.domain.student_directory import build_student_directory, student_information
 import json
 import time
 from collections import Counter
@@ -49,6 +50,7 @@ def register_administration_routes(*,
         admin_view_options = list_admin_view_options()
         profiles = storage.list_user_profiles()
         identities = AccountIdentities(profiles)
+        student_directory = build_student_directory(profiles)
         memberships = storage.assignment_membership_snapshot(profiles)
         now = time.time()
         student_numbers = {row["username"]: row["student_number"] or "" for row in profiles}
@@ -212,6 +214,8 @@ def register_administration_routes(*,
             and not row["username"].startswith("Session-")
         ]
         for row in account_rows:
+            key = identities.key(row['username'])
+            row['academic'] = student_directory.get(key) or {**student_information(key), 'sync_status':'等待背景同步'}
             related = [memberships[name] for name in identities.members(row["username"]) if name in memberships]
             member = min(related, key=lambda item: item["joined_at"]) if related else None
             row["joined_at"] = _fmt_ts(member["joined_at"]) if member else "-"

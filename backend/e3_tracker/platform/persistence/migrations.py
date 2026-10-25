@@ -73,6 +73,10 @@ def _user_profile_name_schema(conn):
     _add_columns(conn, "users", {"profile_name": "VARCHAR(128)"})
 
 
+def _user_profile_metadata_schema(conn):
+    _add_columns(conn, "users", {"profile_metadata": "TEXT"})
+
+
 def _guest_retention_cleanup(conn):
     from .guest_cleanup import purge_inactive_guests, remove_legacy_guest_traffic
 
@@ -201,6 +205,7 @@ MIGRATIONS = (
     ("0016_grading_notifications", _grading_notifications),
     ("0017_traffic_activity_retention", _traffic_activity_retention),
     ("0018_course_files", _course_files),
+    ("0019_profile_metadata", _user_profile_metadata_schema),
 )
 
 

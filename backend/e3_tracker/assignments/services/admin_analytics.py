@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.assignments.domain.usage import FEATURE_LABELS, student_identity
+from e3_tracker.assignments.domain.student_directory import academic_year, build_student_directory
 
 
 def analytics_window(params, *, now=None):
@@ -52,11 +53,27 @@ def build_assignment_analytics(snapshot, window):
         counts = Counter(number[slice_] for number in students)
         return [{"code": code, "count": count, "percent": round(count * 100 / len(students), 1)}
                 for code, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+    directory = build_student_directory(accounts)
+    grades, departments = {}, {}
+    for number in sorted(students):
+        info = directory[number]
+        for grouped, key, name in ((grades, info['grade_key'], info['grade'].replace('（推估）', '')),
+                                   (departments, (info['department_code'], info['department']), info['department'])):
+            row = grouped.setdefault(key, {'code':info['department_code'] if grouped is departments else info['grade_key'],
+                                           'name':name, 'count':0, 'inferred_count':0, 'e3_count':0})
+            row['count'] += 1
+            source = info['department_source'] if grouped is departments else info['grade_source']
+            row['inferred_count'] += source == 'student_number'
+            row['e3_count'] += source == 'e3'
+    def named_rows(grouped):
+        return [{**row, 'percent':round(row['count'] * 100 / len(students), 1)}
+                for row in sorted(grouped.values(), key=lambda item:(-item['count'], item['code'], item['name']))]
     return {
         **window, "total": total, "identified": len(students), "unidentified": total - len(students),
         "line": len(linked["line"]), "browser": len(linked["browser"]), "google": len(linked["google"]),
         "enabled": {key: len(value) for key, value in enabled.items()},
-        "features": features, "cohorts": distribution(slice(0, 3)), "departments": distribution(slice(3, 6)),
+        "features": features, "cohorts": distribution(slice(0, 3)), "departments": named_rows(departments),
+        "grades": named_rows(grades), "academic_year": academic_year(),
         "started_at": datetime.fromtimestamp(snapshot["state"]["started_at"], TAIPEI_TZ).strftime("%Y-%m-%d %H:%M"),
         "legacy_samples": snapshot["state"]["legacy_samples"],
     }

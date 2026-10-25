@@ -19,6 +19,7 @@ users_table = Table(
     Column("username", String(191), nullable=False, unique=True),
     Column("profile_surname", String(16)),
     Column("profile_name", String(128)),
+    Column("profile_metadata", Text),
     Column("student_number", String(9)),
     Column("student_number_sync_after", Float, nullable=False, default=0),
     Column("is_guest", Integer, nullable=False, default=0),

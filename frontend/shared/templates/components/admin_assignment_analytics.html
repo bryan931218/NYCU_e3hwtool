@@ -33,14 +33,15 @@
         <p class="analytics-note">自 {{ analytics.started_at }} 起累積；啟用前僅回填保留的 {{ analytics.legacy_samples }} 筆有效操作。最多保留 730 天，不代表完整歷史。操作次數為功能使用紀錄，非完成作業數。</p>
     </section>{% endif %}
     <div class="analytics-distributions">
-        {% for key, title, rows, note in [('cohort', '入學碼分布', analytics.cohorts, '學號前三碼，不代表目前在學年級。'), ('department', '科系碼分布', analytics.departments, '學號第 4–6 碼；未核對科系名稱。')] %}
+        {% for key, title, rows, note in [('grade', '年級分布', analytics.grades, analytics.academic_year ~ ' 學年度 · E3 年級優先，其餘依入學年推估'), ('department', '系所分布', analytics.departments, 'E3 系所優先，其餘使用學號系碼對照')] %}
         <section class="analytics-distribution" data-distribution="{{ key }}" aria-labelledby="{{ key }}DistributionTitle">
             <header class="analytics-header"><div><h3 id="{{ key }}DistributionTitle">{{ title }}</h3><p>{{ note }}</p></div><span class="analytics-scope">已識別 {{ analytics.identified }} 人</span></header>
             {% if rows %}<div class="analytics-table-wrap analytics-distribution-scroll"><table>
-                <thead><tr><th scope="col">代碼</th><th scope="col">人數</th><th scope="col">占已識別用戶</th></tr></thead>
-                <tbody>{% for row in rows %}<tr data-code="{{ row.code }}"><th scope="row">{{ row.code }}</th><td>{{ row.count }}</td><td><div class="analytics-rate"><meter value="{{ row.percent }}" min="0" max="100" aria-label="{{ row.code }}占比">{{ row.percent }}%</meter><span>{{ row.percent }}%</span></div></td></tr>{% endfor %}</tbody>
+                <thead><tr><th scope="col">{{ '年級' if key == 'grade' else '系所' }}</th><th scope="col">人數</th><th scope="col">占比</th></tr></thead>
+                <tbody>{% for row in rows %}<tr data-code="{{ row.code }}"><th scope="row">{{ row.name }}<small class="distribution-source">{% if key == 'department' and row.code %}<span>系碼 {{ row.code }}</span>{% endif %}{% if row.e3_count %}<span>E3 {{ row.e3_count }} 人</span>{% endif %}{% if row.inferred_count %}<span>{{ '推估' if key == 'grade' else '對照' }} {{ row.inferred_count }} 人</span>{% endif %}</small></th><td>{{ row.count }}</td><td><div class="analytics-rate"><meter value="{{ row.percent }}" min="0" max="100" aria-label="{{ row.name }}占比">{{ row.percent }}%</meter><span>{{ row.percent }}%</span></div></td></tr>{% endfor %}</tbody>
             </table></div>{% else %}<p class="analytics-empty">尚無可識別的學號</p>{% endif %}
         </section>
         {% endfor %}
     </div>
+    <p class="analytics-note">推估年級不代表目前在學狀態，未反映休學、轉系或畢業。系碼尚未核對時保留原碼，不猜測系所。</p>
 </section>
