@@ -96,7 +96,8 @@
                 <p class="muted">{% if trend.resolution == 'day' %}每天使用人數去重 · 新用戶包含於活躍人數{% else %}活躍帳號每小時計一次 · 新用戶依首次登入{% endif %} · 不含訪客</p>
             </div>
             <div class="trend-peak">
-                <span class="muted">區間最高</span> <strong>{{ trend.peak }}</strong> <span class="muted">個帳號</span>
+                <p class="trend-unique-total">區間去重用戶 <strong id="trendUniqueUsers">{% if trend.unique_complete %}{{ trend.unique_users }}{% elif trend.unique_users %}至少 {{ trend.unique_users }}{% else %}—{% endif %}</strong> 人{% if not trend.unique_complete %}<small>部分早期資料不完整</small>{% endif %}</p>
+                <span class="muted">區間最高</span> <strong>{{ trend.peak }}</strong> <span class="muted">{{ '人' if trend.resolution == 'day' else '個帳號' }}</span>
                 <p class="muted">{{ trend.peak_label }}</p>
                 <p class="trend-new-total">區間新用戶 <strong>{{ trend.new_total }}</strong> 人</p>
             </div>

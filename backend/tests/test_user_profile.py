@@ -27,7 +27,7 @@ class ProfileParsingTests(unittest.TestCase):
     def test_only_follows_own_profile_link_and_does_not_capture_other_fields(self):
         menu = '<div class="usermenu"><a href="/user/profile.php?id=42">關於我</a></div>'
         profile = '<header id="page-header"><h1>資工系 / DCP 王小明</h1></header><dd>private@example.test</dd>'
-        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[Mock(text=menu), Mock(text=profile)]) as request:
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[Mock(text=menu, status_code=200), Mock(text=profile, status_code=200)]) as request:
             self.assertEqual(fetch_profile_surname(Mock(), 'https://e3.example'), '王')
         self.assertEqual(request.call_args_list[1].args[2], 'https://e3.example/user/profile.php?id=42')
 
@@ -68,6 +68,12 @@ class ProfileParsingTests(unittest.TestCase):
         for title in ('登入', '關於我', '個人資料', '焦點綜覽', '錯誤訊息', '112550103'):
             with self.subTest(title=title):
                 self.assertEqual(parse_profile_name(f'<header id="page-header"><h1>{title}</h1></header>'), '')
+
+    def test_international_names_and_grade_labels_on_own_profile(self):
+        for title, expected in [('John Smith', 'John Smith'), ('Élodie Martin', 'Élodie Martin'),
+                                ('王小明 / 藥學系 / 三年級', '王小明'), ('Profile', ''), ('User Profile', '')]:
+            with self.subTest(title=title):
+                self.assertEqual(parse_profile_name(f'<div id="page-header"><h2>{title}</h2></div>'), expected)
 
 
 class UserProfileTests(unittest.TestCase):

@@ -200,7 +200,8 @@ def register_assignments_routes(*,
         user = current_user()
         if user.get("is_guest"):
             return {"ok": True, "surname": ""}
-        session_identity_sync.refresh_user(user)
+        if user["username"].startswith("Session-"):
+            session_identity_sync.refresh_user(user)
         profile = storage.load_user_profile(user["username"])
         surname = profile["surname"]
         if (

@@ -2,11 +2,14 @@
 import os
 import sys
 import tempfile
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from e3_tracker.platform.application import create_app
+from e3_tracker.platform.constants import TAIPEI_TZ
 
 with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
     "E3_CACHE_DIR": folder, "E3_DATABASE_URL": "", "E3_SESSION_COOKIE_SECURE": "0", "E3_CANONICAL_HOST": "",
@@ -34,6 +37,19 @@ with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
         storage.save_web_session("traffic-preview-token", "traffic-preview", is_admin=True)
         with client.session_transaction() as session:
             session.update(username="traffic-preview", session_token="traffic-preview-token")
-        print(client.get("/admin/ga4" if "--ga4-page" in sys.argv else "/admin/traffic").get_data(as_text=True))
+        if '--active-users' in sys.argv:
+            from sqlalchemy import update
+            from e3_tracker.platform.persistence.migrations import history
+            for name in ('112550101', '113550102', '114550103', 'Session-alice'):
+                storage.save_user_profile(name, 'Synthetic Student', 'S')
+            storage.save_student_number('Session-alice', '112550101')
+            now = time.time()
+            with storage._engine.begin() as conn:
+                conn.execute(update(history).where(history.c.version == '0017_traffic_activity_retention').values(
+                    applied_at=(datetime.now(TAIPEI_TZ)-timedelta(days=30)).isoformat()))
+            for name, age in [('112550101',1),('Session-alice',0),('113550102',1),('114550103',0)]:
+                storage.record_assignment_usage(name, 'heartbeat', now=now-age*86400)
+        target = '/admin/ga4' if '--ga4-page' in sys.argv else '/admin/traffic'
+        print(client.get(target, query_string={'range':'30d' if '--30d' in sys.argv else '7d'}).get_data(as_text=True))
     finally:
         storage._engine.dispose()

@@ -162,6 +162,7 @@ def register_administration_routes(*,
                           'identity_key': student_identity(profile) or memberships[profile['username']]['identity_key']}
                          for profile in profiles if profile['username'] in memberships],
             daily_counts=storage.assignment_daily_user_counts(start=storage.assignment_daily_tracking_start_day()),
+            daily_users=storage.assignment_daily_user_identities,
             identity_key=identities.key,
         )
         action_counter: Counter = Counter()

@@ -117,6 +117,14 @@ class AssignmentUsageStorage:
         today = datetime.fromtimestamp(time.time() if now is None else now, TAIPEI_TZ).date()
         start = start or (today - timedelta(days=729)).isoformat()
         end = end or today.isoformat()
+        members = self.assignment_daily_user_identities(start=start, end=end)
+        counts = {day: len(identities) for day, identities in members.items()}
+        if start <= today.isoformat() <= end:
+            counts.setdefault(today.isoformat(), 0)
+        return counts
+
+    def assignment_daily_user_identities(self, *, start, end):
+        """Server-only identity sets, so range totals never sum daily people counts."""
         with self._lock, self._engine.connect() as conn:
             rows = conn.execute(select(feature_usage.c.day, users_table.c.username, users_table.c.student_number).join(
                 users_table, users_table.c.id == feature_usage.c.user_id,
@@ -127,10 +135,7 @@ class AssignmentUsageStorage:
         members = {}
         for row in rows:
             members.setdefault(row["day"], set()).add(student_identity(row) or row["username"])
-        counts = {day: len(identities) for day, identities in members.items()}
-        if start <= today.isoformat() <= end:
-            counts.setdefault(today.isoformat(), 0)
-        return counts
+        return members
 
     def assignment_usage_snapshot(self, start, end):
         cutoff = (datetime.now(TAIPEI_TZ).date() - timedelta(days=729)).isoformat()

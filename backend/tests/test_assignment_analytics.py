@@ -96,6 +96,23 @@ class AssignmentAnalyticsTests(unittest.TestCase):
             other._engine.dispose()
         self.assertTrue(all(row["feature"] != "__presence" for row in self.storage.assignment_usage_snapshot("2026-10-06", "2026-10-06")["usage"]))
 
+    def test_range_unique_users_are_shown_inside_existing_chart_with_alias_deduplication(self):
+        today = datetime.now(TAIPEI_TZ).date()
+        midnight = TAIPEI_TZ.localize(datetime.combine(today, datetime.min.time())).timestamp()
+        for username, ts in [('112550103', midnight - 1), ('Session-one', midnight + 1),
+                             ('113550092', midnight + 2), ('114513001', midnight - 40 * 86400)]:
+            self.storage.record_assignment_usage(username, 'heartbeat', now=ts)
+        self.storage.record_assignment_usage('訪客_demo', 'heartbeat', now=midnight + 3)
+        self.storage.record_assignment_usage('Session-unknown', 'heartbeat', meta={'site':'study'}, now=midnight + 3)
+        self.storage.clear_traffic_events()
+        for params, count in [('range=7d', 2), ('range=30d', 2),
+                              (f'range=custom&start={today}&end={today}', 2)]:
+            with self.subTest(params=params):
+                page = BeautifulSoup(self.client.get('/admin/traffic?' + params).get_data(as_text=True), 'html.parser')
+                self.assertEqual(page.select_one('#visit-trend #trendUniqueUsers').get_text(strip=True), str(count))
+        sets = self.storage.assignment_daily_user_identities(start=(today-timedelta(days=1)).isoformat(), end=today.isoformat())
+        self.assertEqual(set.union(*sets.values()), {'112550103', '113550092'})
+
     def test_quiet_feature_usage_updates_public_daily_users_without_activity_noise(self):
         self.login("analytics-second")
         self.client.post("/ui-event", json={"action": "usage_calendar"})

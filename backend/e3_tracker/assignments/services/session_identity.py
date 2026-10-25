@@ -10,6 +10,7 @@ import requests
 from e3_tracker.assignments.services.http import apply_cookie
 from e3_tracker.assignments.services.profile import fetch_session_identity, profile_surname
 from e3_tracker.platform.security import production_mode
+from e3_tracker.platform.guest_privacy import is_guest_identity
 
 logger = logging.getLogger(__name__)
 
@@ -23,28 +24,25 @@ class SessionIdentitySync:
 
     def refresh_user(self, user, *, force=False):
         username = str(user.get("username") or "")
-        if user.get("is_guest") or not username.startswith("Session-") or not user.get("moodle_session"):
+        if user.get("is_guest") or is_guest_identity(username) or not username or not user.get("moodle_session"):
             return
         try:
             if not self.storage.claim_student_number_sync(username, time.time(), force=force):
                 return
             diagnostics = {}
+            needs_number = username.startswith('Session-') and not self.storage.load_student_number(username)
             with requests.Session() as sess:
                 apply_cookie(sess, self.base_url, user["moodle_session"])
-                identity = fetch_session_identity(sess, self.base_url, timeout=self.timeout, diagnostics=diagnostics)
+                identity = fetch_session_identity(sess, self.base_url, timeout=self.timeout, diagnostics=diagnostics,
+                                                  include_number=needs_number)
             number = identity["student_number"]
-            if number and not self.storage.save_student_number(username, number):
-                logger.warning("E3 Session identity unavailable (reason=identity_conflict); will retry later")
-                return False
-            # The authenticated profile already establishes the display name.
-            # An unavailable edit form must not discard it with the student number.
             name = identity["name"]
-            if name:
-                self.storage.save_user_profile(username, name, profile_surname(name))
-            if number:
+            saved = self.storage.save_identity_enrichment(username, name, profile_surname(name), number)
+            if saved and (number or not needs_number):
                 return True
-            reason = diagnostics.get("reason", "identity_missing")
+            reason = "identity_conflict" if number and not saved else diagnostics.get("reason", "identity_missing")
             logger.warning("E3 Session identity unavailable (reason=%s); will retry later", reason)
+            return bool(saved)
         except requests.Timeout:
             logger.warning("E3 Session identity unavailable (reason=upstream_timeout); will retry later")
         except requests.RequestException:
@@ -63,6 +61,9 @@ class SessionIdentitySync:
                 if user:
                     checked += 1
                     updated += bool(self.refresh_user(user))
+                else:
+                    # Unusable encrypted sessions must not monopolize every batch.
+                    self.storage.claim_student_number_sync(username, now)
             except Exception:
                 logger.warning("E3 Session identity backfill will retry later")
         if checked:

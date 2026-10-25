@@ -1,5 +1,7 @@
 """Read the signed-in user's name from E3's own profile page."""
 import re
+import time
+import unicodedata
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
@@ -19,18 +21,26 @@ COMPOUND_SURNAMES = frozenset((
 
 def parse_profile_name(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
-    heading = soup.select_one("#page-header h1")
+    heading = soup.select_one("#page-header h1, .page-context-header h1, #page-header h2")
     if not heading:
         return ""
     # E3 may put the department before or after the person's name.
-    labels = {"登入", "登出", "關於我", "個人資料", "使用者資料", "焦點綜覽", "錯誤", "錯誤訊息"}
+    labels = {"登入", "登出", "關於我", "個人資料", "使用者資料", "焦點綜覽", "錯誤", "錯誤訊息", "姓名"}
+    text = unicodedata.normalize('NFKC', heading.get_text(" ", strip=True))
     candidates = re.findall(
         r"(?<![\u3400-\u9fff])([\u3400-\u9fff]{2,8})(?![\u3400-\u9fff])",
-        heading.get_text(" ", strip=True),
+        text,
     )
     names = list(dict.fromkeys(name for name in candidates
-                             if name not in labels and not is_academic_unit_name(name)))
-    return names[0] if len(names) == 1 else ""
+                             if name not in labels and not is_academic_unit_name(name)
+                             and not re.fullmatch(r'[一二三四五六七八九十0-9]+年級', name)))
+    if names:
+        return names[0] if len(names) == 1 else ""
+    # International students may have no Chinese name at all.
+    if (re.fullmatch(r"[A-Za-z\u00c0-\u02af][A-Za-z\u00c0-\u02af .,'’-]{1,126}", text)
+            and text.casefold() not in {'login', 'logout', 'profile', 'user profile', 'error', 'dashboard'}):
+        return text
+    return ""
 
 
 def profile_surname(name: str) -> str:
@@ -42,18 +52,7 @@ def parse_profile_surname(html: str) -> str:
 
 
 def fetch_profile_name(sess, base_url: str, *, timeout: int = 8) -> str:
-    dashboard = safe_request(sess, "GET", f"{base_url.rstrip('/')}/my/",
-                             headers=HEADERS, timeout=timeout)
-    soup = BeautifulSoup(dashboard.text, "html.parser")
-    link = soup.select_one('.usermenu a[href*="/user/profile.php"]')
-    if not link:
-        return ""
-    profile_url = urljoin(base_url + "/", link.get("href", ""))
-    base, target = urlsplit(base_url), urlsplit(profile_url)
-    if (target.scheme, target.netloc) != (base.scheme, base.netloc):
-        return ""
-    response = safe_request(sess, "GET", profile_url, headers=HEADERS, timeout=timeout)
-    return parse_profile_name(response.text)
+    return fetch_session_identity(sess, base_url, timeout=timeout, include_number=False)['name']
 
 
 def fetch_profile_surname(sess, base_url: str, *, timeout: int = 8) -> str:
@@ -81,6 +80,8 @@ def _own_profile_url(base_url: str, href: str, path: str, user_id=None, *, impli
         or target.fragment
     ):
         return ""
+    if path == '/user/profile.php' and set(query) - {'id', 'course'}:
+        return ''
     if path == "/user/edit.php":
         # Only read profile forms; do not follow GET actions such as email cancellation.
         if set(query) - {"id", "course", "returnto"}:
@@ -89,16 +90,17 @@ def _own_profile_url(base_url: str, href: str, path: str, user_id=None, *, impli
             return ""
         if "returnto" in query and (len(query["returnto"]) != 1 or query["returnto"][0] not in {"profile", "preferences", ""}):
             return ""
-    if not ids and implicit_own and user_id is not None:
+    if not ids and implicit_own and (user_id is not None or path == '/user/profile.php'):
         return url
     if len(ids) != 1 or not re.fullmatch(r"[0-9]+", ids[0]) or (user_id is not None and ids[0] != user_id):
         return ""
     return url
 
 
-def fetch_session_identity(sess, base_url: str, *, timeout: int = 8, diagnostics=None) -> dict:
+def fetch_session_identity(sess, base_url: str, *, timeout: int = 8, diagnostics=None, include_number=True) -> dict:
     """Follow only the authenticated menu's own profile and its locked idnumber."""
     empty = {"name": "", "student_number": ""}
+    deadline = time.monotonic() + min(max(timeout, 1) * 3, 16)
 
     def fail(reason, name=""):
         if diagnostics is not None:
@@ -106,47 +108,81 @@ def fetch_session_identity(sess, base_url: str, *, timeout: int = 8, diagnostics
         return {"name": name, "student_number": ""}
 
     def read(url, stage):
-        try:
-            response = safe_request(sess, "GET", url, headers=HEADERS,
-                                    timeout=timeout, allow_redirects=False)
-        except requests.Timeout:
-            if diagnostics is not None:
-                diagnostics["reason"] = "upstream_timeout"
-            return None
-        except requests.HTTPError as exc:
-            status = exc.response.status_code if exc.response is not None else None
-            if diagnostics is not None:
-                diagnostics["reason"] = "access_denied" if status == 403 else stage + "_unavailable"
-            return None
-        except requests.RequestException:
-            if diagnostics is not None:
-                diagnostics["reason"] = "upstream_request"
+        for _ in range(3):
+            budget = deadline - time.monotonic()
+            if budget <= 0:
+                fail('upstream_timeout')
+                return None
+            try:
+                response = safe_request(sess, "GET", url, headers=HEADERS,
+                                        timeout=min(timeout, budget), allow_redirects=False)
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                fail("access_denied" if status == 403 else stage + "_unavailable")
+                return None
+            except requests.Timeout:
+                fail('upstream_timeout')
+                return None
+            except (requests.RequestException, RuntimeError):
+                fail('upstream_request')
+                return None
+            if response.status_code not in {301, 302, 303, 307, 308}:
+                break
+            location = response.headers.get("Location", "")
+            target = urlsplit(urljoin(url, location)) if isinstance(location, str) and location else None
+            if target and target.path == '/login/index.php':
+                fail('login_required')
+                return None
+            current = urlsplit(url)
+            valid = False
+            if target and (target.scheme, target.netloc) == (current.scheme, current.netloc) and not target.fragment:
+                if stage == 'dashboard':
+                    valid = target.path in {'/my/', '/my/index.php'} and not target.query
+                else:
+                    owner = parse_qs(current.query).get('id', [user_id])[0]
+                    valid = bool(_own_profile_url(base_url, target.geturl(), current.path, owner, implicit_own=True))
+                    if owner is None and parse_qs(target.query).get('id'):
+                        valid = False
+            if not valid or target.geturl() == url:
+                fail(stage + '_unavailable')
+                return None
+            url = target.geturl()
+        else:
+            fail(stage + '_unavailable')
             return None
         if response.status_code != 200:
             if diagnostics is not None:
-                location = response.headers.get("Location", "")
-                target = urlsplit(urljoin(url, location)) if isinstance(location, str) else None
-                diagnostics["reason"] = "login_required" if target and target.path == "/login/index.php" else stage + "_unavailable"
+                diagnostics["reason"] = stage + "_unavailable"
             return None
         soup = BeautifulSoup(response.text, "html.parser")
         if soup.select_one('form[action*="/login/index.php"]') or soup.select_one('input[name="logintoken"]'):
             if diagnostics is not None:
                 diagnostics["reason"] = "login_required"
             return None
+        if soup.select_one('.errorcode, .errorbox, [data-region="error-message"]'):
+            fail(stage + '_unavailable')
+            return None
         return soup
 
     dashboard = read(base_url.rstrip("/") + "/my/", "dashboard")
     if dashboard is None:
         return empty
-    link = dashboard.select_one('.usermenu a[href*="/user/profile.php"]') if dashboard else None
-    profile_url = _own_profile_url(base_url, link.get("href", ""), "/user/profile.php") if link else ""
+    profile_links = [url for link in dashboard.select('.usermenu a[href*="/user/profile.php"]')
+                     if (url := _own_profile_url(base_url, link.get('href', ''), '/user/profile.php', implicit_own=True))]
+    profile_url = next((url for url in profile_links if parse_qs(urlsplit(url).query).get('id')), profile_links[0] if profile_links else '')
     if not profile_url:
         return fail("profile_link_missing")
-    user_id = parse_qs(urlsplit(profile_url).query)["id"][0]
+    user_id = parse_qs(urlsplit(profile_url).query).get('id', [None])[0]
     profile = read(profile_url, "profile")
     if profile is None:
         return empty
     name = parse_profile_name(str(profile))
+    if not include_number:
+        if diagnostics is not None:
+            diagnostics['reason'] = 'success' if name else 'name_missing'
+        return {"name": name, "student_number": ""}
+    if user_id is None:
+        return fail('profile_owner_missing', name)
     # Never construct an edit URL from a caller-provided Moodle id.
     found_edit = False
     visited = set()

@@ -9,12 +9,13 @@ from unittest.mock import Mock, patch
 
 import requests
 from bs4 import BeautifulSoup
-from sqlalchemy import text
+from sqlalchemy import delete, text, update
 
 from e3_tracker.assignments.services.profile import fetch_session_identity, parse_student_number
 from e3_tracker.platform.application import create_app
 from e3_tracker.platform.persistence import migrations
 from e3_tracker.platform.services.account_labels import account_label
+from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
 from tests.security_helpers import csrf_client
 
 
@@ -31,6 +32,56 @@ def response(html, status=200):
 
 
 class IdentityParsingTests(unittest.TestCase):
+    def test_name_survives_number_lookup_timeout_or_access_denied(self):
+        for failure, reason in [(requests.Timeout('never-log-cookie'), 'upstream_timeout'),
+                                (requests.HTTPError(response=response('', 403)), 'access_denied')]:
+            with self.subTest(reason=reason), patch('e3_tracker.assignments.services.profile.safe_request',
+                    side_effect=[response(MENU), response(PROFILE), failure]):
+                diagnostics = {}
+                self.assertEqual(fetch_session_identity(Mock(), BASE, diagnostics=diagnostics),
+                                 {'name': '王小明', 'student_number': ''})
+                self.assertEqual(diagnostics['reason'], reason)
+
+    def test_name_only_lookup_never_opens_edit_form(self):
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(MENU), response(PROFILE)]) as read:
+            self.assertEqual(fetch_session_identity(Mock(), BASE, include_number=False), {'name': '王小明', 'student_number': ''})
+            self.assertEqual(read.call_count, 2)
+
+    def test_implicit_own_profile_keeps_name_but_requires_verified_menu_owner_for_number(self):
+        implicit = MENU.replace('?id=42', '')
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(implicit), response(PROFILE)]):
+            self.assertEqual(fetch_session_identity(Mock(), BASE), {'name':'王小明','student_number':''})
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(implicit+MENU), response(PROFILE), response(EDIT_FORM)]):
+            self.assertEqual(fetch_session_identity(Mock(), BASE), IDENTITY)
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(implicit), response(MENU+PROFILE)]) as read:
+            self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '', 'Profile body cannot supply its own authorization identity')
+            self.assertEqual(read.call_count, 2)
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(implicit), response(PROFILE)]) as read:
+            self.assertEqual(fetch_session_identity(Mock(), BASE, include_number=False)['name'], '王小明')
+            self.assertEqual(read.call_count, 2)
+
+    def test_error_page_is_not_accepted_as_an_international_name(self):
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[response(MENU),
+                response('<header id="page-header"><h1>Invalid User</h1></header><div class="errorcode">invaliduser</div>')]):
+            self.assertEqual(fetch_session_identity(Mock(), BASE, include_number=False)['name'], '')
+
+    def test_safe_canonical_redirect_and_valid_second_menu_link(self):
+        canonical = response('', 302); canonical.headers = {'Location': '/my/index.php'}
+        with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[canonical,
+                response(MENU.replace('href="/', 'href="https://evil.example/') + MENU), response(PROFILE), response(EDIT_FORM)]) as read:
+            self.assertEqual(fetch_session_identity(Mock(), BASE), IDENTITY)
+            self.assertEqual(read.call_args_list[1].args[2], BASE + '/my/index.php')
+            self.assertTrue(all(call.kwargs['allow_redirects'] is False for call in read.call_args_list))
+
+    def test_redirect_cannot_switch_profile_owner_or_origin(self):
+        for location in ['/user/profile.php?id=99', 'https://evil.example/user/profile.php?id=42', '/login/index.php',
+                         '/user/profile.php?id=42&cancelemailchange=1']:
+            redirect = response('', 302); redirect.headers = {'Location': location}
+            with self.subTest(location=location), patch('e3_tracker.assignments.services.profile.safe_request',
+                    side_effect=[response(MENU), redirect]) as read:
+                self.assertEqual(fetch_session_identity(Mock(), BASE)['student_number'], '')
+                self.assertEqual(read.call_count, 2)
+
     def test_session_name_does_not_use_the_trailing_department(self):
         with patch('e3_tracker.assignments.services.profile.safe_request', side_effect=[
             response(MENU), response(PROFILE.replace('王小明', '王小明 / 藥學系')), response(EDIT_FORM),
@@ -299,14 +350,50 @@ class SessionIdentityTests(unittest.TestCase):
         self.storage.save_web_session('no-cookie', 'Session-no-cookie')
         self.storage.save_web_session('guest', 'Session-guest', is_guest=True, moodle_session='guest')
         self.storage.save_web_session('password', '112550102', moodle_session='password-cookie')
-        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', return_value=IDENTITY) as fetch:
+        def identity(*args, include_number=True, **kwargs):
+            return IDENTITY if include_number else {**IDENTITY, 'student_number': ''}
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', side_effect=identity) as fetch:
             self.sync.backfill_once()
             self.sync.backfill_once()
-        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(fetch.call_count, 3)
         for name in (self.username, 'Session-second'):
             self.assertEqual(self.storage.load_student_number(name), '112550101')
         for name in ('Session-expired', 'Session-no-cookie', 'Session-guest', '112550102'):
             self.assertEqual(self.storage.load_student_number(name), '')
+        self.assertEqual(self.storage.load_user_profile('112550102')['name'], '王小明')
+
+    def test_name_is_saved_even_when_student_number_is_unavailable(self):
+        with self.storage._engine.begin() as conn:
+            conn.execute(update(users_table).where(users_table.c.username == self.username).values(profile_name=None, profile_surname=None))
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', return_value={**IDENTITY, 'student_number': ''}), \
+                patch('e3_tracker.assignments.routes.assignments.fetch_profile_name') as fallback:
+            self.client.get('/api/profile')
+            fallback.assert_not_called()
+        self.assertEqual(self.storage.load_user_profile(self.username)['name'], '王小明')
+        self.assertEqual(self.storage.load_student_number(self.username), '')
+        self.assertTrue(self.storage.claim_student_number_sync(self.username, time.time() + 301))
+
+    def test_known_number_does_not_prevent_missing_name_backfill(self):
+        self.storage.save_web_session('nameless', 'Session-nameless', moodle_session='nameless-cookie')
+        self.storage.save_student_number('Session-nameless', '112550101')
+        self.storage.save_student_number(self.username, '112550101')
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', return_value={**IDENTITY, 'student_number': ''}) as fetch:
+            self.sync.backfill_once()
+            self.sync.backfill_once()
+        fetch.assert_called_once()
+        self.assertFalse(fetch.call_args.kwargs['include_number'])
+        self.assertEqual(self.storage.load_user_profile('Session-nameless')['name'], '王小明')
+
+    def test_in_flight_lookup_does_not_recreate_deleted_account(self):
+        def removed(*args, **kwargs):
+            with self.storage._engine.begin() as conn:
+                conn.execute(delete(web_sessions_table).where(web_sessions_table.c.username == self.username))
+                conn.execute(delete(users_table).where(users_table.c.username == self.username))
+            return IDENTITY
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity', side_effect=removed):
+            self.assertFalse(self.sync.refresh_user(self.storage.load_web_session('identity-test')))
+        self.assertEqual(self.storage.load_user_profile(self.username)['name'], '')
+        self.assertFalse(self.storage.claim_student_number_sync(self.username, time.time(), force=True))
 
     def test_profile_name_is_saved_even_when_student_number_is_unavailable(self):
         username = 'Session-name-only'
@@ -467,6 +554,24 @@ class SessionIdentityTests(unittest.TestCase):
         self.assertTrue(self.storage.claim_student_number_sync(self.username, now))
         self.assertFalse(self.storage.claim_student_number_sync(self.username, now))
         self.assertTrue(self.storage.claim_student_number_sync(self.username, now + 3601))
+
+    def test_new_retry_window_does_not_leave_legacy_one_hour_failures_stuck(self):
+        now = time.time()
+        with self.storage._engine.begin() as conn:
+            conn.execute(update(users_table).where(users_table.c.username == self.username).values(student_number_sync_after=now+3500))
+        self.assertIn(self.username, self.storage.list_session_identity_users(now))
+        self.assertTrue(self.storage.claim_student_number_sync(self.username, now))
+        self.assertFalse(self.storage.claim_student_number_sync(self.username, now+1))
+        self.assertTrue(self.storage.claim_student_number_sync(self.username, now+301))
+
+    def test_unusable_credentials_get_cooldown_instead_of_blocking_following_batches(self):
+        with self.storage._engine.begin() as conn:
+            conn.execute(update(web_sessions_table).where(web_sessions_table.c.username == self.username).values(moodle_credential='enc:v1:invalid'))
+        with patch('e3_tracker.assignments.services.session_identity.fetch_session_identity') as read:
+            self.sync.backfill_once()
+            self.sync.backfill_once()
+            read.assert_not_called()
+        self.assertNotIn(self.username, self.storage.list_session_identity_users(time.time()))
 
     def test_worker_runs_backfill_in_app_context_and_can_stop(self):
         with patch.dict(os.environ, {'E3_SESSION_PROFILE_WORKER': '1'}), patch(

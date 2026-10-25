@@ -69,6 +69,8 @@
 .metric.metric-time strong { font-size: 15px; margin: 12px 0; }
 .trend-header { display: flex; justify-content: space-between; gap: 18px; align-items: start; flex-wrap: wrap; }
 .trend-peak { text-align: right; }
+.trend-unique-total { margin: 0 0 12px; color: var(--fg); }
+.trend-unique-total small { display: block; color: var(--muted); font-size: 11px; }
 .trend-peak strong { color: var(--primary); font-size: 26px; font-variant-numeric: tabular-nums; margin: 0 5px; }
 .trend-new-total { margin: 8px 0 0; color: var(--muted); }
 .trend-new-total strong { color: var(--info-fg); font-size: 18px; }

@@ -23,6 +23,12 @@ from e3_tracker.platform.persistence.core_schema import (
 
 
 class AccountsStorage:
+    @staticmethod
+    def _missing_identity():
+        return or_(users_table.c.profile_name.is_(None), users_table.c.profile_name == "",
+            users_table.c.username.like("Session-%") & or_(
+                users_table.c.student_number.is_(None), users_table.c.student_number == ""))
+
     def load_student_number(self, username: str) -> str:
         with self._lock, self._engine.connect() as conn:
             return conn.execute(
@@ -46,21 +52,53 @@ class AccountsStorage:
             ).rowcount)
 
     def claim_student_number_sync(self, username: str, now: float, *, force=False) -> bool:
-        if not username.startswith("Session-"):
+        if not username or is_guest_identity(username):
             return False
         with self._lock, self._engine.begin() as conn:
-            uid = self._ensure_user(conn, username)
+            exists = conn.execute(select(users_table.c.id).where(users_table.c.username == username)).scalar()
+            if not exists:
+                authenticated = conn.execute(select(web_sessions_table.c.username).where(
+                    web_sessions_table.c.username == username, web_sessions_table.c.is_guest == 0,
+                    web_sessions_table.c.expires_at > now, web_sessions_table.c.moodle_credential.is_not(None),
+                ).limit(1)).scalar()
+                if not authenticated:
+                    return False
+                self._ensure_user(conn, username)
             claim = update(users_table).where(
-                users_table.c.id == uid,
+                users_table.c.username == username,
                 users_table.c.is_guest == 0,
-                or_(users_table.c.student_number.is_(None), users_table.c.student_number == "",
-                    users_table.c.profile_name.is_(None), users_table.c.profile_name == ""),
+                self._missing_identity(),
             )
             if not force:
-                claim = claim.where(users_table.c.student_number_sync_after <= now)
+                # Replace legacy hour-long leases without bypassing current five-minute claims.
+                claim = claim.where(or_(users_table.c.student_number_sync_after <= now,
+                                        users_table.c.student_number_sync_after > now + 300))
             return bool(conn.execute(
-                claim.values(student_number_sync_after=now + 3600)
+                claim.values(student_number_sync_after=now + 300)
             ).rowcount)
+
+    def save_identity_enrichment(self, username, name, surname, student_number=""):
+        """Save independently available fields without recreating deleted accounts."""
+        with self._lock, self._engine.begin() as conn:
+            row = conn.execute(select(users_table.c.id, users_table.c.student_number).where(
+                users_table.c.username == username, ~guest_account_condition())).first()
+            if not row:
+                return False
+            expected = username if re.fullmatch(r"[0-9]{9}", username) else row.student_number
+            if student_number and (not re.fullmatch(r"[0-9]{9}", student_number)
+                                   or expected and student_number != expected):
+                return False
+            values = {}
+            if student_number and username.startswith("Session-"):
+                values['student_number'] = student_number
+            if name and len(name) <= 128 and surname and len(surname) <= 16 and not is_academic_unit_name(name):
+                values.update(profile_name=name, profile_surname=surname)
+            if not values:
+                return False
+            return bool(conn.execute(update(users_table).where(users_table.c.id == row.id,
+                or_(users_table.c.student_number.is_(None), users_table.c.student_number == "",
+                    users_table.c.student_number == (student_number or row.student_number)),
+            ).values(**values)).rowcount)
 
     def list_session_identity_users(self, now: float, limit=10) -> list:
         with self._lock, self._engine.connect() as conn:
@@ -68,18 +106,18 @@ class AccountsStorage:
                 select(web_sessions_table.c.username).distinct()
                 .outerjoin(users_table, users_table.c.username == web_sessions_table.c.username)
                 .where(
-                    web_sessions_table.c.username.like("Session-%"),
                     web_sessions_table.c.is_guest == 0,
+                    or_(users_table.c.id.is_(None), ~guest_account_condition()),
                     web_sessions_table.c.expires_at > now,
                     web_sessions_table.c.moodle_credential.is_not(None),
-                    or_(users_table.c.student_number.is_(None), users_table.c.student_number == "",
-                        users_table.c.profile_name.is_(None), users_table.c.profile_name == ""),
-                    func.coalesce(users_table.c.student_number_sync_after, 0) <= now,
+                    self._missing_identity(),
+                    or_(func.coalesce(users_table.c.student_number_sync_after, 0) <= now,
+                        users_table.c.student_number_sync_after > now + 300),
                 ).order_by(web_sessions_table.c.username).limit(limit)
             ).scalars())
 
     def load_session_identity_user(self, username: str, now: float):
-        if not username.startswith("Session-"):
+        if not username or is_guest_identity(username):
             return None
         with self._lock, self._engine.connect() as conn:
             row = conn.execute(

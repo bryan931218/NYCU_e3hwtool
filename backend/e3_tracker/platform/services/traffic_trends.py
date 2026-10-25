@@ -6,7 +6,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.platform.services.traffic import PASSIVE_TRAFFIC_ACTIONS
 
 
-def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, memberships=(), daily_counts=None, now=None, identity_key=str):
+def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, memberships=(), daily_counts=None, daily_users=None, now=None, identity_key=str):
     now = (now or datetime.now(TAIPEI_TZ)).astimezone(TAIPEI_TZ)
     today = now.astimezone(TAIPEI_TZ).date()
     current_hour = now.replace(minute=0, second=0, microsecond=0)
@@ -126,11 +126,28 @@ def build_traffic_trend(hourly_series, hourly_buckets, events, params, *, member
     previous_end = start - timedelta(days=1)
     next_start = end + timedelta(days=1)
     peak = max(values, default=0)
+    # Resolve the provider only after validating the requested window.
+    daily_users = daily_users(start=start.isoformat(), end=end.isoformat()) if callable(daily_users) else (daily_users or {})
+    unique_users = set()
+    for day, members in daily_members.items():
+        if start <= day <= end:
+            unique_users.update(identity_key(member) for member in members)
+    for day, members in daily_users.items():
+        if start.isoformat() <= day <= end.isoformat():
+            unique_users.update(members)
+    for key, (moment, is_new) in first_joins.items():
+        if is_new and start <= moment.date() <= end:
+            unique_users.add(key)
+    # Aggregate-only legacy periods cannot be reconstructed from daily totals.
+    identity_coverage = all(count <= len(daily_members.get(date.fromisoformat(label[:10]), set())
+                                       | daily_users.get(label[:10], set()))
+                            for label, count in zip(labels, values))
     return {
         "range": selection, "resolution": resolution, "query": query,
         "start": start.isoformat(), "end": end.isoformat(), "today": today.isoformat(),
         "labels": labels, "values": values, "rows": rows, "notice": notice,
         "new_values": new_values, "new_total": sum(new_values),
+        "unique_users": len(unique_users), "unique_complete": identity_coverage,
         "has_data": any(values) or any(new_values), "has_history": bool(history_days),
         "unit": "小時" if resolution == "hour" else "天",
         "active_label": "活躍帳號數" if resolution == "hour" else "活躍人數",

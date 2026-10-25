@@ -11,8 +11,31 @@ class TrafficTrendTests(unittest.TestCase):
     def timestamp(self, day, hour):
         return int(TAIPEI_TZ.localize(datetime(2026, 1, day, hour)).timestamp())
 
-    def build(self, buckets=None, series=None, events=None, memberships=(), daily_counts=None, **params):
-        return build_traffic_trend(series or [], buckets or {}, events or [], params, memberships=memberships, daily_counts=daily_counts, now=self.now)
+    def build(self, buckets=None, series=None, events=None, memberships=(), daily_counts=None, daily_users=None, **params):
+        return build_traffic_trend(series or [], buckets or {}, events or [], params, memberships=memberships, daily_counts=daily_counts, daily_users=daily_users, now=self.now)
+
+    def test_window_unique_users_are_a_union_not_a_sum_of_daily_counts(self):
+        daily = {'2026-01-01': {'alice', 'bob'}, '2026-01-02': {'alice', 'carol'}}
+        trend = self.build(daily_users=daily, daily_counts={day: len(names) for day, names in daily.items()},
+                           memberships=[self.member('carol', 2, 1)], range='7d')
+        self.assertEqual(sum(trend['values']), 4)
+        self.assertEqual(trend['unique_users'], 3)
+        self.assertTrue(trend['unique_complete'])
+        one = self.build(daily_users=daily, range='custom', start='2026-01-01', end='2026-01-01')
+        self.assertEqual(one['unique_users'], 2)
+
+    def test_unique_counts_deduplicate_legacy_aliases_and_current_student_numbers(self):
+        trend = build_traffic_trend([], {self.timestamp(1, 8): {'Session-alice'}}, [], {'range':'7d'}, now=self.now,
+            daily_users={'2026-01-02': {'112550101'}}, identity_key=lambda name: '112550101' if name == 'Session-alice' else name)
+        self.assertEqual(trend['unique_users'], 1)
+
+    def test_unique_loader_is_bounded_by_validated_range_and_legacy_counts_are_not_guessed(self):
+        from unittest.mock import Mock
+        load = Mock(return_value={})
+        trend = self.build(daily_users=load, daily_counts={'2026-01-02': 10}, range='custom', start='invalid', end='invalid')
+        load.assert_called_once_with(start='2025-12-27', end='2026-01-02')
+        self.assertEqual(trend['unique_users'], 0)
+        self.assertFalse(trend['unique_complete'])
 
     def test_daily_chart_uses_homepage_source_without_adding_new_users(self):
         buckets = {self.timestamp(2, 8): {str(index) for index in range(13)}}
