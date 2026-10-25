@@ -143,12 +143,14 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
         self.assertTrue(config["settings"])
         self.assertEqual(config["consent"], "")
         self.assertTrue(config["default_enabled"])
-        self.assertIn("預設啟用", privacy)
-        self.assertIn('id="analyticsPreferenceStatus"', privacy)
+        self.assertEqual(config['events'], [])
+        self.assertEqual(config['path'], '/privacy')
+        self.assertNotIn('src="https://www.googletagmanager.com', privacy)
+        self.assertNotIn('id="googleAnalyticsConfig"', self.client.get('/not-a-real-page').get_data(as_text=True))
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/?view_user=113550092").get_data(as_text=True))
         self.assertNotIn('id="googleAnalyticsConfig"', self.client.get("/study").get_data(as_text=True))
 
-    def test_privacy_preferences_keep_saved_choices_and_do_not_create_consent(self):
+    def test_saved_choices_survive_reading_privacy_and_other_public_pages(self):
         for choice in ("granted", "denied"):
             self.client.post("/analytics/consent", json={"choice": choice})
             response = self.client.get("/privacy")
@@ -156,7 +158,10 @@ class GoogleAnalyticsIntegrationTests(unittest.TestCase):
             config = json.loads(html.split('id="googleAnalyticsConfig">')[1].split('</script>')[0])
             self.assertEqual(config["consent"], choice)
             self.assertTrue(config["settings"])
-            self.assertIn("已停用" if choice == "denied" else "已啟用", html)
+            self.assertEqual(config['events'], [])
+            login_html = self.client.get('/login').get_data(as_text=True)
+            login_config = json.loads(login_html.split('id="googleAnalyticsConfig">')[1].split('</script>')[0])
+            self.assertEqual(login_config['consent'], choice)
             self.assertNotIn("e3_analytics_consent", response.headers.get("Set-Cookie", ""))
 
     def test_missing_configuration_hides_privacy_preferences(self):

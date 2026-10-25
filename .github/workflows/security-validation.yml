@@ -22,8 +22,10 @@ jobs:
       - name: Bootstrap audited build tools
         run: python -m pip install -r requirements-build.txt
       - name: Install audited deployment dependencies
+        id: dependencies
         run: python -m pip install -r requirements.txt 'pip-audit>=2.10.1,<3'
       - name: Test security protections and migrations
         run: python -m unittest discover -s backend/tests -t backend
       - name: Audit actual installed runtime dependencies
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: python -m pip_audit

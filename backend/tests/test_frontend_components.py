@@ -8,7 +8,7 @@ from e3_tracker.platform.assets import configure_frontend
 
 
 class FrontendComponentTests(unittest.TestCase):
-    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, overdue=True, completed=False, readonly=False, google_ready=False, google_linked=False, excel_data='', admin=False):
+    def render(self, *, grade_text=None, extra_courses=(), submitted_count=5, participant_count=10, surname='', guest_mode=False, overdue=True, completed=False, readonly=False, google_ready=False, google_linked=False, excel_data='', admin=False, view_mode='due'):
         app = Flask(__name__)
         configure_frontend(app)
         app.secret_key = 'component-test'
@@ -21,7 +21,7 @@ class FrontendComponentTests(unittest.TestCase):
             'submitted_count': submitted_count, 'participant_count': participant_count,
         }
         uid = '1|' + item['title'] + '|' + item['url']
-        preferences = {'view_mode': 'due', 'status_filter': ['overdue'],
+        preferences = {'view_mode': view_mode, 'status_filter': ['overdue'],
                        'semester_filter': ['115-1'], 'ignored_overdue_uids': [uid]}
         result = {'courses': [{'id': 1, 'title': 'Course', 'semester_key': '115-1', 'assignments': [item]}, *extra_courses],
                   'all_assignments': [item], 'errors': [], 'available_semesters': [], 'selected_semesters': ['115-1']}
@@ -85,37 +85,51 @@ class FrontendComponentTests(unittest.TestCase):
                 self.assertEqual(page.select_one('a[href="/e3_navigation_extension"]') is not None, visible)
 
     def test_both_views_share_escaped_content_and_ignored_state(self):
-        document, uid = self.render()
-        rows = document.select('tr[data-uid]')
-        self.assertEqual(len(rows), 2)
-        for row in rows:
-            self.assertEqual(row['data-uid'], uid)
-            self.assertEqual(row['data-course-id'], '1')
-            self.assertEqual(row['data-ignored'], '1')
-            self.assertEqual(row['data-primary-status'], 'overdue')
-            self.assertEqual(row.select_one('.assignment-title').get_text(), '<img src=x onerror=alert(1)>')
-            self.assertIsNone(row.select_one('img'))
-            self.assertIn('已逾期', row.select_one('.remaining-text').get_text())
-        config = json.loads(document.select_one('#workbench-config').string)
-        self.assertEqual(config['preferences']['ignored_overdue_uids'], [uid])
+        for mode, selector in [('due', '#viewDue'), ('course', '#viewCourse')]:
+            with self.subTest(mode=mode):
+                document, uid = self.render(view_mode=mode)
+                rows = document.select(selector + ' tr[data-uid]')
+                self.assertEqual(len(rows), 1)
+                row = rows[0]
+                self.assertEqual(row['data-uid'], uid)
+                self.assertEqual(row['data-course-id'], '1')
+                self.assertEqual(row['data-ignored'], '1')
+                self.assertEqual(row['data-primary-status'], 'overdue')
+                self.assertEqual(row.select_one('.assignment-title').get_text(), '<img src=x onerror=alert(1)>')
+                self.assertIsNone(row.select_one('img'))
+                self.assertIn('已逾期', row.select_one('.remaining-text').get_text())
+                config = json.loads(document.select_one('#workbench-config').string)
+                self.assertEqual(config['preferences']['ignored_overdue_uids'], [uid])
+
+    def test_inactive_course_rows_stay_lazy_until_the_course_view_is_selected(self):
+        document, _uid = self.render(view_mode='due')
+        self.assertIsNotNone(document.select_one('#viewCourse tbody[data-lazy-course-rows]'))
+        self.assertFalse(document.select('#viewCourse tr[data-uid]'))
+        course_document, _uid = self.render(view_mode='course')
+        self.assertIsNone(course_document.select_one('#viewCourse tbody[data-lazy-course-rows]'))
+        self.assertEqual(len(course_document.select('#viewCourse tr[data-uid]')), 1)
 
     def test_grade_and_status_are_consistent_in_both_views(self):
-        document, _uid = self.render(grade_text='95')
-        for row in document.select('tr[data-uid]'):
-            self.assertEqual(row['data-primary-status'], 'graded')
-            self.assertEqual(row.select_one('.badge.graded').get_text(), '已評分')
-            self.assertIsNone(row.select_one('.badge.overdue'))
+        for mode, selector in [('due', '#viewDue'), ('course', '#viewCourse')]:
+            with self.subTest(mode=mode):
+                document, _uid = self.render(grade_text='95', view_mode=mode)
+                rows = document.select(selector + ' tr[data-uid]')
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]['data-primary-status'], 'graded')
+                self.assertEqual(rows[0].select_one('.badge.graded').get_text(), '已評分')
+                self.assertIsNone(rows[0].select_one('.badge.overdue'))
 
     def test_ignore_available_for_pending_and_overdue_but_not_completed_or_readonly(self):
-        for extra, expected in [({'overdue': False}, 2), ({}, 2),
-                                ({'completed': True}, 0), ({'grade_text': '95'}, 0),
-                                ({'overdue': False, 'readonly': True}, 0)]:
-            with self.subTest(extra=extra):
-                document, _uid = self.render(**extra)
-                self.assertEqual(len(document.select('[data-ignore-assignment]')), expected)
-                self.assertIsNone(document.select_one('[data-ignore-overdue]'))
-                self.assertIn('已忽略作業', document.get_text())
-                self.assertNotIn('已忽略逾期作業', document.get_text())
+        for mode, selector in [('due', '#viewDue'), ('course', '#viewCourse')]:
+            for extra, expected in [({'overdue': False}, 1), ({}, 1),
+                                    ({'completed': True}, 0), ({'grade_text': '95'}, 0),
+                                    ({'overdue': False, 'readonly': True}, 0)]:
+                with self.subTest(mode=mode, extra=extra):
+                    document, _uid = self.render(view_mode=mode, **extra)
+                    self.assertEqual(len(document.select(selector + ' [data-ignore-assignment]')), expected)
+                    self.assertIsNone(document.select_one('[data-ignore-overdue]'))
+                    self.assertIn('已忽略作業', document.get_text())
+                    self.assertNotIn('已忽略逾期作業', document.get_text())
 
     def test_course_options_only_contain_selected_semester_even_without_assignments(self):
         document, _uid = self.render(extra_courses=[
