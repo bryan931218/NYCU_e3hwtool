@@ -28,6 +28,9 @@ def _name_from_text(value):
     # E3 may put the department before or after the person's name.
     labels = {"登入", "登出", "關於我", "個人資料", "使用者資料", "焦點綜覽", "錯誤", "錯誤訊息", "姓名", "學士後", "學士", "碩士", "博士", "研究所"}
     text = unicodedata.normalize('NFKC', value).strip()
+    program_heading = re.fullmatch(rf'[{_CJK}]{{2,30}}\s*/\s*[A-Z][A-Z0-9_-]{{1,30}}(?:\s+(.+))?', text)
+    if program_heading:
+        return _name_from_text(program_heading.group(1) or '')
     candidates = re.findall(
         rf"(?<![{_CJK}])([{_CJK}]{{2,12}})(?![{_CJK}])",
         text,
@@ -110,6 +113,11 @@ def _own_edit_profile_name(form):
         parts.append(str(fields[0].get('value') or '').strip())
     # Names may be editable in Moodle. This is a GET of the already verified
     # person's form, never a submission. Only idnumber must be auth-locked.
+    # Some E3 programs use a short Chinese unit + English code as lastname,
+    # with the complete personal name in firstname. The short unit may not
+    # end in 系/所 and must not be treated as a second candidate person.
+    if re.fullmatch(rf'[{_CJK}]{{2,30}}\s*/\s*[A-Z][A-Z0-9_-]{{1,30}}', parts[1]):
+        return _name_from_text(parts[0])
     # Chinese Moodle names are lastname + firstname, while Latin names retain
     # firstname + lastname. Some E3 accounts put a department in the last name.
     cjk = any(re.search(rf'[{_CJK}]', value) for value in parts)

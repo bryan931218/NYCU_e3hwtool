@@ -104,6 +104,16 @@ class ProfileFieldTests(unittest.TestCase):
                 self.assertTrue(all(call.args[1] == 'GET' for call in get.call_args_list))
                 self.assertEqual(identity['student_number'],'')
 
+    def test_program_abbreviation_in_lastname_does_not_hide_full_firstname(self):
+        self.assertEqual(parse_profile_name('<header id="page-header"><h1>王小明 / John Smith</h1></header>'),'王小明')
+        for unit in ['智算 / AIC','智慧系統 / AISYSTEM']:
+            for firstname, expected in [('王小明','王小明'),('Nguyễn Văn An','Nguyễn Văn An'),('115550001','')]:
+                form=FORM.replace('value="王"',f'value="{unit}"').replace('value="小明"',f'value="{firstname}"')
+                profile=PROFILE.replace('個人資料',unit+' '+firstname)
+                with self.subTest(unit=unit,firstname=firstname), patch('e3_tracker.assignments.services.profile.safe_request',
+                        side_effect=[Mock(text=html,status_code=200) for html in [MENU,profile,form]]):
+                    self.assertEqual(fetch_session_identity(Mock(),'https://e3.example',include_number=False)['name'],expected)
+
 
 class ProfileMetadataPersistenceTests(unittest.TestCase):
     def setUp(self):
