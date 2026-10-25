@@ -90,54 +90,74 @@
     {% endif %}
 
     <section class="admin-section trend-controls" id="visit-trend" aria-labelledby="trend-title">
-        <div class="trend-header">
+        <header class="trend-header">
             <div>
                 <h2 id="trend-title">帳號訪問趨勢</h2>
-                <p class="muted">{% if trend.resolution == 'day' %}每天使用人數去重 · 新用戶包含於活躍人數{% else %}活躍帳號每小時計一次 · 新用戶依首次登入{% endif %} · 不含訪客</p>
+                <p class="muted">{{ trend.start|replace('-', '/') }} — {{ trend.end|replace('-', '/') }}</p>
             </div>
-            <div class="trend-peak">
-                <p class="trend-unique-total">區間去重用戶 <strong id="trendUniqueUsers">{% if trend.unique_complete %}{{ trend.unique_users }}{% elif trend.unique_users %}至少 {{ trend.unique_users }}{% else %}—{% endif %}</strong> 人{% if not trend.unique_complete %}<small>部分早期資料不完整</small>{% endif %}</p>
-                <span class="muted">區間最高</span> <strong>{{ trend.peak }}</strong> <span class="muted">{{ '人' if trend.resolution == 'day' else '個帳號' }}</span>
-                <p class="muted">{{ trend.peak_label }}</p>
-                <p class="trend-new-total">區間新用戶 <strong>{{ trend.new_total }}</strong> 人</p>
-            </div>
-        </div>
+            <span class="trend-timezone">台北時間</span>
+        </header>
         <div class="trend-toolbar">
-            <nav class="trend-presets" aria-label="快捷時間範圍">
-                {% for value, label in [('today', '今天'), ('7d', '近 7 天'), ('30d', '近 30 天'), ('all', '全部')] %}
-                <a href="{{ traffic_link(range=value, _anchor='visit-trend') }}" class="{{ 'active' if trend.range == value else '' }}" {% if trend.range == value %}aria-current="true"{% endif %}>{{ label }}</a>
-                {% endfor %}
-            </nav>
+            <div class="trend-range-controls">
+                <nav class="trend-presets" aria-label="快捷時間範圍">
+                    {% for value, label in [('today', '今天'), ('7d', '近 7 天'), ('30d', '近 30 天'), ('all', '全部')] %}
+                    <a href="{{ traffic_link(range=value, _anchor='visit-trend') }}" class="{{ 'active' if trend.range == value else '' }}" {% if trend.range == value %}aria-current="true"{% endif %}>{{ label }}</a>
+                    {% endfor %}
+                </nav>
+                <details class="trend-date-picker {{ 'is-custom' if trend.range == 'custom' else '' }}" id="trendDatePicker">
+                    <summary><span class="admin-icon" data-icon="calendar" aria-hidden="true"></span>自訂日期</summary>
+                    <form class="trend-dates" method="get" action="{{ url_for('admin_traffic', _anchor='visit-trend') }}">
+                        <input type="hidden" name="range" value="custom">
+                        <input type="hidden" name="trend" value="{{ trend.resolution }}">
+                        <input type="hidden" name="usage_range" value="{{ assignment_analytics.range }}">
+                        {% if traffic_query.view_user %}<input type="hidden" name="view_user" value="{{ traffic_query.view_user }}">{% endif %}
+                        <label>開始日期<input type="date" name="start" value="{{ trend.start }}" max="{{ trend.today }}" required></label>
+                        <label>結束日期<input type="date" name="end" value="{{ trend.end }}" max="{{ trend.today }}" required></label>
+                        <button class="btn" type="submit">套用日期</button>
+                    </form>
+                </details>
+            </div>
             <nav class="trend-toggle" aria-label="統計時段">
                 <a class="{{ 'active' if trend.resolution == 'day' else '' }}" href="{{ traffic_link(trend='day', _anchor='visit-trend') }}" {% if trend.resolution == 'day' %}aria-current="true"{% endif %}>每天</a>
                 <a class="{{ 'active' if trend.resolution == 'hour' else '' }}" href="{{ traffic_link(trend='hour', _anchor='visit-trend') }}" {% if trend.resolution == 'hour' %}aria-current="true"{% endif %}>每小時</a>
             </nav>
         </div>
-        <form class="trend-dates" method="get" action="{{ url_for('admin_traffic', _anchor='visit-trend') }}">
-            <input type="hidden" name="range" value="custom">
-            <input type="hidden" name="trend" value="{{ trend.resolution }}">
-            <input type="hidden" name="usage_range" value="{{ assignment_analytics.range }}">
-            {% if traffic_query.view_user %}<input type="hidden" name="view_user" value="{{ traffic_query.view_user }}">{% endif %}
-            <label>開始日期<input type="date" name="start" value="{{ trend.start }}" max="{{ trend.today }}" required></label>
-            <label>結束日期<input type="date" name="end" value="{{ trend.end }}" max="{{ trend.today }}" required></label>
-            <button class="btn" type="submit">套用日期</button>
-        </form>
         {% if trend.notice %}<p class="trend-notice" role="status">{{ trend.notice }}</p>{% endif %}
-        <div class="trend-window">
-            <div class="trend-window-label">
-                {{ trend.start }} — {{ trend.end }}
-                <small>以每{{ trend.unit }}統計 · 台北時間（UTC+8）</small>
+        <dl class="trend-metrics" aria-label="所選區間統計">
+            <div class="trend-metric trend-metric-primary">
+                <dt>區間使用人數</dt>
+                <dd><strong id="trendUniqueUsers">{% if trend.unique_complete %}{{ trend.unique_users }}{% elif trend.unique_users %}至少 {{ trend.unique_users }}{% else %}—{% endif %}</strong><span>人</span></dd>
+                <dd class="trend-metric-note">{{ '同一用戶只計一次' if trend.unique_complete else '部分早期資料不完整' }}</dd>
             </div>
-            <div class="trend-pagination" aria-label="切換日期區間">
-                {% if trend.previous %}
-                <a class="icon-button" href="{{ traffic_link(range='custom', start=trend.previous.start, end=trend.previous.end, _anchor='visit-trend') }}" aria-label="上一段日期" title="上一段日期"><span class="admin-icon" data-icon="left" aria-hidden="true"></span></a>
-                {% else %}<button class="icon-button" type="button" disabled aria-label="上一段日期" title="上一段日期"><span class="admin-icon" data-icon="left" aria-hidden="true"></span></button>{% endif %}
-                {% if trend.next %}
-                <a class="icon-button" href="{{ traffic_link(range='custom', start=trend.next.start, end=trend.next.end, _anchor='visit-trend') }}" aria-label="下一段日期" title="下一段日期"><span class="admin-icon" data-icon="right" aria-hidden="true"></span></a>
-                {% else %}<button class="icon-button" type="button" disabled aria-label="下一段日期" title="下一段日期"><span class="admin-icon" data-icon="right" aria-hidden="true"></span></button>{% endif %}
+            <div class="trend-metric trend-new-total">
+                <dt>區間新用戶</dt>
+                <dd><strong>{{ trend.new_total }}</strong><span>人</span></dd>
+                <dd class="trend-metric-note">首次加入的用戶</dd>
             </div>
-        </div>
+            <div class="trend-metric">
+                <dt>{{ '單日最高' if trend.resolution == 'day' else '單小時最高' }}</dt>
+                <dd><strong>{{ trend.peak }}</strong><span>{{ '人' if trend.resolution == 'day' else '個帳號' }}</span></dd>
+                <dd class="trend-metric-note">{{ trend.peak_label|replace('-', '/') }}</dd>
+            </div>
+        </dl>
         <div class="chart-wrap">
+            <div class="trend-chart-heading">
+                <div class="trend-chart-title">
+                    <h3>{{ '每日活躍人數' if trend.resolution == 'day' else '每小時活躍帳號' }}</h3>
+                    <div class="trend-pagination" aria-label="切換日期區間">
+                        {% if trend.previous %}
+                        <a class="icon-button" href="{{ traffic_link(range='custom', start=trend.previous.start, end=trend.previous.end, _anchor='visit-trend') }}" aria-label="上一段日期" title="上一段日期"><span class="admin-icon" data-icon="left" aria-hidden="true"></span></a>
+                        {% else %}<button class="icon-button" type="button" disabled aria-label="上一段日期" title="上一段日期"><span class="admin-icon" data-icon="left" aria-hidden="true"></span></button>{% endif %}
+                        {% if trend.next %}
+                        <a class="icon-button" href="{{ traffic_link(range='custom', start=trend.next.start, end=trend.next.end, _anchor='visit-trend') }}" aria-label="下一段日期" title="下一段日期"><span class="admin-icon" data-icon="right" aria-hidden="true"></span></a>
+                        {% else %}<button class="icon-button" type="button" disabled aria-label="下一段日期" title="下一段日期"><span class="admin-icon" data-icon="right" aria-hidden="true"></span></button>{% endif %}
+                    </div>
+                </div>
+                <div class="trend-legend" role="group" aria-label="顯示的圖表資料">
+                    <button type="button" data-trend-series="0" aria-pressed="true" aria-controls="visitChart" disabled><i aria-hidden="true"></i>{{ '活躍人數' if trend.resolution == 'day' else '活躍帳號' }}</button>
+                    <button type="button" data-trend-series="1" aria-pressed="true" aria-controls="visitChart" disabled><i aria-hidden="true"></i>其中新用戶</button>
+                </div>
+            </div>
             <div class="chart-plot">
                 <canvas id="visitChart" class="chart-canvas" role="img" aria-label="{{ trend.start }} 至 {{ trend.end }}，每{{ trend.unit }}{{ trend.active_label }}與新用戶數；詳細數值見下方表格" {% if not trend.has_data %}hidden{% endif %}></canvas>
                 <div class="chart-empty" id="chartEmpty" {% if trend.has_data %}hidden{% endif %}>
@@ -147,7 +167,7 @@
             </div>
         </div>
         <div class="trend-footer">
-            <p class="muted">{{ trend.active_periods }} / {{ trend.rows|length }} 個時段有活動{% if trend.end == trend.today %} · 今天尚未結束{% endif %}</p>
+            <p class="muted">新用戶包含於活躍人數 · 不含訪客{% if trend.resolution == 'hour' %} · 帳號每小時計一次{% endif %}{% if trend.end == trend.today %}<span class="trend-today-note">今天尚未結束</span>{% endif %}</p>
         </div>
         <details class="trend-values">
             <summary>查看詳細數值</summary>
@@ -294,6 +314,7 @@ const lineColor = rootStyles.getPropertyValue('--chart-line').trim() || '#6366f1
 const newUserColor = rootStyles.getPropertyValue('--info-fg').trim() || '#286aa6';
 const tooltipBg = rootStyles.getPropertyValue('--chart-tooltip-bg').trim() || '#0f172a';
 const tooltipFg = rootStyles.getPropertyValue('--chart-tooltip-fg').trim() || '#e2e8f0';
+const seriesButtons = document.querySelectorAll('[data-trend-series]');
 let visitChart = null;
 if (chartHasData && typeof Chart !== 'undefined') {
     visitChart = new Chart(chartCanvas.getContext('2d'), {
@@ -306,20 +327,20 @@ if (chartHasData && typeof Chart !== 'undefined') {
                     data: chartValues,
                     borderColor: lineColor,
                     backgroundColor: lineColor,
-                    borderRadius: 4,
-                    maxBarThickness: 42,
-                    categoryPercentage: 0.8,
-                    barPercentage: 0.9,
+                    borderRadius: 5,
+                    maxBarThickness: 28,
+                    categoryPercentage: 0.72,
+                    barPercentage: 0.86,
                 },
                 {
                     label: '新用戶',
                     data: chartNewValues,
                     borderColor: newUserColor,
                     backgroundColor: newUserColor,
-                    borderRadius: 4,
-                    maxBarThickness: 42,
-                    categoryPercentage: 0.8,
-                    barPercentage: 0.9,
+                    borderRadius: 5,
+                    maxBarThickness: 28,
+                    categoryPercentage: 0.72,
+                    barPercentage: 0.86,
                 },
             ]
         },
@@ -327,14 +348,15 @@ if (chartHasData && typeof Chart !== 'undefined') {
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
+            font: { family: rootStyles.fontFamily, size: 11 },
             interaction: { mode: 'index', intersect: false, axis: 'x' },
-            layout: { padding: { top: 12 } },
+            layout: { padding: { top: 12, right: 4 } },
             scales: {
                 y: {
                     beginAtZero: true,
                     suggestedMax: Math.max(2, ...chartValues, ...chartNewValues),
-                    ticks: { color: axisColor, precision: 0, maxTicksLimit: 6 },
-                    grid: { color: gridColor },
+                    ticks: { color: axisColor, precision: 0, maxTicksLimit: 5, padding: 10 },
+                    grid: { color: gridColor, drawTicks: false },
                     border: { display: false }
                 },
                 x: {
@@ -342,6 +364,7 @@ if (chartHasData && typeof Chart !== 'undefined') {
                         color: axisColor,
                         maxRotation: 0,
                         minRotation: 0,
+                        padding: 10,
                         autoSkip: true,
                         maxTicksLimit: window.innerWidth < 700 ? 4 : 10,
                         callback(value) {
@@ -351,11 +374,11 @@ if (chartHasData && typeof Chart !== 'undefined') {
                         }
                     },
                     grid: { display: false },
-                    border: { color: gridColor }
+                    border: { display: false }
                 }
             },
             plugins: {
-                legend: { display: true, position: 'bottom', labels: {color: axisColor, usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 10, padding: 16} },
+                legend: { display: false },
                 tooltip: {
                     backgroundColor: tooltipBg,
                     borderColor: lineColor,
@@ -363,10 +386,12 @@ if (chartHasData && typeof Chart !== 'undefined') {
                     titleColor: tooltipFg,
                     bodyColor: tooltipFg,
                     padding: 12,
+                    cornerRadius: 9,
+                    bodySpacing: 7,
                     displayColors: true,
                     callbacks: {
-                        title(items) { return `${items[0].label}（台北時間）`; },
-                        label(item) { return `${item.datasetIndex === 1 ? '新用戶' : chartActiveLabel}：${item.parsed.y} ${item.datasetIndex === 1 || !chartHourly ? '人' : '個'}`; }
+                        title(items) { return `${items[0].label.replaceAll('-', '/')}（台北時間）`; },
+                        label(item) { return `${item.datasetIndex === 1 ? '其中新用戶' : chartActiveLabel}：${item.parsed.y} ${item.datasetIndex === 1 || !chartHourly ? '人' : '個帳號'}`; }
                     }
                 }
             }
@@ -378,7 +403,23 @@ if (chartHasData && typeof Chart !== 'undefined') {
     empty.querySelector('p').textContent = '圖表暫時無法載入，請查看下方詳細數值。';
     document.querySelector('.trend-values').open = true;
 }
+function syncSeriesButtons() {
+    seriesButtons.forEach(button => {
+        const visible = visitChart?.isDatasetVisible(Number(button.dataset.trendSeries)) ?? true;
+        button.setAttribute('aria-pressed', String(visible));
+        button.disabled = !visitChart || (visible && visitChart.getVisibleDatasetCount() === 1);
+    });
+}
+seriesButtons.forEach(button => button.addEventListener('click', () => {
+    if (!visitChart) return;
+    const index = Number(button.dataset.trendSeries);
+    visitChart.setDatasetVisibility(index, !visitChart.isDatasetVisible(index));
+    visitChart.update('none');
+    syncSeriesButtons();
+}));
+syncSeriesButtons();
 const trendDateForm = document.querySelector('.trend-dates');
+const trendDatePicker = document.getElementById('trendDatePicker');
 const trendStart = trendDateForm.elements.start;
 const trendEnd = trendDateForm.elements.end;
 function validateTrendDates() {
@@ -386,6 +427,15 @@ function validateTrendDates() {
 }
 trendStart.addEventListener('change', validateTrendDates);
 trendEnd.addEventListener('change', validateTrendDates);
+document.addEventListener('pointerdown', event => {
+    if (trendDatePicker.open && !trendDatePicker.contains(event.target)) trendDatePicker.open = false;
+});
+trendDatePicker.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !trendDatePicker.open) return;
+    event.preventDefault();
+    trendDatePicker.open = false;
+    trendDatePicker.querySelector('summary').focus();
+});
 function syncAdminTheme() {
     const theme = document.documentElement.dataset.theme;
     document.querySelectorAll('[data-admin-theme]').forEach(button => {
@@ -398,7 +448,6 @@ function syncAdminTheme() {
     visitChart.data.datasets[0].borderColor = color('--primary');
     visitChart.data.datasets[1].backgroundColor = color('--info-fg');
     visitChart.data.datasets[1].borderColor = color('--info-fg');
-    visitChart.options.plugins.legend.labels.color = color('--muted');
     for (const axis of ['x', 'y']) visitChart.options.scales[axis].ticks.color = color('--muted');
     visitChart.options.scales.y.grid.color = color('--border');
     visitChart.options.scales.x.border.color = color('--border');

@@ -49,7 +49,13 @@ with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
                     applied_at=(datetime.now(TAIPEI_TZ)-timedelta(days=30)).isoformat()))
             for name, age in [('112550101',1),('Session-alice',0),('113550102',1),('114550103',0)]:
                 storage.record_assignment_usage(name, 'heartbeat', now=now-age*86400)
+            storage.claim_assignment_membership('114550103', now=now)
         target = '/admin/ga4' if '--ga4-page' in sys.argv else '/admin/traffic'
-        print(client.get(target, query_string={'range':'30d' if '--30d' in sys.argv else '7d'}).get_data(as_text=True))
+        query = {'range':'30d' if '--30d' in sys.argv else '7d'}
+        for key in ('range', 'trend', 'start', 'end'):
+            argument = next((arg for arg in sys.argv if arg.startswith('--' + key + '=')), None)
+            if argument:
+                query[key] = argument.split('=', 1)[1]
+        print(client.get(target, query_string=query).get_data(as_text=True))
     finally:
         storage._engine.dispose()
