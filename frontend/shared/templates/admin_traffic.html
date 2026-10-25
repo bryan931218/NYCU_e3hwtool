@@ -231,7 +231,6 @@
                     <tr>
                         <th>學號／帳號</th>
                         <th>姓名</th>
-                        <th>系所／年級</th>
                         <th>狀態</th>
                         <th>總訪問次數</th>
                         <th>最後在線時間</th>
@@ -244,7 +243,6 @@
                         <tr>
                             <td class="account-label">{{ row.username|account_label(row.student_number) }}{% if row.is_new_user %}<span class="new-user-badge" title="首次加入：{{ row.joined_at }}">新用戶</span>{% endif %}</td>
                             <td class="account-name">{% if row.profile_name %}{{ row.profile_name }}{% else %}<span class="muted">尚未取得</span><small class="account-profile-status">{{ row.academic.sync_status }}</small>{% endif %}</td>
-                            <td class="account-academic"><span>{{ row.academic.department }}</span><small>{{ row.academic.grade }}{% if row.academic.grade_source == 'e3' %} · E3{% endif %}{% if row.academic.admission_year %} · {{ row.academic.admission_year }} 入學{% endif %}</small>{% if row.academic.department_source == 'e3' %}<small class="account-profile-status">系所來源：E3</small>{% endif %}</td>
                             <td>
                                 {% if row.online %}
                                 <span class="badge online">在線</span>
@@ -265,7 +263,7 @@
                         </tr>
                         {% endfor %}
                     {% else %}
-                        <tr><td colspan="7" class="muted">目前尚無紀錄</td></tr>
+                        <tr><td colspan="6" class="muted">目前尚無紀錄</td></tr>
                     {% endif %}
                 </tbody>
             </table>

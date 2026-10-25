@@ -42,7 +42,8 @@ async function routePage(page, {blockChart = false} = {}) {
       await page.goto('http://traffic.test/admin/traffic');
       assert.match(await page.locator('[data-distribution="grade"]').innerText(), /年級分布/);
       assert.match(await page.locator('[data-distribution="department"]').innerText(), /資訊工程學系/);
-      assert.match(await page.locator('.account-usage-table').innerText(), /未核對系所（607）/);
+      assert.match(await page.locator('[data-distribution="department"]').innerText(), /未核對系所（607）/);
+      assert.equal(await page.locator('.account-usage-table thead th').count(), 6, 'Account table keeps student number and its original columns');
       assert.match(await page.locator('.account-usage-table').innerText(), /E3 姓名欄位未取得/);
       assert.equal(await page.locator('#visit-trend #trendUniqueUsers').innerText(), '3');
       assert.equal(await page.locator('#trendUniqueUsers').count(), 1, 'No separate duplicate statistics section');
