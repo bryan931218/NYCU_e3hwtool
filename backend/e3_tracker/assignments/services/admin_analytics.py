@@ -111,7 +111,27 @@ def build_account_engagement(snapshot, memberships, window, *, now=None):
             retained.add(key)
     adoption = build_assignment_analytics(snapshot, window)
     total = adoption["total"]
+    # Union identities across days; summing daily active counts would overcount return visits.
+    daily_identities = {}
+    for key, values in interval_days.items():
+        for day in values:
+            daily_identities.setdefault(day, set()).add(key)
+    chart_rows, seen = [], set()
+    cursor = datetime.fromisoformat(window['start']).date()
+    end = min(datetime.fromisoformat(window['end']).date(), today)
+    while cursor <= end:
+        seen.update(daily_identities.get(cursor, set()))
+        chart_rows.append({'day': cursor.isoformat(), 'count': len(seen)})
+        cursor += timedelta(days=1)
+    ceiling = max(4, ((len(seen) + 3) // 4) * 4)
+    for index, row in enumerate(chart_rows):
+        row.update(x=round(8 + 704 * index / max(1, len(chart_rows) - 1), 2),
+                   y=round(192 - 176 * row['count'] / ceiling, 2))
+    chart = {'rows': chart_rows, 'ceiling': ceiling,
+             'points': ' '.join(f"{row['x']},{row['y']}" for row in chart_rows),
+             'ticks': [{'value': ceiling * i // 4, 'y': 192 - 44 * i} for i in range(5)]}
     return {
+        'chart': chart,
         "active": sum(bool(value) for value in interval_days.values()),
         "repeat": sum(len(value) > 1 for value in interval_days.values()),
         "eligible": len(eligible), "retained": len(retained), "pending": len(pending),

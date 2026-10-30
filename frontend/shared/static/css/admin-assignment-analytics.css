@@ -45,6 +45,23 @@
 .analytics-distribution th:first-child { width: 55%; overflow-wrap: anywhere; }
 .analytics-distribution .analytics-rate meter { min-width: 24px; }
 .analytics-empty { color: var(--analytics-muted); font-size: 13px; padding: 30px 0; }
+.engagement-chart { margin: 0 0 24px; padding: clamp(16px, 3vw, 28px); border: 1px solid var(--analytics-border); border-radius: 12px; background: var(--analytics-surface); }
+.engagement-chart figcaption { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.engagement-chart h3 { margin: 0; font-size: 16px; }
+.engagement-chart figcaption p { margin: 6px 0 0; font-size: 12px; color: var(--analytics-muted); }
+.engagement-chart figcaption strong { font-size: 32px; font-variant-numeric: tabular-nums; color: var(--analytics-accent); white-space: nowrap; }
+.engagement-chart figcaption small { font-size: 12px; font-weight: 400; color: var(--analytics-muted); margin-left: 6px; }
+.engagement-chart-body { display: flex; gap: 10px; height: 208px; }
+.engagement-chart-axis { width: 32px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; font-size: 11px; text-align: right; color: var(--analytics-muted); font-variant-numeric: tabular-nums; }
+.engagement-chart svg { display: block; width: 100%; min-width: 0; height: 208px; overflow: visible; }
+.engagement-chart-grid { stroke: var(--analytics-border); vector-effect: non-scaling-stroke; }
+.engagement-chart-line { fill: none; stroke: var(--analytics-accent); stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.engagement-chart-area { fill: var(--analytics-accent); opacity: .09; }
+.engagement-chart-point { fill: var(--analytics-accent); }
+.engagement-chart-dates { display: flex; justify-content: space-between; margin: 6px 0 0 42px; color: var(--analytics-muted); font-size: 11px; }
+.engagement-chart-values { border-top: 1px solid var(--analytics-border); margin-top: 20px; padding-top: 14px; font-size: 12px; }
+.engagement-chart-values summary { color: var(--analytics-accent); cursor: pointer; width: fit-content; }
+.engagement-chart-values .analytics-table-wrap { max-height: 280px; overflow-y: auto; margin-top: 12px; }
 @media (max-width: 1200px) { .analytics-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) {
   .analytics-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
