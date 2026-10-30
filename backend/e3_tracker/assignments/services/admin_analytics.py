@@ -14,7 +14,9 @@ def analytics_window(params, *, now=None):
     if value not in {"7d", "30d", "90d", "all"}:
         value = "30d"
     days = {"7d": 7, "30d": 30, "90d": 90, "all": 730}[value]
-    return {"range": value, "start": (today - timedelta(days=days - 1)).isoformat(), "end": today.isoformat()}
+    start = today - timedelta(days=days - 1)
+    return {"range": value, "start": start.isoformat(), "end": today.isoformat(),
+            "daily_start": (start - timedelta(days=days - 1) if value != 'all' else start).isoformat()}
 
 
 def build_assignment_analytics(snapshot, window):
@@ -111,23 +113,35 @@ def build_account_engagement(snapshot, memberships, window, *, now=None):
             retained.add(key)
     adoption = build_assignment_analytics(snapshot, window)
     total = adoption["total"]
-    # Union identities across days; summing daily active counts would overcount return visits.
+    # Warm up before the plotted range so its first point also covers a full X-day window.
     daily_identities = {}
-    for key, values in interval_days.items():
+    for key, values in days.items():
         for day in values:
             daily_identities.setdefault(day, set()).add(key)
-    chart_rows, seen = [], set()
-    cursor = datetime.fromisoformat(window['start']).date()
+    chart_rows, counts = [], Counter()
+    start = datetime.fromisoformat(window['start']).date()
     end = min(datetime.fromisoformat(window['end']).date(), today)
+    period = (end - start).days + 1 if window.get('range') != 'all' else None
+    cursor = start - timedelta(days=period - 1) if period else start
     while cursor <= end:
-        seen.update(daily_identities.get(cursor, set()))
-        chart_rows.append({'day': cursor.isoformat(), 'count': len(seen)})
+        counts.update(daily_identities.get(cursor, set()))
+        if period and cursor > start:
+            for key in daily_identities.get(cursor - timedelta(days=period), set()):
+                counts[key] -= 1
+                if not counts[key]:
+                    del counts[key]
+        if cursor >= start:
+            chart_rows.append({'day': cursor.isoformat(), 'count': len(counts),
+                               'start': (cursor - timedelta(days=period - 1) if period else start).isoformat()})
         cursor += timedelta(days=1)
-    ceiling = max(4, ((len(seen) + 3) // 4) * 4)
+    peak = max((row['count'] for row in chart_rows), default=0)
+    ceiling = max(4, ((peak + 3) // 4) * 4)
     for index, row in enumerate(chart_rows):
         row.update(x=round(8 + 704 * index / max(1, len(chart_rows) - 1), 2),
                    y=round(192 - 176 * row['count'] / ceiling, 2))
-    chart = {'rows': chart_rows, 'ceiling': ceiling,
+    chart = {'rows': chart_rows, 'ceiling': ceiling, 'has_data': peak > 0,
+             'title': f'近 {period} 天使用人數' if period else '保留紀錄累計使用人數',
+             'note': f'每天含當天往前 {period} 天，同一用戶只計一次' if period else '從保留紀錄起日累計，同一用戶只計一次',
              'points': ' '.join(f"{row['x']},{row['y']}" for row in chart_rows),
              'ticks': [{'value': ceiling * i // 4, 'y': 192 - 44 * i} for i in range(5)]}
     return {

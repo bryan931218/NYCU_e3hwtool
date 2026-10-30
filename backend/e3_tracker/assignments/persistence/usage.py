@@ -137,7 +137,7 @@ class AssignmentUsageStorage:
             members.setdefault(row["day"], set()).add(student_identity(row) or row["username"])
         return members
 
-    def assignment_usage_snapshot(self, start, end):
+    def assignment_usage_snapshot(self, start, end, *, daily_start=None):
         cutoff = (datetime.now(TAIPEI_TZ).date() - timedelta(days=729)).isoformat()
         observation_end = (datetime.fromisoformat(end).date() + timedelta(days=7)).isoformat()
         with self._lock, self._engine.begin() as conn:
@@ -155,7 +155,7 @@ class AssignmentUsageStorage:
             state = dict(conn.execute(select(usage_state)).mappings().first())
             daily = [dict(row) for row in conn.execute(select(
                 feature_usage.c.user_id, feature_usage.c.day,
-            ).where(feature_usage.c.day >= start, feature_usage.c.day <= observation_end).distinct()).mappings()]
+            ).where(feature_usage.c.day >= (daily_start or start), feature_usage.c.day <= observation_end).distinct()).mappings()]
             # Select only ownership IDs; never load/decrypt notification targets or tokens.
             linked = {
                 "line": set(conn.execute(select(line_bindings.c.user_id)).scalars()),

@@ -40,6 +40,21 @@ class EngagementChartTests(unittest.TestCase):
                 self.assertEqual(result['chart']['rows'][0]['x'], 8)
                 self.assertEqual(result['chart']['rows'][-1]['count'], result['active'])
 
+    def test_rolling_window_includes_history_before_plot_and_expires_old_users(self):
+        result = self.build([(1, '2026-09-24'), (1, '2026-09-28'), (3, '2026-09-30')])
+        chart = result['chart']
+        self.assertEqual([row['count'] for row in chart['rows']], [2, 1, 1, 0])
+        self.assertEqual([row['start'] for row in chart['rows']],
+                         ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01'])
+        self.assertTrue(chart['has_data'])  # Still show history when today's rolling count is zero.
+        self.assertEqual(result['active'], 0)
+        self.assertEqual(chart['title'], '近 4 天使用人數')
+
+    def test_rolling_counts_keep_returning_aliases_until_their_last_visit_expires(self):
+        result = self.build([(1, '2026-09-28'), (2, '2026-10-01'), (3, '2026-10-03')])
+        self.assertEqual([row['count'] for row in result['chart']['rows']], [1, 1, 2, 2])
+        self.assertEqual(result['chart']['rows'][-1]['count'], result['active'])
+
     def test_template_has_accessible_chart_and_matching_table_or_empty_state(self):
         root = Path(__file__).resolve().parents[2] / 'frontend/shared/templates'
         env = Environment(loader=FileSystemLoader(root), autoescape=select_autoescape())

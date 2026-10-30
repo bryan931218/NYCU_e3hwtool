@@ -72,6 +72,20 @@ class AssignmentAnalyticsTests(unittest.TestCase):
         self.assertEqual(student_identity({"username": "Session-112550103"}), "")
         self.assertEqual(student_identity({"username": "１１２５５０１０３"}), "")
 
+    def test_rolling_chart_loads_lookback_without_expanding_feature_totals(self):
+        today = datetime.now(TAIPEI_TZ).replace(hour=12, minute=0, second=0, microsecond=0)
+        self.storage.record_assignment_usage('112550103', 'usage_search', now=(today - timedelta(days=10)).timestamp())
+        self.storage.record_assignment_usage('113550092', 'usage_search', now=today.timestamp())
+        window = analytics_window({'usage_range': '7d'}, now=today)
+        snapshot = self.storage.assignment_usage_snapshot(window['start'], window['end'], daily_start=window['daily_start'])
+        self.assertEqual(window['daily_start'], (today.date() - timedelta(days=12)).isoformat())
+        self.assertEqual(len(snapshot['daily']), 2)
+        self.assertEqual(sum(row['count'] for row in snapshot['usage']), 1)
+        from e3_tracker.assignments.services.admin_analytics import build_account_engagement
+        chart = build_account_engagement(snapshot, {}, window, now=today)['chart']
+        self.assertEqual(chart['rows'][0]['count'], 1)
+        self.assertEqual(chart['rows'][-1]['count'], 1)
+
     def test_daily_users_are_taipei_calendar_days_persistent_and_deduplicated(self):
         midnight = TAIPEI_TZ.localize(datetime(2026, 10, 6)).timestamp()
         for username, action, ts in (

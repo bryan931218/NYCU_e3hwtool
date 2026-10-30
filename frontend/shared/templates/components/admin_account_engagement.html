@@ -8,21 +8,21 @@
     </form>{% endif %}
   </header>
   <figure class="engagement-chart" aria-labelledby="engagementChartTitle">
-    <figcaption><div><h3 id="engagementChartTitle">區間累計使用人數</h3><p>同一用戶跨日只計一次</p></div><strong>{{ account_engagement.active }}<small>人</small></strong></figcaption>
     {% set chart = account_engagement.chart %}
-    {% if account_engagement.active and chart.rows %}
+    <figcaption><div><h3 id="engagementChartTitle">{{ chart.title }}</h3><p>{{ chart.note }}</p></div><strong>{{ account_engagement.active }}<small>人</small></strong></figcaption>
+    {% if chart.has_data and chart.rows %}
     <div class="engagement-chart-body">
       <div class="engagement-chart-axis" aria-hidden="true">{% for tick in chart.ticks|reverse %}<span>{{ tick.value }}</span>{% endfor %}</div>
       <svg viewBox="0 0 720 208" preserveAspectRatio="none" role="img" aria-labelledby="engagementChartTitle engagementChartDesc">
-        <desc id="engagementChartDesc">{{ assignment_analytics.start }} 至 {{ assignment_analytics.end }}，累計 {{ account_engagement.active }} 位不同用戶。詳細數值可於下方展開。</desc>
+        <desc id="engagementChartDesc">{{ chart.note }}。截至 {{ assignment_analytics.end }} 為 {{ account_engagement.active }} 人。詳細數值可於下方展開。</desc>
         {% for tick in chart.ticks %}<line class="engagement-chart-grid" x1="8" x2="712" y1="{{ tick.y }}" y2="{{ tick.y }}" />{% endfor %}
         <polygon class="engagement-chart-area" points="8,192 {{ chart.points }} {{ chart.rows[-1].x }},192" />
         <polyline class="engagement-chart-line" points="{{ chart.points }}" />
-        {% for row in chart.rows %}<circle class="engagement-chart-point" cx="{{ row.x }}" cy="{{ row.y }}" r="{{ 4 if loop.last else 2 }}"><title>{{ row.day }}：累計 {{ row.count }} 人</title></circle>{% endfor %}
+        {% for row in chart.rows %}<circle class="engagement-chart-point" cx="{{ row.x }}" cy="{{ row.y }}" r="{{ 4 if loop.last else 2 }}"><title>{{ row.start }} 至 {{ row.day }}：{{ row.count }} 人</title></circle>{% endfor %}
       </svg>
     </div>
     <div class="engagement-chart-dates" aria-hidden="true"><span>{{ chart.rows[0].day }}</span>{% if chart.rows|length > 1 %}<span>{{ chart.rows[-1].day }}</span>{% endif %}</div>
-    <details class="engagement-chart-values"><summary>查看每日數值</summary><div class="analytics-table-wrap"><table><thead><tr><th scope="col">日期</th><th scope="col">區間累計使用人數</th></tr></thead><tbody>{% for row in chart.rows %}<tr><th scope="row">{{ row.day }}</th><td>{{ row.count }} 人</td></tr>{% endfor %}</tbody></table></div></details>
+    <details class="engagement-chart-values"><summary>查看每日數值</summary><div class="analytics-table-wrap"><table><thead><tr><th scope="col">截至日期</th><th scope="col">計算起日</th><th scope="col">去重使用人數</th></tr></thead><tbody>{% for row in chart.rows %}<tr><th scope="row">{{ row.day }}</th><td>{{ row.start }}</td><td>{{ row.count }} 人</td></tr>{% endfor %}</tbody></table></div></details>
     {% else %}<p class="analytics-empty">這個區間尚無使用紀錄</p>{% endif %}
   </figure>
   <div class="engagement-grid{% if ga4_primary %} engagement-grid-single{% endif %}">

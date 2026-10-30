@@ -221,7 +221,7 @@ def register_administration_routes(*,
             row["joined_at"] = _fmt_ts(member["joined_at"]) if member else "-"
             row["is_new_user"] = bool(member and member["is_new"] and 0 <= now - member["joined_at"] < 7 * 86400)
         window = analytics_window(request.args)
-        usage_snapshot = storage.assignment_usage_snapshot(window["start"], window["end"])
+        usage_snapshot = storage.assignment_usage_snapshot(window["start"], window["end"], daily_start=window['daily_start'])
         analytics = build_assignment_analytics(usage_snapshot, window)
         engagement = build_account_engagement(usage_snapshot, memberships, window)
         ga4 = app.extensions["e3_google_analytics"].status()
