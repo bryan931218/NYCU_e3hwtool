@@ -1,7 +1,8 @@
 {% set analytics = assignment_analytics %}
-<section id="assignment-analytics" class="assignment-analytics" aria-labelledby="assignmentAnalyticsTitle">
+<div class="assignment-analytics admin-analytics-modules">
+<section id="assignment-analytics" class="admin-section" data-admin-panel="notifications" aria-labelledby="assignmentAnalyticsTitle">
     <header class="analytics-header">
-        <div><h2 id="assignmentAnalyticsTitle">{{ '帳號與通知' if ga4_primary else '作業系統使用分析' }}</h2><p>目前綁定與已保存的用戶資料</p></div>
+        <div><h2 id="assignmentAnalyticsTitle">通知與帳號綁定</h2><p>目前啟用狀態</p></div>
         <span class="analytics-scope">同學號合併計算 · 不含訪客</span>
     </header>
     <div class="analytics-metrics">
@@ -16,13 +17,15 @@
         <article class="analytics-metric" data-metric="{{ key }}"><span>{{ label }}</span><strong><span {% if key == 'online' %}data-traffic-stat="online"{% endif %}>{{ value }}</span><small>人</small></strong><p>{{ detail }}</p></article>
         {% endfor %}
     </div>
-    {% if not ga4_primary %}<section class="analytics-features" aria-labelledby="featureUsageTitle">
+    {% if not ga4_primary %}<section class="admin-adoption"><h3>LINE 啟用進度</h3><ol class="adoption-steps">{% for row in account_engagement.line_steps %}<li><div><span>{{ row.label }}</span><strong>{{ row.count }} 人 <small>{{ row.percent }}%</small></strong></div><meter min="0" max="100" value="{{ row.percent }}" aria-label="{{ row.label }}占全部帳號">{{ row.percent }}%</meter></li>{% endfor %}</ol><p class="analytics-note">目前帳號狀態，解除綁定或停用後會更新。</p></section>{% endif %}
+</section>
+    {% if not ga4_primary %}<section id="feature-usage" class="analytics-features admin-section" data-admin-panel="features" aria-labelledby="featureUsageTitle">
         <header class="analytics-header">
             <div><h3 id="featureUsageTitle">功能使用</h3><p>{{ analytics.start }} 至 {{ analytics.end }}</p></div>
-            <form method="get" action="{{ url_for('admin_traffic', _anchor='assignment-analytics') }}" class="analytics-range">
+            <form method="get" action="{{ url_for('admin_traffic', _anchor='feature-usage') }}" class="analytics-range">
                 {% for key, value in traffic_query.items() if key != 'usage_range' %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-                <label for="usageRange">統計區間</label>
-                <select id="usageRange" name="usage_range">{% for value, label in [('7d','近 7 天'),('30d','近 30 天'),('90d','近 90 天'),('all','全部保留紀錄')] %}<option value="{{ value }}" {% if analytics.range == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                <label for="featureUsageRange">統計區間</label>
+                <select id="featureUsageRange" name="usage_range">{% for value, label in [('7d','近 7 天'),('30d','近 30 天'),('90d','近 90 天'),('all','全部保留紀錄')] %}<option value="{{ value }}" {% if analytics.range == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
                 <button type="submit">套用</button>
             </form>
         </header>
@@ -32,16 +35,4 @@
         </table></div>
         <p class="analytics-note">自 {{ analytics.started_at }} 起累積；啟用前僅回填保留的 {{ analytics.legacy_samples }} 筆有效操作。最多保留 730 天，不代表完整歷史。操作次數為功能使用紀錄，非完成作業數。</p>
     </section>{% endif %}
-    <div class="analytics-distributions">
-        {% for key, title, rows, note in [('grade', '年級分布', analytics.grades, analytics.academic_year ~ ' 學年度 · E3 年級優先，其餘依入學年推估'), ('department', '系所分布', analytics.departments, 'E3 系所優先，其餘使用學號系碼對照')] %}
-        <section class="analytics-distribution" data-distribution="{{ key }}" aria-labelledby="{{ key }}DistributionTitle">
-            <header class="analytics-header"><div><h3 id="{{ key }}DistributionTitle">{{ title }}</h3><p>{{ note }}</p></div><span class="analytics-scope">已識別 {{ analytics.identified }} 人</span></header>
-            {% if rows %}<div class="analytics-table-wrap analytics-distribution-scroll"><table>
-                <thead><tr><th scope="col">{{ '年級' if key == 'grade' else '系所' }}</th><th scope="col">人數</th><th scope="col">占比</th></tr></thead>
-                <tbody>{% for row in rows %}<tr data-code="{{ row.code }}"><th scope="row">{{ row.name }}<small class="distribution-source">{% if key == 'department' and row.code %}<span>系碼 {{ row.code }}</span>{% endif %}{% if row.e3_count %}<span>E3 {{ row.e3_count }} 人</span>{% endif %}{% if row.inferred_count %}<span>{{ '推估' if key == 'grade' else '對照' }} {{ row.inferred_count }} 人</span>{% endif %}</small></th><td>{{ row.count }}</td><td><div class="analytics-rate"><meter value="{{ row.percent }}" min="0" max="100" aria-label="{{ row.name }}占比">{{ row.percent }}%</meter><span>{{ row.percent }}%</span></div></td></tr>{% endfor %}</tbody>
-            </table></div>{% else %}<p class="analytics-empty">尚無可識別的學號</p>{% endif %}
-        </section>
-        {% endfor %}
-    </div>
-    <p class="analytics-note">推估年級不代表目前在學狀態，未反映休學、轉系或畢業。系碼尚未核對時保留原碼，不猜測系所。</p>
-</section>
+</div>

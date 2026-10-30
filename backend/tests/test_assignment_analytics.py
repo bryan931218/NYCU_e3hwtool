@@ -72,6 +72,28 @@ class AssignmentAnalyticsTests(unittest.TestCase):
         self.assertEqual(student_identity({"username": "Session-112550103"}), "")
         self.assertEqual(student_identity({"username": "１１２５５０１０３"}), "")
 
+    def test_admin_sections_and_shared_navigation_preserve_management_controls(self):
+        for path in ('/admin/traffic', '/admin/ga4', '/admin/analytics', '/admin/feedback', '/admin/announcements'):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                page = BeautifulSoup(response.get_data(as_text=True), 'html.parser')
+                nav = page.select_one('.admin-data-nav')
+                self.assertIsNotNone(nav)
+                self.assertEqual(nav.select_one('[aria-current="page"]')['href'], path)
+                for target in ('/admin/traffic', '/admin/ga4', '/admin/announcements', '/admin/feedback'):
+                    self.assertIsNotNone(nav.select_one(f'a[href="{target}"]'))
+                if path == '/admin/traffic':
+                    self.assertEqual({p['data-admin-panel'] for p in page.select('[data-admin-panel]')},
+                                     {'overview', 'accounts', 'notifications', 'features', 'activity'})
+                    self.assertFalse(page.select('[data-admin-panel][hidden]'))  # No-JS fallback.
+                    self.assertEqual(page.select_one('#account-usage')['data-admin-panel'], 'accounts')
+                    self.assertEqual(page.select_one('#account-distributions')['data-admin-panel'], 'accounts')
+                    self.assertEqual(page.select_one('#assignment-analytics')['data-admin-panel'], 'notifications')
+                    ids = [node['id'] for node in page.select('[id]')]
+                    self.assertEqual(len(ids), len(set(ids)))
+                    self.assertIsNotNone(page.select_one('.admin-maintenance form input[name="csrf_token"]'))
+
     def test_rolling_chart_loads_lookback_without_expanding_feature_totals(self):
         today = datetime.now(TAIPEI_TZ).replace(hour=12, minute=0, second=0, microsecond=0)
         self.storage.record_assignment_usage('112550103', 'usage_search', now=(today - timedelta(days=10)).timestamp())

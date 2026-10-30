@@ -10,10 +10,12 @@
   </head>
 <body class="e3-page">
 {% from 'shared/components/e3-page-header.html' import page_header with context %}
-<main class="page-shell page-shell-narrow">
+<main class="page-shell admin-announcements-shell">
     {{ page_header('公告管理', url_for('index')) }}
+    {% include 'shared/components/admin_data_navigation.html' %}
     <p class="muted page-meta">登入：{{ admin_user.username }} · 目前共有 {{ announcements|length }} 則公告</p>
-    <section class="page-section">
+    <section class="page-section announcement-compose">
+        <h2>新增公告</h2>
         <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
             <label for="title">公告標題</label>
             <input id="title" name="title" type="text" placeholder="輸入公告主題" required>

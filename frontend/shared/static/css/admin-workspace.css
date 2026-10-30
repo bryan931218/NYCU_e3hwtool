@@ -1,0 +1,45 @@
+/* Shared administrative surfaces; loaded only by the admin navigation. */
+.admin-data-nav { padding: 18px; gap: 20px 32px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); margin: 8px 0 24px; }
+.admin-data-group > span { letter-spacing: .06em; }
+.admin-data-nav a { background: transparent; border-color: transparent; border-radius: 7px; font-size: 12px; }
+.admin-data-nav a[aria-current="page"] { color: var(--primary); font-weight: 700; border-color: color-mix(in srgb, var(--primary) 25%, var(--border)); }
+.admin-data-tools { margin-left: auto; }
+.admin-data-nav ~ .page-section, .admin-data-nav ~ .admin-section:not(.trend-controls) { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; }
+#account-engagement .engagement-chart { border: 0; padding: 0; background: transparent; margin-top: 22px; }
+.admin-analytics-modules { display: contents; }
+[data-admin-panel][hidden], .admin-traffic tr[hidden], .admin-traffic li[hidden] { display: none !important; }
+.admin-view-nav { position: sticky; top: 8px; z-index: 10; border: 1px solid var(--border); border-radius: 10px; padding: 5px; gap: 4px; background: var(--bg); box-shadow: 0 5px 18px rgb(0 0 0 / 5%); scroll-margin-top: 8px; }
+.admin-view-nav a { padding: 9px 16px; border-radius: 6px; font-weight: 600; }
+.admin-view-nav a[aria-current] { background: var(--primary); color: var(--bg); }
+.admin-view-nav a:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.admin-shell [data-admin-panel] { scroll-margin-top: 76px; }
+.admin-shell .admin-analytics-modules > .admin-section { margin: 20px 0; padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.admin-analytics-modules .analytics-distributions { border: 0; padding-top: 0; }
+.admin-analytics-modules .analytics-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.admin-adoption { padding: 22px 0 0; border-top: 1px solid var(--border); }
+.admin-adoption .adoption-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.admin-list-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; padding: 16px; background: var(--card-2); border-radius: 8px; margin: 16px 0; }
+.admin-list-tools label { display: grid; gap: 6px; min-width: 0; }
+.admin-list-tools label:first-child { flex: 1; min-width: 180px; }
+.admin-list-tools input { font: inherit; width: 100%; min-height: 38px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 6px; color: var(--fg); background: var(--card); }
+.admin-list-tools [role="status"] { color: var(--muted); font-size: 12px; padding-bottom: 9px; }
+.admin-maintenance { position: relative; font-size: 12px; color: var(--muted); max-width: 300px; }
+.admin-maintenance summary { cursor: pointer; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; }
+.admin-maintenance p { margin: 10px 0; }
+.admin-announcements-shell .announcement-compose { max-width: 860px; }
+.admin-data-nav ~ .page-section h2 { font-size: 18px; }
+.admin-data-nav ~ .page-section .table-wrap { margin-top: 14px; }
+@media (max-width: 700px) {
+  .admin-data-nav { display: flex; gap: 18px; padding: 14px; }
+  .admin-data-tools { margin-left: 0; }
+  .admin-data-nav ~ .page-section, .admin-data-nav ~ .admin-section, .admin-shell .admin-analytics-modules > .admin-section { padding: 16px; }
+  .admin-view-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .admin-view-nav a { padding: 9px 3px; font-size: 11px; text-align: center; }
+  .admin-shell [data-admin-panel] { scroll-margin-top: 112px; }
+  .admin-analytics-modules .analytics-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-adoption .adoption-steps { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .admin-list-tools { gap: 10px; padding: 12px; }
+  .admin-list-tools [role="status"] { width: 100%; padding-bottom: 0; }
+  .analytics-distribution th:first-child { width: 45%; }
+  .analytics-distribution :is(th, td):nth-child(2) { white-space: nowrap; }
+}

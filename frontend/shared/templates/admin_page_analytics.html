@@ -11,9 +11,7 @@
 <body class="e3-page analytics-page">
 {% from 'shared/components/e3-page-header.html' import page_header with context %}
 <main class="page-shell">
-    {% call page_header('網站流量分析', url_for('index')) %}
-        <a class="btn" href="{{ url_for('admin_traffic') }}">流量監控</a>
-    {% endcall %}
+    {{ page_header('網站流量分析', url_for('index')) }}
     {% include 'shared/components/admin_data_navigation.html' %}
     <p class="muted page-meta">更新時間：{{ generated_at }} · 台北日期 · E3 作業系統 · 不含考研站 · 保留最近 {{ retention_days }} 天</p>
     <section class="page-section">

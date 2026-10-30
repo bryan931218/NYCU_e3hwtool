@@ -21,9 +21,8 @@
                 <div><small>E3 作業追蹤系統</small><h1>流量監控</h1></div>
             </div>
             <div class="actions">
-                <a class="btn" href="{{ url_for('admin_feedback') }}">回報列表</a>
                 <a class="btn" href="{{ url_for('index') }}">返回主頁</a>
-                <a class="icon-button" href="{{ traffic_link() }}" aria-label="更新監控資料" title="更新監控資料"><span class="admin-icon" data-icon="refresh" aria-hidden="true"></span></a>
+                <a class="icon-button" href="{{ traffic_link() }}" data-admin-refresh aria-label="更新監控資料" title="更新監控資料"><span class="admin-icon" data-icon="refresh" aria-hidden="true"></span></a>
                 <div class="theme-segment" role="group" aria-label="介面主題">
                     <button class="icon-button" type="button" data-admin-theme="light" aria-label="淺色模式" aria-pressed="false" title="淺色模式"><span class="admin-icon" data-icon="sun" aria-hidden="true"></span></button>
                     <button class="icon-button" type="button" data-admin-theme="dark" aria-label="深色模式" aria-pressed="false" title="深色模式"><span class="admin-icon" data-icon="moon" aria-hidden="true"></span></button>
@@ -34,10 +33,14 @@
     </header>
     {% include 'shared/components/admin_data_navigation.html' %}
     {% set ga4_primary = ga4 is defined and ga4.reports_ready %}
-    <nav class="admin-nav" aria-label="監控區域">
-        {% if ga4_primary %}<a href="#assignment-analytics">帳號與通知</a>{% else %}<a href="#system-summary">總覽</a><a href="#assignment-analytics">功能分析</a><a href="#trafficSources">造訪來源</a>{% endif %}<a href="#account-engagement">帳號回訪</a><a href="#visit-trend">帳號趨勢</a><a href="#account-usage">帳號</a><a href="#recent-activity">近期動態</a>
+    <nav class="admin-nav admin-view-nav" aria-label="監控區域">
+        <a href="#account-engagement" data-admin-view="overview">使用概況</a>
+        <a href="#account-usage" data-admin-view="accounts">用戶管理</a>
+        <a href="#assignment-analytics" data-admin-view="notifications">通知與綁定</a>
+        {% if not ga4_primary %}<a href="#feature-usage" data-admin-view="features">功能與來源</a>{% endif %}
+        <a href="#recent-activity" data-admin-view="activity">操作紀錄</a>
     </nav>
-    <section class="admin-section">
+    <section class="admin-section" id="account-viewer" data-admin-panel="accounts">
         <div class="admin-view-panel">
             <div class="admin-view-copy">
                 <h2>用戶資料檢視</h2>
@@ -58,7 +61,7 @@
         </div>
     </section>
 
-    {% if not ga4_primary %}<section class="admin-section" id="system-summary" aria-labelledby="summaryTitle">
+    {% if not ga4_primary %}<section class="admin-section" id="system-summary" data-admin-panel="overview" aria-labelledby="summaryTitle">
         <h2 id="summaryTitle">系統摘要</h2>
         <div class="metrics-grid">
             <div class="metric">
@@ -86,10 +89,10 @@
     {% include 'shared/components/admin_assignment_analytics.html' %}
     {% include 'shared/components/admin_account_engagement.html' %}
     {% if not ga4_primary %}
-    {% include 'shared/components/admin_traffic_sources.html' %}
+    <div data-admin-panel="features">{% include 'shared/components/admin_traffic_sources.html' %}</div>
     {% endif %}
 
-    <section class="admin-section trend-controls" id="visit-trend" aria-labelledby="trend-title">
+    <section class="admin-section trend-controls" id="visit-trend" data-admin-panel="overview" aria-labelledby="trend-title">
         <header class="trend-header">
             <div>
                 <h2 id="trend-title">帳號訪問趨勢</h2>
@@ -181,7 +184,7 @@
         </details>
     </section>
 
-    {% if not ga4_primary %}<section class="admin-section">
+    {% if not ga4_primary %}<section class="admin-section" data-admin-panel="features">
         <div class="list-grid">
             <div>
                 <h3>Top 5 使用者</h3>
@@ -219,12 +222,13 @@
         </div>
     </section>{% endif %}
 
-    <section class="admin-section" id="account-usage" aria-labelledby="accountsTitle">
+    <section class="admin-section" id="account-usage" data-admin-panel="accounts" aria-labelledby="accountsTitle">
         <div class="admin-section-head"><h2 id="accountsTitle">帳號使用概況</h2>
-            <form class="inline-form" method="post" action="{{ url_for('admin_traffic_reset') }}" data-confirm="確定要清除所有訪問次數、近期動態與功能使用紀錄嗎？"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+            <details class="admin-maintenance"><summary>統計管理</summary><p>清除訪問次數、近期動態與功能使用紀錄。</p><form class="inline-form" method="post" action="{{ url_for('admin_traffic_reset') }}" data-confirm="確定要清除所有訪問次數、近期動態與功能使用紀錄嗎？"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
                 <button type="submit" class="btn danger"><span class="admin-icon" data-icon="trash" aria-hidden="true"></span>清除統計</button>
-            </form>
+            </form></details>
         </div>
+        <div class="admin-list-tools"><label for="adminAccountSearch">搜尋用戶<input id="adminAccountSearch" type="search" placeholder="學號、帳號或姓名" autocomplete="off" data-admin-search="accounts"></label><label for="adminAccountStatus">狀態<select id="adminAccountStatus" data-admin-status><option value="all">全部用戶</option><option value="online">目前在線</option><option value="new">新用戶</option></select></label><span role="status" data-admin-count="accounts"></span></div>
         <div class="table-wrap">
             <table class="account-usage-table">
                 <thead>
@@ -270,9 +274,11 @@
         </div>
     </section>
 
-    <section class="admin-section" id="recent-activity" aria-labelledby="activityTitle">
+    {% include 'shared/components/admin_account_distributions.html' %}
+    <section class="admin-section" id="recent-activity" data-admin-panel="activity" aria-labelledby="activityTitle">
         <h2 id="activityTitle">近期動態</h2>
         <p class="muted">作業操作、通知設定與 LINE 綁定紀錄 · 保留 {{ activity_retention_days }} 天</p>
+        <div class="admin-list-tools"><label for="adminActivitySearch">篩選這頁紀錄<input id="adminActivitySearch" type="search" placeholder="學號、姓名或操作" autocomplete="off" data-admin-search="activity"></label><span role="status" data-admin-count="activity"></span></div>
         <ul class="events">
             {% if events %}
                 {% for item in events %}
@@ -295,6 +301,7 @@
         {% endif %}
     </section>
 </main>
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/admin-workspace.js') }}" defer></script>
 
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}">

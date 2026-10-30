@@ -62,6 +62,7 @@ class EngagementChartTests(unittest.TestCase):
         for daily in ([], [(1, '2026-10-01'), (3, '2026-10-04')]):
             result = self.build(daily)
             page = BeautifulSoup(template.render(account_engagement=result, ga4_primary=False,
+                traffic_query={}, url_for=lambda *args, **kwargs: '/admin/traffic#account-engagement',
                 assignment_analytics={'start': '2026-10-01', 'end': '2026-10-04'}), 'html.parser')
             if daily:
                 self.assertIsNotNone(page.select_one('svg[role="img"] desc'))

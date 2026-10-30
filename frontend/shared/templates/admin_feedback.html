@@ -11,9 +11,8 @@
 <body class="e3-page">
 {% from 'shared/components/e3-page-header.html' import page_header with context %}
 <main class="page-shell">
-    {% call page_header('回報總覽', url_for('index')) %}
-        <a class="btn" href="{{ url_for('admin_traffic') }}">流量監控</a>
-    {% endcall %}
+    {{ page_header('回報總覽', url_for('index')) }}
+    {% include 'shared/components/admin_data_navigation.html' %}
     <p class="muted page-meta">目前登入：{{ admin_user.username }}</p>
     <section class="page-section">
         <div class="metrics metrics-compact">
