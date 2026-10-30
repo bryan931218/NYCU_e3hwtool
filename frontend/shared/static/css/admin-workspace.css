@@ -1,4 +1,8 @@
 /* Shared administrative surfaces; loaded only by the admin navigation. */
+.admin-report-status { position: fixed; z-index: 30; bottom: 20px; right: 24px; display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px); padding: 12px 18px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 20px rgb(0 0 0 / 12%); font-size: 13px; }
+.admin-report-status[hidden] { display: none; }
+.admin-report-pending { opacity: .65; }
+#pageReports > .page-section, #pageReports > .grid2 > .page-section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; }
 .admin-data-nav { padding: 18px; gap: 20px 32px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); margin: 8px 0 24px; }
 .admin-data-group > span { letter-spacing: .06em; }
 .admin-data-nav a { background: transparent; border-color: transparent; border-radius: 7px; font-size: 12px; }

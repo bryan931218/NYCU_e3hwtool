@@ -1,4 +1,5 @@
 (() => {
+  function mount() {
     const filter = document.getElementById('sourceFilter');
     filter?.addEventListener('change', () => {
         let count = 0;
@@ -29,4 +30,7 @@
             status.textContent = '請複製已選取的連結';
         }
     });
+  }
+  document.addEventListener('admin:reports-updated', mount);
+  mount();
 })();

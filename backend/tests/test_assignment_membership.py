@@ -166,10 +166,10 @@ class AssignmentMembershipTests(unittest.TestCase):
         self.assertEqual(page.select_one('.trend-new-total strong').get_text(),'2')
         self.assertIn('新用戶數',page.select_one('.trend-values').get_text())
         self.assertFalse(page.select_one('#visitChart').has_attr('hidden'))
-        scripts='\n'.join(script.get_text() for script in page.select('script'))
-        counts=json.loads(re.search(r'const chartNewValues = (\[[^;]*\]);',scripts)[1])
+        config = json.loads(page.select_one('#adminTrendConfig').string)
+        counts = config['newValues']
         self.assertEqual(sum(counts),2)
-        self.assertIn("label: '新用戶'",scripts)
+        self.assertIsNotNone(page.select_one('script[src$="admin-traffic-charts.js"]'))
 
 
 if __name__ == "__main__":

@@ -14,3 +14,5 @@
     <a href="https://analytics.google.com/analytics/web/" title="{% if ga4 is defined and ga4.property_id %}GA4 資源 {{ ga4.property_id }}{% else %}Google Analytics{% endif %}" target="_blank" rel="noopener noreferrer">Google 數據後台 <span class="admin-data-external" aria-hidden="true">↗</span></a>
   </div></div>
 </nav>
+<div id="adminReportStatus" class="admin-report-status" role="status" aria-live="polite" hidden></div>
+<script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/admin-report-updates.js') }}" defer></script>

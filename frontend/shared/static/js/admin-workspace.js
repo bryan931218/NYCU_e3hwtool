@@ -3,7 +3,6 @@
   const nav = document.querySelector('.admin-view-nav');
   if (!nav) return;
   const links = [...nav.querySelectorAll('[data-admin-view]')];
-  const panels = [...document.querySelectorAll('[data-admin-panel]')];
   const resolve = () => {
     let id;
     try { id = decodeURIComponent(location.hash.slice(1)); } catch (_) { id = ''; }
@@ -11,7 +10,7 @@
   };
   function show() {
     const selected = resolve();
-    panels.forEach(panel => { panel.hidden = panel.dataset.adminPanel !== selected; });
+    document.querySelectorAll('[data-admin-panel]').forEach(panel => { panel.hidden = panel.dataset.adminPanel !== selected; });
     links.forEach(link => {
       if (link.dataset.adminView === selected) link.setAttribute('aria-current', 'location');
       else link.removeAttribute('aria-current');
@@ -30,6 +29,7 @@
   }));
   window.addEventListener('hashchange', show);
   window.addEventListener('popstate', show);
+  document.addEventListener('admin:reports-updated', show);
   show();
 
   const status = document.querySelector('[data-admin-status]');

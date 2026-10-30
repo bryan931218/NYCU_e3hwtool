@@ -1,0 +1,72 @@
+// Playwright CLI regression: open output/playwright/admin-analytics-preview.py as a synthetic loopback server,
+// navigate to /__preview-admin, then run-code --filename backend/tests/admin_reports_browser.js.
+async page => {
+  const origin = new URL(page.url()).origin;
+  if (new URL(origin).hostname !== '127.0.0.1') throw Error('Use the synthetic loopback admin preview only');
+  const errors=[];
+  page.on('pageerror', error=>errors.push(error.message));
+  const waitDone=()=>page.waitForFunction(()=>!document.querySelector('[aria-busy="true"]') && document.getElementById('adminReportStatus').hidden);
+  await page.evaluate(()=>{window.__sameDocument='async-report-test';});
+  await page.locator('#usageRange').focus();
+  await page.locator('#usageRange').selectOption('7d');
+  await waitDone();
+  if(!page.url().includes('usage_range=7d')) throw Error('Range did not update');
+  if(!await page.locator('#engagementChartTitle').textContent().then(s=>s.includes('7'))) throw Error('Wrong rolling range');
+  if(await page.evaluate(()=>document.activeElement.id)!=='usageRange') throw Error('Focus lost');
+  await page.locator('#visit-trend .trend-presets a').filter({hasText:'近 30 天'}).click();
+  await waitDone();
+  await page.locator('#visit-trend .trend-toggle a').filter({hasText:'每小時'}).click();
+  await waitDone();
+  if(!page.url().includes('trend=hour')) throw Error('Hourly view failed');
+  await page.locator('#trendDatePicker summary').click();
+  const bounds=await page.locator('.trend-dates input[name=end]').inputValue();
+  await page.locator('.trend-dates input[name=start]').fill(bounds);
+  await page.locator('.trend-dates button').click();
+  await waitDone();
+  if(!page.url().includes('range=custom')) throw Error('Custom dates failed');
+  await page.locator('[data-admin-view=features]').click();
+  await page.locator('#trafficSources .trend-presets a').filter({hasText:'近 7 天'}).click();
+  await waitDone();
+  if(!page.url().includes('source_days=7')) throw Error('Source days failed');
+  await page.locator('[data-admin-view=overview]').click();
+  // Deliver the older response last, even when abort is ignored by the transport.
+  await page.route('**/admin/traffic?**',async route=>{
+    const response=await route.fetch();
+    const delay=new URL(route.request().url()).searchParams.get('usage_range')==='7d'?500:20;
+    await new Promise(resolve=>setTimeout(resolve,delay));
+    await route.fulfill({response});
+  });
+  await page.evaluate(()=>{window.__realFetch=window.fetch;window.fetch=(input,options)=>window.__realFetch(input,{...options,signal:undefined});});
+  await page.locator('#usageRange').selectOption('7d');
+  await page.locator('#usageRange').selectOption('90d');
+  await waitDone();
+  await page.waitForTimeout(650);
+  if(!page.url().includes('usage_range=90d')) throw Error('Stale result overwrote latest range');
+  await page.evaluate(()=>{window.fetch=window.__realFetch;});
+  await page.unroute('**/admin/traffic?**');
+  await page.route('**/admin/traffic?**',route=>route.fulfill({status:503,body:'temporary error'}));
+  await page.locator('#usageRange').selectOption('30d');
+  await page.waitForFunction(()=>document.getElementById('adminReportStatus').textContent.includes('失敗'));
+  if(!page.url().includes('usage_range=90d')) throw Error('Failed request changed applied URL');
+  if(!await page.locator('#engagementChartTitle').textContent().then(s=>s.includes('90'))) throw Error('Old chart disappeared on failure');
+  await page.unroute('**/admin/traffic?**');
+  await page.locator('#adminReportStatus button').click();
+  await waitDone();
+  if(!page.url().includes('usage_range=30d')) throw Error('Retry failed');
+  await page.goBack();
+  await waitDone();
+  if(!await page.locator('#engagementChartTitle').textContent().then(s=>s.includes('90'))) throw Error('History data not restored');
+  if(await page.evaluate(()=>window.__sameDocument)!=='async-report-test') throw Error('Document reloaded');
+  const charts=await page.evaluate(()=>window.Chart ? Object.keys(Chart.instances).length : 0);
+  if(charts>1) throw Error('Leaked charts');
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#usageRange').selectOption('7d');
+  await waitDone();
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)) throw Error('Mobile overflow');
+  await page.goto(origin + '/admin/analytics');
+  await page.evaluate(()=>{window.__sameDocument='page-report-test';});
+  await page.locator('.filters a').filter({hasText:'近 7 天'}).click();
+  await waitDone();
+  if(await page.evaluate(()=>window.__sameDocument)!=='page-report-test') throw Error('Page analytics reloaded');
+  if(errors.length) throw Error(errors.join('\n'));
+}

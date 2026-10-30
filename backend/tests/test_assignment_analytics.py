@@ -159,7 +159,8 @@ class AssignmentAnalyticsTests(unittest.TestCase):
         self.assertEqual(values[0].get_text(strip=True), "1人")
         self.login("analytics-admin")
         chart = self.client.get('/admin/traffic?range=today&trend=day').get_data(as_text=True)
-        self.assertIn('const chartValues = [1];', chart)
+        config = json.loads(BeautifulSoup(chart, 'html.parser').select_one('#adminTrendConfig').string)
+        self.assertEqual(config['values'], [1])
         self.assertIn('新用戶包含於活躍人數', chart)
         self.assertEqual(self.storage.assignment_daily_user_counts().get(datetime.now(TAIPEI_TZ).date().isoformat()), 1)
 
