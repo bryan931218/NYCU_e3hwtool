@@ -12,6 +12,18 @@ def extract_text(el) -> str:
     return re.sub(r"\s+", " ", el.get_text(strip=True)) if el else ""
 
 
+def assignment_description(html, page_url):
+    """Read the teacher's introduction only; never include submission or grading tables."""
+    from .course_announcements import safe_message_content
+    soup = html if isinstance(html, BeautifulSoup) else BeautifulSoup(html, 'html.parser')
+    intro = soup.select_one('#intro, [data-region="intro"], .assignment-intro, [data-region="activity-description"], .activity-description')
+    if intro is None:
+        return {'content': '', 'links': [], 'unavailable': True}
+    for row in intro.select('li'):
+        row.insert(0, '• ')
+    return safe_message_content(intro, page_url, soup.select('.activityattachments a[href]'))
+
+
 def _is_placeholder_title(title: str) -> bool:
     if not title:
         return True
@@ -56,7 +68,8 @@ def _find_feedback_text(soup):
 
 
 def find_due_and_status_from_assign_page(
-    html: str, *, include_feedback: bool = False,
+    html: str, *, include_feedback: bool = False, include_description: bool = False,
+    page_url: str = 'https://e3p.nycu.edu.tw/mod/assign/view.php',
 ) -> tuple:
     soup = BeautifulSoup(html, "html.parser")
     status_cell_text = ""
@@ -160,7 +173,11 @@ def find_due_and_status_from_assign_page(
             submitted_dt = None
 
     result = (status_is_complete, status_is_incomplete, due_dt, status_cell_text.strip(), grade_text, submitted_dt, remaining_text)
-    return (*result, _find_feedback_text(soup)) if include_feedback else result
+    if include_feedback:
+        result = (*result, _find_feedback_text(soup))
+    if include_description:
+        result = (*result, assignment_description(soup, page_url))
+    return result
 
 
 def parse_due_text_to_dt(due_text: Optional[str]):

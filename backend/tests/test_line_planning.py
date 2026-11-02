@@ -42,7 +42,8 @@ class LinePlanningTests(unittest.TestCase):
 
     def test_picker_bounds_direct_link_and_selection_creates_reminder(self):
         item, _, target, job, pushed = self.line_job()
-        self.assertIn(item['url'], pushed['text'])
+        self.assertEqual(pushed['type'], 'flex')
+        self.assertIn(item['url'], json.dumps(pushed))
         picker = next(entry['action'] for entry in pushed['quickReply']['items'] if entry['action']['type']=='datetimepicker')
         self.assertEqual(picker['mode'], 'datetime')
         self.assertLessEqual(picker['min'], picker['initial'])

@@ -133,4 +133,7 @@ def safe_message_content(content, page_url, attachments=()):
         node.insert_before('\n')
         node.insert_after('\n')
     text = re.sub(r'\n[ \t]*\n(?:[ \t]*\n)+', '\n\n', content.get_text()).strip()
-    return {'content': text[:20000], 'links': links[:20]}
+    result = {'content': text[:20000], 'links': links[:20]}
+    if len(text) > 20000 or len(links) > 20:
+        result['truncated'] = True
+    return result

@@ -128,6 +128,7 @@ class NotificationTests(unittest.TestCase):
             "url": f"https://e3p.nycu.edu.tw/mod/assign/view.php?id={digest(title)[:10]}",
             "due_ts": self.now + days * 86400,
             "completed": False,
+            "description": {'content': '請依照題目完成作業。', 'links': []},
             **extra,
         }
 

@@ -71,12 +71,12 @@ class NotificationService:
         )
 
     def line_request(self, method, payload, retry_key=None):
-        headers = {"Authorization": f"Bearer {self.line_token}"}
+        headers = {"Authorization": f"Bearer {self.line_token}", "Content-Type": "application/json"}
         if retry_key:
             headers["X-Line-Retry-Key"] = retry_key
         response = requests.post(
             f"https://api.line.me/v2/bot/message/{method}",
-            json=payload,
+            data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
             headers=headers,
             timeout=10,
             allow_redirects=False,
@@ -144,9 +144,14 @@ class NotificationService:
                 if actions:
                     message['quickReply'] = {'items': [{'type': 'action', 'action': action} for action in actions]}
                 message['text'] += '\n\n網頁安排／管理提醒\n' + urljoin(self.home_url, f'/assignments/plan?uid={key}') + '\nLINE 選擇的時間以台灣時間為準。'
+            if payload.get('line_detail'):
+                from e3_tracker.assignments.domain.line_notifications import line_detail_messages
+                messages = line_detail_messages(payload, message.get('quickReply'))
+            else:
+                messages = [message]
             self.line_request(
                 "push",
-                {"to": target, "messages": [message]},
+                {"to": target, "messages": messages},
                 str(uuid.UUID(job["id"][:32])),
             )
         else:
@@ -225,6 +230,26 @@ class NotificationService:
                     if payload['semester'] != current_semester_key() or not any(item['key'] == payload['message_key'] for item in cache.get('items', [])):
                         self.storage.finish_notification_job(job, 'cancelled', now=now)
                         continue
+                    if job['channel'] == 'line':
+                        message_item = next(item for item in cache['items'] if item['key'] == payload['message_key'])
+                        detail = message_item
+                        if 'content' not in detail:
+                            user = self.storage.notification_content_user(username, now)
+                            if user:
+                                try:
+                                    content = source.content(user, message_item)
+                                except Exception:
+                                    if job.get('attempts', 1) < 3:
+                                        raise
+                                    content = {'unavailable': True}
+                                updated = source.storage.update_course_announcement(username, payload['semester'], message_item['key'], content=content,
+                                    expected_version=(message_item.get('title'), message_item.get('updated_ts')))
+                                if updated is None:
+                                    raise ValueError('course_message_changed')
+                                detail = {**message_item, **content}
+                            else:
+                                detail = {**message_item, 'unavailable': True}
+                        payload['line_detail'] = detail
                 elif payload.get("custom_todo"):
                     item = self.storage.get_custom_todo(
                         username, payload.get("custom_uid", "")
@@ -271,7 +296,27 @@ class NotificationService:
                         payload = {**payload, **notification_payload(item, payload['kind'],
                                    include_grading_details=job['channel'] == 'line')}
                     payload['assignment_url'] = safe_assignment_url(item.get('url'))
+                    if job['channel'] == 'line':
+                        detail = item.get('description')
+                        if not isinstance(detail, dict):
+                            try:
+                                detail = self._assignment_description(username, item, now)
+                            except Exception:
+                                if job.get('attempts', 1) < 3:
+                                    raise
+                                detail = {'unavailable': True}
+                        if payload['kind'] == 'graded':
+                            from e3_tracker.assignments.domain.notifications import published_grade_text
+                            grade = published_grade_text(item)
+                            detail = {**detail, 'content': '\n\n'.join(filter(None, [f'分數：{grade}' if grade else '',
+                                f"評語：{item['feedback_text']}" if item.get('feedback_text') else '', detail.get('content')]))}
+                        payload['line_detail'] = {**item, **detail}
 
+                if job['channel'] == 'line' and payload.get('line_detail'):
+                    current = self.storage.notification_delivery(job)
+                    if not current or current[0] != username or current[3] != target:
+                        self.storage.finish_notification_job(job, 'cancelled', now=now)
+                        continue
                 self.deliver(job, payload, target)
                 self.storage.finish_notification_job(job, "sent", now=now)
             except Exception as exc:
@@ -296,6 +341,21 @@ class NotificationService:
                 logger.warning(
                     "Assignment notification delivery failed (%s)", job["channel"]
                 )
+
+    def _assignment_description(self, username, item, now):
+        from e3_tracker.assignments.domain.course_announcements import moodle_url
+        from e3_tracker.assignments.domain.parsing import assignment_description
+        from e3_tracker.assignments.services.course_announcements import MoodleNewsClient
+        source = self.course_message_services.get('announcements')
+        user = self.storage.notification_content_user(username, now)
+        url = moodle_url(item.get('url', ''), source.base_url, '/mod/assign/view.php', 'id') if source else None
+        if not user or not url:
+            return {'unavailable': True}
+        client = MoodleNewsClient(source.base_url, user['moodle_session'], timeout=8, deadline=time.monotonic() + 12)
+        try:
+            return assignment_description(client.get(url), url)
+        finally:
+            client.close()
 
     def refresh_once(self, fetch_assignments_for, save_cache):
         for username in self.storage.notification_users():

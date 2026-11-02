@@ -515,6 +515,17 @@ class NotificationStorage:
             {"username": username, "moodle_session": credential} if credential else None
         )
 
+    def notification_content_user(self, username, now):
+        """Read an owner's live session without consuming the polling cooldown."""
+        with self._lock, self._engine.connect() as conn:
+            row = conn.execute(select(web_sessions_table).where(
+                web_sessions_table.c.username == username, web_sessions_table.c.is_guest == 0,
+                web_sessions_table.c.expires_at > now).order_by(web_sessions_table.c.updated_at.desc()).limit(1)).mappings().first()
+        if not row:
+            return None
+        credential = self._credential_cipher.decrypt(row['moodle_credential'], f'moodle:{username}')
+        return {'username': username, 'moodle_session': credential} if credential else None
+
     def notification_sync_error(self, username):
         with self._lock, self._engine.begin() as conn:
             uid = self._notification_user(conn, username)

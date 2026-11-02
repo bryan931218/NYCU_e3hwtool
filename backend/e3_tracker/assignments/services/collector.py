@@ -778,7 +778,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                 if options.debug:
                     _save_debug_file(f"debug_assign_{cid}_{idx}.html", resp.text, created_debug)
                 
-                is_complete, is_incomplete, due_dt, raw_status, grade_text, submitted_dt, remaining_text, feedback_text = find_due_and_status_from_assign_page(resp.text, include_feedback=True)
+                is_complete, is_incomplete, due_dt, raw_status, grade_text, submitted_dt, remaining_text, feedback_text, description = find_due_and_status_from_assign_page(resp.text, include_feedback=True, include_description=True, page_url=url)
                 if not due_dt and due_text_from_list:
                     due_dt = parse_due_text_to_dt(due_text_from_list)
 
@@ -809,6 +809,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
                         "raw_status_text": raw_status,
                         "grade_text": grade_text,
                         "feedback_text": feedback_text,
+                        "description": description,
                         "submitted_count": submitted_count,
                         "participant_count": participant_count,
                     }

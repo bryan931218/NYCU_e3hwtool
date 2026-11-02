@@ -68,7 +68,8 @@ class LineReminderMenuTests(unittest.TestCase):
             self.service.dispatch(now=start + 1)
             self.assertEqual(send.call_count, 1)
             self.assertEqual(send.call_args.args[1]['to'], target)
-            self.assertIn(item['url'], send.call_args.args[1]['messages'][0]['text'])
+            self.assertEqual(send.call_args.args[1]['messages'][0]['type'], 'flex')
+            self.assertIn(item['url'], json.dumps(send.call_args.args[1]['messages']))
 
     def test_retries_fresh_menus_and_cancel_are_idempotent(self):
         menu, _, key, target = self.menu()
