@@ -164,6 +164,29 @@ class TrafficActivityTests(unittest.TestCase):
         self.record("study_plan_replanned")
         self.assertIn("尚無操作紀錄", self.activity_text())
 
+    def test_activity_refresh_reads_new_records_without_loading_reports(self):
+        self.assertIn("尚無操作紀錄", self.activity_text())
+        self.record("usage_ignore", {"info": "new operation"})
+        self.record("usage_calendar")
+        self.record("study_plan_replanned")
+        with patch.object(self.storage, "assignment_usage_snapshot", side_effect=AssertionError):
+            response = self.client.get("/admin/traffic/activity")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response.headers["Cache-Control"])
+        html = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+        self.assertEqual(len(html.select(".events li")), 1)
+        self.assertIn("new operation", html.select_one(".events").get_text())
+        self.assertFalse(html.select_one(".admin-shell"))
+
+    def test_activity_refresh_is_admin_only(self):
+        path = "/admin/traffic/activity"
+        self.assertEqual(self.app.test_client().get(path).status_code, 302)
+        user = csrf_client(self.app)
+        self.storage.save_web_session("activity-user", "test-user", is_admin=False)
+        with user.session_transaction() as session:
+            session["session_token"] = "activity-user"
+        self.assertEqual(user.get(path).status_code, 403)
+
     def test_activity_pages_are_bounded_stable_and_preserve_filters(self):
         now = time.time()
         for index in range(105):
@@ -176,6 +199,9 @@ class TrafficActivityTests(unittest.TestCase):
         self.assertIn("history-104", page.select_one(".events").get_text())
         self.assertNotIn("history-004", page.select_one(".events").get_text())
         older = page.select_one(".activity-pagination a")['href']
+        fragment = self.client.get("/admin/traffic/activity?range=30d&trend=day&usage_range=90d&source_days=30")
+        refreshed_page = BeautifulSoup(fragment.get_data(as_text=True), "html.parser")
+        self.assertEqual(refreshed_page.select_one(".activity-pagination a")["href"], older)
         self.assertIn("range=30d", older)
         self.assertIn("usage_range=90d", older)
         self.storage.append_traffic_event({"ts": now, "action": "login_success", "meta": {"info": "newest"}}, 2)

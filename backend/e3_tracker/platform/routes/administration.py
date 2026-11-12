@@ -12,9 +12,79 @@ import json
 import time
 from collections import Counter
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from flask import flash, redirect, render_template_string, request, url_for
+from typing import Optional
+from flask import abort, flash, redirect, render_template, render_template_string, request, url_for
 from e3_tracker.platform.constants import TAIPEI_TZ
+
+
+ACTION_LABELS = {
+    **NOTIFICATION_ACTION_LABELS,
+    **{f"usage_{key}": label for key, label in FEATURE_LABELS.items()},
+    "login_success": "登入成功",
+    "logout": "登出",
+    "guest_login": "訪客登入",
+    "guest_import": "匯入訪客資料",
+    "refresh_assignments": "更新作業資料",
+    "course_announcements_refresh": "更新課程公告",
+    "course_mail_refresh": "更新課程信件",
+    "course_files_refresh": "整理課程附件",
+    "download_excel": "匯出 Excel",
+    "export_calendar": "匯出日曆",
+    "google_sync": "同步 Google 日曆",
+    "ui-event": "操作事件",
+}
+
+
+def _action_description(action: str) -> str:
+    action = action or "-"
+    return ACTION_LABELS.get(action, action.replace("_", " "))
+
+
+def _fmt_ts(ts: Optional[float]) -> str:
+    if not ts:
+        return "-"
+    try:
+        dt = datetime.fromtimestamp(ts, tz=TAIPEI_TZ)
+    except (OSError, OverflowError, TypeError, ValueError):
+        return "-"
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _activity_context(storage, profiles, before=None):
+    student_numbers = {row["username"]: row["student_number"] or "" for row in profiles}
+    page = storage.recent_activity_events(101, before_id=before)
+    formatted_events = []
+    detail_keys = ("info", "course", "message", "target", "action_detail")
+    hidden_keys = {"username", "is_guest", "is_admin", "site", "activity_only", "is_new_user", *detail_keys}
+    for ev in page[:100]:
+        meta = ev.get("meta") or {}
+        detail_parts = []
+        for key in detail_keys:
+            if meta.get(key):
+                label = {"course": "課程：", "target": "對象："}.get(key, "")
+                detail_parts.append(f"{label}{meta[key]}")
+        extra = {key: value for key, value in meta.items() if key not in hidden_keys}
+        if extra:
+            detail_parts.append(json.dumps(extra, ensure_ascii=False, default=str))
+        status = ev.get("status") or "info"
+        formatted_events.append({
+            "ts": _fmt_ts(ev.get("ts")),
+            "ip": ev.get("ip") or "-",
+            "status": status,
+            "status_label": {"success": "成功", "error": "失敗", "info": "操作", "start": "處理中"}.get(status, "操作"),
+            "username": meta.get("username") or ("訪客" if meta.get("is_guest") else "-"),
+            "student_number": student_numbers.get(meta.get("username"), ""),
+            "description": _action_description(ev.get("action")),
+            "is_new_user": ev.get("action") == "login_success" and meta.get("is_new_user") is True and not meta.get("is_guest"),
+            "details": "；".join(detail_parts),
+        })
+    return {
+        "events": formatted_events,
+        "activity_retention_days": ACTIVITY_RETENTION_DAYS,
+        "activity_before": before,
+        "activity_next": page[99]["id"] if len(page) > 100 else None,
+        "activity_updated_at": _fmt_ts(time.time()),
+    }
 
 
 def register_administration_routes(*,
@@ -40,6 +110,24 @@ def register_administration_routes(*,
     update_feedback_status_entry,
     usage_stats,
 ):
+    @app.get("/admin/traffic/activity")
+    @login_required
+    def admin_recent_activity():
+        if not current_user().get("is_admin"):
+            abort(403)
+        context = _activity_context(storage, storage.list_user_profiles())
+        # Keep the dashboard filters in history links built by the fragment.
+        query = {
+            key: request.args[key]
+            for key in ("range", "start", "end", "trend", "usage_range", "source_days", "view_user")
+            if key in request.args
+        }
+
+        def traffic_link(**changes):
+            return url_for("admin_traffic", **{**query, **changes})
+
+        return render_template("shared/components/admin_recent_activity.html", traffic_link=traffic_link, **context)
+
     @app.route("/admin/traffic", methods=["GET"])
     @login_required
     def admin_traffic():
@@ -53,7 +141,6 @@ def register_administration_routes(*,
         student_directory = build_student_directory(profiles)
         memberships = storage.assignment_membership_snapshot(profiles)
         now = time.time()
-        student_numbers = {row["username"]: row["student_number"] or "" for row in profiles}
         for option in admin_view_options:
             profile = identities.profile(option["username"])
             option["profile_name"] = profile["profile_name"]
@@ -64,36 +151,6 @@ def register_administration_routes(*,
             valid_usernames = {item["username"] for item in admin_view_options}
             if requested_view_username in valid_usernames:
                 selected_view_username = requested_view_username
-
-        def _fmt_ts(ts: Optional[float]) -> str:
-            if not ts:
-                return "-"
-            try:
-                dt = datetime.fromtimestamp(ts, tz=TAIPEI_TZ)
-            except Exception:
-                return "-"
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-        ACTION_LABELS = {
-            **NOTIFICATION_ACTION_LABELS,
-            **{f"usage_{key}": label for key, label in FEATURE_LABELS.items()},
-            "login_success": "登入成功",
-            "logout": "登出",
-            "guest_login": "訪客登入",
-            "guest_import": "匯入訪客資料",
-            "refresh_assignments": "更新作業資料",
-            "course_announcements_refresh": "更新課程公告",
-            "course_mail_refresh": "更新課程信件",
-            "course_files_refresh": "整理課程附件",
-            "download_excel": "匯出 Excel",
-            "export_calendar": "匯出日曆",
-            "google_sync": "同步 Google 日曆",
-            "ui-event": "操作事件",
-        }
-
-        def _action_description(action: str) -> str:
-            action = action or "-"
-            return ACTION_LABELS.get(action, action.replace("_", " "))
 
         user_breakdown = traffic_tracker.user_breakdown()
         ip_overview = traffic_tracker.ip_summary()
@@ -115,48 +172,10 @@ def register_administration_routes(*,
             for ev in raw_events
             if is_recent_activity_event(ev)
         ]
-        formatted_events = []
         activity_before = request.args.get("activity_before", type=int)
         if activity_before is not None and not 0 < activity_before <= 9223372036854775807:
             activity_before = None
-        activity_page = storage.recent_activity_events(101, before_id=activity_before)
-        activity_has_older = len(activity_page) > 100
-        activity_page = activity_page[:100]
-        activity_next = activity_page[-1]["id"] if activity_has_older else None
-        for ev in activity_page:
-            meta = ev.get("meta") or {}
-            role = "訪客" if meta.get("is_guest") else ("管理員" if meta.get("is_admin") else "一般使用者")
-            detail_parts: List[str] = []
-            for key in ("info", "course", "message", "target", "action_detail"):
-                val = meta.get(key)
-                if val:
-                    label = {"course": "課程：", "target": "對象："}.get(key, "")
-                    detail_parts.append(f"{label}{val}")
-            extra = {
-                key: value
-                for key, value in meta.items()
-                if key
-                not in {"username", "is_guest", "is_admin", "site", "activity_only", "is_new_user", "info", "course", "message", "target", "action_detail"}
-            }
-            if extra:
-                try:
-                    detail_parts.append(json.dumps(extra, ensure_ascii=False))
-                except Exception:
-                    detail_parts.append(str(extra))
-            formatted_events.append(
-                {
-                    "ts": _fmt_ts(ev.get("ts")),
-                    "ip": ev.get("ip") or "-",
-                    "action": ev.get("action") or "-",
-                    "status": ev.get("status") or "info",
-                    "status_label": {"success": "成功", "error": "失敗", "info": "操作", "start": "處理中"}.get(ev.get("status"), "操作"),
-                    "username": meta.get("username") or ("訪客" if meta.get("is_guest") else "-"),
-                    "student_number": student_numbers.get(meta.get("username"), ""),
-                    "description": _action_description(ev.get("action") or "-"),
-                    "is_new_user": ev.get("action") == "login_success" and meta.get("is_new_user") is True and not meta.get("is_guest"),
-                    "details": "；".join(detail_parts),
-                }
-            )
+        activity = _activity_context(storage, profiles, activity_before)
         trend = build_traffic_trend(
             traffic_tracker.hourly_series(), traffic_tracker.hourly_buckets(),
             filtered_events, request.args,
@@ -249,10 +268,6 @@ def register_administration_routes(*,
             stats=usage_stats(),
             stats_version=current_stats_version(),
             user_rows=account_rows,
-            events=formatted_events,
-            activity_retention_days=ACTIVITY_RETENTION_DAYS,
-            activity_before=activity_before,
-            activity_next=activity_next,
             generated_at=_fmt_ts(time.time()),
             admin_user=user,
             trend=trend,
@@ -270,6 +285,7 @@ def register_administration_routes(*,
             ip_summary=ip_overview,
             admin_view_options=admin_view_options,
             selected_view_username=selected_view_username,
+            **activity,
         )
 
     @app.route("/admin/traffic/reset", methods=["POST"])

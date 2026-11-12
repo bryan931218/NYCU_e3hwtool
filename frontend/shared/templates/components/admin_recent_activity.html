@@ -1,0 +1,20 @@
+<div data-activity-results data-activity-updated="{{ activity_updated_at }}"{% if activity_before %} data-activity-history{% endif %}>
+    <ul class="events">
+        {% for item in events %}
+        <li>
+            <span class="time">{{ item.ts }}</span>
+            <span class="path event-account">{{ item.username|account_label(item.student_number) }}</span>
+            <div class="event-content"><strong>{{ item.description }}{% if item.is_new_user %}<span class="new-user-badge">首次加入</span>{% endif %}</strong>{% if item.details or item.ip != '-' %}<span class="event-detail">{{ item.details or item.ip }}</span>{% endif %}</div>
+            <span class="status-badge {{ item.status }}">{{ item.status_label }}</span>
+        </li>
+        {% else %}
+        <li><span class="time">-</span><span class="muted">尚無操作紀錄</span></li>
+        {% endfor %}
+    </ul>
+    {% if activity_before or activity_next %}
+    <nav class="activity-pagination" aria-label="近期動態分頁">
+        {% if activity_before %}<a class="btn" href="{{ traffic_link(activity_before=None) }}#recent-activity">最新紀錄</a>{% endif %}
+        {% if activity_next %}<a class="btn" href="{{ traffic_link(activity_before=activity_next) }}#recent-activity">較早紀錄 <span class="admin-icon" data-icon="right" aria-hidden="true"></span></a>{% endif %}
+    </nav>
+    {% endif %}
+</div>

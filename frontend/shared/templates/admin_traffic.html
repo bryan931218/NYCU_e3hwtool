@@ -38,7 +38,7 @@
         <a href="#account-usage" data-admin-view="accounts">用戶管理</a>
         <a href="#assignment-analytics" data-admin-view="notifications">通知與綁定</a>
         {% if not ga4_primary %}<a href="#feature-usage" data-admin-view="features">功能與來源</a>{% endif %}
-        <a href="#recent-activity" data-admin-view="activity">操作紀錄</a>
+        <a href="#recent-activity" data-admin-view="activity">近期動態</a>
     </nav>
     <section class="admin-section" id="account-viewer" data-admin-panel="accounts">
         <div class="admin-view-panel">
@@ -276,30 +276,16 @@
     </section>
 
     {% include 'shared/components/admin_account_distributions.html' %}
-    <section class="admin-section" id="recent-activity" data-admin-panel="activity" aria-labelledby="activityTitle">
+    <section class="admin-section" id="recent-activity" data-admin-panel="activity" data-activity-url="{{ url_for('admin_recent_activity') }}" aria-labelledby="activityTitle">
         <h2 id="activityTitle">近期動態</h2>
         <p class="muted">作業操作、通知設定與 LINE 綁定紀錄 · 保留 {{ activity_retention_days }} 天</p>
-        <div class="admin-list-tools"><label for="adminActivitySearch">篩選這頁紀錄<input id="adminActivitySearch" type="search" placeholder="學號、姓名或操作" autocomplete="off" data-admin-search="activity"></label><span role="status" data-admin-count="activity"></span></div>
-        <ul class="events">
-            {% if events %}
-                {% for item in events %}
-                <li>
-                    <span class="time">{{ item.ts }}</span>
-                    <span class="path event-account">{{ item.username|account_label(item.student_number) }}</span>
-                    <div class="event-content"><strong>{{ item.description }}{% if item.is_new_user %}<span class="new-user-badge">首次加入</span>{% endif %}</strong>{% if item.details or item.ip != '-' %}<span class="event-detail">{{ item.details or item.ip }}</span>{% endif %}</div>
-                    <span class="status-badge {{ item.status }}">{{ item.status_label }}</span>
-                </li>
-                {% endfor %}
-            {% else %}
-                <li><span class="time">-</span><span class="muted">尚無操作紀錄</span></li>
-            {% endif %}
-        </ul>
-        {% if activity_before or activity_next %}
-        <nav class="activity-pagination" aria-label="近期動態分頁">
-            {% if activity_before %}<a class="btn" href="{{ traffic_link(activity_before=None) }}#recent-activity">最新紀錄</a>{% endif %}
-            {% if activity_next %}<a class="btn" href="{{ traffic_link(activity_before=activity_next) }}#recent-activity">較早紀錄 <span class="admin-icon" data-icon="right" aria-hidden="true"></span></a>{% endif %}
-        </nav>
-        {% endif %}
+        <div class="admin-list-tools">
+            <label for="adminActivitySearch">篩選這頁紀錄<input id="adminActivitySearch" type="search" placeholder="學號、姓名或操作" autocomplete="off" data-admin-search="activity"></label>
+            <a class="btn" href="{{ traffic_link(activity_before=None) }}#recent-activity" data-admin-activity-refresh>{{ '返回最新紀錄' if activity_before else '更新紀錄' }}</a>
+            <span role="status" data-admin-count="activity"></span>
+        </div>
+        <p class="muted" role="status" data-activity-status>{{ '目前正在查看較早的紀錄' if activity_before else '更新於 ' ~ activity_updated_at }}</p>
+        {% include 'shared/components/admin_recent_activity.html' %}
     </section>
 </main>
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/admin-workspace.js') }}" defer></script>

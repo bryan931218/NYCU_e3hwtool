@@ -1,6 +1,7 @@
 """Traffic counters and persistent visitor statistics."""
 
 import json
+import logging
 import threading
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from e3_tracker.platform.guest_privacy import (
 
 PASSIVE_TRAFFIC_ACTIONS = {"heartbeat", "refresh_assignments"}
 ACTIVITY_RETENTION_DAYS = 90
+logger = logging.getLogger(__name__)
 QUIET_ACTIVITY_ACTIONS = {
     "usage_due_view", "usage_course_view", "usage_calendar",
     "usage_search", "usage_filters", "usage_notification_settings",
@@ -587,8 +589,9 @@ class TrafficTracker:
         if self._event_writer:
             try:
                 self._event_writer(cleaned)
-            except Exception:
-                pass
+            except Exception as exc:
+                if is_recent_activity_event(cleaned):
+                    logger.warning("Recent activity could not be persisted (%s)", type(exc).__name__)
             return
         if not self._log_path:
             return
