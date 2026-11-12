@@ -467,7 +467,7 @@ test('autofill detection tolerates unsupported selectors and an absent search fi
   initializeSearch({});
 });
 
-test('pending ignore applies to both lists, survives becoming overdue and can be restored', () => {
+test('pending ignore applies to both lists, survives becoming overdue and can be restored', async () => {
   const makeRow = (uid, primaryStatus) => {
     const classes = new Set();
     return { dataset: { uid, primaryStatus, semester: '115-1' }, style: { setProperty() {} },
@@ -507,7 +507,46 @@ test('pending ignore applies to both lists, survives becoming overdue and can be
       ctx.ignoreAssignment('future');
       assert.deepEqual(ctx.USER_PREFERENCES.ignored_assignment_uids, []);
     });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(payloads.at(-1), { ignoredAssignmentUids: [] });
   } finally { globalThis.fetch = previousFetch; }
+});
+
+test('ignored list, count and bulk restore follow the selected semester', () => {
+  const rows = [
+    { dataset: { uid: 'recent', semester: '115-1', title: 'Current work' } },
+    { dataset: { uid: 'archive', semester: '114-2', title: 'Archived work' } },
+  ];
+  const list = {
+    children: [],
+    set innerHTML(value) { this.children = []; this.emptyText = value; },
+    appendChild(chip) { this.children.push(chip); },
+  };
+  const ctx = {
+    USER_PREFERENCES: { ignored_assignment_uids: ['recent', 'archive', 'not-in-cache'] },
+    currentSemesterFilters: ['115-1'],
+    ignoredAssignmentsList: list, ignoredCountEl: {}, restoreIgnoredAssignmentsAll: {},
+    escapeHtml: String,
+  };
+  registerWorkspaceFilters(ctx);
+  ctx.persistPreferences = ({ ignoredAssignmentUids }) => ctx.setIgnoredAssignmentUids(ignoredAssignmentUids);
+  ctx.applyFilters = ctx.renderIgnoredAssignmentsList;
+  withDocument({ querySelectorAll: () => rows, createElement: () => ({}) }, () => {
+    ctx.applyFilters();
+    assert.equal(ctx.ignoredCountEl.textContent, '1');
+    assert.equal(list.children.length, 1);
+    assert.match(list.children[0].innerHTML, /Current work/);
+    ctx.restoreAllIgnoredAssignments();
+    assert.deepEqual(ctx.USER_PREFERENCES.ignored_assignment_uids, ['archive', 'not-in-cache']);
+    assert.equal(ctx.ignoredCountEl.textContent, '0');
+    assert.equal(ctx.restoreIgnoredAssignmentsAll.hidden, true);
+    ctx.currentSemesterFilters = ['114-2'];
+    ctx.applyFilters();
+    assert.equal(ctx.ignoredCountEl.textContent, '1');
+    assert.equal(list.children.length, 1);
+    assert.match(list.children[0].innerHTML, /Archived work/);
+    assert.equal(ctx.restoreIgnoredAssignmentsAll.hidden, false);
+  });
 });
 
 test('legacy ignored preferences initialize under the generalized name without losing records', () => {

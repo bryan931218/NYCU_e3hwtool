@@ -239,7 +239,7 @@
                         <button type="button" class="status-filter-btn{% if 'overdue' in selected_status_filters %} active{% endif %}" data-status-filter="overdue">逾期未交</button>
                         <button type="button" class="status-filter-btn{% if selected_status_filters|length >= status_filter_labels|length %} active{% endif %}" data-status-filter="all" style="grid-column:1 / -1">全部</button>
                     </div>
-                    <div class="filter-subsection"><p class="filter-panel-title" style="margin-bottom:6px">已忽略作業</p><button type="button" class="ignored-restore-all" id="restoreIgnoredAssignmentsAll" hidden>全部復原</button><div class="ignored-list" id="ignoredAssignmentsList"></div></div>
+                    <div class="filter-subsection"><p class="filter-panel-title" style="margin-bottom:6px">已忽略作業</p><button type="button" class="ignored-restore-all" id="restoreIgnoredAssignmentsAll" hidden>本學期全部復原</button><div class="ignored-list" id="ignoredAssignmentsList"></div></div>
                 </div>
             </details>
             <div class="seg" role="group" aria-label="作業檢視"><button type="button" id="viewDueBtn" class="seg-btn" data-view="due">到期日</button><button type="button" id="viewCourseBtn" class="seg-btn" data-view="course">依課程</button><button type="button" id="viewCalendarBtn" class="seg-btn" data-view="calendar"><span class="calendar-icon" data-icon="calendar-days" aria-hidden="true"></span>日曆</button></div>
@@ -279,7 +279,7 @@
             </div>
         </details>
         {% if google_ready and google_linked %}<form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"><input type="hidden" name="selected_uids" id="googleSyncInput"></form>{% endif %}
-        <div class="tc-right toolbar-counts"><span>顯示 <strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong> 筆</span><span class="ignored-count">忽略 <strong id="ignoredCount">{{ ignored_assignment_uids|length }}</strong></span></div>
+        <div class="tc-right toolbar-counts"><span>顯示 <strong id="totalCount">{{ (result.all_assignments|length) if result else 0 }}</strong> 筆</span><span class="ignored-count">忽略 <strong id="ignoredCount">{{ ignored_semester_count|default(0) }}</strong></span></div>
     </section>
 
     {% if result and result.errors %}

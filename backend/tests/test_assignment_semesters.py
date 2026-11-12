@@ -719,6 +719,12 @@ class AssignmentSemesterTests(unittest.TestCase):
             try:
                 token = "semester-test-session"
                 storage.save_web_session(token, "student")
+                ignored_assignments = [
+                    {"course_id": 2, "course_title": "【115上】作業系統", "title": "本學期作業",
+                     "url": "https://e3.example/assign/12", "due_ts": 1790006340},
+                    {"course_id": 3, "course_title": "【114下】離散數學", "title": "歷史作業",
+                     "url": "https://e3.example/assign/13", "due_ts": 1780006340},
+                ]
                 storage.save_user_cache(
                     "student",
                     {
@@ -731,6 +737,7 @@ class AssignmentSemesterTests(unittest.TestCase):
                                     "title": "【115上】作業系統",
                                     "url": "",
                                     "assignments": [
+                                        ignored_assignments[0],
                                         {
                                             "course_id": 2,
                                             "course_title": "【115上】作業系統",
@@ -744,9 +751,9 @@ class AssignmentSemesterTests(unittest.TestCase):
                                         }
                                     ],
                                 },
-                                {"id": 3, "title": "【114下】離散數學", "url": "", "assignments": []},
+                                {"id": 3, "title": "【114下】離散數學", "url": "", "assignments": [ignored_assignments[1]]},
                             ],
-                            "all_assignments": [],
+                            "all_assignments": ignored_assignments,
                             "errors": [],
                             "available_semesters": [
                                 {"key": "115-1", "label": "115 上學期", "course_count": 6, "is_current": True},
@@ -756,7 +763,11 @@ class AssignmentSemesterTests(unittest.TestCase):
                         },
                     },
                 )
-                storage.save_user_preferences("student", {"semester_filter": ["114-2"]})
+                ignored_uids = [storage.assignment_uid(item["course_id"], item["title"], item["url"])
+                                for item in ignored_assignments]
+                storage.save_user_preferences("student", {
+                    "semester_filter": ["114-2"], "ignored_assignment_uids": ignored_uids,
+                })
                 from tests.security_helpers import csrf_client
                 client = csrf_client(app)
                 with client.session_transaction() as browser_session:
@@ -767,7 +778,9 @@ class AssignmentSemesterTests(unittest.TestCase):
                 html = response.get_data(as_text=True)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('id="semesterFilterGroup"', html)
-                semester_selector = BeautifulSoup(html, "html.parser").select_one("details#semesterSelector")
+                document = BeautifulSoup(html, "html.parser")
+                self.assertEqual(document.select_one("#ignoredCount").get_text(), "1")
+                semester_selector = document.select_one("details#semesterSelector")
                 self.assertIsNotNone(semester_selector)
                 self.assertEqual(semester_selector.select_one("#semesterSelectedLabel").get_text(strip=True), "114 下學期")
                 self.assertEqual(semester_selector.select_one("#semesterSelectedCount").get_text(strip=True), "5 門課")
@@ -801,7 +814,10 @@ class AssignmentSemesterTests(unittest.TestCase):
                     ["115-1"],
                 )
                 refreshed_html = client.get("/").get_data(as_text=True)
-                refreshed_inputs = BeautifulSoup(refreshed_html, "html.parser").select("[data-semester-filter]")
+                refreshed = BeautifulSoup(refreshed_html, "html.parser")
+                self.assertEqual(refreshed.select_one("#ignoredCount").get_text(), "1")
+                self.assertEqual(storage.load_user_preferences("student")["ignored_assignment_uids"], ignored_uids)
+                refreshed_inputs = refreshed.select("[data-semester-filter]")
                 self.assertEqual(
                     {item.get("value"): item.has_attr("checked") for item in refreshed_inputs},
                     {"115-1": True, "114-2": False},

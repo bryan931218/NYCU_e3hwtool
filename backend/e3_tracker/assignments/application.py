@@ -692,6 +692,15 @@ def register_assignment_site(
                 ).strftime("%Y-%m-%d %H:%M")
             except Exception:
                 last_updated_label = None
+        ignored_uids = set(preferences["ignored_assignment_uids"])
+        ignored_semester_count = 0
+        if result and ignored_uids:
+            selected_semesters = set(result.get("selected_semesters", []))
+            ignored_semester_count = len(ignored_uids.intersection(
+                storage.assignment_uid(item.get("course_id"), item.get("title", ""), item.get("url"))
+                for item in result.get("all_assignments", [])
+                if item.get("semester_key", "other") in selected_semesters
+            ))
         return {
             "result": result,
             "excel_data": excel_data,
@@ -703,6 +712,7 @@ def register_assignment_site(
             "stats_version": stats_version_value,
             "now_ts": now_ts,
             "preferences": preferences,
+            "ignored_semester_count": ignored_semester_count,
             "cache_ts": cache_ts_val,
             "last_updated_ts": cache_ts_val,
             "last_updated_label": last_updated_label,

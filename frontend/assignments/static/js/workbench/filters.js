@@ -1,4 +1,18 @@
+function ignoredRowsForSelectedSemester(ctx) {
+  const ignored = ctx.getIgnoredAssignmentUidSet();
+  const rows = new Map();
+  if (!ignored.size) return rows;
+  document.querySelectorAll("#flatTable tbody tr[data-uid]").forEach((row) => {
+    const { uid, semester = "other" } = row.dataset;
+    if (ctx.currentSemesterFilters.includes(semester) && ignored.has(uid)) {
+      rows.set(uid, row);
+    }
+  });
+  return rows;
+}
+
 export function register(ctx) {
+  let preferenceSave = null;
   ctx.getIgnoredAssignmentUidSet = function getIgnoredAssignmentUidSet() {
     return new Set(
       (ctx.USER_PREFERENCES.ignored_assignment_uids || [])
@@ -18,44 +32,28 @@ export function register(ctx) {
   };
 
   ctx.renderIgnoredAssignmentsList = function renderIgnoredAssignmentsList() {
+    const rows = ignoredRowsForSelectedSemester(ctx);
+    if (ctx.ignoredCountEl) ctx.ignoredCountEl.textContent = String(rows.size);
     if (!ctx.ignoredAssignmentsList) return;
-    const ignoredSet = ctx.getIgnoredAssignmentUidSet();
-    const rows = Array.from(
-      document.querySelectorAll('tr[data-uid]'),
-    );
-    const items = [];
-    const seen = new Set();
-    rows.forEach((row) => {
-      const uid = row.dataset.uid || "";
-      if (!ignoredSet.has(uid) || seen.has(uid)) return;
-      seen.add(uid);
-      items.push({
-        uid,
-        label:
-          `${row.dataset.course || ""}｜${row.dataset.title || ""}`.replace(
-            /^｜/,
-            "",
-          ),
-      });
-    });
     ctx.ignoredAssignmentsList.innerHTML = "";
     if (ctx.restoreIgnoredAssignmentsAll) {
-      ctx.restoreIgnoredAssignmentsAll.hidden = items.length === 0;
+      ctx.restoreIgnoredAssignmentsAll.hidden = rows.size === 0;
     }
-    if (!items.length) {
+    if (!rows.size) {
       ctx.ignoredAssignmentsList.innerHTML =
-        '<div class="muted" style="font-size:12px">目前沒有已忽略的作業。</div>';
+        '<div class="muted" style="font-size:12px">這個學期沒有已忽略的作業。</div>';
       return;
     }
-    items.forEach((item) => {
+    for (const [uid, row] of rows) {
+      const label = [row.dataset.course, row.dataset.title].filter(Boolean).join("｜");
       const chip = document.createElement("div");
       chip.className = "ignored-chip";
       chip.innerHTML = `
-            <span class="ignored-chip-label" title="${ctx.escapeHtml(item.label)}">${ctx.escapeHtml(item.label)}</span>
-            <button type="button" class="ignored-chip-btn" data-restore-assignment="${ctx.escapeHtml(item.uid)}">復原</button>
+            <span class="ignored-chip-label" title="${ctx.escapeHtml(label)}">${ctx.escapeHtml(label)}</span>
+            <button type="button" class="ignored-chip-btn" data-restore-assignment="${ctx.escapeHtml(uid)}">復原</button>
         `;
       ctx.ignoredAssignmentsList.appendChild(chip);
-    });
+    }
   };
 
   ctx.updateFilterSummary = function updateFilterSummary() {
@@ -113,10 +111,6 @@ export function register(ctx) {
       ctx.currentViewMode === "course" ? ctx.viewCourse : ctx.viewDue;
     if (!currentView) {
       if (ctx.totalCountEl) ctx.totalCountEl.textContent = "0";
-      if (ctx.ignoredCountEl)
-        ctx.ignoredCountEl.textContent = String(
-          ctx.getIgnoredAssignmentUidSet().size,
-        );
       return;
     }
 
@@ -125,10 +119,6 @@ export function register(ctx) {
     );
     const totalVisible = visibleRows.length;
     if (ctx.totalCountEl) ctx.totalCountEl.textContent = totalVisible;
-    if (ctx.ignoredCountEl)
-      ctx.ignoredCountEl.textContent = String(
-        ctx.getIgnoredAssignmentUidSet().size,
-      );
     ctx.updateDashboardOverview();
   };
 
@@ -253,11 +243,17 @@ export function register(ctx) {
         ctx.USER_PREFERENCES.ignored_assignment_uids.slice();
     }
     if (!Object.keys(payload).length) return;
-    fetch(ctx.PREFERENCES_ENDPOINT, {
+    // Preference patches read and save the same record on the server.
+    const save = () => fetch(ctx.PREFERENCES_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }).catch(() => {});
+    });
+    const pending = (preferenceSave ? preferenceSave.then(save) : save()).catch(() => {});
+    preferenceSave = pending;
+    void pending.then(() => {
+      if (preferenceSave === pending) preferenceSave = null;
+    });
   };
 
   ctx.applyServerPreferenceState = function applyServerPreferenceState(
@@ -326,7 +322,10 @@ export function register(ctx) {
   ctx.restoreAllIgnoredAssignments =
     function restoreAllIgnoredAssignments() {
       if (ctx.IS_READONLY_VIEW) return;
-      ctx.persistPreferences({ ignoredAssignmentUids: [] });
+      const rows = ignoredRowsForSelectedSemester(ctx);
+      if (!rows.size) return;
+      const remaining = ctx.USER_PREFERENCES.ignored_assignment_uids.filter((uid) => !rows.has(uid));
+      ctx.persistPreferences({ ignoredAssignmentUids: remaining });
       ctx.applyFilters();
     };
 }
