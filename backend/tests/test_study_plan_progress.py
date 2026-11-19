@@ -16,7 +16,7 @@ from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
-    def test_history_calibration_marks_today_complete_with_half_hour_lead(self):
+    def test_history_calibration_marks_today_complete_without_fake_lead(self):
         weeks = [{
             "daily_targets": [
                 {
@@ -47,8 +47,8 @@ class StudyPlanProgressTests(unittest.TestCase):
             for day in week["daily_targets"]
             if day["date"] <= date(2026, 11, 19)
         )
-        self.assertEqual(historical_target, 400)
-        self.assertEqual(1200 + 1000 - historical_target, 30 * 60)
+        self.assertEqual(historical_target, 2200)
+        self.assertEqual(1200 + 1000 - historical_target, 0)
         self.assertEqual(
             calibrated[0]["daily_targets"][1]["allocations"],
             {"作業系統": 600.0},

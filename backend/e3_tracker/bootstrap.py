@@ -14,7 +14,7 @@ from e3_tracker.study.services.study_progress import _study_plan_credited_video_
 
 
 def _calibrate_history_through_today(weeks, videos, replan_settings):
-    """Freeze history as complete through Nov 19 with a 30-minute lead."""
+    """Freeze history as complete through Nov 19 without inventing a lead."""
     if str((replan_settings or {}).get("start_date") or "") != "2026-11-20":
         return weeks
     cutoff = "2026-11-19"
@@ -40,15 +40,6 @@ def _calibrate_history_through_today(weeks, videos, replan_settings):
             watched_by_subject[str(subject)] = max(0.0, float(seconds or 0))
 
     desired_targets = dict(watched_by_subject)
-    lead_seconds = 30 * 60
-    for subject in ("演算法", "作業系統", "資料結構", "離散數學", "線性代數"):
-        deduction = min(lead_seconds, desired_targets.get(subject, 0.0))
-        desired_targets[subject] = max(
-            0.0, desired_targets.get(subject, 0.0) - deduction
-        )
-        lead_seconds -= deduction
-        if lead_seconds <= 0.001:
-            break
 
     original_targets = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
     for day in historical_days:
