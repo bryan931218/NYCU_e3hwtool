@@ -360,15 +360,11 @@ def _study_plan_progress_race(
 
     delta_label = format_duration(delta_minutes)
     today_target_label = format_duration(today_target)
-    within_daily_allowance = bool(
-        delta_minutes < -1
-        and today_target > 1
-        and abs(delta_minutes) < today_target
-    )
-    is_behind = bool(
-        delta_minutes < -1
-        and not within_daily_allowance
-    )
+    # An unfinished target is a real gap even when it is smaller than the full
+    # daily allocation. Otherwise a partially watched day misleadingly appears
+    # to be on track until an entire extra day has been missed.
+    within_daily_allowance = False
+    is_behind = bool(delta_minutes < -1)
 
     if is_behind:
         state = "behind"
@@ -384,13 +380,6 @@ def _study_plan_progress_race(
         status_detail = "已超過今天應看的時間，可保留作後續緩衝"
         headline_message = "目前進度超前，"
         headline_unit = "小時領先"
-    elif within_daily_allowance:
-        state = "active"
-        state_label = "進度正常"
-        status_label = f"差距 {delta_label}"
-        status_detail = f"小於今日安排的 {today_target_label}，不列為落後"
-        headline_message = "目前差距仍在今天安排的時數內。"
-        headline_unit = "小時今日差距"
     else:
         state = "active"
         state_label = "進度同步"

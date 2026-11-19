@@ -1033,7 +1033,7 @@ class StudyPlanProgressTests(unittest.TestCase):
         self.assertEqual(race["gap_start"], race["plan_position"])
         self.assertGreater(race["gap_width"], 0)
 
-    def test_progress_race_treats_a_gap_smaller_than_today_target_as_on_track(self):
+    def test_progress_race_treats_any_unfinished_today_target_as_behind(self):
         within_today = _study_plan_progress_race(
             83.3 * 60,
             85.7 * 60,
@@ -1047,10 +1047,10 @@ class StudyPlanProgressTests(unittest.TestCase):
             3.44 * 60,
         )
 
-        self.assertEqual(within_today["state"], "active")
-        self.assertEqual(within_today["state_label"], "進度正常")
-        self.assertTrue(within_today["within_daily_allowance"])
-        self.assertEqual(within_today["status_label"], "差距 2 小時 24 分鐘")
+        self.assertEqual(within_today["state"], "behind")
+        self.assertEqual(within_today["state_label"], "落後計畫")
+        self.assertFalse(within_today["within_daily_allowance"])
+        self.assertEqual(within_today["status_label"], "落後 2 小時 24 分鐘")
         self.assertEqual(within_today["today_target_label"], "3 小時 26 分鐘")
         self.assertEqual(beyond_today["state"], "behind")
         self.assertFalse(beyond_today["within_daily_allowance"])

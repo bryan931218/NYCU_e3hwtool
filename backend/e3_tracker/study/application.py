@@ -1625,6 +1625,7 @@ def register_study_site(
         watched_minutes_total = float(summary.get("total_watched") or 0)
         target_minutes_by_today = 0.0
         today_target_minutes = 0.0
+        today_credited_minutes = 0.0
         today_iso = today.isoformat()
         for row in week_rows:
             row_start = str(row.get("start") or "")
@@ -1637,6 +1638,10 @@ def register_study_site(
                     day_target_minutes = float(day.get("target_seconds") or 0) / 60
                     if day_key == today_iso:
                         today_target_minutes += day_target_minutes
+                        today_credited_minutes += min(
+                            day_target_minutes,
+                            max(0.0, float(day.get("credited_seconds") or 0) / 60),
+                        )
                     if day_key <= today_iso:
                         target_minutes_by_today += day_target_minutes
         target_minutes_by_today = min(
@@ -1650,10 +1655,27 @@ def register_study_site(
                 else 0.0
             ),
         )
-        pace_delta = completion - scheduled_percent
-        pace_minutes = watched_minutes_total - target_minutes_by_today
+        # Pace follows the daily plan contract: historical calibrated days count as
+        # complete, while today only receives today's actual viewing credit. Raw
+        # lifetime watch time remains available in the overall progress metrics.
+        pace_watched_minutes = max(
+            0.0,
+            target_minutes_by_today
+            - today_target_minutes
+            + min(today_target_minutes, today_credited_minutes),
+        )
+        pace_completion = min(
+            100.0,
+            (
+                pace_watched_minutes / total_target_minutes * 100
+                if total_target_minutes
+                else 0.0
+            ),
+        )
+        pace_delta = pace_completion - scheduled_percent
+        pace_minutes = pace_watched_minutes - target_minutes_by_today
         progress_race = _study_plan_progress_race(
-            watched_minutes_total,
+            pace_watched_minutes,
             target_minutes_by_today,
             total_target_minutes,
             today_target_minutes,
@@ -1838,7 +1860,7 @@ def register_study_site(
             "buffer_days": round(buffer_days, 1),
             "meter_position": round(pace_meter_position, 1),
             "target_today_hours": round(target_minutes_by_today / 60, 1),
-            "watched_hours": round(watched_minutes_total / 60, 1),
+            "watched_hours": round(pace_watched_minutes / 60, 1),
             "delta_stat_label": pace_delta_stat_label,
             "delta_stat_value": pace_delta_stat_value,
         }
@@ -1894,7 +1916,7 @@ def register_study_site(
                 end_day=today.isoformat(),
             ),
             today=today,
-            current_watched_minutes=watched_minutes_total,
+            current_watched_minutes=pace_watched_minutes,
         )
         activity_events_by_day: Dict[str, List[Dict[str, Any]]] = {}
         for event in activity_events:
