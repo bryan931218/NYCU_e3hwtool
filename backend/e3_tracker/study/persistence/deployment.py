@@ -347,6 +347,155 @@ class StudyDeploymentStorage:
                 {"repair_key": repair_key, "details": details, "applied_at": now},
             )
 
+    def _repair_finalize_computer_org_and_replan_os_algorithm(self) -> None:
+        """End computer organization today and schedule only OS then algorithms."""
+        repair_key = "finalize-computer-org-replan-os-algorithm-2026-11-19-v2"
+        start_date = "2026-11-20"
+        end_date = "2026-11-30"
+        scheduled_subjects = ("作業系統", "演算法")
+        with self._lock, self._engine.begin() as conn:
+            if conn.execute(
+                text(
+                    "SELECT repair_key FROM e3_data_repairs "
+                    "WHERE repair_key = :repair_key"
+                ),
+                {"repair_key": repair_key},
+            ).first():
+                return
+
+            counts = {
+                str(row["subject"]): int(row["video_count"] or 0)
+                for row in conn.execute(
+                    text(
+                        "SELECT subject, COUNT(*) AS video_count "
+                        "FROM study_plan_videos "
+                        "WHERE subject IN (:os_subject, :co_subject, :algo_subject) "
+                        "GROUP BY subject"
+                    ),
+                    {
+                        "os_subject": "作業系統",
+                        "co_subject": "計算機組織",
+                        "algo_subject": "演算法",
+                    },
+                ).mappings()
+            }
+            # Match the complete production inventory and avoid imposing this
+            # dated repair on small development databases.
+            if (
+                counts.get("作業系統", 0) < 58
+                or counts.get("計算機組織", 0) < 69
+                or counts.get("演算法", 0) < 16
+            ):
+                return
+
+            rows = (
+                conn.execute(
+                    text(
+                        "SELECT v.subject, v.duration_seconds, "
+                        "COALESCE(r.watched_seconds, 0) AS watched_seconds "
+                        "FROM study_plan_videos v "
+                        "LEFT JOIN study_plan_video_records r ON r.video_id = v.id "
+                        "WHERE v.subject IN (:os_subject, :algo_subject)"
+                    ),
+                    {
+                        "os_subject": scheduled_subjects[0],
+                        "algo_subject": scheduled_subjects[1],
+                    },
+                )
+                .mappings()
+                .all()
+            )
+            baseline_by_subject = {subject: 0.0 for subject in scheduled_subjects}
+            subject_targets = {subject: 0.0 for subject in scheduled_subjects}
+            for row in rows:
+                subject = str(row["subject"] or "")
+                duration = max(0.0, float(row["duration_seconds"] or 0))
+                watched = min(duration, max(0.0, float(row["watched_seconds"] or 0)))
+                complete = duration > 0 and (
+                    watched >= duration - 5.0
+                    or watched / duration >= 0.995
+                )
+                credited = duration if complete else watched
+                baseline_by_subject[subject] += credited
+                subject_targets[subject] += max(0.0, duration - credited)
+            subject_targets = {
+                subject: seconds
+                for subject, seconds in subject_targets.items()
+                if seconds > 0.001
+            }
+            now = datetime.utcnow().isoformat()
+            values = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "weekday_minutes": 720.0,
+                "weekend_minutes": 240.0,
+                "baseline_by_subject": json.dumps(
+                    baseline_by_subject, ensure_ascii=False, sort_keys=True
+                ),
+                "subject_targets": json.dumps(
+                    subject_targets, ensure_ascii=False, sort_keys=True
+                ),
+                "updated_at": now,
+            }
+            if conn.execute(
+                text("SELECT id FROM study_plan_replan_settings WHERE id = 1")
+            ).first():
+                conn.execute(
+                    text(
+                        "UPDATE study_plan_replan_settings SET "
+                        "start_date = :start_date, end_date = :end_date, "
+                        "weekday_minutes = :weekday_minutes, "
+                        "weekend_minutes = :weekend_minutes, "
+                        "baseline_by_subject = :baseline_by_subject, "
+                        "subject_targets = :subject_targets, updated_at = :updated_at "
+                        "WHERE id = 1"
+                    ),
+                    values,
+                )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_replan_settings ("
+                        "id, start_date, end_date, weekday_minutes, weekend_minutes, "
+                        "baseline_by_subject, subject_targets, created_at, updated_at"
+                        ") VALUES ("
+                        "1, :start_date, :end_date, :weekday_minutes, :weekend_minutes, "
+                        ":baseline_by_subject, :subject_targets, :updated_at, :updated_at"
+                        ")"
+                    ),
+                    values,
+                )
+            conn.execute(
+                text(
+                    "DELETE FROM study_plan_rest_days "
+                    "WHERE study_date >= :start_date AND study_date <= :end_date"
+                ),
+                {"start_date": start_date, "end_date": end_date},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                    "VALUES (:repair_key, :details, :applied_at)"
+                ),
+                {
+                    "repair_key": repair_key,
+                    "details": json.dumps(
+                        {
+                            "computer_organization_end": "2026-11-19",
+                            "scheduled_subjects": list(subject_targets),
+                            "remaining_hours": {
+                                subject: round(seconds / 3600, 2)
+                                for subject, seconds in subject_targets.items()
+                            },
+                            "replan_start": start_date,
+                            "replan_end": end_date,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "applied_at": now,
+                },
+            )
+
     def _repair_discrete_video_11_12_history(self) -> None:
         repair_key = "discrete-video-11-to-12-2026-08-26"
         repair_day = "2026-08-26"
@@ -1115,3 +1264,4 @@ class StudyDeploymentStorage:
         self._restore_discrete_video_11_fresh_progress()
         self._repair_remove_misclassified_computer_org_videos_and_replan()
         self._repair_replan_only_final_three_subjects()
+        self._repair_finalize_computer_org_and_replan_os_algorithm()
