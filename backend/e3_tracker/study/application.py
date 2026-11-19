@@ -1181,6 +1181,23 @@ def register_study_site(
         today = _study_plan_business_date()
         replan_settings = storage.get_study_plan_replan_settings()
         rest_days = storage.list_study_plan_rest_days()
+        activity_events = storage.list_study_plan_activity_events(
+            start_day=STUDY_PLAN_START,
+            end_day=today.isoformat(),
+        )
+        actual_seconds_by_day: Dict[str, float] = {}
+        actual_seconds_by_day_subject: Dict[str, Dict[str, float]] = {}
+        for event in activity_events:
+            day_key = str(event.get("day") or "")
+            subject = str(event.get("subject") or "")
+            delta_seconds = _study_plan_nonnegative_number(event.get("delta_seconds"))
+            if not day_key or delta_seconds <= 0:
+                continue
+            actual_seconds_by_day[day_key] = (
+                actual_seconds_by_day.get(day_key, 0.0) + delta_seconds
+            )
+            subject_totals = actual_seconds_by_day_subject.setdefault(day_key, {})
+            subject_totals[subject] = subject_totals.get(subject, 0.0) + delta_seconds
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {}
         for video in videos:
             subject = str(video.get("subject") or "")
@@ -1251,18 +1268,23 @@ def register_study_site(
                     if video_end > prior_seconds and video_start < range_end:
                         weekly_videos[int(video.get("id") or id(video))] = video
 
-            remaining_credit = dict(subject_credits)
             daily_recommendations: List[Dict[str, Any]] = []
             for index, daily_target in enumerate(definition["daily_targets"]):
                 allocations = dict(daily_target["allocations"])
                 target_seconds = sum(allocations.values())
-                credited_seconds = 0.0
+                current_day = daily_target["date"]
+                current_day_key = current_day.isoformat()
+                credited_seconds = min(
+                    target_seconds,
+                    actual_seconds_by_day.get(current_day_key, 0.0),
+                )
                 daily_subject_progress: List[Dict[str, Any]] = []
                 for subject, subject_target in allocations.items():
-                    amount = min(subject_target, remaining_credit.get(subject, 0.0))
-                    credited_seconds += amount
-                    remaining_credit[subject] = max(
-                        0.0, remaining_credit.get(subject, 0.0) - amount
+                    amount = min(
+                        subject_target,
+                        actual_seconds_by_day_subject.get(current_day_key, {}).get(
+                            subject, 0.0
+                        ),
                     )
                     daily_subject_progress.append(
                         {
@@ -1285,7 +1307,6 @@ def register_study_site(
                     )
                 else:
                     completion = 0.0
-                current_day = daily_target["date"]
                 is_rest_day = bool(daily_target.get("is_rest_day"))
                 if is_rest_day:
                     state = "rest"

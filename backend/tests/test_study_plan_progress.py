@@ -939,23 +939,30 @@ class StudyPlanProgressTests(unittest.TestCase):
                 subject_targets={"離散數學": 7 * 3600},
             )
             remaining_seconds = 5400.0
-            for video in sorted(
-                (
-                    video
-                    for video in storage.list_study_plan_videos_with_records()
-                    if video["subject"] == "離散數學"
-                ),
-                key=lambda video: int(video["sequence"]),
+            # All 90 minutes were watched on Sep 7. The extra 30 minutes must not
+            # spill into Sep 8 when daily completion is calculated.
+            with patch.object(
+                storage,
+                "_now_iso",
+                return_value="2026-09-07T12:00:00",
             ):
-                watched_seconds = min(float(video["duration_seconds"]), remaining_seconds)
-                storage.update_study_plan_video_progress(
-                    video_id=int(video["id"]),
-                    watched_seconds=watched_seconds,
-                    expected_version=int(video["progress_version"]),
-                )
-                remaining_seconds -= watched_seconds
-                if remaining_seconds <= 0.001:
-                    break
+                for video in sorted(
+                    (
+                        video
+                        for video in storage.list_study_plan_videos_with_records()
+                        if video["subject"] == "離散數學"
+                    ),
+                    key=lambda video: int(video["sequence"]),
+                ):
+                    watched_seconds = min(float(video["duration_seconds"]), remaining_seconds)
+                    storage.update_study_plan_video_progress(
+                        video_id=int(video["id"]),
+                        watched_seconds=watched_seconds,
+                        expected_version=int(video["progress_version"]),
+                    )
+                    remaining_seconds -= watched_seconds
+                    if remaining_seconds <= 0.001:
+                        break
             self.assertLessEqual(remaining_seconds, 0.001)
 
             token = "completed-rest-day-test-session"
