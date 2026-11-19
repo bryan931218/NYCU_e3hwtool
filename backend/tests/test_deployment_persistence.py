@@ -209,6 +209,19 @@ class DeploymentPersistenceTests(unittest.TestCase):
             self.assertEqual(settings["subject_targets"]["作業系統"], 1800)
             self.assertEqual(settings["subject_targets"]["演算法"], 2700)
             self.assertNotIn("計算機組織", settings["subject_targets"])
+            with storage._lock, storage._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                        "VALUES ("
+                        "'finalize-computer-org-replan-os-algorithm-2026-11-19-v2', "
+                        "'{}', 'x')"
+                    )
+                )
+            storage._repair_even_daily_weight_for_remaining_plan()
+            even_settings = storage.get_study_plan_replan_settings()
+            self.assertEqual(even_settings["weekday_minutes"], 240)
+            self.assertEqual(even_settings["weekend_minutes"], 240)
             storage._engine.dispose()
 
     def test_database_url_uses_standard_railway_postgres_variable(self):

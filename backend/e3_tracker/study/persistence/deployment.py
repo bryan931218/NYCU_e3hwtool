@@ -496,6 +496,66 @@ class StudyDeploymentStorage:
                 },
             )
 
+    def _repair_even_daily_weight_for_remaining_plan(self) -> None:
+        """Use the same daily weight while preserving separate subject blocks."""
+        repair_key = "even-daily-os-algorithm-plan-2026-11-19"
+        prerequisite_key = "finalize-computer-org-replan-os-algorithm-2026-11-19-v2"
+        with self._lock, self._engine.begin() as conn:
+            if conn.execute(
+                text(
+                    "SELECT repair_key FROM e3_data_repairs "
+                    "WHERE repair_key = :repair_key"
+                ),
+                {"repair_key": repair_key},
+            ).first():
+                return
+            if not conn.execute(
+                text(
+                    "SELECT repair_key FROM e3_data_repairs "
+                    "WHERE repair_key = :repair_key"
+                ),
+                {"repair_key": prerequisite_key},
+            ).first():
+                return
+            settings = conn.execute(
+                text(
+                    "SELECT subject_targets FROM study_plan_replan_settings WHERE id = 1"
+                )
+            ).first()
+            if not settings:
+                return
+            targets = json.loads(str(settings[0] or "{}"))
+            if any(subject not in {"作業系統", "演算法"} for subject in targets):
+                return
+
+            now = datetime.utcnow().isoformat()
+            conn.execute(
+                text(
+                    "UPDATE study_plan_replan_settings SET "
+                    "weekday_minutes = 240, weekend_minutes = 240, "
+                    "updated_at = :updated_at WHERE id = 1"
+                ),
+                {"updated_at": now},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                    "VALUES (:repair_key, :details, :applied_at)"
+                ),
+                {
+                    "repair_key": repair_key,
+                    "details": json.dumps(
+                        {
+                            "weekday_minutes": 240,
+                            "weekend_minutes": 240,
+                            "subjects_remain_separate": True,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "applied_at": now,
+                },
+            )
+
     def _repair_discrete_video_11_12_history(self) -> None:
         repair_key = "discrete-video-11-to-12-2026-08-26"
         repair_day = "2026-08-26"
@@ -1265,3 +1325,4 @@ class StudyDeploymentStorage:
         self._repair_remove_misclassified_computer_org_videos_and_replan()
         self._repair_replan_only_final_three_subjects()
         self._repair_finalize_computer_org_and_replan_os_algorithm()
+        self._repair_even_daily_weight_for_remaining_plan()
