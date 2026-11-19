@@ -795,7 +795,7 @@ n!\le n^n,\qquad n!\ge\left\frac{n!}{2}\right^{n/2}
                 applied = client.post(payload["proposal"]["apply_url"])
                 settings = storage.get_study_plan_replan_settings()
                 self.assertEqual(applied.status_code, 200)
-                self.assertEqual(settings["end_date"], "2026-12-03")
+                self.assertEqual(settings["end_date"], "2026-11-30")
                 self.assertEqual(settings["weekday_minutes"], settings["weekend_minutes"])
                 self.assertAlmostEqual(sum(settings["subject_targets"].values()), remaining_seconds, places=3)
                 self.assertEqual(client.post(applied.get_json()["undo"]["url"]).status_code, 200)

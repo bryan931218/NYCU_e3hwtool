@@ -2041,59 +2041,5 @@
     "sequence": 69,
     "title": "069_進階補充單元-05-02_重點5.多重處理器的快取一致性(1時07分34秒)",
     "duration_seconds": 4054.1
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 70,
-    "title": "070_邏輯設計_01_課程介紹~第二章布林代數重點P25(2時47分42秒)",
-    "duration_seconds": 10062.7
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 71,
-    "title": "071_邏輯設計_02_重點八-布林函數的化簡(2時16分08秒)",
-    "duration_seconds": 8168.7
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 72,
-    "title": "072_邏輯設計_03_3.列表法P50(2時53分42秒)",
-    "duration_seconds": 10422.5
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 73,
-    "title": "073_邏輯設計_04_重點三-比較器P78(2時55分29秒)",
-    "duration_seconds": 10529.6
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 74,
-    "title": "074_邏輯設計_05_第四章序向邏輯電路P105(3時02分26秒)",
-    "duration_seconds": 10946
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 75,
-    "title": "075_邏輯設計_06_第四章序向邏輯電路(3時24分14秒)",
-    "duration_seconds": 12254.8
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 76,
-    "title": "076_邏輯設計_07_第五章.暫存器與記數器P142(3時29分44秒)",
-    "duration_seconds": 12584.6
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 77,
-    "title": "077_邏輯設計_08_CH5並列載入 P158(3時02分06秒)",
-    "duration_seconds": 10926.5
-  },
-  {
-    "subject": "計算機組織",
-    "sequence": 78,
-    "title": "078_邏輯設計_09_重點5-唯讀記憶體(3時40分45秒)",
-    "duration_seconds": 13245.3
   }
 ]

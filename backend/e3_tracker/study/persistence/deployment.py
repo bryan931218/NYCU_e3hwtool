@@ -22,6 +22,202 @@ _YOUTUBE_FIELDS = (
 class StudyDeploymentStorage:
     """Keep deployment data and player preferences authoritative across restarts."""
 
+    def _repair_remove_misclassified_computer_org_videos_and_replan(self) -> None:
+        """Remove the logic-design tail and rebuild the remaining whole-course plan."""
+        repair_key = "remove-computer-org-70-78-and-replan-2026-11-19"
+        repair_day = "2026-11-19"
+        start_date = "2026-11-20"
+        end_date = "2026-11-30"
+        subject_order = (
+            "線性代數",
+            "離散數學",
+            "資料結構",
+            "作業系統",
+            "計算機組織",
+            "演算法",
+        )
+        with self._lock, self._engine.begin() as conn:
+            if conn.execute(
+                text(
+                    "SELECT repair_key FROM e3_data_repairs "
+                    "WHERE repair_key = :repair_key"
+                ),
+                {"repair_key": repair_key},
+            ).first():
+                return
+
+            wrong_videos = (
+                conn.execute(
+                    text(
+                        "SELECT id, sequence, youtube_video_id "
+                        "FROM study_plan_videos "
+                        "WHERE subject = :subject AND sequence BETWEEN 70 AND 78 "
+                        "ORDER BY sequence"
+                    ),
+                    {"subject": "計算機組織"},
+                )
+                .mappings()
+                .all()
+            )
+            # Do not install a dated global replan on a new or unrelated database.
+            if not wrong_videos:
+                return
+
+            wrong_ids = [int(row["id"]) for row in wrong_videos]
+            bind_names = [f"video_{index}" for index in range(len(wrong_ids))]
+            placeholders = ", ".join(f":{name}" for name in bind_names)
+            id_params = dict(zip(bind_names, wrong_ids))
+
+            removed_activity_seconds = float(
+                conn.execute(
+                    text(
+                        "SELECT COALESCE(SUM(delta_seconds), 0) "
+                        f"FROM study_plan_activity_events WHERE video_id IN ({placeholders})"
+                    ),
+                    id_params,
+                ).scalar_one()
+                or 0
+            )
+            removed_session_seconds = float(
+                conn.execute(
+                    text(
+                        "SELECT COALESCE(SUM(elapsed_seconds), 0) "
+                        f"FROM study_time_sessions WHERE video_id IN ({placeholders})"
+                    ),
+                    id_params,
+                ).scalar_one()
+                or 0
+            )
+            deleted_counts: Dict[str, int] = {}
+            for table_name in (
+                "study_plan_activity_events",
+                "study_time_sessions",
+                "study_plan_video_markers",
+                "study_plan_video_records",
+                "study_plan_video_overrides",
+            ):
+                result = conn.execute(
+                    text(
+                        f"DELETE FROM {table_name} WHERE video_id IN ({placeholders})"
+                    ),
+                    id_params,
+                )
+                deleted_counts[table_name] = max(0, int(result.rowcount or 0))
+
+            deleted_video_count = conn.execute(
+                text(f"DELETE FROM study_plan_videos WHERE id IN ({placeholders})"),
+                id_params,
+            ).rowcount
+
+            # Snapshots at and after the correction can no longer be trusted, and
+            # rest days would conflict with the requested seven-day schedule.
+            conn.execute(
+                text("DELETE FROM study_plan_daily_snapshots WHERE day >= :repair_day"),
+                {"repair_day": repair_day},
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM study_plan_rest_days "
+                    "WHERE study_date >= :start_date AND study_date <= :end_date"
+                ),
+                {"start_date": start_date, "end_date": end_date},
+            )
+
+            progress_rows = (
+                conn.execute(
+                    text(
+                        "SELECT v.subject, v.duration_seconds, "
+                        "COALESCE(r.watched_seconds, 0) AS watched_seconds "
+                        "FROM study_plan_videos v "
+                        "LEFT JOIN study_plan_video_records r ON r.video_id = v.id"
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            baseline_by_subject = {subject: 0.0 for subject in subject_order}
+            total_by_subject = {subject: 0.0 for subject in subject_order}
+            for row in progress_rows:
+                subject = str(row["subject"] or "")
+                if subject not in baseline_by_subject:
+                    continue
+                duration = max(0.0, float(row["duration_seconds"] or 0))
+                watched = min(duration, max(0.0, float(row["watched_seconds"] or 0)))
+                total_by_subject[subject] += duration
+                baseline_by_subject[subject] += watched
+            subject_targets = {
+                subject: max(0.0, total_by_subject[subject] - baseline_by_subject[subject])
+                for subject in subject_order
+                if total_by_subject[subject] - baseline_by_subject[subject] > 0.001
+            }
+
+            now = datetime.utcnow().isoformat()
+            replan_values = {
+                "start_date": start_date,
+                "end_date": end_date,
+                # Weekends retain one third of a weekday's weight.  The schedule
+                # engine scales these weights to the actual remaining duration.
+                "weekday_minutes": 720.0,
+                "weekend_minutes": 240.0,
+                "baseline_by_subject": json.dumps(
+                    baseline_by_subject, ensure_ascii=False, sort_keys=True
+                ),
+                "subject_targets": json.dumps(
+                    subject_targets, ensure_ascii=False, sort_keys=True
+                ),
+                "updated_at": now,
+            }
+            if conn.execute(
+                text("SELECT id FROM study_plan_replan_settings WHERE id = 1")
+            ).first():
+                conn.execute(
+                    text(
+                        "UPDATE study_plan_replan_settings SET "
+                        "start_date = :start_date, end_date = :end_date, "
+                        "weekday_minutes = :weekday_minutes, "
+                        "weekend_minutes = :weekend_minutes, "
+                        "baseline_by_subject = :baseline_by_subject, "
+                        "subject_targets = :subject_targets, updated_at = :updated_at "
+                        "WHERE id = 1"
+                    ),
+                    replan_values,
+                )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_replan_settings ("
+                        "id, start_date, end_date, weekday_minutes, weekend_minutes, "
+                        "baseline_by_subject, subject_targets, created_at, updated_at"
+                        ") VALUES ("
+                        "1, :start_date, :end_date, :weekday_minutes, :weekend_minutes, "
+                        ":baseline_by_subject, :subject_targets, :updated_at, :updated_at"
+                        ")"
+                    ),
+                    replan_values,
+                )
+
+            details = json.dumps(
+                {
+                    "removed_sequences": [int(row["sequence"]) for row in wrong_videos],
+                    "deleted_videos": max(0, int(deleted_video_count or 0)),
+                    "deleted_counts": deleted_counts,
+                    "removed_activity_seconds": removed_activity_seconds,
+                    "removed_session_seconds": removed_session_seconds,
+                    "replan_start": start_date,
+                    "replan_end": end_date,
+                    "remaining_hours": round(sum(subject_targets.values()) / 3600, 2),
+                    "subjects": list(subject_targets),
+                },
+                ensure_ascii=False,
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                    "VALUES (:repair_key, :details, :applied_at)"
+                ),
+                {"repair_key": repair_key, "details": details, "applied_at": now},
+            )
+
     def _repair_discrete_video_11_12_history(self) -> None:
         repair_key = "discrete-video-11-to-12-2026-08-26"
         repair_day = "2026-08-26"
@@ -788,3 +984,4 @@ class StudyDeploymentStorage:
         self._repair_discrete_video_11_12_history()
         self._repair_confirmed_discrete_14_calendar_move()
         self._restore_discrete_video_11_fresh_progress()
+        self._repair_remove_misclassified_computer_org_videos_and_replan()

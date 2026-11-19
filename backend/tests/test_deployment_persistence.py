@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -11,6 +12,148 @@ from e3_tracker.platform.deployment_runtime import DeploymentSafeStorage
 
 
 class DeploymentPersistenceTests(unittest.TestCase):
+    def test_misclassified_computer_org_tail_is_removed_and_all_subjects_replanned(self):
+        subjects = (
+            "線性代數",
+            "離散數學",
+            "資料結構",
+            "作業系統",
+            "計算機組織",
+            "演算法",
+        )
+        inventory = [
+            {
+                "subject": subject,
+                "sequence": 69 if subject == "計算機組織" else 1,
+                "title": f"{subject}保留影片",
+                "duration_seconds": 3600,
+            }
+            for subject in subjects
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "whole-plan.sqlite3"))
+            storage.sync_study_plan_videos(inventory)
+            linear_id = next(
+                int(item["id"])
+                for item in storage.list_study_plan_videos_with_records()
+                if item["subject"] == "線性代數"
+            )
+            with storage._lock, storage._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_videos "
+                        "(subject, sequence, title, duration_seconds, created_at, updated_at) "
+                        "VALUES "
+                        "('計算機組織', 70, '邏輯設計 70', 7200, 'x', 'x'), "
+                        "('計算機組織', 78, '邏輯設計 78', 7200, 'x', 'x')"
+                    )
+                )
+                wrong_ids = [
+                    int(row[0])
+                    for row in conn.execute(
+                        text(
+                            "SELECT id FROM study_plan_videos "
+                            "WHERE subject = '計算機組織' AND sequence IN (70, 78)"
+                        )
+                    ).all()
+                ]
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_video_records "
+                        "(video_id, watched_seconds, playback_seconds, progress_version, notes, updated_at) "
+                        "VALUES (:linear_id, 600, 600, 1, '', 'x'), "
+                        "(:wrong_id, 1800, 1800, 1, '', 'x')"
+                    ),
+                    {"linear_id": linear_id, "wrong_id": wrong_ids[0]},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_activity_events "
+                        "(day, video_id, previous_watched_seconds, watched_seconds, delta_seconds, updated_at) "
+                        "VALUES ('2026-11-19', :wrong_id, 0, 1800, 1800, '2026-11-19T10:00:00')"
+                    ),
+                    {"wrong_id": wrong_ids[0]},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO study_time_sessions "
+                        "(session_key, day, kind, video_id, label, elapsed_seconds, completed, started_at, updated_at) "
+                        "VALUES ('wrong-session', '2026-11-19', 'video', :wrong_id, "
+                        "'邏輯設計 70', 1800, 0, 'x', 'x')"
+                    ),
+                    {"wrong_id": wrong_ids[0]},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_daily_snapshots "
+                        "(day, total_watched_seconds, updated_at) "
+                        "VALUES ('2026-11-19', 2400, 'x')"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_rest_days (study_date, created_at) "
+                        "VALUES ('2026-11-22', 'x')"
+                    )
+                )
+
+            storage.sync_study_plan_videos(inventory)
+
+            videos = storage.list_study_plan_videos_with_records()
+            computer_sequences = {
+                int(item["sequence"])
+                for item in videos
+                if item["subject"] == "計算機組織"
+            }
+            self.assertEqual(computer_sequences, {69})
+            with storage._lock, storage._engine.connect() as conn:
+                self.assertEqual(
+                    conn.execute(text("SELECT COUNT(*) FROM study_plan_activity_events")).scalar_one(),
+                    0,
+                )
+                self.assertEqual(
+                    conn.execute(text("SELECT COUNT(*) FROM study_time_sessions")).scalar_one(),
+                    0,
+                )
+                self.assertEqual(
+                    conn.execute(text("SELECT COUNT(*) FROM study_plan_daily_snapshots")).scalar_one(),
+                    0,
+                )
+                self.assertEqual(
+                    conn.execute(text("SELECT COUNT(*) FROM study_plan_rest_days")).scalar_one(),
+                    0,
+                )
+                settings = conn.execute(
+                    text("SELECT * FROM study_plan_replan_settings WHERE id = 1")
+                ).mappings().one()
+                repair_count = conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM e3_data_repairs "
+                        "WHERE repair_key = "
+                        "'remove-computer-org-70-78-and-replan-2026-11-19'"
+                    )
+                ).scalar_one()
+            self.assertEqual(settings["start_date"], "2026-11-20")
+            self.assertEqual(settings["end_date"], "2026-11-30")
+            targets = json.loads(settings["subject_targets"])
+            self.assertEqual(set(targets), set(subjects))
+            self.assertEqual(targets["線性代數"], 3000)
+            self.assertEqual(repair_count, 1)
+
+            storage.sync_study_plan_videos(inventory)
+            with storage._lock, storage._engine.connect() as conn:
+                self.assertEqual(
+                    conn.execute(
+                        text(
+                            "SELECT COUNT(*) FROM e3_data_repairs "
+                            "WHERE repair_key = "
+                            "'remove-computer-org-70-78-and-replan-2026-11-19'"
+                        )
+                    ).scalar_one(),
+                    1,
+                )
+            storage._engine.dispose()
+
     def test_database_url_uses_standard_railway_postgres_variable(self):
         with patch.dict(
             os.environ,

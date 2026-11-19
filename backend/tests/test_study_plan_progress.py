@@ -547,7 +547,7 @@ class StudyPlanProgressTests(unittest.TestCase):
                     seconds,
                     places=3,
                 )
-        self.assertEqual(future_days[-1]["date"].isoformat(), "2026-12-03")
+        self.assertEqual(future_days[-1]["date"].isoformat(), "2026-11-26")
 
         scheduled_by_subject = {}
         for day in future_days:
@@ -565,7 +565,7 @@ class StudyPlanProgressTests(unittest.TestCase):
         for subject, target_seconds in inventory_by_subject.items():
             self.assertAlmostEqual(scheduled_by_subject[subject], target_seconds, places=3)
 
-    def test_smart_replan_replaces_future_schedule_and_preserves_phase_interleaving(self):
+    def test_smart_replan_replaces_future_schedule_and_keeps_courses_separate(self):
         settings = {
             "start_date": "2026-08-03",
             "end_date": "2026-08-09",
@@ -584,7 +584,14 @@ class StudyPlanProgressTests(unittest.TestCase):
 
         self.assertTrue(replanned["is_replanned"])
         self.assertEqual(replanned["credit_baselines"], settings["baseline_by_subject"])
-        self.assertEqual(set(replanned["daily_targets"][0]["allocations"]), {"離散數學", "資料結構"})
+        daily_subjects = [
+            tuple(day["allocations"])
+            for day in replanned["daily_targets"]
+            if day["allocations"]
+        ]
+        self.assertTrue(all(len(subjects) == 1 for subjects in daily_subjects))
+        self.assertEqual(daily_subjects[0], ("離散數學",))
+        self.assertEqual(daily_subjects[-1], ("資料結構",))
         self.assertAlmostEqual(allocated["離散數學"], 7200, places=3)
         self.assertAlmostEqual(allocated["資料結構"], 7200, places=3)
         self.assertEqual(weeks[-1]["end"].isoformat(), "2026-08-09")
@@ -1250,7 +1257,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertNotIn("每日影片上限", plan_html)
             self.assertIn('data-day-subject="線性代數"', plan_html)
             self.assertNotIn("彈性日", plan_html)
-            self.assertIn("2026-12-03", plan_html)
+            self.assertIn("2026-11-30", plan_html)
 
             home_page = client.get("/admin/study-home")
             self.assertEqual(home_page.status_code, 200)

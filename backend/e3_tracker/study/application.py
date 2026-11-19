@@ -161,8 +161,8 @@ STUDY_PLAN_BLOCKS = (
     {
         "subject": "計算機組織",
         "weeks": 5,
-        "total_minutes": 8633.8,
-        "lesson_targets": (17, 34, 51, 68, 78),
+        "total_minutes": 6981.5,
+        "lesson_targets": (14, 28, 42, 56, 69),
     },
 )
 
@@ -170,7 +170,7 @@ STUDY_PLAN_START = "2026-06-29"
 
 STUDY_PLAN_INTERLEAVED_START = "2026-07-27"
 
-STUDY_PLAN_END = "2026-12-03"
+STUDY_PLAN_END = "2026-11-30"
 
 STUDY_PLAN_SUBJECTS = (
     "線性代數",
@@ -343,71 +343,75 @@ def _study_plan_schedule_definitions(
             while cursor_day <= replan_end:
                 replan_days.append(cursor_day)
                 cursor_day += timedelta(days=1)
-            total_target = sum(subject_targets.values())
-            total_weight = sum(
-                weekend_seconds if item.weekday() >= 5 else weekday_seconds
-                for item in replan_days
-            )
-            load_ratio = (total_target / total_weight) if total_weight > 0 else 0.0
-            remaining_by_subject = dict(subject_targets)
-            study_phases = [
-                ("線性代數",),
-                tuple(STUDY_PLAN_PHASE_ONE_SUBJECTS),
-                tuple(STUDY_PLAN_PHASE_TWO_SUBJECTS),
+            ordered_subjects = [
+                subject
+                for subject in STUDY_PLAN_SUBJECTS
+                if subject_targets.get(subject, 0.0) > 0.001
             ]
-            phase_index = 0
-            for index, scheduled_day in enumerate(replan_days):
-                base_capacity = (
-                    weekend_seconds if scheduled_day.weekday() >= 5 else weekday_seconds
-                )
-                day_target = base_capacity * load_ratio
-                if index == len(replan_days) - 1:
-                    day_target = sum(remaining_by_subject.values())
-                allocations: Dict[str, float] = {}
-                remaining_day = max(0.0, day_target)
-                while remaining_day > 0.001 and phase_index < len(study_phases):
-                    phase_subjects = [
-                        subject
-                        for subject in study_phases[phase_index]
-                        if remaining_by_subject.get(subject, 0.0) > 0.001
+            ordered_subjects.extend(
+                subject
+                for subject in subject_targets
+                if subject not in ordered_subjects
+                and subject_targets.get(subject, 0.0) > 0.001
+            )
+            if ordered_subjects and len(replan_days) >= len(ordered_subjects):
+                # Give every remaining course at least one consecutive day, then
+                # apportion extra days by its remaining video duration.  This
+                # keeps courses separate while still using every calendar day.
+                day_counts = {subject: 1 for subject in ordered_subjects}
+                extra_days = len(replan_days) - len(ordered_subjects)
+                target_total = sum(subject_targets[subject] for subject in ordered_subjects)
+                shares = {
+                    subject: extra_days * subject_targets[subject] / target_total
+                    for subject in ordered_subjects
+                }
+                for subject in ordered_subjects:
+                    day_counts[subject] += int(shares[subject])
+                assigned_days = sum(day_counts.values())
+                for subject in sorted(
+                    ordered_subjects,
+                    key=lambda item: shares[item] - int(shares[item]),
+                    reverse=True,
+                )[: len(replan_days) - assigned_days]:
+                    day_counts[subject] += 1
+
+                day_index = 0
+                for subject in ordered_subjects:
+                    subject_days = replan_days[
+                        day_index : day_index + day_counts[subject]
                     ]
-                    phase_total = sum(
-                        remaining_by_subject[subject] for subject in phase_subjects
-                    )
-                    if phase_total <= 0.001:
-                        phase_index += 1
-                        continue
-                    phase_amount = min(remaining_day, phase_total)
-                    distributed = 0.0
-                    for subject_index, subject in enumerate(phase_subjects):
-                        if subject_index == len(phase_subjects) - 1:
-                            amount = phase_amount - distributed
-                        else:
-                            amount = (
-                                phase_amount
-                                * remaining_by_subject[subject]
-                                / phase_total
-                            )
-                            distributed += amount
-                        amount = min(amount, remaining_by_subject[subject])
-                        if amount > 0.001:
-                            allocations[subject] = (
-                                allocations.get(subject, 0.0) + amount
-                            )
-                            remaining_by_subject[subject] = max(
-                                0.0, remaining_by_subject[subject] - amount
-                            )
-                    remaining_day -= phase_amount
-                    if (
-                        sum(
-                            remaining_by_subject.get(subject, 0.0)
-                            for subject in study_phases[phase_index]
-                        )
-                        <= 0.001
+                    weights = [
+                        weekend_seconds if item.weekday() >= 5 else weekday_seconds
+                        for item in subject_days
+                    ]
+                    weight_total = sum(weights)
+                    allocated = 0.0
+                    for index, (scheduled_day, weight) in enumerate(
+                        zip(subject_days, weights)
                     ):
-                        phase_index += 1
-                add_day(scheduled_day, allocations)
-                days[scheduled_day.isoformat()]["replanned"] = True
+                        amount = (
+                            subject_targets[subject] - allocated
+                            if index == len(subject_days) - 1
+                            else subject_targets[subject] * weight / weight_total
+                        )
+                        allocated += amount
+                        add_day(scheduled_day, {subject: amount})
+                        days[scheduled_day.isoformat()]["replanned"] = True
+                    day_index += len(subject_days)
+            else:
+                # A deadline with fewer days than remaining subjects cannot keep
+                # them separate; preserve all targets by placing the overflow on
+                # the final day instead of silently dropping work.
+                for index, scheduled_day in enumerate(replan_days):
+                    allocations = {}
+                    if index < len(ordered_subjects):
+                        subject = ordered_subjects[index]
+                        allocations[subject] = subject_targets[subject]
+                    if index == len(replan_days) - 1:
+                        for subject in ordered_subjects[index + 1 :]:
+                            allocations[subject] = subject_targets[subject]
+                    add_day(scheduled_day, allocations)
+                    days[scheduled_day.isoformat()]["replanned"] = True
         else:
             replan_start = None
             replan_end = None
