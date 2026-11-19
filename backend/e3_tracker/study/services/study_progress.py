@@ -479,6 +479,7 @@ def _study_plan_pace_history(
             cumulative_actual = current_watched_seconds
         if cumulative_actual is not None:
             delta_hours = (cumulative_actual - cumulative_target) / 3600
+            displayed_delta = 0.0 if abs(delta_hours) < 0.05 else round(delta_hours, 1)
             if delta_hours > 0.05:
                 state = "early"
             elif delta_hours < -0.05:
@@ -489,13 +490,20 @@ def _study_plan_pace_history(
                 {
                     "date": day_key,
                     "short_date": f"{cursor.month}/{cursor.day}",
-                    "delta_hours": round(delta_hours, 1),
-                    "value_label": f"{delta_hours:+.1f}",
+                    "delta_hours": displayed_delta,
+                    "value_label": (
+                        "0.0" if displayed_delta == 0 else f"{displayed_delta:+.1f}"
+                    ),
                     "state": state,
                     "is_today": cursor == today,
                     "accessible_label": (
-                        f"{cursor.month} 月 {cursor.day} 日，"
-                        f"{'領先' if delta_hours >= 0 else '落後'} {abs(delta_hours):.1f} 小時"
+                        f"{cursor.month} 月 {cursor.day} 日，準時"
+                        if displayed_delta == 0
+                        else (
+                            f"{cursor.month} 月 {cursor.day} 日，"
+                            f"{'領先' if displayed_delta > 0 else '落後'} "
+                            f"{abs(displayed_delta):.1f} 小時"
+                        )
                     ),
                 }
             )
@@ -533,12 +541,13 @@ def _study_plan_pace_history(
         trend_label = f"相較 {first['short_date']} 改善 {abs(trend_hours):.1f} 小時"
     else:
         trend_label = f"相較 {first['short_date']} 惡化 {abs(trend_hours):.1f} 小時"
+    latest_delta = float(latest["delta_hours"])
     return {
         "rows": display_rows,
         "points": " ".join(f"{row['x']},{row['y']}" for row in display_rows),
         "range_label": f"{first['short_date']} - {latest['short_date']}",
         "trend_label": trend_label,
-        "latest_label": f"{float(latest['delta_hours']):+.1f}h",
+        "latest_label": "0.0h" if latest_delta == 0 else f"{latest_delta:+.1f}h",
         "latest_state": str(latest["state"]),
         "scale_label": f"{scale_hours:.1f}h",
     }

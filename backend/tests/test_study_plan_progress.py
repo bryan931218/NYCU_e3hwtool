@@ -1076,6 +1076,23 @@ class StudyPlanProgressTests(unittest.TestCase):
         self.assertEqual(history["latest_state"], "behind")
         self.assertEqual(history["trend_label"], "相較 8/1 惡化 4.0 小時")
 
+    def test_pace_history_formats_zero_without_negative_zero(self):
+        history = _study_plan_pace_history(
+            [{
+                "daily_recommendations": [{
+                    "date": "2026-11-19",
+                    "target_seconds": 3600.01,
+                }]
+            }],
+            [],
+            today=date(2026, 11, 19),
+            current_watched_minutes=60,
+        )
+
+        self.assertEqual(history["rows"][-1]["value_label"], "0.0")
+        self.assertEqual(history["latest_label"], "0.0h")
+        self.assertIn("準時", history["rows"][-1]["accessible_label"])
+
     def test_pace_history_carries_last_snapshot_across_days_without_updates(self):
         history = _study_plan_pace_history(
             [
