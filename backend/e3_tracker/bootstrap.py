@@ -6,7 +6,78 @@ from e3_tracker.platform import application as web
 from e3_tracker.application_storage import ApplicationStorage
 from e3_tracker.study.features import register_application_features
 from e3_tracker.study.domain.study_rest_day_runtime import redistribute_rest_day_allocations
-from e3_tracker.study.application import _study_plan_schedule_definitions
+from e3_tracker.study.application import (
+    STUDY_PLAN_SUBJECTS,
+    _study_plan_schedule_definitions,
+)
+from e3_tracker.study.services.study_progress import _study_plan_credited_video_seconds
+
+
+def _calibrate_history_through_today(weeks, videos, replan_settings):
+    """Freeze history as complete through Nov 19 with a 30-minute lead."""
+    if str((replan_settings or {}).get("start_date") or "") != "2026-11-20":
+        return weeks
+    cutoff = "2026-11-19"
+    historical_days = [
+        day
+        for week in weeks
+        for day in week.get("daily_targets") or []
+        if str(day.get("date") or "")[:10] <= cutoff
+    ]
+    watched_by_subject = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
+    for video in videos:
+        subject = str(video.get("subject") or "")
+        if subject not in watched_by_subject:
+            continue
+        watched_by_subject[subject] += _study_plan_credited_video_seconds(
+            video.get("duration_seconds"),
+            video.get("watched_seconds"),
+        )
+    for subject, seconds in dict(
+        (replan_settings or {}).get("baseline_by_subject") or {}
+    ).items():
+        if str(subject) in watched_by_subject:
+            watched_by_subject[str(subject)] = max(0.0, float(seconds or 0))
+
+    desired_targets = dict(watched_by_subject)
+    lead_seconds = 30 * 60
+    for subject in ("演算法", "作業系統", "資料結構", "離散數學", "線性代數"):
+        deduction = min(lead_seconds, desired_targets.get(subject, 0.0))
+        desired_targets[subject] = max(
+            0.0, desired_targets.get(subject, 0.0) - deduction
+        )
+        lead_seconds -= deduction
+        if lead_seconds <= 0.001:
+            break
+
+    original_targets = {subject: 0.0 for subject in STUDY_PLAN_SUBJECTS}
+    for day in historical_days:
+        for subject, seconds in dict(day.get("allocations") or {}).items():
+            if subject in original_targets:
+                original_targets[subject] += max(0.0, float(seconds or 0))
+    for day in historical_days:
+        allocations = dict(day.get("allocations") or {})
+        calibrated = {}
+        for subject, seconds in allocations.items():
+            original = original_targets.get(subject, 0.0)
+            target = desired_targets.get(subject, 0.0)
+            if original > 0.001 and target > 0.001:
+                calibrated[subject] = max(0.0, float(seconds or 0)) * target / original
+        day["allocations"] = calibrated
+
+    for week in weeks:
+        subject_targets = {}
+        subjects = []
+        for day in week.get("daily_targets") or []:
+            for subject, seconds in dict(day.get("allocations") or {}).items():
+                if float(seconds or 0) <= 0.001:
+                    continue
+                subject_targets[subject] = subject_targets.get(subject, 0.0) + float(seconds)
+                if subject not in subjects:
+                    subjects.append(subject)
+        week["subject_targets"] = subject_targets
+        week["subjects"] = subjects
+    return weeks
 
 
 def _build_schedule(videos, replan_settings=None, rest_days=None):
@@ -19,10 +90,15 @@ def _build_schedule(videos, replan_settings=None, rest_days=None):
         if replan_settings
         else weeks
     )
-    return redistribute_rest_day_allocations(
+    distributed = redistribute_rest_day_allocations(
         weeks,
         rest_days,
         reference_weeks=historical_reference,
+    )
+    return _calibrate_history_through_today(
+        distributed,
+        videos,
+        replan_settings,
     )
 
 

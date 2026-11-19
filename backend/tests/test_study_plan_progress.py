@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from unittest.mock import patch
 
 from e3_tracker.platform.application import create_app
+from e3_tracker.bootstrap import _calibrate_history_through_today
 from e3_tracker.study.application import _study_plan_today_progress_days, _study_plan_schedule_definitions
 from e3_tracker.study.domain.study_rest_day_runtime import redistribute_rest_day_allocations
 from e3_tracker.study.services.study_progress import _study_plan_pace_history, _study_plan_progress_race, _study_plan_progress_summary, _study_plan_progress_week, _study_plan_range_credited_seconds, _study_plan_interleave_video_queues, _study_plan_subject_status, _study_plan_task_video_queue, _study_plan_credited_video_seconds, _study_plan_video_completion, _study_plan_business_date
@@ -15,6 +16,44 @@ from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
+    def test_history_calibration_marks_today_complete_with_half_hour_lead(self):
+        weeks = [{
+            "daily_targets": [
+                {
+                    "date": date(2026, 11, 19),
+                    "allocations": {"作業系統": 1000.0, "演算法": 1000.0},
+                },
+                {
+                    "date": date(2026, 11, 20),
+                    "allocations": {"作業系統": 600.0},
+                },
+            ],
+            "subject_targets": {"作業系統": 1600.0, "演算法": 1000.0},
+            "subjects": ["作業系統", "演算法"],
+        }]
+        videos = [
+            {"subject": "作業系統", "duration_seconds": 5000, "watched_seconds": 1200},
+            {"subject": "演算法", "duration_seconds": 5000, "watched_seconds": 1000},
+        ]
+        settings = {
+            "start_date": "2026-11-20",
+            "baseline_by_subject": {"作業系統": 1200, "演算法": 1000},
+        }
+
+        calibrated = _calibrate_history_through_today(weeks, videos, settings)
+        historical_target = sum(
+            sum(day["allocations"].values())
+            for week in calibrated
+            for day in week["daily_targets"]
+            if day["date"] <= date(2026, 11, 19)
+        )
+        self.assertEqual(historical_target, 400)
+        self.assertEqual(1200 + 1000 - historical_target, 30 * 60)
+        self.assertEqual(
+            calibrated[0]["daily_targets"][1]["allocations"],
+            {"作業系統": 600.0},
+        )
+
     def test_replan_does_not_rewrite_historical_rest_day_requirements(self):
         reference = _study_plan_schedule_definitions(STUDY_PLAN_VIDEO_INVENTORY)
         settings = {
@@ -1245,7 +1284,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             current_day_subjects = payload["current_week"]["daily_recommendations"][0]["subject_progress"]
             self.assertEqual(
                 [item["name"] for item in current_day_subjects],
-                ["作業系統", "計算機組織", "演算法"],
+                ["線性代數"],
             )
             self.assertIn("remaining_hours", payload["current_week"])
 
@@ -1292,10 +1331,10 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("尚需完成", plan_html)
             self.assertIn("週完成率", plan_html)
             self.assertNotIn("日均", plan_html)
-            self.assertIn("2026-11-16 至 2026-11-22", plan_html)
+            self.assertIn("2026-06-29 至 2026-07-05", plan_html)
             self.assertIn("本週剩餘", plan_html)
             self.assertNotIn("每日影片上限", plan_html)
-            self.assertIn('data-day-subject="作業系統"', plan_html)
+            self.assertIn('data-day-subject="線性代數"', plan_html)
             self.assertNotIn("彈性日", plan_html)
             self.assertIn("2026-11-30", plan_html)
 

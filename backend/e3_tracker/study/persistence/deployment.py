@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Mapping
 from sqlalchemy import text
+from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.study.domain.player_settings import (
     PLAYER_SETTINGS_DEFAULTS,
     normalize_player_settings,
@@ -555,6 +556,123 @@ class StudyDeploymentStorage:
                     "applied_at": now,
                 },
             )
+
+    def _ensure_current_os_algorithm_plan(self) -> None:
+        """Recover the active plan if a restart drops or restores stale settings."""
+        today = datetime.now(TAIPEI_TZ).date().isoformat()
+        if today < "2026-11-19" or today > "2026-11-30":
+            return
+        start_date = "2026-11-20"
+        end_date = "2026-11-30"
+        subjects = ("作業系統", "演算法")
+        with self._lock, self._engine.begin() as conn:
+            saved = conn.execute(
+                text("SELECT * FROM study_plan_replan_settings WHERE id = 1")
+            ).mappings().first()
+            if saved:
+                try:
+                    saved_targets = json.loads(str(saved["subject_targets"] or "{}"))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    saved_targets = None
+                if (
+                    str(saved["start_date"] or "") == start_date
+                    and str(saved["end_date"] or "") == end_date
+                    and abs(float(saved["weekday_minutes"] or 0) - 240.0) < 0.001
+                    and abs(float(saved["weekend_minutes"] or 0) - 240.0) < 0.001
+                    and isinstance(saved_targets, dict)
+                    and set(saved_targets).issubset(set(subjects))
+                ):
+                    return
+
+            counts = {
+                str(row["subject"]): int(row["video_count"] or 0)
+                for row in conn.execute(
+                    text(
+                        "SELECT subject, COUNT(*) AS video_count "
+                        "FROM study_plan_videos "
+                        "WHERE subject IN (:os_subject, :co_subject, :algo_subject) "
+                        "GROUP BY subject"
+                    ),
+                    {
+                        "os_subject": subjects[0],
+                        "co_subject": "計算機組織",
+                        "algo_subject": subjects[1],
+                    },
+                ).mappings()
+            }
+            if (
+                counts.get("作業系統", 0) < 58
+                or counts.get("計算機組織", 0) < 69
+                or counts.get("演算法", 0) < 16
+            ):
+                return
+            rows = conn.execute(
+                text(
+                    "SELECT v.subject, v.duration_seconds, "
+                    "COALESCE(r.watched_seconds, 0) AS watched_seconds "
+                    "FROM study_plan_videos v "
+                    "LEFT JOIN study_plan_video_records r ON r.video_id = v.id "
+                    "WHERE v.subject IN (:os_subject, :algo_subject)"
+                ),
+                {"os_subject": subjects[0], "algo_subject": subjects[1]},
+            ).mappings().all()
+            baselines = {subject: 0.0 for subject in subjects}
+            targets = {subject: 0.0 for subject in subjects}
+            for row in rows:
+                subject = str(row["subject"] or "")
+                duration = max(0.0, float(row["duration_seconds"] or 0))
+                watched = min(duration, max(0.0, float(row["watched_seconds"] or 0)))
+                complete = duration > 0 and (
+                    watched >= duration - 5.0 or watched / duration >= 0.995
+                )
+                credited = duration if complete else watched
+                baselines[subject] += credited
+                targets[subject] += max(0.0, duration - credited)
+            targets = {
+                subject: seconds
+                for subject, seconds in targets.items()
+                if seconds > 0.001
+            }
+            now = datetime.utcnow().isoformat()
+            values = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "weekday_minutes": 240.0,
+                "weekend_minutes": 240.0,
+                "baseline_by_subject": json.dumps(
+                    baselines, ensure_ascii=False, sort_keys=True
+                ),
+                "subject_targets": json.dumps(
+                    targets, ensure_ascii=False, sort_keys=True
+                ),
+                "updated_at": now,
+            }
+            if saved:
+                conn.execute(
+                    text(
+                        "UPDATE study_plan_replan_settings SET "
+                        "start_date = :start_date, end_date = :end_date, "
+                        "weekday_minutes = :weekday_minutes, "
+                        "weekend_minutes = :weekend_minutes, "
+                        "baseline_by_subject = :baseline_by_subject, "
+                        "subject_targets = :subject_targets, updated_at = :updated_at "
+                        "WHERE id = 1"
+                    ),
+                    values,
+                )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_replan_settings ("
+                        "id, start_date, end_date, weekday_minutes, weekend_minutes, "
+                        "baseline_by_subject, subject_targets, created_at, updated_at"
+                        ") VALUES ("
+                        "1, :start_date, :end_date, :weekday_minutes, :weekend_minutes, "
+                        ":baseline_by_subject, :subject_targets, :updated_at, :updated_at"
+                        ")"
+                    ),
+                    values,
+                )
 
     def _repair_discrete_video_11_12_history(self) -> None:
         repair_key = "discrete-video-11-to-12-2026-08-26"
@@ -1326,3 +1444,4 @@ class StudyDeploymentStorage:
         self._repair_replan_only_final_three_subjects()
         self._repair_finalize_computer_org_and_replan_os_algorithm()
         self._repair_even_daily_weight_for_remaining_plan()
+        self._ensure_current_os_algorithm_plan()

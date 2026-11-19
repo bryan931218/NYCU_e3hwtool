@@ -238,10 +238,8 @@ def register_study_plan_routes(*,
             return redirect(url_for("admin_study_plan", subject=selected_subject))
 
         videos = storage.list_study_plan_videos_with_records()
-        week_rows, calendar_week, summary = _study_plan_week_rows(videos)
-        # The page timeline follows today's calendar week.  An unfinished older
-        # week remains visible in history but must not pull the whole page back.
-        current_week = calendar_week or _study_plan_progress_week(week_rows)
+        week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
+        current_week = _study_plan_progress_week(week_rows)
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
         for video in videos:
             video["duration_minutes"] = round(float(video["duration_seconds"]) / 60, 1)
