@@ -939,8 +939,8 @@ class StudyPlanProgressTests(unittest.TestCase):
                 subject_targets={"離散數學": 7 * 3600},
             )
             remaining_seconds = 5400.0
-            # All 90 minutes were watched on Sep 7. The extra 30 minutes must not
-            # spill into Sep 8 when daily completion is calculated.
+            # Record all 90 minutes on Sep 7 so the historical allocation and the
+            # current-day calculation can be exercised independently.
             with patch.object(
                 storage,
                 "_now_iso",
@@ -973,6 +973,17 @@ class StudyPlanProgressTests(unittest.TestCase):
                 browser_session["username"] = "test-admin"
                 browser_session["session_token"] = token
                 browser_session["is_admin"] = True
+
+            with patch(
+                "e3_tracker.study.application._study_plan_business_date",
+                return_value=date(2026, 9, 8),
+            ):
+                today_html = client.get("/admin/study-plan").get_data(as_text=True)
+                self.assertRegex(
+                    today_html,
+                    r'(?s)<div class="day-chip active"[^>]*style="--day-progress:0\.0%">'
+                    r'.*?<span class="day-date">09/08</span>',
+                )
 
             with patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 10)):
                 page = client.get("/admin/study-plan")
