@@ -218,6 +218,135 @@ class StudyDeploymentStorage:
                 {"repair_key": repair_key, "details": details, "applied_at": now},
             )
 
+    def _repair_replan_only_final_three_subjects(self) -> None:
+        """Replan only OS, computer organization and algorithms from live progress."""
+        repair_key = "replan-final-three-subjects-2026-11-19"
+        prerequisite_key = "remove-computer-org-70-78-and-replan-2026-11-19"
+        start_date = "2026-11-20"
+        end_date = "2026-11-30"
+        final_subjects = ("作業系統", "計算機組織", "演算法")
+        with self._lock, self._engine.begin() as conn:
+            if conn.execute(
+                text(
+                    "SELECT repair_key FROM e3_data_repairs "
+                    "WHERE repair_key = :repair_key"
+                ),
+                {"repair_key": repair_key},
+            ).first():
+                return
+            # This is a follow-up to the production cleanup above.  Requiring
+            # that marker prevents a dated plan from appearing in fresh installs.
+            if not conn.execute(
+                text(
+                    "SELECT repair_key FROM e3_data_repairs "
+                    "WHERE repair_key = :repair_key"
+                ),
+                {"repair_key": prerequisite_key},
+            ).first():
+                return
+
+            rows = (
+                conn.execute(
+                    text(
+                        "SELECT v.subject, v.duration_seconds, "
+                        "COALESCE(r.watched_seconds, 0) AS watched_seconds "
+                        "FROM study_plan_videos v "
+                        "LEFT JOIN study_plan_video_records r ON r.video_id = v.id "
+                        "WHERE v.subject IN (:os_subject, :co_subject, :algo_subject)"
+                    ),
+                    {
+                        "os_subject": final_subjects[0],
+                        "co_subject": final_subjects[1],
+                        "algo_subject": final_subjects[2],
+                    },
+                )
+                .mappings()
+                .all()
+            )
+            present_subjects = {str(row["subject"] or "") for row in rows}
+            if not all(subject in present_subjects for subject in final_subjects):
+                return
+
+            baseline_by_subject = {subject: 0.0 for subject in final_subjects}
+            subject_targets = {subject: 0.0 for subject in final_subjects}
+            for row in rows:
+                subject = str(row["subject"] or "")
+                duration = max(0.0, float(row["duration_seconds"] or 0))
+                watched = min(duration, max(0.0, float(row["watched_seconds"] or 0)))
+                # Match the UI's completion rule.  Without this tolerance, the
+                # final 0.1-5 seconds of completed videos become fake 0h tasks.
+                complete = duration > 0 and (
+                    watched >= duration - 5.0
+                    or watched / duration >= 0.995
+                )
+                credited = duration if complete else watched
+                baseline_by_subject[subject] += credited
+                subject_targets[subject] += max(0.0, duration - credited)
+            subject_targets = {
+                subject: seconds
+                for subject, seconds in subject_targets.items()
+                if seconds > 0.001
+            }
+
+            now = datetime.utcnow().isoformat()
+            values = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "weekday_minutes": 720.0,
+                "weekend_minutes": 240.0,
+                "baseline_by_subject": json.dumps(
+                    baseline_by_subject, ensure_ascii=False, sort_keys=True
+                ),
+                "subject_targets": json.dumps(
+                    subject_targets, ensure_ascii=False, sort_keys=True
+                ),
+                "updated_at": now,
+            }
+            conn.execute(
+                text(
+                    "UPDATE study_plan_replan_settings SET "
+                    "start_date = :start_date, end_date = :end_date, "
+                    "weekday_minutes = :weekday_minutes, "
+                    "weekend_minutes = :weekend_minutes, "
+                    "baseline_by_subject = :baseline_by_subject, "
+                    "subject_targets = :subject_targets, updated_at = :updated_at "
+                    "WHERE id = 1"
+                ),
+                values,
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM study_plan_rest_days "
+                    "WHERE study_date >= :start_date AND study_date <= :end_date"
+                ),
+                {"start_date": start_date, "end_date": end_date},
+            )
+            details = json.dumps(
+                {
+                    "scope": list(final_subjects),
+                    "scheduled_subjects": list(subject_targets),
+                    "completed_subjects": [
+                        subject
+                        for subject in final_subjects
+                        if subject not in subject_targets
+                    ],
+                    "remaining_hours": {
+                        subject: round(seconds / 3600, 2)
+                        for subject, seconds in subject_targets.items()
+                    },
+                    "replan_start": start_date,
+                    "replan_end": end_date,
+                },
+                ensure_ascii=False,
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                    "VALUES (:repair_key, :details, :applied_at)"
+                ),
+                {"repair_key": repair_key, "details": details, "applied_at": now},
+            )
+
     def _repair_discrete_video_11_12_history(self) -> None:
         repair_key = "discrete-video-11-to-12-2026-08-26"
         repair_day = "2026-08-26"
@@ -985,3 +1114,4 @@ class StudyDeploymentStorage:
         self._repair_confirmed_discrete_14_calendar_move()
         self._restore_discrete_video_11_fresh_progress()
         self._repair_remove_misclassified_computer_org_videos_and_replan()
+        self._repair_replan_only_final_three_subjects()

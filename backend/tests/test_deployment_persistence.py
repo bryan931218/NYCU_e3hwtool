@@ -136,8 +136,8 @@ class DeploymentPersistenceTests(unittest.TestCase):
             self.assertEqual(settings["start_date"], "2026-11-20")
             self.assertEqual(settings["end_date"], "2026-11-30")
             targets = json.loads(settings["subject_targets"])
-            self.assertEqual(set(targets), set(subjects))
-            self.assertEqual(targets["線性代數"], 3000)
+            self.assertEqual(set(targets), {"作業系統", "計算機組織", "演算法"})
+            self.assertEqual(targets["作業系統"], 3600)
             self.assertEqual(repair_count, 1)
 
             storage.sync_study_plan_videos(inventory)
@@ -152,6 +152,63 @@ class DeploymentPersistenceTests(unittest.TestCase):
                     ).scalar_one(),
                     1,
                 )
+            storage._engine.dispose()
+
+    def test_final_three_replan_ignores_completed_video_tail_seconds(self):
+        inventory = [
+            {
+                "subject": subject,
+                "sequence": sequence,
+                "title": f"{subject}影片",
+                "duration_seconds": 3600,
+            }
+            for subject, sequence in (
+                ("作業系統", 1),
+                ("計算機組織", 69),
+                ("演算法", 1),
+            )
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = DeploymentSafeStorage(str(Path(temp_dir) / "final-three.sqlite3"))
+            storage.sync_study_plan_videos(inventory)
+            videos = {
+                item["subject"]: int(item["id"])
+                for item in storage.list_study_plan_videos_with_records()
+            }
+            with storage._lock, storage._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_videos "
+                        "(subject, sequence, title, duration_seconds, created_at, updated_at) "
+                        "VALUES ('計算機組織', 70, '誤放影片', 7200, 'x', 'x')"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO study_plan_video_records "
+                        "(video_id, watched_seconds, playback_seconds, progress_version, notes, updated_at) "
+                        "VALUES "
+                        "(:os_id, 1800, 1800, 1, '', 'x'), "
+                        "(:co_id, 3598, 3598, 1, '', 'x'), "
+                        "(:algo_id, 900, 900, 1, '', 'x')"
+                    ),
+                    {
+                        "os_id": videos["作業系統"],
+                        "co_id": videos["計算機組織"],
+                        "algo_id": videos["演算法"],
+                    },
+                )
+
+            storage.sync_study_plan_videos(inventory)
+            settings = storage.get_study_plan_replan_settings()
+            self.assertIsNotNone(settings)
+            self.assertEqual(
+                set(settings["subject_targets"]),
+                {"作業系統", "演算法"},
+            )
+            self.assertEqual(settings["subject_targets"]["作業系統"], 1800)
+            self.assertEqual(settings["subject_targets"]["演算法"], 2700)
+            self.assertNotIn("計算機組織", settings["subject_targets"])
             storage._engine.dispose()
 
     def test_database_url_uses_standard_railway_postgres_variable(self):
