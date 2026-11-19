@@ -58,11 +58,18 @@ def _rebuild_week_totals(weeks: List[Dict[str, Any]]) -> None:
 def redistribute_rest_day_allocations(
     weeks: Iterable[Dict[str, Any]],
     rest_days: Iterable[str] | None,
+    *,
+    reference_weeks: Iterable[Dict[str, Any]] | None = None,
 ) -> List[Dict[str, Any]]:
     """Move a rest day's subjects only to later days already planning those subjects."""
 
     result = copy.deepcopy(list(weeks))
     entries = _entries(result)
+    reference_entries = _entries(
+        copy.deepcopy(list(reference_weeks))
+        if reference_weeks is not None
+        else result
+    )
     by_key = {key: (day, segment) for key, day, segment in entries}
     originally_planned = {
         key
@@ -76,6 +83,14 @@ def redistribute_rest_day_allocations(
             if _positive_number(value) > 0.001
         }
         for key, day, _segment in entries
+    }
+    reference_planned_subjects = {
+        key: {
+            str(subject)
+            for subject, value in dict(day.get("allocations") or {}).items()
+            if _positive_number(value) > 0.001
+        }
+        for key, day, _segment in reference_entries
     }
     requested = {
         str(value)
@@ -106,6 +121,24 @@ def redistribute_rest_day_allocations(
             for subject in subjects
         )
 
+    def stable_receiver_count(
+        rest_key: str,
+        segment: bool,
+        blocked: set[str],
+        subject: str,
+        current_count: int,
+    ) -> int:
+        if segment or not reference_entries:
+            return current_count
+        reference_count = sum(
+            1
+            for key, _day, _candidate_segment in reference_entries
+            if key > rest_key
+            and key not in blocked
+            and subject in reference_planned_subjects.get(key, set())
+        )
+        return max(current_count, reference_count)
+
     # Resolve from the end. A requested rest day is effective only if at least
     # one later planned date can receive its work. Invalid late requests remain
     # normal study days and can therefore receive an earlier rest day's load.
@@ -129,7 +162,13 @@ def redistribute_rest_day_allocations(
             subject_receivers = receivers(rest_key, segment, effective, subject)
             if not subject_receivers:
                 continue
-            addition = seconds / len(subject_receivers)
+            addition = seconds / stable_receiver_count(
+                rest_key,
+                segment,
+                effective,
+                subject,
+                len(subject_receivers),
+            )
             for receiver_key, candidate in subject_receivers:
                 allocations = candidate.setdefault("allocations", {})
                 allocations[subject] = _positive_number(allocations.get(subject)) + addition

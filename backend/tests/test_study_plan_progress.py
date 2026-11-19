@@ -9,11 +9,51 @@ from unittest.mock import patch
 
 from e3_tracker.platform.application import create_app
 from e3_tracker.study.application import _study_plan_today_progress_days, _study_plan_schedule_definitions
+from e3_tracker.study.domain.study_rest_day_runtime import redistribute_rest_day_allocations
 from e3_tracker.study.services.study_progress import _study_plan_pace_history, _study_plan_progress_race, _study_plan_progress_summary, _study_plan_progress_week, _study_plan_range_credited_seconds, _study_plan_interleave_video_queues, _study_plan_subject_status, _study_plan_task_video_queue, _study_plan_credited_video_seconds, _study_plan_video_completion, _study_plan_business_date
 from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
 
 
 class StudyPlanProgressTests(unittest.TestCase):
+    def test_replan_does_not_rewrite_historical_rest_day_requirements(self):
+        reference = _study_plan_schedule_definitions(STUDY_PLAN_VIDEO_INVENTORY)
+        settings = {
+            "start_date": "2026-11-20",
+            "end_date": "2026-11-30",
+            "weekday_minutes": 240,
+            "weekend_minutes": 240,
+            "baseline_by_subject": {},
+            "subject_targets": {"作業系統": 72000, "演算法": 25200},
+        }
+        replanned = _study_plan_schedule_definitions(
+            STUDY_PLAN_VIDEO_INVENTORY,
+            settings,
+        )
+        historical = redistribute_rest_day_allocations(
+            reference,
+            ["2026-10-01"],
+            reference_weeks=reference,
+        )
+        after_replan = redistribute_rest_day_allocations(
+            replanned,
+            ["2026-10-01"],
+            reference_weeks=reference,
+        )
+
+        def day(weeks, key):
+            return next(
+                row
+                for week in weeks
+                for row in week["daily_targets"]
+                if row["date"].isoformat() == key
+            )
+
+        self.assertEqual(
+            after_replan_day := day(after_replan, "2026-11-16")["allocations"],
+            day(historical, "2026-11-16")["allocations"],
+        )
+        self.assertTrue(after_replan_day)
+
     def test_daily_task_queue_includes_every_unfinished_video_needed(self):
         videos = [
             {"id": 1, "duration_seconds": 600, "watched_seconds": 600},
@@ -1205,7 +1245,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             current_day_subjects = payload["current_week"]["daily_recommendations"][0]["subject_progress"]
             self.assertEqual(
                 [item["name"] for item in current_day_subjects],
-                ["線性代數"],
+                ["作業系統", "計算機組織", "演算法"],
             )
             self.assertIn("remaining_hours", payload["current_week"])
 
@@ -1252,10 +1292,10 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertIn("尚需完成", plan_html)
             self.assertIn("週完成率", plan_html)
             self.assertNotIn("日均", plan_html)
-            self.assertIn("2026-06-29 至 2026-07-05", plan_html)
+            self.assertIn("2026-11-16 至 2026-11-22", plan_html)
             self.assertIn("本週剩餘", plan_html)
             self.assertNotIn("每日影片上限", plan_html)
-            self.assertIn('data-day-subject="線性代數"', plan_html)
+            self.assertIn('data-day-subject="作業系統"', plan_html)
             self.assertNotIn("彈性日", plan_html)
             self.assertIn("2026-11-30", plan_html)
 

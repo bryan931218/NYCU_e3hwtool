@@ -11,7 +11,19 @@ from e3_tracker.study.application import _study_plan_schedule_definitions
 
 def _build_schedule(videos, replan_settings=None, rest_days=None):
     weeks = _study_plan_schedule_definitions(videos, replan_settings, None)
-    return redistribute_rest_day_allocations(weeks, rest_days)
+    # Rest-day redistribution for dates before a replan must keep using the
+    # original plan's receiver count.  Otherwise shortening the future plan
+    # retroactively changes the required hours shown on historical dates.
+    historical_reference = (
+        _study_plan_schedule_definitions(videos, None, None)
+        if replan_settings
+        else weeks
+    )
+    return redistribute_rest_day_allocations(
+        weeks,
+        rest_days,
+        reference_weeks=historical_reference,
+    )
 
 
 def create_app(**kwargs):

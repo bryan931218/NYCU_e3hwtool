@@ -716,8 +716,8 @@ def register_video_routes(*,
         if not result.get("stale"):
             _invalidate_study_progress_context()
         videos = storage.list_study_plan_videos_with_records()
-        week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
-        current_week = _study_plan_progress_week(week_rows)
+        week_rows, calendar_week, summary = _study_plan_week_rows(videos)
+        current_week = calendar_week or _study_plan_progress_week(week_rows)
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {
             subject: [] for subject in STUDY_PLAN_SUBJECTS
         }
