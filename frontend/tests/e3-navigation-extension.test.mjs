@@ -34,9 +34,9 @@ test('unavailable or blocked clipboard selects the URL for manual copying', asyn
     assert.match(feedback.textContent,/手動複製/);
   }
 });
-const tracker = { frameId: 0, tab: { id: 1, windowId: 3 }, url: "https://www.e3hwtool.space/" };
+const tracker = { frameId: 0, tab: { id: 1, windowId: 3 }, url: "https://www.e3hwtool.space/", documentId: "tracker-document" };
 const e3 = (id, url, documentId) => ({ frameId: 0, tab: { id }, url, documentId });
-function fixture() {
+function fixture(restoreSession) {
   const records = {};
   const changes = [];
   let nextId = 10;
@@ -50,12 +50,128 @@ function fixture() {
     async create(options) { const id = nextId++; changes.push({ id, ...options }); return { id }; },
     async update(id, options) { changes.push({ id, ...options }); },
   };
-  const make = () => createNavigationController({ storage, tabs, now: () => time });
+  const make = () => createNavigationController({ storage, tabs, restoreSession, now: () => time });
   return { records, changes, controller: make(), make, advance: (delta) => { time += delta; } };
 }
 const open = (controller, url = target) => controller.handle({ type: "OPEN_E3_ASSIGNMENT", url }, tracker);
 const report = (controller, id, url, status, documentId = "doc") =>
   controller.handle({ type: "E3_NAVIGATION_STATE", status }, e3(id, url, documentId));
+const openWithSession = controller => controller.handle({ type: "OPEN_E3_ASSIGNMENT", url: target,
+  requestId: "12345678-1234-1234-1234-123456789012" }, tracker);
+
+test("missing E3 login restores the saved session once and reaches the original assignment", async () => {
+  const attempts = [];
+  const f = fixture(async (pending, tabId) => { attempts.push({ pending, tabId }); return true; });
+  await openWithSession(f.controller);
+  await report(f.controller, 10, E3_ORIGIN + "/login/index.php", "login-required", "login");
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].pending.source.tabId, 1);
+  assert.equal(attempts[0].pending.source.documentId, "tracker-document");
+  assert.equal(f.changes.at(-1).url, target);
+  assert.equal(f.records[pendingKey(10)].phase, "restoring");
+  await report(f.controller, 10, target, "authenticated", "assignment");
+  assert.equal(f.records[pendingKey(10)], undefined);
+  assert.equal(f.changes.some(item => item.url === PORTAL_ENTRY), false);
+});
+
+test("expired session, unavailable bridge and duplicate reports fall back to school login without looping", async () => {
+  for (const outcome of [true, false, "error"]) {
+    let attempts = 0;
+    const f = fixture(async () => { attempts++; if (outcome === "error") throw Error("source closed"); return outcome; });
+    await openWithSession(f.controller);
+    await Promise.all([1, 2].map(() => report(f.controller, 10, E3_ORIGIN + "/login/index.php", "login-required", "login")));
+    if (outcome === true) {
+      await report(f.controller, 10, E3_ORIGIN + "/login/index.php", "login-required", "expired");
+    }
+    assert.equal(attempts, 1);
+    assert.equal(f.changes.filter(item => item.url === PORTAL_ENTRY).length, 1);
+    await report(f.controller, 10, E3_ORIGIN + "/login/index.php", "login-required", "failed-sso");
+    assert.equal(f.changes.filter(item => item.url === PORTAL_ENTRY).length, 1);
+  }
+});
+
+test("authenticated E3 browsers and unknown account workflows never receive a replacement cookie", async () => {
+  for (const status of ["authenticated", "unknown"]) {
+    const f = fixture(async () => assert.fail("must not replace this browser session"));
+    await openWithSession(f.controller);
+    await report(f.controller, 10, status === "authenticated" ? target : E3_ORIGIN + "/user/edit.php", status);
+    assert.equal(f.changes.length, 2);
+  }
+});
+
+test("restoration writes a secure session cookie in the source and destination cookie store only", async () => {
+  const source = readFileSync(new URL("../assignments/static/e3-navigation-extension/background.js", import.meta.url), "utf8");
+  const writes = [];
+  const calls = [];
+  const chrome = {
+    storage: { session: {} },
+    tabs: { onRemoved: { addListener() {} }, async sendMessage(...args) {
+      calls.push(args); return { ok: true, session: "synthetic-credential-1234567890" };
+    } },
+    runtime: { onMessage: { addListener() {} } },
+    cookies: { async getAllCookieStores() { return [{ id: "regular", tabIds: [1, 10] }]; },
+      async set(cookie) { writes.push(cookie); return cookie; } },
+  };
+  const sandbox = vm.createContext({ chrome, createNavigationController: () => ({}), E3_ORIGIN });
+  vm.runInContext(source.replace(/^import .*\n/, ""), sandbox);
+  const pending = { url: target, source: { tabId: 1, documentId: "source-doc", requestId: "one-time" } };
+  assert.equal(await sandbox.restoreSession(pending, 10), true);
+  assert.equal(calls[0][0], 1);
+  assert.equal(calls[0][2].documentId, "source-doc");
+  assert.equal(writes[0].url, E3_ORIGIN + "/");
+  assert.equal(writes[0].name, "MoodleSession");
+  assert.equal(writes[0].httpOnly, true);
+  assert.equal(writes[0].secure, true);
+  assert.equal(writes[0].storeId, "regular");
+  assert.equal(Object.hasOwn(writes[0], "expirationDate"), false);
+  chrome.cookies.getAllCookieStores = async () => [{ id: "private", tabIds: [10] }];
+  assert.equal(await sandbox.restoreSession(pending, 10), false);
+  assert.equal(writes.length, 1);
+});
+
+test("the tracker releases a session only once for a trusted click and the extension worker", async () => {
+  const source = readFileSync(new URL("../assignments/static/e3-navigation-extension/tracker.js", import.meta.url), "utf8");
+  const handlers = {};
+  const messages = [];
+  const requests = [];
+  let listener;
+  const requestId = "12345678-1234-1234-1234-123456789012";
+  const body = { dataset: { readonlyView: "0", viewUser: "admin" } };
+  const sandbox = vm.createContext({ URL, AbortSignal, crypto: { randomUUID: () => requestId },
+    setTimeout() {}, location: { search: "" },
+    document: { body, addEventListener: (type, fn) => { handlers[type] = fn; },
+      querySelector: () => ({ content: "csrf-protected" }) },
+    window: { open: () => assert.fail("unexpected fallback") },
+    chrome: { runtime: { id: "own-extension", onMessage: { addListener: fn => { listener = fn; } },
+      async sendMessage(message) { messages.push(message); return { ok: true }; } } },
+    fetch: async (url, options) => { requests.push({ url, options }); return {
+      ok: true, json: async () => ({ ok: true, session: "synthetic-credential-1234567890" }),
+    }; },
+  });
+  vm.runInContext(source, sandbox);
+  const click = trusted => handlers.click({ isTrusted: trusted, type: "click", preventDefault() {},
+    target: { closest: () => ({ href: target }) } });
+  const getSession = (sender = { id: "own-extension" }) => new Promise(resolve => {
+    const async = listener({ type: "E3_RESTORE_SESSION", requestId, url: target }, sender, resolve);
+    if (async !== true) resolve({ ok: false });
+  });
+  click(false);
+  assert.equal(messages.length, 0);
+  click(true);
+  assert.equal(messages[0].requestId, requestId);
+  assert.equal((await getSession({ id: "other-extension" })).ok, false);
+  assert.equal(requests.length, 0);
+  assert.equal((await getSession()).ok, true);
+  assert.equal(requests[0].url, "/api/e3-navigation/session");
+  assert.equal(requests[0].options.headers["X-CSRFToken"], "csrf-protected");
+  assert.equal(requests[0].options.redirect, "error");
+  assert.equal((await getSession()).ok, false);
+  assert.equal(requests.length, 1);
+  click(true);
+  body.dataset.viewUser = "changed-account";
+  assert.equal((await getSession()).ok, false);
+  assert.equal(requests.length, 1);
+});
 
 test("expired login opens SSO once, then automatically returns in the same tab with no second click", async () => {
   const f = fixture();

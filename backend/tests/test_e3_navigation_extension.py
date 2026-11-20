@@ -133,7 +133,7 @@ class E3NavigationExtensionTests(unittest.TestCase):
                 self.assertEqual(package.read('e3-auto-navigation/' + name), (source / name).read_bytes())
             manifest = json.loads(package.read('e3-auto-navigation/manifest.json'))
         self.assertEqual(manifest['manifest_version'], 3)
-        self.assertEqual(manifest['permissions'], ['storage'])
+        self.assertEqual(manifest['permissions'], ['storage', 'cookies'])
         self.assertEqual(manifest['host_permissions'], ['https://e3p.nycu.edu.tw/*'])
         self.assertEqual({match for content in manifest['content_scripts'] for match in content['matches']},
             {'https://e3p.nycu.edu.tw/*', 'https://www.e3hwtool.space/*', 'https://e3hwtool.space/*'})

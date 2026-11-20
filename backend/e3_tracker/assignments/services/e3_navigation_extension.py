@@ -3,6 +3,7 @@
 import io
 import json
 import re
+from urllib.parse import parse_qs, urlsplit
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from e3_tracker.platform.paths import FRONTEND_ROOT
@@ -14,6 +15,24 @@ EXTENSION_FILES = (
     "e3-page.js", "README.html", "guide.css", "icons/icon-16.png", "icons/icon-32.png",
     "icons/icon-48.png", "icons/icon-128.png",
 )
+
+
+def navigation_target(value):
+    """Accept only a canonical E3 course/module viewing destination."""
+    if not isinstance(value, str) or len(value) > 4096 or re.search(r"[\x00-\x20\\]", value):
+        return None
+    try:
+        url = urlsplit(value)
+        if (url.scheme != "https" or url.hostname != "e3p.nycu.edu.tw"
+                or url.port not in (None, 443) or url.username or url.password
+                or not re.fullmatch(r"/(?:mod/[a-z0-9_]+|course)/view\.php", url.path)):
+            return None
+        ids = parse_qs(url.query, keep_blank_values=True).get("id", [])
+        if len(ids) == 1 and re.fullmatch(r"[1-9]\d*", ids[0]):
+            return url.path, ids[0]
+    except ValueError:
+        return None
+    return None
 
 
 def extension_details():

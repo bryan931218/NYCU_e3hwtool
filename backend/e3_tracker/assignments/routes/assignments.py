@@ -5,6 +5,7 @@ import os
 import secrets
 import threading
 import hashlib
+import re
 from typing import List, Optional
 from urllib.parse import urlsplit, urlunsplit
 import requests
@@ -14,6 +15,7 @@ from e3_tracker.assignments.services.collector import annotate_result_semesters,
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
 from e3_tracker.assignments.services.http import apply_cookie, login_with_password
 from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
+from e3_tracker.assignments.services.e3_navigation_extension import navigation_target
 from e3_tracker.platform.services.account_labels import account_label
 from e3_tracker.platform.analytics_integration import consent_choice
 
@@ -194,6 +196,34 @@ def register_assignments_routes(*,
 
 
 
+
+    @app.post("/api/e3-navigation/session")
+    @login_required
+    def e3_navigation_session():
+        user = current_user()
+        if not user.get("is_admin") or user.get("is_guest") or is_admin_viewing_other_user(actor=user):
+            return {"ok": False, "error": "own_account_required"}, 403
+        raw = request.get_json(silent=True)
+        if not isinstance(raw, dict) or raw.get("username") != user["username"]:
+            return {"ok": False, "error": "account_changed"}, 409
+        target = navigation_target(raw.get("url"))
+        if not target:
+            return {"ok": False, "error": "invalid_destination"}, 400
+        result = (get_assign_cache(user["username"]) or {}).get("result") or {}
+        destinations = {
+            navigation_target(item.get("url"))
+            for item in result.get("all_assignments", []) + result.get("courses", [])
+        }
+        if target not in destinations:
+            return {"ok": False, "error": "destination_not_in_account"}, 403
+        if not storage.consume_security_limit(f"e3-session-restore:{user['username']}", 20, 300):
+            return {"ok": False, "error": "too_many_attempts"}, 429
+        credential = user.get("moodle_session") or ""
+        if not re.fullmatch(r"[A-Za-z0-9,-]{16,256}", credential):
+            return {"ok": False, "error": "session_unavailable"}, 409
+        # This POST uses the normal same-origin/CSRF checks. The extension keeps
+        # the response in memory until writing the caller's E3 session cookie.
+        return {"ok": True, "session": credential}
 
     @app.get("/api/profile")
     @login_required

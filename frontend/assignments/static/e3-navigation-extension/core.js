@@ -30,9 +30,8 @@ function isTargetPage(current, target) {
 
 export function pendingKey(tabId) { return `e3-navigation:${tabId}`; }
 
-// State is held in extension session storage, independently for each destination
-// tab. No E3 cookie, password or page content leaves the E3 content script.
-export function createNavigationController({ storage, tabs, now = Date.now }) {
+// Only navigation metadata is persisted. Session credentials stay in memory.
+export function createNavigationController({ storage, tabs, restoreSession = async () => false, now = Date.now }) {
   const queues = new Map();
   function forTab(id, action) {
     const previous = queues.get(id) || Promise.resolve();
@@ -53,7 +52,12 @@ export function createNavigationController({ storage, tabs, now = Date.now }) {
         windowId: sender.tab.windowId });
       const key = pendingKey(tab.id);
       try {
-        await storage.set({ [key]: { url: target, createdAt: now(), phase: "opening" } });
+        const source = {
+          tabId: sender.tab.id, documentId: sender.documentId,
+          requestId: typeof message.requestId === "string" && /^[a-f0-9-]{36}$/.test(message.requestId)
+            ? message.requestId : null,
+        };
+        await storage.set({ [key]: { url: target, createdAt: now(), phase: "opening", source } });
       } catch {
         // A storage failure must still leave the original E3 link usable.
       }
@@ -79,7 +83,7 @@ export function createNavigationController({ storage, tabs, now = Date.now }) {
       if (!pending) return { ok: true };
       const age = now() - pending.createdAt;
       if (!assignmentTarget(pending.url) || !Number.isFinite(pending.createdAt) ||
-          age < 0 || age >= PENDING_TTL_MS || !["opening", "waiting-login", "returning"].includes(pending.phase)) {
+          age < 0 || age >= PENDING_TTL_MS || !["opening", "restoring", "waiting-login", "returning"].includes(pending.phase)) {
         await storage.remove(key);
         return { ok: true };
       }
@@ -99,6 +103,19 @@ export function createNavigationController({ storage, tabs, now = Date.now }) {
         await storage.set({ [key]: { ...pending, phase: "returning", redirectedDocument: sender.documentId } });
         await tabs.update(sender.tab.id, { url: pending.url });
       } else if (pending.phase === "opening") {
+        let restored = false;
+        if (pending.source?.requestId && pending.source.documentId) {
+          try { restored = await restoreSession(pending, sender.tab.id); } catch {}
+        }
+        if (restored) {
+          await storage.set({ [key]: { ...pending, phase: "restoring", redirectedDocument: sender.documentId } });
+          await tabs.update(sender.tab.id, { url: pending.url });
+          return { ok: true };
+        }
+        await storage.set({ [key]: { ...pending, phase: "waiting-login", redirectedDocument: sender.documentId } });
+        await tabs.update(sender.tab.id, { url: PORTAL_ENTRY });
+      } else if (pending.phase === "restoring") {
+        // A rejected/expired session gets one school-login attempt.
         await storage.set({ [key]: { ...pending, phase: "waiting-login", redirectedDocument: sender.documentId } });
         await tabs.update(sender.tab.id, { url: PORTAL_ENTRY });
       }

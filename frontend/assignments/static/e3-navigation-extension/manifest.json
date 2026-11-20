@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "E3 作業自動跳轉",
-  "version": "1.0.1",
-  "description": "從 E3 作業追蹤系統開啟作業，登入完成後自動返回指定作業。",
+  "version": "1.1.0",
+  "description": "開啟作業時沿用追蹤系統儲存的有效 Session；需要學校登入時自動返回原作業。",
   "minimum_chrome_version": "116",
   "homepage_url": "https://www.e3hwtool.space/e3-auto-navigation",
   "icons": {
@@ -11,7 +11,7 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "cookies"],
   "host_permissions": ["https://e3p.nycu.edu.tw/*"],
   "background": {"service_worker": "background.js", "type": "module"},
   "content_scripts": [
