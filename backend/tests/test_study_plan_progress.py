@@ -11,7 +11,7 @@ from unittest.mock import patch
 from e3_tracker.platform.application import create_app
 from e3_tracker.bootstrap import _build_schedule, _calibrate_history_through_today
 from e3_tracker.bootstrap import create_app as create_study_app
-from e3_tracker.study.application import _study_plan_today_progress_days, _study_plan_schedule_definitions
+from e3_tracker.study.application import _daily_display_completion, _study_plan_today_progress_days, _study_plan_schedule_definitions
 from e3_tracker.study.domain.study_rest_day_runtime import redistribute_rest_day_allocations
 from e3_tracker.study.services.study_progress import _study_plan_pace_history, _study_plan_progress_race, _study_plan_progress_summary, _study_plan_progress_week, _study_plan_range_credited_seconds, _study_plan_interleave_video_queues, _study_plan_subject_status, _study_plan_task_video_queue, _study_plan_credited_video_seconds, _study_plan_video_completion, _study_plan_business_date
 from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
@@ -21,7 +21,11 @@ from e3_tracker.study.domain.november_plan_checkpoint import (
 
 
 class StudyPlanProgressTests(unittest.TestCase):
-    def test_restored_public_plan_keeps_history_and_carries_real_surplus(self):
+    def test_daily_percent_does_not_round_incomplete_to_100(self):
+        self.assertEqual(_daily_display_completion(99.99), 99.9)
+        self.assertEqual(_daily_display_completion(100), 100)
+
+    def test_restored_plan_matches_subject_bars_daily_badges_and_race(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(os.environ, {
                 "E3_CACHE_DIR": temp_dir,
@@ -60,17 +64,30 @@ class StudyPlanProgressTests(unittest.TestCase):
                 targets = {day: sum(amounts.values()) for day, amounts in allocations_by_day.items()}
                 nov19_target = targets["2026-11-19"]
                 nov20_target = targets["2026-11-20"]
-                client = app.test_client()
+                from tests.security_helpers import csrf_client
+                client = csrf_client(app)
+                token = "checkpoint-card-test-session"
+                storage.save_web_session(token, "test-admin", is_admin=True)
+                with client.session_transaction() as session:
+                    session.update(username="test-admin", session_token=token, is_admin=True)
+                inventory = storage.list_study_plan_videos_with_records()
 
-                def load_page(today, nov19_seconds, nov20_seconds=0):
+                def load_page(today, nov19_seconds, replan_progress=None):
                     events = [
                         {"day": "2026-11-19", "subject": "計算機組織",
                          "delta_seconds": nov19_seconds, "watched_seconds": nov19_seconds,
                          "duration_seconds": 30000, "sequence": 1, "video_id": 0},
-                        {"day": "2026-11-20", "subject": "作業系統",
-                         "delta_seconds": nov20_seconds, "watched_seconds": nov20_seconds,
-                         "duration_seconds": 30000, "sequence": 1, "video_id": 0},
                     ]
+                    pending_seconds = dict(BASELINE_BY_SUBJECT)
+                    for subject, seconds in (replan_progress or {}).items():
+                        pending_seconds[subject] += seconds
+                    records = []
+                    for video in sorted(inventory, key=lambda item: item["sequence"]):
+                        subject = video["subject"]
+                        amount = min(video["duration_seconds"], max(0, pending_seconds[subject]))
+                        pending_seconds[subject] -= amount
+                        records.append(dict(video, watched_seconds=amount))
+
                     def activity(*, start_day=None, end_day=None, day=None):
                         return [
                             event for event in events
@@ -79,37 +96,63 @@ class StudyPlanProgressTests(unittest.TestCase):
                     with (
                         patch("e3_tracker.study.application._study_plan_business_date", return_value=today),
                         patch.object(storage, "list_study_plan_activity_events", side_effect=activity),
+                        patch.object(storage, "list_study_plan_videos_with_records", return_value=records),
                         patch("e3_tracker.study.application.time", wraps=time) as app_time,
                     ):
                         app_time.monotonic.return_value = load_page.clock
                         load_page.clock += 30
                         response = client.get("/study-progress")
+                        admin = client.get("/admin/study-plan")
                     self.assertEqual(response.status_code, 200)
+                    self.assertEqual(admin.status_code, 200)
                     html = response.get_data(as_text=True)
                     cards = {
                         re.search(r'class="day-date">([^<]+)', card)[1]: card
                         for card in re.findall(r'<article class="day-chip.*?</article>', html, re.S)
                     }
-                    return html, cards
+                    return html, cards, admin.get_data(as_text=True)
 
                 load_page.clock = 100
-                html, cards = load_page(date(2026, 11, 19), 8275)
+                html, cards, _ = load_page(date(2026, 11, 19), 8275)
                 self.assertIn("完成度</span><strong>100.0%", cards["11/18"])
                 self.assertIn(f"完成度</span><strong>{8275 / nov19_target * 100:.1f}%", cards["11/19"])
                 self.assertIn(f'class="pace-number">{(nov19_target - 8275) / 3600:.1f}', html)
 
-                html, cards = load_page(date(2026, 11, 20), 18276, 384)
+                nov20_allocations = allocations_by_day["2026-11-20"]
+                os_target = nov20_allocations["作業系統"]
+                algo_target = nov20_allocations["演算法"]
+                html, cards, _ = load_page(
+                    date(2026, 11, 20), 18276,
+                    {"作業系統": os_target - 600, "演算法": algo_target + 400},
+                )
                 self.assertIn("完成度</span><strong>100.0%", cards["11/19"])
                 self.assertIn('class="day-hours">2.52h', cards["11/20"])
                 self.assertIn('class="day-focus">OS 1.88h＋演算法 0.64h', cards["11/20"])
-                carried = 18276 + 384 - nov19_target
-                self.assertIn(f"完成度</span><strong>{carried / nov20_target * 100:.1f}%", cards["11/20"])
-                self.assertIn(f'class="pace-number">{(nov20_target - carried) / 3600:.1f}', html)
+                self.assertIn(f"完成度</span><strong>{(nov20_target - 600) / nov20_target * 100:.1f}%", cards["11/20"])
+                self.assertIn('class="day-chip early"', cards["11/21"])
+                self.assertIn('class="pace-number">0.2', html)
+                self.assertIn('class="pace-unit">小時待補', html)
 
-                html, cards = load_page(date(2026, 11, 20), 18276, 7000)
+                # Reproduce the submitted screenshot: both courses covered today
+                # plus part of tomorrow's allocation, without extra watch events.
+                os_ahead, algo_ahead = 140, 1396
+                html, cards, admin = load_page(
+                    date(2026, 11, 20), 18276,
+                    {"作業系統": os_target + os_ahead, "演算法": algo_target + algo_ahead},
+                )
+                self.assertIn('class="day-chip complete"', cards["11/20"])
                 self.assertIn("完成度</span><strong>100.0%", cards["11/20"])
                 self.assertIn('class="day-chip early"', cards["11/21"])
+                self.assertIn(f"完成度</span><strong>{(os_ahead + algo_ahead) / nov20_target * 100:.1f}%", cards["11/21"])
+                self.assertIn('class="day-chip upcoming"', cards["11/22"])
                 self.assertIn('class="pace-unit">小時領先', html)
+                self.assertIn('class="pace-number">0.4', html)
+                self.assertIn('目前差距</span><strong>+0.4h', html)
+                focus_cards = re.findall(
+                    r'<div class="day-chip (\w+)" data-focus-day-index="\d+".*?(?=<div class="day-chip|</section>)',
+                    admin, re.S,
+                )
+                self.assertEqual(focus_cards[-3:], ["complete", "early", "upcoming"])
             finally:
                 storage._engine.dispose()
 

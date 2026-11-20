@@ -1412,7 +1412,7 @@
                         const status = card.querySelector('.day-status');
                         const completion = card.querySelector('.day-completion strong');
                         if (status) status.textContent = day.state_label;
-                        if (completion) completion.textContent = day.has_target ? Math.round(Number(day.completion || 0)) + '%' : '—';
+                        if (completion) completion.textContent = day.has_target ? Number(day.completion || 0) + '%' : '—';
                         (day.subject_progress || []).forEach(function (subjectProgress) {
                             const subjectRow = Array.from(card.querySelectorAll('[data-day-subject]')).find(function (row) {
                                 return row.dataset.daySubject === subjectProgress.name;
@@ -1420,7 +1420,7 @@
                             if (!subjectRow) return;
                             const value = subjectRow.querySelector('.day-subject-value');
                             const fill = subjectRow.querySelector('.day-subject-fill');
-                            if (value) value.textContent = Math.round(Number(subjectProgress.completion || 0)) + '%';
+                            if (value) value.textContent = Number(subjectProgress.completion || 0) + '%';
                             if (fill) fill.style.setProperty('--subject-progress', Number(subjectProgress.completion || 0) + '%');
                         });
                         const timelineCard = document.querySelector('[data-timeline-day-date="' + day.date + '"]');
@@ -1432,7 +1432,7 @@
                             if (timelineStatus) timelineStatus.textContent = day.state_label || '';
                             if (timelineCompletion) {
                                 timelineCompletion.textContent = day.has_target
-                                    ? Math.round(Number(day.completion || 0)) + '%'
+                                    ? Number(day.completion || 0) + '%'
                                     : '—';
                             }
                         }
