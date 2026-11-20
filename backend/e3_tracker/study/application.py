@@ -358,7 +358,18 @@ def _study_plan_schedule_definitions(
                 if subject not in ordered_subjects
                 and subject_targets.get(subject, 0.0) > 0.001
             )
-            if ordered_subjects and len(replan_days) >= len(ordered_subjects):
+            if uses_november_checkpoint(replan_settings):
+                # This plan alternates neither courses nor days: both remaining
+                # courses share each day in proportion to their video lengths.
+                # Keep the checkpoint targets intact so earned credit still carries.
+                daily_allocations = {
+                    subject: subject_targets[subject] / len(replan_days)
+                    for subject in ordered_subjects
+                }
+                for scheduled_day in replan_days:
+                    add_day(scheduled_day, daily_allocations)
+                    days[scheduled_day.isoformat()]["replanned"] = True
+            elif ordered_subjects and len(replan_days) >= len(ordered_subjects):
                 # Give every remaining course at least one consecutive day, then
                 # apportion extra days by its remaining video duration.  This
                 # keeps courses separate while still using every calendar day.

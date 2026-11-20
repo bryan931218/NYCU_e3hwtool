@@ -38,11 +38,26 @@ class StudyPlanProgressTests(unittest.TestCase):
                     subject_targets=SUBJECT_TARGETS,
                 )
                 storage.save_study_plan_replan_settings(**settings)
-                targets = {
-                    day["date"].isoformat(): sum(day["allocations"].values())
+                allocations_by_day = {
+                    day["date"].isoformat(): day["allocations"]
                     for week in _build_schedule(STUDY_PLAN_VIDEO_INVENTORY, settings)
                     for day in week["daily_targets"]
                 }
+                remaining_days = {
+                    day: amounts for day, amounts in allocations_by_day.items()
+                    if day >= PLAN_START and amounts
+                }
+                self.assertEqual(
+                    list(remaining_days), [f"2026-11-{day}" for day in range(20, 31)]
+                )
+                for amounts in remaining_days.values():
+                    self.assertEqual(set(amounts), {"作業系統", "演算法"})
+                    self.assertAlmostEqual(sum(amounts.values()), sum(SUBJECT_TARGETS.values()) / 11)
+                for subject, total in SUBJECT_TARGETS.items():
+                    self.assertAlmostEqual(
+                        sum(amounts[subject] for amounts in remaining_days.values()), total
+                    )
+                targets = {day: sum(amounts.values()) for day, amounts in allocations_by_day.items()}
                 nov19_target = targets["2026-11-19"]
                 nov20_target = targets["2026-11-20"]
                 client = app.test_client()
@@ -85,8 +100,8 @@ class StudyPlanProgressTests(unittest.TestCase):
 
                 html, cards = load_page(date(2026, 11, 20), 18276, 384)
                 self.assertIn("完成度</span><strong>100.0%", cards["11/19"])
-                self.assertIn('class="day-hours">2.59h', cards["11/20"])
-                self.assertIn('class="day-focus">OS 2.59h', cards["11/20"])
+                self.assertIn('class="day-hours">2.52h', cards["11/20"])
+                self.assertIn('class="day-focus">OS 1.88h＋演算法 0.64h', cards["11/20"])
                 carried = 18276 + 384 - nov19_target
                 self.assertIn(f"完成度</span><strong>{carried / nov20_target * 100:.1f}%", cards["11/20"])
                 self.assertIn(f'class="pace-number">{(nov20_target - carried) / 3600:.1f}', html)
