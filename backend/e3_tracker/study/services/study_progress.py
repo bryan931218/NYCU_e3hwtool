@@ -363,7 +363,6 @@ def _study_plan_progress_race(
     # An unfinished target is a real gap even when it is smaller than the full
     # daily allocation. Otherwise a partially watched day misleadingly appears
     # to be on track until an entire extra day has been missed.
-    within_daily_allowance = False
     is_behind = bool(delta_minutes < -1)
 
     if is_behind:
@@ -401,7 +400,6 @@ def _study_plan_progress_race(
         "delta_label": delta_label,
         "today_target_hours": round(today_target / 60, 1),
         "today_target_label": today_target_label,
-        "within_daily_allowance": within_daily_allowance,
         "state": state,
         "state_label": state_label,
         "status_label": status_label,

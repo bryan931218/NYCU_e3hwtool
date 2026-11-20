@@ -3,19 +3,101 @@ import math
 import os
 import re
 import tempfile
+import time
 import unittest
 from datetime import date, timedelta
 from unittest.mock import patch
 
 from e3_tracker.platform.application import create_app
-from e3_tracker.bootstrap import _calibrate_history_through_today
+from e3_tracker.bootstrap import _build_schedule, _calibrate_history_through_today
+from e3_tracker.bootstrap import create_app as create_study_app
 from e3_tracker.study.application import _study_plan_today_progress_days, _study_plan_schedule_definitions
 from e3_tracker.study.domain.study_rest_day_runtime import redistribute_rest_day_allocations
 from e3_tracker.study.services.study_progress import _study_plan_pace_history, _study_plan_progress_race, _study_plan_progress_summary, _study_plan_progress_week, _study_plan_range_credited_seconds, _study_plan_interleave_video_queues, _study_plan_subject_status, _study_plan_task_video_queue, _study_plan_credited_video_seconds, _study_plan_video_completion, _study_plan_business_date
 from e3_tracker.study.domain.study_plan_data import STUDY_PLAN_VIDEO_INVENTORY
+from e3_tracker.study.domain.november_plan_checkpoint import (
+    BASELINE_BY_SUBJECT, PLAN_END, PLAN_START, SUBJECT_TARGETS,
+)
 
 
 class StudyPlanProgressTests(unittest.TestCase):
+    def test_restored_public_plan_keeps_history_and_carries_real_surplus(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(os.environ, {
+                "E3_CACHE_DIR": temp_dir,
+                "E3_DATABASE_URL": "",
+                "E3_SESSION_COOKIE_SECURE": "0",
+            }):
+                app = create_study_app()
+            storage = app.extensions["e3_storage"]
+            try:
+                settings = dict(
+                    start_date=PLAN_START, end_date=PLAN_END,
+                    weekday_minutes=240, weekend_minutes=240,
+                    baseline_by_subject=BASELINE_BY_SUBJECT,
+                    subject_targets=SUBJECT_TARGETS,
+                )
+                storage.save_study_plan_replan_settings(**settings)
+                targets = {
+                    day["date"].isoformat(): sum(day["allocations"].values())
+                    for week in _build_schedule(STUDY_PLAN_VIDEO_INVENTORY, settings)
+                    for day in week["daily_targets"]
+                }
+                nov19_target = targets["2026-11-19"]
+                nov20_target = targets["2026-11-20"]
+                client = app.test_client()
+
+                def load_page(today, nov19_seconds, nov20_seconds=0):
+                    events = [
+                        {"day": "2026-11-19", "subject": "計算機組織",
+                         "delta_seconds": nov19_seconds, "watched_seconds": nov19_seconds,
+                         "duration_seconds": 30000, "sequence": 1, "video_id": 0},
+                        {"day": "2026-11-20", "subject": "作業系統",
+                         "delta_seconds": nov20_seconds, "watched_seconds": nov20_seconds,
+                         "duration_seconds": 30000, "sequence": 1, "video_id": 0},
+                    ]
+                    def activity(*, start_day=None, end_day=None, day=None):
+                        return [
+                            event for event in events
+                            if (day or start_day or "") <= event["day"] <= (day or end_day or "9999")
+                        ]
+                    with (
+                        patch("e3_tracker.study.application._study_plan_business_date", return_value=today),
+                        patch.object(storage, "list_study_plan_activity_events", side_effect=activity),
+                        patch("e3_tracker.study.application.time", wraps=time) as app_time,
+                    ):
+                        app_time.monotonic.return_value = load_page.clock
+                        load_page.clock += 30
+                        response = client.get("/study-progress")
+                    self.assertEqual(response.status_code, 200)
+                    html = response.get_data(as_text=True)
+                    cards = {
+                        re.search(r'class="day-date">([^<]+)', card)[1]: card
+                        for card in re.findall(r'<article class="day-chip.*?</article>', html, re.S)
+                    }
+                    return html, cards
+
+                load_page.clock = 100
+                html, cards = load_page(date(2026, 11, 19), 8275)
+                self.assertIn("完成度</span><strong>100.0%", cards["11/18"])
+                self.assertIn(f"完成度</span><strong>{8275 / nov19_target * 100:.1f}%", cards["11/19"])
+                self.assertIn(f'class="pace-number">{(nov19_target - 8275) / 3600:.1f}', html)
+
+                html, cards = load_page(date(2026, 11, 20), 18276, 384)
+                self.assertIn("完成度</span><strong>100.0%", cards["11/19"])
+                self.assertIn('class="day-hours">2.59h', cards["11/20"])
+                self.assertIn('class="day-focus">OS 2.59h', cards["11/20"])
+                carried = 18276 + 384 - nov19_target
+                self.assertIn(f"完成度</span><strong>{carried / nov20_target * 100:.1f}%", cards["11/20"])
+                self.assertIn(f'class="pace-number">{(nov20_target - carried) / 3600:.1f}', html)
+
+                html, cards = load_page(date(2026, 11, 20), 18276, 7000)
+                self.assertIn("完成度</span><strong>100.0%", cards["11/20"])
+                self.assertIn('class="day-chip early"', cards["11/21"])
+                self.assertIn('class="pace-unit">小時領先', html)
+            finally:
+                storage._engine.dispose()
+
     def test_history_calibration_marks_today_complete_without_fake_lead(self):
         weeks = [{
             "daily_targets": [
@@ -939,8 +1021,7 @@ class StudyPlanProgressTests(unittest.TestCase):
                 subject_targets={"離散數學": 7 * 3600},
             )
             remaining_seconds = 5400.0
-            # Record all 90 minutes on Sep 7 so the historical allocation and the
-            # current-day calculation can be exercised independently.
+            # The extra 30 minutes of real progress carry to the next planned day.
             with patch.object(
                 storage,
                 "_now_iso",
@@ -979,10 +1060,10 @@ class StudyPlanProgressTests(unittest.TestCase):
                 return_value=date(2026, 9, 8),
             ):
                 today_html = client.get("/admin/study-plan").get_data(as_text=True)
-                self.assertRegex(
+                self.assertIn(
+                    'id="plan-day-2026-09-08" data-timeline-day-date="2026-09-08" '
+                    'style="--day-progress:50.0%"',
                     today_html,
-                    r'(?s)<div class="day-chip active"[^>]*style="--day-progress:0\.0%">'
-                    r'.*?<span class="day-date">09/08</span>',
                 )
 
             with patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 9, 10)):
@@ -1049,11 +1130,9 @@ class StudyPlanProgressTests(unittest.TestCase):
 
         self.assertEqual(within_today["state"], "behind")
         self.assertEqual(within_today["state_label"], "落後計畫")
-        self.assertFalse(within_today["within_daily_allowance"])
         self.assertEqual(within_today["status_label"], "落後 2 小時 24 分鐘")
         self.assertEqual(within_today["today_target_label"], "3 小時 26 分鐘")
         self.assertEqual(beyond_today["state"], "behind")
-        self.assertFalse(beyond_today["within_daily_allowance"])
 
     def test_progress_race_keeps_edge_markers_visible(self):
         start = _study_plan_progress_race(0, 0, 100)

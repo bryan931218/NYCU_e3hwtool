@@ -25,6 +25,10 @@ from e3_tracker.study.services.note_batch_analysis import build_note_batch_analy
 from e3_tracker.study.domain.study_note_quality import (
     is_study_note_process_metadata_card,
 )
+from e3_tracker.study.domain.november_plan_checkpoint import (
+    FIRST_TRACKED_DAY,
+    uses_november_checkpoint,
+)
 from e3_tracker.study.services.note_analysis import build_note_analysis
 from e3_tracker.study.services.note_relations import build_note_relations
 from e3_tracker.study.services.study_progress import (
@@ -707,6 +711,10 @@ def _study_plan_today_progress_days(
                 )
                 planned_before_by_subject[subject] = planned_before + target_seconds
 
+            if "checkpoint_credit_before_today" in day:
+                day_before_seconds = day["checkpoint_credit_before_today"]
+                day_after_seconds = day["credited_seconds"]
+
             week_before_seconds += day_before_seconds
             week_after_seconds += day_after_seconds
             gained_seconds = max(0.0, day_after_seconds - day_before_seconds)
@@ -1179,21 +1187,23 @@ def register_study_site(
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
         start_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
         today = _study_plan_business_date()
+        today_iso = today.isoformat()
         replan_settings = storage.get_study_plan_replan_settings()
         rest_days = storage.list_study_plan_rest_days()
-        activity_events = storage.list_study_plan_activity_events(
-            start_day=STUDY_PLAN_START,
-            end_day=today.isoformat(),
-        )
-        actual_seconds_by_day_subject: Dict[str, Dict[str, float]] = {}
-        for event in activity_events:
-            day_key = str(event.get("day") or "")
-            subject = str(event.get("subject") or "")
-            delta_seconds = _study_plan_nonnegative_number(event.get("delta_seconds"))
-            if not day_key or delta_seconds <= 0:
-                continue
-            subject_totals = actual_seconds_by_day_subject.setdefault(day_key, {})
-            subject_totals[subject] = subject_totals.get(subject, 0.0) + delta_seconds
+        use_checkpoint = uses_november_checkpoint(replan_settings)
+        checkpoint_credit = checkpoint_credit_before_today = 0.0
+        if use_checkpoint and today_iso >= FIRST_TRACKED_DAY:
+            for event in storage.list_study_plan_activity_events(
+                start_day=FIRST_TRACKED_DAY, end_day=today_iso
+            ):
+                seconds = float(event.get("delta_seconds") or 0)
+                if not math.isfinite(seconds):
+                    continue
+                checkpoint_credit += seconds
+                if event.get("day") != today_iso:
+                    checkpoint_credit_before_today += seconds
+            checkpoint_credit = max(0.0, checkpoint_credit)
+            checkpoint_credit_before_today = max(0.0, checkpoint_credit_before_today)
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {}
         for video in videos:
             subject = str(video.get("subject") or "")
@@ -1239,7 +1249,11 @@ def register_study_site(
             week_end = definition["end"]
             subject_targets = dict(definition["subject_targets"])
             subjects = list(definition["subjects"])
-            credit_baselines = dict(definition.get("credit_baselines") or {})
+            # Checkpoint allocations already include the historical baseline,
+            # even on a week that straddles the replan start.
+            credit_baselines = (
+                {} if use_checkpoint else dict(definition.get("credit_baselines") or {})
+            )
             subject_credits: Dict[str, float] = {}
             weekly_videos: Dict[int, Dict[str, Any]] = {}
             for subject, target_seconds in subject_targets.items():
@@ -1274,29 +1288,10 @@ def register_study_site(
                 credited_seconds = 0.0
                 daily_subject_progress: List[Dict[str, Any]] = []
                 for subject, subject_target in allocations.items():
-                    if current_day < today:
-                        # Keep the calibrated cumulative allocation for historical
-                        # days. Replanning may intentionally mark these dates as
-                        # caught up even when the viewing happened on another day.
-                        amount = min(
-                            subject_target,
-                            remaining_credit.get(subject, 0.0),
-                        )
-                        remaining_credit[subject] = max(
-                            0.0,
-                            remaining_credit.get(subject, 0.0) - amount,
-                        )
-                    elif current_day == today:
-                        # Today must stand on its own: earlier overachievement must
-                        # never make today's card look complete.
-                        amount = min(
-                            subject_target,
-                            actual_seconds_by_day_subject.get(current_day_key, {}).get(
-                                subject, 0.0
-                            ),
-                        )
-                    else:
-                        amount = 0.0
+                    amount = min(subject_target, remaining_credit.get(subject, 0.0))
+                    remaining_credit[subject] = max(
+                        0.0, remaining_credit.get(subject, 0.0) - amount
+                    )
                     credited_seconds += amount
                     daily_subject_progress.append(
                         {
@@ -1312,6 +1307,21 @@ def register_study_site(
                             ),
                         }
                     )
+                checkpoint_fields = {}
+                if use_checkpoint:
+                    if current_day_key < FIRST_TRACKED_DAY:
+                        # Dates the owner already confirmed as completed.
+                        credited_seconds = credit_before_today = target_seconds
+                    else:
+                        # Apply net recorded time to the oldest scheduled day
+                        # first; carry any surplus through to later dates.
+                        credited_seconds = min(target_seconds, checkpoint_credit)
+                        credit_before_today = min(
+                            target_seconds, checkpoint_credit_before_today
+                        )
+                        checkpoint_credit -= credited_seconds
+                        checkpoint_credit_before_today -= credit_before_today
+                    checkpoint_fields["checkpoint_credit_before_today"] = credit_before_today
                 has_target = target_seconds > 0
                 if has_target:
                     completion = _study_plan_completion_percent(
@@ -1380,11 +1390,12 @@ def register_study_site(
                         "completion": round(completion, 1),
                         "state": state,
                         "state_label": state_label,
+                        **checkpoint_fields,
                     }
                 )
 
             target_seconds = sum(subject_targets.values())
-            watched_seconds = sum(subject_credits.values())
+            watched_seconds = sum(day["credited_seconds"] for day in daily_recommendations)
             week_is_complete = _study_plan_total_is_complete(
                 target_seconds, watched_seconds
             )
@@ -1622,31 +1633,25 @@ def register_study_site(
         elapsed_percent = min(100.0, max(0.0, elapsed_days / total_plan_days * 100))
         completion = float(summary.get("completion") or 0)
         total_target_minutes = float(summary.get("total_target") or 0)
-        watched_minutes_total = float(summary.get("total_watched") or 0)
         target_minutes_by_today = 0.0
+        due_credited_minutes = 0.0
+        future_credited_minutes = 0.0
         today_target_minutes = 0.0
         today_credited_minutes = 0.0
         today_iso = today.isoformat()
         for row in week_rows:
-            row_start = str(row.get("start") or "")
-            row_end = str(row.get("end") or "")
-            if row_end and row_end < today_iso:
-                target_minutes_by_today += float(row.get("target_minutes") or 0)
-            elif row_start and row_start <= today_iso <= row_end:
-                for day in row.get("daily_recommendations", []):
-                    day_key = str(day.get("date") or "")
-                    day_target_minutes = float(day.get("target_seconds") or 0) / 60
-                    if day_key == today_iso:
-                        today_target_minutes += day_target_minutes
-                        today_credited_minutes += min(
-                            day_target_minutes,
-                            max(0.0, float(day.get("credited_seconds") or 0) / 60),
-                        )
-                    if day_key <= today_iso:
-                        target_minutes_by_today += day_target_minutes
-        target_minutes_by_today = min(
-            max(target_minutes_by_today, 0.0), total_target_minutes
-        )
+            for day in row.get("daily_recommendations", []):
+                day_key = day["date"]
+                day_target_minutes = day["target_seconds"] / 60
+                day_credited_minutes = day["credited_seconds"] / 60
+                if day_key <= today_iso:
+                    target_minutes_by_today += day_target_minutes
+                    due_credited_minutes += day_credited_minutes
+                else:
+                    future_credited_minutes += day_credited_minutes
+                if day_key == today_iso:
+                    today_target_minutes += day_target_minutes
+                    today_credited_minutes += day_credited_minutes
         scheduled_percent = min(
             100.0,
             (
@@ -1655,15 +1660,13 @@ def register_study_site(
                 else 0.0
             ),
         )
-        # Pace follows the daily plan contract: historical calibrated days count as
-        # complete, while today only receives today's actual viewing credit. Raw
-        # lifetime watch time remains available in the overall progress metrics.
-        pace_watched_minutes = max(
-            0.0,
-            target_minutes_by_today
-            - today_target_minutes
-            + min(today_target_minutes, today_credited_minutes),
-        )
+        # The race and the daily cards use the same allocations. Early work on
+        # a future course remains visible there, but must not hide overdue work
+        # on another course. For the checkpoint time balance, surplus is already
+        # distributed oldest-day-first.
+        pace_watched_minutes = due_credited_minutes
+        if math.isclose(due_credited_minutes, target_minutes_by_today, abs_tol=1e-6):
+            pace_watched_minutes += future_credited_minutes
         pace_completion = min(
             100.0,
             (
@@ -1838,14 +1841,9 @@ def register_study_site(
             pace_delta_stat_label = "時間緩衝"
             pace_delta_stat_value = str(progress_race["delta_label"])
         else:
-            if progress_race["within_daily_allowance"]:
-                pace_action = "目前不列為落後，完成今天安排的內容即可。"
-                pace_delta_stat_label = "今日容許差距"
-                pace_delta_stat_value = str(progress_race["today_target_label"])
-            else:
-                pace_action = "維持目前節奏即可貼近計畫進度。"
-                pace_delta_stat_label = "進度差距"
-                pace_delta_stat_value = str(progress_race["delta_label"])
+            pace_action = "維持目前節奏即可貼近計畫進度。"
+            pace_delta_stat_label = "進度差距"
+            pace_delta_stat_value = str(progress_race["delta_label"])
 
         pace_insight = {
             "state": pace_state,
@@ -1909,20 +1907,46 @@ def register_study_site(
             start_day=tracked_start_day,
             end_day=today.isoformat(),
         )
-        pace_history = _study_plan_pace_history(
-            week_rows,
-            storage.list_study_plan_daily_snapshots(
-                start_day=STUDY_PLAN_START,
-                end_day=today.isoformat(),
-            ),
-            today=today,
-            current_watched_minutes=pace_watched_minutes,
-        )
         activity_events_by_day: Dict[str, List[Dict[str, Any]]] = {}
         for event in activity_events:
             event_day = str(event.get("day") or "")
             if event_day:
                 activity_events_by_day.setdefault(event_day, []).append(event)
+        pace_snapshots = storage.list_study_plan_daily_snapshots(
+            start_day=STUDY_PLAN_START, end_day=today_iso
+        )
+        if uses_november_checkpoint(active_replan):
+            plan_days = [
+                day for week in week_rows for day in week["daily_recommendations"]
+            ]
+            confirmed_seconds = sum(
+                day["target_seconds"] for day in plan_days if day["date"] < FIRST_TRACKED_DAY
+            )
+            plan_seconds = sum(day["target_seconds"] for day in plan_days)
+            pace_snapshots = [
+                snapshot for snapshot in pace_snapshots if snapshot["day"] < FIRST_TRACKED_DAY
+            ]
+            earned_seconds = 0.0
+            cursor = date.fromisoformat(FIRST_TRACKED_DAY)
+            while cursor < today:
+                day_key = cursor.isoformat()
+                for event in activity_events_by_day.get(day_key, []):
+                    seconds = float(event.get("delta_seconds") or 0)
+                    if math.isfinite(seconds):
+                        earned_seconds += seconds
+                pace_snapshots.append(
+                    {
+                        "day": day_key,
+                        "total_watched_seconds": min(
+                            plan_seconds, confirmed_seconds + max(0.0, earned_seconds)
+                        ),
+                    }
+                )
+                cursor += timedelta(days=1)
+        pace_history = _study_plan_pace_history(
+            week_rows, pace_snapshots, today=today,
+            current_watched_minutes=pace_watched_minutes,
+        )
         last_watched_event = next(
             (
                 item
@@ -2190,7 +2214,7 @@ def register_study_site(
             else 0.0
         )
         today_target_hours = max(0.0, today_target_minutes / 60)
-        today_effective_hours = max(0.0, today_study_hours)
+        today_effective_hours = today_credited_minutes / 60
         today_remaining_hours = max(0.0, today_target_hours - today_effective_hours)
         today_target_completion = min(
             100.0,

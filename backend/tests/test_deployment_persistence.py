@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,9 +10,42 @@ from sqlalchemy import text
 
 from e3_tracker.platform.config import load_env_defaults
 from e3_tracker.platform.deployment_runtime import DeploymentSafeStorage
+from e3_tracker.study.domain.november_plan_checkpoint import uses_november_checkpoint
 
 
 class DeploymentPersistenceTests(unittest.TestCase):
+    def test_november_recovery_does_not_reapply_after_an_intentional_reset(self):
+        for prior_update in (None, "2026-11-20T05:49:26", "2026-11-20T06:00:00"):
+            with self.subTest(prior_update=prior_update), tempfile.TemporaryDirectory() as temp_dir:
+                storage = DeploymentSafeStorage(str(Path(temp_dir) / "recovery.sqlite3"))
+                try:
+                    with storage._engine.begin() as conn:
+                        conn.execute(text(
+                            "INSERT INTO e3_data_repairs (repair_key, details, applied_at) "
+                            "VALUES ('finalize-computer-org-replan-os-algorithm-2026-11-19-v2', '{}', 'x')"
+                        ))
+                        if prior_update is not None:
+                            conn.execute(text(
+                                "INSERT INTO study_plan_replan_settings "
+                                "(id, start_date, end_date, weekday_minutes, weekend_minutes, "
+                                "baseline_by_subject, subject_targets, created_at, updated_at) "
+                                "VALUES (1, '2026-11-23', '2026-11-30', 60, 60, '{}', '{}', 'x', :updated)"
+                            ), {"updated": prior_update})
+                    with patch("e3_tracker.study.persistence.deployment.datetime", wraps=datetime) as clock:
+                        clock.now.return_value = datetime(2026, 11, 20, 15)
+                        storage._restore_november_plan_checkpoint()
+                        settings = storage.get_study_plan_replan_settings()
+                        if prior_update == "2026-11-20T06:00:00":
+                            self.assertEqual(settings["start_date"], "2026-11-23")
+                        else:
+                            self.assertTrue(uses_november_checkpoint(settings))
+                            self.assertEqual(settings["weekday_minutes"], settings["weekend_minutes"])
+                            storage.delete_study_plan_replan_settings()
+                            storage._restore_november_plan_checkpoint()
+                            self.assertIsNone(storage.get_study_plan_replan_settings())
+                finally:
+                    storage._engine.dispose()
+
     def test_misclassified_computer_org_tail_is_removed_and_all_subjects_replanned(self):
         subjects = (
             "線性代數",
