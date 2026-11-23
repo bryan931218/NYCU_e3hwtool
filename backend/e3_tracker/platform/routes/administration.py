@@ -61,7 +61,7 @@ def _activity_context(storage, profiles, before=None):
         meta = ev.get("meta") or {}
         event_hidden_keys = hidden_keys
         if ev.get("action") == "login_failed":
-            event_hidden_keys = hidden_keys | {"attempted_username", "login_method", "login_stage", "error_code", "response_page", "response_notice", "response_form", "response_menu", "response_trace"}
+            event_hidden_keys = hidden_keys | {"attempted_username", "login_method", "login_stage", "error_code", "response_page", "response_notice", "response_form", "response_menu", "response_trace", "auth_step", "api_code"}
         detail_parts = []
         for key in detail_keys:
             if meta.get(key):

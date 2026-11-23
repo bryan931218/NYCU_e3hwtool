@@ -12,12 +12,19 @@ from e3_tracker.platform.constants import HEADERS
 class E3LoginError(RuntimeError):
     """A fixed login failure code; never include upstream content or credentials."""
 
-    def __init__(self, reason: str, *, page="unknown", form=False, menu=False, notice="unknown", trace=()):
+    def __init__(self, reason: str, *, page="unknown", form=False, menu=False, notice="unknown", trace=(), auth_step=None, api_code=None):
         self.reason = reason
         self.page = page if page in {"login", "dashboard", "verification", "policy", "other"} else "unknown"
         self.form = bool(form)
         self.menu = bool(menu)
         self.notice = notice if notice in {"credentials", "token", "cookies", "verification", "rate_limit", "challenge", "none"} else "unknown"
+        self.auth_step = auth_step if auth_step in {"token", "identity", "handoff", "web_session"} else None
+        self.api_code = api_code if api_code in {
+            "invalidlogin", "invalidtoken", "invalidprivatetoken", "accessexception", "servicenotavailable",
+            "enablewsdescription", "apprequired", "autologinkeygenerationlockout", "autologinnotallowedtoadmins",
+            "passwordisexpired", "usernotconfirmed", "usernotfullysetup", "forcepasswordchangenotice",
+            "restoredaccountresetpassword", "other",
+        } else None
         self.trace = []
         for step in trace[:8]:
             if not isinstance(step, dict):
@@ -33,7 +40,10 @@ class E3LoginError(RuntimeError):
 
 def login_failure_reason(exc: Exception) -> str:
     """Classify failures without logging exception text, URLs or response bodies."""
-    if isinstance(exc, E3LoginError) and exc.reason in {"login_rejected", "session_cookie_missing"}:
+    if isinstance(exc, E3LoginError) and exc.reason in {
+        "login_rejected", "session_cookie_missing", "mobile_api_unavailable", "mobile_session_unavailable",
+        "session_handoff_limited", "account_action_required", "identity_mismatch", "upstream_response_invalid",
+    }:
         return exc.reason
     if isinstance(exc, requests.exceptions.SSLError) or isinstance(exc.__cause__, requests.exceptions.SSLError):
         return "upstream_tls"
@@ -65,25 +75,30 @@ def need_login_redirect(html_text: str) -> bool:
 
 
 def _authenticated_dashboard(response, base_url):
+    return _authenticated_principal(response, base_url) is not None
+
+
+def _authenticated_principal(response, base_url):
     """A login URL elsewhere in the page is not proof that authentication failed."""
     base, target = urlsplit(base_url), urlsplit(response.url)
     if (response.status_code != 200 or (target.scheme, target.netloc) != (base.scheme, base.netloc)
             or target.path not in {"/my/", "/my/index.php"}):
-        return False
+        return None
     soup = BeautifulSoup(response.text, "html.parser")
     if soup.select_one('input[name="password"]'):
-        return False
-    profile = logout = False
+        return None
+    profiles, logout = set(), False
     for link in soup.select('.usermenu a[href], #usermenu a[href], #action-menu-1-menu a[href]'):
         url = urlsplit(urljoin(base_url, link["href"]))
         if (url.scheme, url.netloc) != (base.scheme, base.netloc):
             continue
         query = parse_qs(url.query)
         if url.path == "/user/profile.php" and len(query.get("id", [])) == 1:
-            profile = bool(re.fullmatch(r"[0-9]+", query["id"][0]))
+            if re.fullmatch(r"[1-9][0-9]*", query["id"][0]):
+                profiles.add(query["id"][0])
         if url.path == "/login/logout.php" and query.get("sesskey"):
             logout = True
-    return profile and logout
+    return next(iter(profiles)) if logout and len(profiles) == 1 else None
 
 
 def _login_rejection(response):
@@ -150,6 +165,10 @@ def _password_form(soup, login_url, base_url):
 
 
 def login_with_password(sess: requests.Session, base_url: str, username: str, password: str, *, timeout: int = 20) -> None:
+    if base_url.rstrip("/") == "https://e3p.nycu.edu.tw":
+        from e3_tracker.assignments.services.mobile_auth import login_with_mobile_api
+        login_with_mobile_api(sess, base_url, username, password, timeout=timeout)
+        return
     login_url = f"{base_url}/login/index.php"
     resp = safe_request(sess, "GET", login_url, headers=HEADERS, timeout=timeout)
     soup = BeautifulSoup(resp.text, "html.parser")

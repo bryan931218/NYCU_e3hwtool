@@ -14,6 +14,12 @@ FAILURE_MESSAGES = {
     "upstream_rate_limited": "E3 限制登入請求（HTTP 429）。",
     "upstream_http_error": "E3 回傳 HTTP 錯誤。",
     "internal_error": "登入處理發生程式錯誤。",
+    "mobile_api_unavailable": "E3 官方 API 未能完成帳密驗證。",
+    "mobile_session_unavailable": "E3 API 未能建立經本人驗證的網頁 Session。",
+    "session_handoff_limited": "E3 暫時限制重複建立網頁 Session，請稍後再試。",
+    "account_action_required": "E3 要求先完成帳號確認、密碼更新或額外驗證。",
+    "identity_mismatch": "E3 回傳的帳號或網站與這次登入不一致，已停止登入。",
+    "upstream_response_invalid": "E3 回傳的登入資料格式不符合預期。",
     "csrf_validation_failed": "本站表單安全驗證失敗，請重新整理登入頁後再試。",
     "login_rate_limited": "本站暫時限制登入嘗試，請等待五分鐘後再試。",
     "too_many_requests": "本站暫時限制過多的連線請求。",
@@ -28,7 +34,7 @@ NOTICE_MESSAGES = {
     "rate_limit": "E3 回報帳號鎖定或嘗試次數過多。",
     "challenge": "E3 要求安全驗證。",
     "none": "E3 頁面沒有提供錯誤提示。",
-    "unknown": "E3 提供了未能分類的錯誤提示。",
+    "unknown": "未取得可判讀的 E3 錯誤提示。",
 }
 PAGE_LABELS = {"login": "登入頁", "dashboard": "首頁", "verification": "驗證頁", "policy": "使用條款頁", "other": "其他頁面", "unknown": "未知頁面"}
 STAGE_LABELS = {"input": "表單檢查", "request_validation": "本站請求檢查", "e3_authentication": "E3 帳密驗證", "session_validation": "E3 Session 驗證", "web_session": "建立本站登入", "post_login": "登入後處理"}
@@ -51,6 +57,12 @@ def failure_metadata(exc, *, method, stage, username="", code=None):
     if isinstance(exc, E3LoginError):
         meta.update(response_page=exc.page, response_notice=exc.notice,
                     response_form=exc.form, response_menu=exc.menu)
+        if exc.auth_step:
+            meta["auth_step"] = exc.auth_step
+            meta["api_code"] = exc.api_code
+            details.append("API 步驟：" + {"token": "取得登入憑證", "identity": "核對本人帳號", "handoff": "建立 E3 Session", "web_session": "確認 E3 網頁登入"}[exc.auth_step])
+            if exc.api_code:
+                details.append("E3 API 錯誤代碼：" + exc.api_code)
         details.extend(["E3 回應：" + PAGE_LABELS[exc.page], NOTICE_MESSAGES[exc.notice],
                         "帳密表單：" + ("有" if exc.form else "無"),
                         "使用者選單：" + ("有" if exc.menu else "無")])

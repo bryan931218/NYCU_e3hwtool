@@ -220,6 +220,8 @@ def register_assignments_routes(*,
                         if isinstance(exc, E3LoginError):
                             app.logger.warning("E3 login response (page=%s form=%s menu=%s notice=%s)",
                                                exc.page, exc.form, exc.menu, exc.notice)
+                            if exc.auth_step:
+                                app.logger.warning("E3 login API response (step=%s code=%s)", exc.auth_step, exc.api_code or "none")
                         message = {
                             "upstream_tls": "目前無法驗證 E3 的安全連線，請稍後再試。這不代表帳號或密碼錯誤。",
                             "upstream_timeout": "連線至 E3 逾時，請稍後再試。這不代表帳號或密碼錯誤。",
@@ -228,6 +230,12 @@ def register_assignments_routes(*,
                             "upstream_rate_limited": "E3 暫時限制了登入請求，請稍後再試。",
                             "upstream_http_error": "E3 目前回傳異常回應，請稍後再試。",
                             "session_cookie_missing": "E3 未提供登入憑證，請稍後再試或使用 Session 登入。",
+                            "session_handoff_limited": "E3 暫時限制重複登入，請稍後再試。",
+                            "account_action_required": "請先在 E3 完成帳號確認或額外驗證後，再回來登入。",
+                            "mobile_api_unavailable": "E3 官方 API 目前未能完成登入，請稍後再試。",
+                            "mobile_session_unavailable": "E3 API 尚未建立可用的網頁 Session，請稍後再試。",
+                            "identity_mismatch": "E3 回傳的登入身分不一致，已停止登入，請重新開始。",
+                            "upstream_response_invalid": "E3 目前回傳非預期的登入資料，請稍後再試。",
                         }.get(reason, "登入失敗，請確認帳密、雙重驗證與 E3 連線狀態。")
                         flash(message, "error")
         announcements_list = load_announcements()
