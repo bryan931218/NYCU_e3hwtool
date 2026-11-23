@@ -16,6 +16,7 @@ from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOP
 from e3_tracker.assignments.services.http import E3LoginError, apply_cookie, login_failure_reason, login_with_password
 from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
 from e3_tracker.assignments.services.e3_navigation_extension import navigation_target
+from e3_tracker.assignments.services.session_auth import authenticated_moodle_user_id
 from e3_tracker.platform.services.account_labels import account_label
 from e3_tracker.platform.analytics_integration import consent_choice
 
@@ -91,6 +92,8 @@ def register_assignments_routes(*,
         if current_user():
             return redirect(url_for("index"))
         password_login_failed = False
+        bound_admin_moodle_id = os.getenv("E3_ADMIN_MOODLE_USER_ID", "").strip()
+        admin_session_enabled = bool(admin_user_id and re.fullmatch(r"[1-9][0-9]*", bound_admin_moodle_id))
         if request.method == "POST":
             login_type = request.form.get("login_type", "password")
             if login_type == "session":
@@ -100,11 +103,23 @@ def register_assignments_routes(*,
                 else:
                     digest = hashlib.sha1(raw_session.encode("utf-8")).hexdigest()[:10]
                     session_label = f"Session-{digest}"
-                    existing_cache = load_cache_from_disk(session_label)
+                    admin_session = request.form.get("admin_session") == "1"
                     try:
+                        if admin_session:
+                            if not admin_session_enabled:
+                                raise E3LoginError("admin_session_rejected")
+                            with requests.Session() as sess:
+                                apply_cookie(sess, base_url, raw_session)
+                                principal = authenticated_moodle_user_id(sess, base_url, timeout=default_timeout)
+                            if not principal or not secrets.compare_digest(principal, bound_admin_moodle_id):
+                                raise E3LoginError("admin_session_rejected")
+                            # This explicit login checks a separately configured immutable
+                            # principal. Enrichment/student-number mappings never grant roles.
+                            session_label = admin_user_id
+                        existing_cache = load_cache_from_disk(session_label)
                         result = None
                         excel_data = None
-                        if not existing_cache:
+                        if not existing_cache and not admin_session:
                             result, excel_data = fetch_assignments_for(
                                 {"username": session_label, "moodle_session": raw_session}
                             )
@@ -112,15 +127,20 @@ def register_assignments_routes(*,
                             session_label,
                             moodle_session=raw_session,
                             is_guest=False,
-                            is_admin=bool(admin_user_id and session_label == admin_user_id),
+                            is_admin=bool(admin_session or (admin_user_id and session_label == admin_user_id)),
                             permanent=True,
                         )
-                        session_identity_sync.refresh_user(
-                            {"username": session_label, "moodle_session": raw_session}, force=True
-                        )
+                        if admin_session:
+                            session_identity_sync.schedule_user(session_label)
+                        else:
+                            session_identity_sync.refresh_user(
+                                {"username": session_label, "moodle_session": raw_session}, force=True
+                            )
                         record_login(session_label)
                         if existing_cache:
                             flash("已載入先前的課程資料，系統將在背景自動更新最新內容。", "info")
+                        elif admin_session:
+                            flash("已驗證管理員身分。可使用更新作業資料載入目前課程。", "success")
                         else:
                             try:
                                 set_assign_cache(result, excel_data)
@@ -134,7 +154,10 @@ def register_assignments_routes(*,
                         return response
                     except Exception as exc:
                         app.logger.warning("E3 session validation failed (%s)", type(exc).__name__)
-                        flash("Session 驗證失敗，請確認 MoodleSession 是否正確。", "error")
+                        if admin_session:
+                            flash("無法驗證為已綁定的管理員本人。請先用管理員的學校帳號登入 E3，再貼上有效 Session。", "error")
+                        else:
+                            flash("Session 驗證失敗，請確認 MoodleSession 是否正確。", "error")
             else:
                 raw_username = request.form.get("username", "").strip()
                 raw_password = request.form.get("password", "")
@@ -196,6 +219,7 @@ def register_assignments_routes(*,
         return render_template_string(
             LOGIN_TEMPLATE,
             password_login_failed=password_login_failed,
+            admin_session_enabled=admin_session_enabled,
             stats=usage_stats(),
             stats_version=current_stats_version(),
             announcements=announcements_list,

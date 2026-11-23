@@ -70,6 +70,10 @@
             <p class="session-use-hint" id="sessionUseHint">適合已啟用雙重驗證（2FA），或不想直接輸入帳號密碼的用戶。請先在同一個瀏覽器登入 E3，再取得 MoodleSession。</p>
             <label for="moodle_session">MoodleSession Cookie</label>
             <textarea id="moodle_session" name="moodle_session" aria-describedby="sessionUseHint" placeholder="貼上值，例如：6h1abcdefgxyz..."></textarea>
+            {% if admin_session_enabled %}
+            <label class="cb"><input type="checkbox" name="admin_session" value="1">以原管理員帳號登入</label>
+            <p class="muted">僅限已綁定的本人 E3 帳號，登入後沿用原帳號的作業與管理資料。</p>
+            {% endif %}
         </div>
         <button class="btn primary" type="submit" id="submitButton">登入</button>
     </form>

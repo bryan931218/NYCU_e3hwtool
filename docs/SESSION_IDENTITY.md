@@ -3,6 +3,28 @@
 Session identities remain separate internal accounts. Student numbers are display
 and statistics metadata only; enrichment never changes roles or merges credentials.
 
+## Explicit administrator Session login
+
+An optional `E3_ADMIN_MOODLE_USER_ID` binds the configured `E3_ADMIN_USER_ID` to
+one immutable, server-assigned Moodle user ID. It is disabled when unset. Establish
+this binding only after independently verifying the existing administrator and
+their E3 account; never populate it from a login form, enrichment result, or cached
+student-number mapping.
+
+The login page then offers an explicit administrator checkbox under Session login.
+Every such login makes a fresh, bounded read of E3's authenticated dashboard. Only
+one unambiguous own-profile ID from its server-rendered user menu, accompanied by
+its authenticated logout link, can match the configured binding. Login pages,
+external redirects, conflicting IDs, expired credentials and request errors fail
+closed before the existing administrator's cache is read or a web session starts.
+No upstream form is submitted by this flow.
+
+A successful login uses the existing administrator account and encrypted credential
+storage with the normal session lifetime, CSRF and rate limits. Ordinary Session
+login and profile enrichment retain their existing non-admin behavior, including
+when a cached student number equals the administrator's student number. Study
+authentication cookies remain separate.
+
 The reader follows the authenticated E3 user menu to its own profile. Edit links
 must remain on the configured origin and `/user/edit.php`. A missing `id` is valid
 for Moodle's own-profile form, but the form action and every hidden owner `id` must
