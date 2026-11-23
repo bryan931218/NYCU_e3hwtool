@@ -5,8 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import requests
 from bs4 import BeautifulSoup
 
+from e3_tracker.assignments.services.http import E3LoginError
 from e3_tracker.platform.application import create_app
 from tests.security_helpers import csrf_client
 
@@ -85,6 +87,31 @@ class LoginSessionGuideTests(unittest.TestCase):
                 page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
                 self.assertIsNone(page.select_one("#passwordLoginFailure"))
                 response.close()
+
+    def test_upstream_failures_show_the_cause_without_the_authentication_failure_prompt(self):
+        tls = RuntimeError("private-exception-detail")
+        tls.__cause__ = requests.exceptions.SSLError("private-upstream-url")
+        for error, reason, message in (
+            (tls, "upstream_tls", "目前無法驗證 E3 的安全連線"),
+            (requests.ConnectTimeout("private-exception-detail"), "upstream_timeout", "連線至 E3 逾時"),
+            (requests.ConnectionError("private-exception-detail"), "upstream_connection", "目前無法連線至 E3"),
+            (E3LoginError("session_cookie_missing"), "session_cookie_missing", "E3 未提供登入憑證"),
+        ):
+            with self.subTest(reason=reason), patch(
+                "e3_tracker.assignments.routes.assignments.login_with_password", side_effect=error
+            ), self.assertLogs(self.app.logger, level="WARNING") as logs:
+                response = csrf_client(self.app).post("/login", data={
+                    "login_type": "password", "username": "private-user", "password": "private-password",
+                })
+            page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNone(page.select_one("#passwordLoginFailure"))
+            self.assertTrue(any(message in node.get("data-message", "") for node in page.select("#flashMessages [data-message]")))
+            self.assertIn("reason=" + reason, " ".join(logs.output))
+            for private in ("private-exception-detail", "private-upstream-url", "private-user", "private-password"):
+                self.assertNotIn(private, " ".join(logs.output))
+                self.assertNotIn(private, response.get_data(as_text=True))
+            response.close()
 
     def test_guide_assets_are_served_from_assignment_frontend(self):
         page = BeautifulSoup(self.client.get("/login").get_data(as_text=True), "html.parser")

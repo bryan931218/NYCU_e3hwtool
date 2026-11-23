@@ -8,6 +8,34 @@ from bs4 import BeautifulSoup
 from e3_tracker.platform.constants import HEADERS
 
 
+class E3LoginError(RuntimeError):
+    """A fixed login failure code; never include upstream content or credentials."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__("E3 login could not be completed")
+
+
+def login_failure_reason(exc: Exception) -> str:
+    """Classify failures without logging exception text, URLs or response bodies."""
+    if isinstance(exc, E3LoginError) and exc.reason in {"login_rejected", "session_cookie_missing"}:
+        return exc.reason
+    if isinstance(exc, requests.exceptions.SSLError) or isinstance(exc.__cause__, requests.exceptions.SSLError):
+        return "upstream_tls"
+    if isinstance(exc, requests.Timeout):
+        return "upstream_timeout"
+    if isinstance(exc, requests.HTTPError):
+        status = exc.response.status_code if exc.response is not None else None
+        if status == 403:
+            return "upstream_access_denied"
+        if status == 429:
+            return "upstream_rate_limited"
+        return "upstream_http_error"
+    if isinstance(exc, requests.RequestException):
+        return "upstream_connection"
+    return "internal_error"
+
+
 def safe_request(sess: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
     try:
         resp = sess.request(method, url, **kwargs)
@@ -30,7 +58,7 @@ def login_with_password(sess: requests.Session, base_url: str, username: str, pa
     payload = {"username": username, "password": password, "logintoken": token, "anchor": ""}
     resp = safe_request(sess, "POST", login_url, data=payload, headers=HEADERS, timeout=timeout)
     if need_login_redirect(resp.text):
-        raise RuntimeError("登入失敗：請確認帳密是否正確，或是否啟用 2FA。")
+        raise E3LoginError("login_rejected")
 
 
 def apply_cookie(sess: requests.Session, base_url: str, moodle_session_value: str) -> None:

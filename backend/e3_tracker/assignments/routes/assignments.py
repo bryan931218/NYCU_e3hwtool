@@ -13,7 +13,7 @@ from flask import Response, flash, redirect, render_template_string, request, se
 from werkzeug.http import http_date
 from e3_tracker.assignments.services.collector import annotate_result_semesters, normalize_semester_selection
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
-from e3_tracker.assignments.services.http import apply_cookie, login_with_password
+from e3_tracker.assignments.services.http import E3LoginError, apply_cookie, login_failure_reason, login_with_password
 from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
 from e3_tracker.assignments.services.e3_navigation_extension import navigation_target
 from e3_tracker.platform.services.account_labels import account_label
@@ -147,7 +147,7 @@ def register_assignments_routes(*,
                         login_with_password(sess, base_url, raw_username, raw_password, timeout=default_timeout)
                         cookie_val = sess.cookies.get("MoodleSession")
                         if not cookie_val:
-                            raise RuntimeError("登入成功但未取得 MoodleSession。")
+                            raise E3LoginError("session_cookie_missing")
                         authenticated = True
                         _start_web_session(
                             raw_username,
@@ -176,9 +176,19 @@ def register_assignments_routes(*,
                         response.headers["Expires"] = "0"
                         return response
                     except Exception as exc:
-                        password_login_failed = not authenticated
-                        app.logger.warning("E3 login failed (%s)", type(exc).__name__)
-                        flash("登入失敗，請確認帳密、雙重驗證與 E3 連線狀態。", "error")
+                        reason = login_failure_reason(exc)
+                        password_login_failed = not authenticated and reason in {"login_rejected", "internal_error"}
+                        app.logger.warning("E3 login failed (reason=%s)", reason)
+                        message = {
+                            "upstream_tls": "目前無法驗證 E3 的安全連線，請稍後再試。這不代表帳號或密碼錯誤。",
+                            "upstream_timeout": "連線至 E3 逾時，請稍後再試。這不代表帳號或密碼錯誤。",
+                            "upstream_connection": "目前無法連線至 E3，請稍後再試。",
+                            "upstream_access_denied": "E3 拒絕了伺服器的連線請求，請稍後再試。",
+                            "upstream_rate_limited": "E3 暫時限制了登入請求，請稍後再試。",
+                            "upstream_http_error": "E3 目前回傳異常回應，請稍後再試。",
+                            "session_cookie_missing": "E3 未提供登入憑證，請稍後再試或使用 Session 登入。",
+                        }.get(reason, "登入失敗，請確認帳密、雙重驗證與 E3 連線狀態。")
+                        flash(message, "error")
         announcements_list = load_announcements()
         return render_template_string(
             LOGIN_TEMPLATE,
