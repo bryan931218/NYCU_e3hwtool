@@ -174,11 +174,6 @@ class ApiPasswordTests(unittest.TestCase):
                 self.assertNotIn(TOKEN, str(result.headers))
                 self.assertEqual(storage.notification_content_user(USER, time.time())["moodle_token"], TOKEN)
                 self.assertEqual(storage.load_session_identity_user(USER, time.time())["moodle_token"], TOKEN)
-                for endpoint in ("/api/course-announcements/refresh", "/api/course-mail/refresh", "/api/course-files/refresh"):
-                    limited = client.post(endpoint, json={"semester": current_semester_key()})
-                    self.assertEqual(limited.status_code, 409, endpoint)
-                    self.assertIn("API 登入仍可更新課程與作業", limited.json["error"])
-                    self.assertNotIn("失效", limited.json["error"])
                 activity = client.get("/admin/traffic/activity")
                 self.assertEqual(activity.status_code, 200)
                 self.assertIn("登入成功", activity.get_data(as_text=True))

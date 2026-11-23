@@ -345,13 +345,14 @@ class NotificationService:
     def _assignment_description(self, username, item, now):
         from e3_tracker.assignments.domain.course_announcements import moodle_url
         from e3_tracker.assignments.domain.parsing import assignment_description
-        from e3_tracker.assignments.services.course_announcements import MoodleNewsClient
+        from e3_tracker.assignments.services.course_announcements import news_client
         source = self.course_message_services.get('announcements')
         user = self.storage.notification_content_user(username, now)
         url = moodle_url(item.get('url', ''), source.base_url, '/mod/assign/view.php', 'id') if source else None
         if not user or not url:
             return {'unavailable': True}
-        client = MoodleNewsClient(source.base_url, user['moodle_session'], timeout=8, deadline=time.monotonic() + 12)
+        client = news_client(source.base_url, user, timeout=8, deadline=time.monotonic() + 12,
+                             courses=[{'id': item['course_id']}] if item.get('course_id') else None)
         try:
             return assignment_description(client.get(url), url)
         finally:

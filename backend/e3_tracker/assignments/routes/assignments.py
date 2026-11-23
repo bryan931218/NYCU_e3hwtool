@@ -304,6 +304,9 @@ def register_assignments_routes(*,
             session_identity_sync.refresh_user(user)
         profile = storage.load_user_profile(user["username"])
         surname = profile["surname"]
+        if (not profile["name"] or request.args.get("refresh") == "1") and user.get("moodle_token"):
+            session_identity_sync.refresh_user(user, force=True)
+            surname = storage.load_user_profile(user["username"])["surname"]
         if (
             not profile["name"] or request.args.get("refresh") == "1"
         ) and user.get("moodle_session"):

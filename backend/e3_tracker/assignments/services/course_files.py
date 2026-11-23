@@ -10,7 +10,7 @@ from e3_tracker.assignments.domain.course_announcements import discussion_summar
 from e3_tracker.assignments.domain.course_files import assignment_files, course_display_name, course_materials, file_index, folder_files
 from e3_tracker.assignments.persistence.course_files import CourseFileStorage
 from .collector import annotate_result_semesters, current_semester_key
-from .course_announcements import AnnouncementSessionExpired, MoodleNewsClient
+from .course_announcements import AnnouncementSessionExpired, news_client
 
 
 class CourseFileService:
@@ -56,7 +56,7 @@ class CourseFileService:
             'error': cache['error'] or ('整理逾時，請重新更新。' if cache['status'] == 'running' and not running else '')}
 
     def start(self, app, user, semester, courses, messages):
-        if not user.get('moodle_session'):
+        if not (user.get('moodle_session') or user.get('moodle_token')):
             return 'session_expired'
         if not self.slots.acquire(blocking=False):
             return 'busy'
@@ -166,7 +166,7 @@ class CourseFileService:
         client = None
         try:
             previous = self.storage.load(user['username'], semester)
-            client = MoodleNewsClient(self.base_url, user['moodle_session'], deadline=time.monotonic() + 55)
+            client = news_client(self.base_url, user, deadline=time.monotonic() + 55, courses=courses)
             sources, pending, error, successful = self.collect(client, courses, messages, previous)
             self.storage.finish(user['username'], semester, attempt, sources, pending, error, fetched=bool(successful))
         except Exception:

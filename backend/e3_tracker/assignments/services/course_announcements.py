@@ -18,6 +18,13 @@ class AnnouncementSessionExpired(Exception):
     pass
 
 
+def news_client(base_url, user, *, timeout=8, deadline=None, courses=None):
+    if user.get('moodle_token'):
+        from .moodle_api_news import MoodleApiNewsClient
+        return MoodleApiNewsClient(base_url, user, timeout=timeout, deadline=deadline, courses=courses)
+    return MoodleNewsClient(base_url, user['moodle_session'], timeout=timeout, deadline=deadline)
+
+
 class MoodleNewsClient:
     def __init__(self, base_url, cookie, *, timeout=8, deadline=None):
         self.base_url = base_url.rstrip('/')
@@ -98,7 +105,7 @@ class CourseAnnouncementService:
         return discussion_content(html, self.base_url)
 
     def start(self, app, user, semester, courses):
-        if not user.get('moodle_session'):
+        if not (user.get('moodle_session') or user.get('moodle_token')):
             return 'session_expired'
         if not self.slots.acquire(blocking=False):
             return 'busy'
@@ -115,7 +122,7 @@ class CourseAnnouncementService:
             raise
 
     def _refresh(self, app, user, semester, courses, attempt):
-        client = MoodleNewsClient(self.base_url, user['moodle_session'], timeout=self.timeout)
+        client = news_client(self.base_url, user, timeout=self.timeout, courses=courses)
         try:
             items, successful, failed = self.collect(client, courses)
             message = f'部分課程更新失敗，已保留先前{self.message_name}。' if failed else ''
@@ -133,11 +140,12 @@ class CourseAnnouncementService:
         url = self.item_url(item)
         if not url:
             raise ValueError('Invalid cached announcement URL')
-        if not user.get('moodle_session'):
+        if not (user.get('moodle_session') or user.get('moodle_token')):
             raise AnnouncementSessionExpired()
         if not self.slots.acquire(blocking=False):
             raise BlockingIOError()
-        client = MoodleNewsClient(self.base_url, user['moodle_session'], timeout=self.timeout, deadline=time.monotonic() + 12)
+        client = news_client(self.base_url, user, timeout=self.timeout, deadline=time.monotonic() + 12,
+                             courses=[{'id': item['course_id']}])
         try:
             return self.parse_content(client.get(url))
         finally:
