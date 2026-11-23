@@ -18,14 +18,12 @@
     <h2>資料使用</h2>
     <p>套件處理從 E3 作業追蹤系統開啟的作業網址，以及 E3 頁面是否需要登入的狀態。當管理員從自己的作業列表開啟 E3，且瀏覽器已被 E3 登出時，套件會向目前登入的追蹤系統取得該帳號已儲存的 Session，寫入同一瀏覽器的 E3 登入 Cookie。</p>
     <h2>暫存與清除</h2>
-    <p>使用者主動按下「管理員：透過學校單一入口登入」時，套件會開啟校方登入頁。E3 確認已登入後，套件只讀取同一瀏覽器設定檔的 MoodleSession，交回發起登入的本站分頁，由本站重新驗證管理員本人身分。套件不讀取單一入口密碼、Portal Token 或驗證碼。</p>
-    <p>此登入接續最多等待 10 分鐘，只保留分頁識別與一次性請求編號；登入憑證只經記憶體傳遞，不寫入套件儲存空間或網址。原本站分頁關閉、重新導覽或請求逾時後，不會把憑證交給其他分頁。</p>
     <p>待開啟的作業網址暫存於瀏覽器的套件工作階段儲存空間。完成跳轉、關閉該分頁或關閉瀏覽器時清除；超過 30 分鐘不再自動跳轉。</p>
     <p>Session 只在恢復登入時經由套件記憶體傳遞，並以 Secure、HttpOnly 的工作階段 Cookie 寫入 E3。Session 的有效期限由 E3 決定。原本的追蹤系統分頁須保持開啟，才能取得登入憑證。</p>
     <h2>權限範圍</h2>
     <p><code>storage</code> 權限用於暫存目標網址、對應分頁編號與時間，不會讀取其他套件的資料。</p>
-    <p><code>cookies</code> 權限搭配限定 E3 網域的網站權限，用來寫入 <code>e3p.nycu.edu.tw</code> 的 MoodleSession Cookie，以及在主動發起的學校登入接續中讀取該 Cookie。一般瀏覽與管理員代看他人資料時，套件不會取用該帳號的 Session。</p>
-    <p>套件僅於 e3hwtool.space、www.e3hwtool.space 與 e3p.nycu.edu.tw 執行。學校登入與雙重驗證由用戶在校方頁面完成。沒有從追蹤系統開啟作業或主動開始學校登入時，套件不會介入 E3 瀏覽。</p>
+    <p><code>cookies</code> 權限搭配限定 E3 網域的網站權限，用來寫入 <code>e3p.nycu.edu.tw</code> 的 MoodleSession Cookie。一般瀏覽與管理員代看他人資料時，套件不會取用該帳號的 Session。</p>
+    <p>套件僅於 e3hwtool.space、www.e3hwtool.space 與 e3p.nycu.edu.tw 執行。學校登入與雙重驗證由用戶在校方頁面完成。沒有從追蹤系統開啟作業時，套件不會介入 E3 瀏覽。</p>
     <p>可在 Chrome 或 Edge 的擴充功能管理頁移除套件，停用自動跳轉並清除套件儲存資料。</p>
     {% if support_email %}<p>聯絡方式：<a href="mailto:{{ support_email }}">{{ support_email }}</a></p>{% endif %}
     {% if can_install %}<p><a href="{{ url_for('e3_navigation_extension') }}">返回套件安裝頁</a></p>{% endif %}

@@ -4,8 +4,7 @@
     if (probe) return probe;
     probe = (async () => {
       const state = await chrome.runtime.sendMessage({ type: "E3_NAVIGATION_PENDING" }).catch(() => null);
-      const schoolLogin = await chrome.runtime.sendMessage({ type: "E3_SCHOOL_LOGIN_PENDING" }).catch(() => null);
-      if (!state?.pending && !schoolLogin?.pending) return;
+      if (!state?.pending) return;
       let status = "unknown";
       const pageUrl = location.href;
       try {
@@ -18,8 +17,7 @@
         }
       } catch {}
       if (location.href === pageUrl) {
-        if (state?.pending) await chrome.runtime.sendMessage({ type: "E3_NAVIGATION_STATE", status }).catch(() => {});
-        if (schoolLogin?.pending) await chrome.runtime.sendMessage({ type: "E3_SCHOOL_LOGIN_STATE", status }).catch(() => {});
+        await chrome.runtime.sendMessage({ type: "E3_NAVIGATION_STATE", status }).catch(() => {});
       }
     })().finally(() => { probe = null; });
     return probe;

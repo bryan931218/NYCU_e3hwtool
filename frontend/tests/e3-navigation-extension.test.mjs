@@ -112,7 +112,7 @@ test("restoration writes a secure session cookie in the source and destination c
     cookies: { async getAllCookieStores() { return [{ id: "regular", tabIds: [1, 10] }]; },
       async set(cookie) { writes.push(cookie); return cookie; } },
   };
-  const sandbox = vm.createContext({ chrome, createNavigationController: () => ({}), createSchoolLoginController: () => ({}), E3_ORIGIN });
+  const sandbox = vm.createContext({ chrome, createNavigationController: () => ({}), E3_ORIGIN });
   vm.runInContext(source.replace(/^import [^\r\n]*\r?\n/, ""), sandbox);
   const pending = { url: target, source: { tabId: 1, documentId: "source-doc", requestId: "one-time" } };
   assert.equal(await sandbox.restoreSession(pending, 10), true);

@@ -22,7 +22,7 @@
     <div class="title-row">
         <div>
             <h2 style="margin:0">登入 E3 帳號</h2>
-            <p class="muted" style="margin-top:4px">校內管理員可使用學校單一入口；也可使用 E3 原生帳密或 MoodleSession 登入。</p>
+            <p class="muted" style="margin-top:4px">選擇使用帳密或貼上 MoodleSession Cookie 登入。</p>
         </div>
         <div class="title-controls">
             <div class="stats login-stats" aria-live="polite">
@@ -44,10 +44,6 @@
     {% endif %}
     {% endwith %}
     <div class="toggle-wrap">
-        {% if admin_session_enabled %}
-        <button type="button" class="btn primary" id="schoolLoginButton" disabled>管理員：透過學校單一入口登入</button>
-        <p class="muted" id="schoolLoginStatus" role="status">請啟用 E3 自動跳轉擴充功能 1.2.0；完成學校登入後會自動返回，不需複製 Cookie。</p>
-        {% endif %}
         <div class="toggle-group" role="group" aria-label="登入方式切換">
             <button type="button" class="toggle-btn active" data-mode="password">帳號 / 密碼</button>
             <div class="toggle-session-option">
@@ -74,10 +70,6 @@
             <p class="session-use-hint" id="sessionUseHint">適合已啟用雙重驗證（2FA），或不想直接輸入帳號密碼的用戶。請先在同一個瀏覽器登入 E3，再取得 MoodleSession。</p>
             <label for="moodle_session">MoodleSession Cookie</label>
             <textarea id="moodle_session" name="moodle_session" aria-describedby="sessionUseHint" placeholder="貼上值，例如：6h1abcdefgxyz..."></textarea>
-            {% if admin_session_enabled %}
-            <label class="cb"><input type="checkbox" name="admin_session" value="1">以原管理員帳號登入</label>
-            <p class="muted">僅限已綁定的本人 E3 帳號，登入後沿用原帳號的作業與管理資料。</p>
-            {% endif %}
         </div>
         <button class="btn primary" type="submit" id="submitButton">登入</button>
     </form>
@@ -95,7 +87,7 @@
         <button type="button" class="guide-close" id="passwordFailureClose" aria-label="關閉提示" title="關閉提示">&times;</button>
     </div>
     <div class="login-failure-body">
-        <p id="passwordFailureDescription">此帳密表單使用 E3 原生驗證。平常透過學校單一入口登入的管理員，請使用上方的單一入口登入按鈕；若啟用雙重驗證（2FA），也可使用 Session 登入。</p>
+        <p id="passwordFailureDescription">若帳號啟用雙重驗證（2FA），請使用 Session 登入。</p>
         <p class="login-failure-note">登入失敗也可能是帳密錯誤或 E3 連線異常。</p>
         <div class="login-failure-actions">
             <button type="button" class="guide-prev" id="passwordFailureRetry">重試帳密登入</button>
