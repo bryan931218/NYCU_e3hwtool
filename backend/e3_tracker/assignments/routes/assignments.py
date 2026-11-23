@@ -179,6 +179,9 @@ def register_assignments_routes(*,
                         reason = login_failure_reason(exc)
                         password_login_failed = not authenticated and reason in {"login_rejected", "internal_error"}
                         app.logger.warning("E3 login failed (reason=%s)", reason)
+                        if isinstance(exc, E3LoginError):
+                            app.logger.warning("E3 login response (page=%s form=%s menu=%s notice=%s)",
+                                               exc.page, exc.form, exc.menu, exc.notice)
                         message = {
                             "upstream_tls": "目前無法驗證 E3 的安全連線，請稍後再試。這不代表帳號或密碼錯誤。",
                             "upstream_timeout": "連線至 E3 逾時，請稍後再試。這不代表帳號或密碼錯誤。",

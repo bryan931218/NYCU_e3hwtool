@@ -1,5 +1,6 @@
 import re
 from typing import Optional
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 import urllib3
@@ -11,8 +12,12 @@ from e3_tracker.platform.constants import HEADERS
 class E3LoginError(RuntimeError):
     """A fixed login failure code; never include upstream content or credentials."""
 
-    def __init__(self, reason: str):
+    def __init__(self, reason: str, *, page="unknown", form=False, menu=False, notice="unknown"):
         self.reason = reason
+        self.page = page if page in {"login", "dashboard", "verification", "policy", "other"} else "unknown"
+        self.form = bool(form)
+        self.menu = bool(menu)
+        self.notice = notice if notice in {"credentials", "token", "cookies", "verification", "rate_limit", "challenge", "none"} else "unknown"
         super().__init__("E3 login could not be completed")
 
 
@@ -49,6 +54,61 @@ def need_login_redirect(html_text: str) -> bool:
     return ("login/index.php" in html_text) or ("您目前尚未登入" in html_text) or ("You are not logged in" in html_text)
 
 
+def _authenticated_dashboard(response, base_url):
+    """A login URL elsewhere in the page is not proof that authentication failed."""
+    base, target = urlsplit(base_url), urlsplit(response.url)
+    if (response.status_code != 200 or (target.scheme, target.netloc) != (base.scheme, base.netloc)
+            or target.path not in {"/my/", "/my/index.php"}):
+        return False
+    soup = BeautifulSoup(response.text, "html.parser")
+    if soup.select_one('input[name="password"]'):
+        return False
+    profile = logout = False
+    for link in soup.select('.usermenu a[href], #usermenu a[href], #action-menu-1-menu a[href]'):
+        url = urlsplit(urljoin(base_url, link["href"]))
+        if (url.scheme, url.netloc) != (base.scheme, base.netloc):
+            continue
+        query = parse_qs(url.query)
+        if url.path == "/user/profile.php" and len(query.get("id", [])) == 1:
+            profile = bool(re.fullmatch(r"[0-9]+", query["id"][0]))
+        if url.path == "/login/logout.php" and query.get("sesskey"):
+            logout = True
+    return profile and logout
+
+
+def _login_rejection(response):
+    """Expose only bounded page/form categories, not upstream messages or URLs."""
+    soup = BeautifulSoup(response.text, "html.parser")
+    path = urlsplit(response.url).path
+    page = "other"
+    if path == "/login/index.php":
+        page = "login"
+    elif path in {"/my/", "/my/index.php"}:
+        page = "dashboard"
+    elif path.startswith("/admin/tool/mfa/"):
+        page = "verification"
+    elif path in {"/user/policy.php", "/admin/tool/policy/view.php"}:
+        page = "policy"
+    errors = " ".join(node.get_text(" ", strip=True) for node in soup.select(
+        '#loginerrormessage, .loginerrors, [data-fieldtype="error"], .alert-danger'
+    )).casefold()
+    notice = "unknown" if errors else "none"
+    for category, markers in (
+        ("token", ("token", "權杖")),
+        ("cookies", ("cookie",)),
+        ("rate_limit", ("too many", "locked", "鎖定", "次數過多")),
+        ("verification", ("verification code", "驗證碼", "two-factor", "雙重驗證")),
+        ("credentials", ("invalid login", "無效的登入", "帳號或密碼", "帳號密碼")),
+    ):
+        if any(marker in errors for marker in markers):
+            notice = category
+            break
+    return E3LoginError("login_rejected", page=page,
+                        form=bool(soup.select_one('input[name="password"]')),
+                        menu=bool(soup.select_one('.usermenu, #usermenu, #user-menu-toggle')),
+                        notice=notice)
+
+
 def login_with_password(sess: requests.Session, base_url: str, username: str, password: str, *, timeout: int = 20) -> None:
     login_url = f"{base_url}/login/index.php"
     resp = safe_request(sess, "GET", login_url, headers=HEADERS, timeout=timeout)
@@ -56,9 +116,17 @@ def login_with_password(sess: requests.Session, base_url: str, username: str, pa
     token_input = soup.find("input", {"name": "logintoken"})
     token = token_input["value"] if token_input and token_input.has_attr("value") else ""
     payload = {"username": username, "password": password, "logintoken": token, "anchor": ""}
-    resp = safe_request(sess, "POST", login_url, data=payload, headers=HEADERS, timeout=timeout)
+    origin = urlsplit(base_url)
+    headers = {**HEADERS, "Referer": login_url, "Origin": f"{origin.scheme}://{origin.netloc}"}
+    resp = safe_request(sess, "POST", login_url, data=payload, headers=headers, timeout=timeout)
     if need_login_redirect(resp.text):
-        raise E3LoginError("login_rejected")
+        # Confirm the authenticated session with one read-only request. A footer,
+        # announcement or switch-account link can also mention login/index.php.
+        dashboard = safe_request(sess, "GET", f"{base_url.rstrip('/')}/my/", headers=HEADERS,
+                                 timeout=timeout, allow_redirects=False)
+        if _authenticated_dashboard(dashboard, base_url):
+            return
+        raise _login_rejection(resp)
 
 
 def apply_cookie(sess: requests.Session, base_url: str, moodle_session_value: str) -> None:
