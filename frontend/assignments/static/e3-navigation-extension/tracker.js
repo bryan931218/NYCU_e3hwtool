@@ -1,5 +1,31 @@
 (() => {
   const pending = new Map();
+  let schoolLogin = null;
+  function schoolStatus(text) {
+    const status = document.getElementById?.("schoolLoginStatus");
+    if (status) status.textContent = text;
+  }
+  function setupSchoolLogin() {
+    const button = document.getElementById?.("schoolLoginButton");
+    if (!button || location.pathname !== "/login") return;
+    button.disabled = false;
+    button.dataset.e3SsoReady = "1";
+    schoolStatus("在學校完成登入後，會自動返回原管理員帳號。");
+    button.addEventListener("click", event => {
+      if (!event.isTrusted || schoolLogin) return;
+      const requestId = crypto.randomUUID();
+      schoolLogin = { requestId, createdAt: Date.now() };
+      schoolStatus("請在開啟的學校頁面完成登入，本站會自動接續驗證。");
+      chrome.runtime.sendMessage({ type: "OPEN_E3_SCHOOL_LOGIN", requestId }).then(result => {
+        if (!result?.ok) { schoolLogin = null; schoolStatus("無法啟動學校登入，請重新載入擴充功能後再試。"); }
+      }).catch(() => { schoolLogin = null; schoolStatus("請重新載入擴充功能與此頁面。"); });
+      setTimeout(() => {
+        if (schoolLogin?.requestId === requestId) { schoolLogin = null; schoolStatus("登入等待已逾時，請重新開始。"); }
+      }, 10 * 60 * 1000);
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", setupSchoolLogin, { once: true });
+  else setupSchoolLogin();
   // Remove data from the previous manual-return implementation on upgrade.
   try { sessionStorage.removeItem("e3_pending_navigation"); } catch {}
   function openAssignment(event) {
@@ -29,6 +55,29 @@
     }
   }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message?.type === "E3_SCHOOL_LOGIN_SESSION") {
+      const entry = schoolLogin;
+      if (sender.id !== chrome.runtime.id || sender.tab || location.pathname !== "/login" || !entry ||
+          entry.requestId !== message.requestId || Date.now() - entry.createdAt >= 10 * 60 * 1000 ||
+          typeof message.session !== "string" || !/^[A-Za-z0-9,-]{16,256}$/.test(message.session)) {
+        respond({ ok: false }); return;
+      }
+      schoolLogin = null;
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+      if (!csrf) { respond({ ok: false }); return; }
+      const fields = new URLSearchParams({ login_type: "session", admin_session: "1", moodle_session: message.session, csrf_token: csrf });
+      fetch("/login", { method: "POST", credentials: "same-origin", mode: "same-origin", cache: "no-store", redirect: "follow",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "X-CSRFToken": csrf },
+        body: fields.toString(), signal: AbortSignal.timeout(25000),
+      }).then(response => {
+        const target = new URL(response.url);
+        const ok = response.ok && target.origin === location.origin && target.pathname === "/";
+        respond({ ok });
+        if (ok) schoolStatus("管理員驗證成功，正在返回本站。");
+        else schoolStatus("學校登入已完成，但本站未通過管理員本人驗證，請確認學校帳號。");
+      }).catch(() => { schoolStatus("學校登入接續失敗，請重新開始。"); respond({ ok: false }); });
+      return true;
+    }
     if (message?.type !== "E3_RESTORE_SESSION" || sender.id !== chrome.runtime.id || sender.tab) return;
     const entry = pending.get(message.requestId);
     pending.delete(message.requestId);

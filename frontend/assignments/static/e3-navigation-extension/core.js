@@ -1,5 +1,6 @@
 export const E3_ORIGIN = "https://e3p.nycu.edu.tw";
 export const PORTAL_ENTRY = "https://portal.nycu.edu.tw/portal/newe3p";
+export const SCHOOL_LOGIN_ENTRY = "https://portal.nycu.edu.tw/#/login?redirect=%2Fredirect%2Fnewe3p";
 export const PENDING_TTL_MS = 30 * 60 * 1000;
 const TRACKER_ORIGINS = new Set(["https://www.e3hwtool.space", "https://e3hwtool.space"]);
 
@@ -14,6 +15,51 @@ export function assignmentTarget(value) {
   } catch {
     return null;
   }
+}
+
+// A school-login transfer is tied to one login-page document and cookie store.
+// Storage contains only navigation metadata, never credentials.
+export function createSchoolLoginController({ storage, tabs, transfer, now = Date.now }) {
+  const key = id => `e3-school-login:${id}`;
+  const locks = new Set();
+  const valid = pending => pending && now() >= pending.createdAt && now() - pending.createdAt < 10 * 60 * 1000;
+  async function handle(message, sender) {
+    if (sender.frameId !== 0 || !Number.isInteger(sender.tab?.id)) return { ok: false };
+    let url;
+    try { url = new URL(sender.url); } catch { return { ok: false }; }
+    if (message?.type === "OPEN_E3_SCHOOL_LOGIN") {
+      if (!TRACKER_ORIGINS.has(url.origin) || url.pathname !== "/login" || !sender.documentId ||
+          !/^[a-f0-9-]{36}$/.test(message.requestId || "")) return { ok: false };
+      const tab = await tabs.create({ url: "about:blank", active: true, windowId: sender.tab.windowId });
+      await storage.set({ [key(tab.id)]: { createdAt: now(), source: {
+        tabId: sender.tab.id, documentId: sender.documentId, requestId: message.requestId, origin: url.origin,
+      } } });
+      await tabs.update(tab.id, { url: SCHOOL_LOGIN_ENTRY });
+      return { ok: true };
+    }
+    if (url.origin !== E3_ORIGIN) return { ok: false };
+    const recordKey = key(sender.tab.id);
+    const pending = (await storage.get(recordKey))[recordKey];
+    if (!valid(pending)) {
+      if (pending) await storage.remove(recordKey);
+      return { ok: true, pending: false };
+    }
+    if (message?.type === "E3_SCHOOL_LOGIN_PENDING") return { ok: true, pending: true };
+    if (message?.type !== "E3_SCHOOL_LOGIN_STATE" || message.status !== "authenticated") return { ok: false };
+    if (locks.has(sender.tab.id)) return { ok: false };
+    locks.add(sender.tab.id);
+    try {
+      // Consume before releasing a credential, including failed or duplicate reports.
+      await storage.remove(recordKey);
+      const result = await transfer(pending.source, sender.tab.id);
+      if (result && TRACKER_ORIGINS.has(pending.source.origin)) {
+        await tabs.update(pending.source.tabId, { active: true, url: pending.source.origin + "/" });
+      }
+      return { ok: Boolean(result) };
+    } catch { return { ok: false }; }
+    finally { locks.delete(sender.tab.id); }
+  }
+  return { handle, forget: id => storage.remove(key(id)) };
 }
 
 function senderOrigin(sender) {
