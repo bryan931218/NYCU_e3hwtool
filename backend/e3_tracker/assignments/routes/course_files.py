@@ -51,6 +51,8 @@ def register_course_file_routes(app, storage, current_user, login_required, load
             semester, courses, _ = service.scope(user['username'], payload['semester'], result=catalog(user))
         except ValueError:
             return response({'ok': False, 'error': '找不到該學期課程，請先更新作業。'}, 400)
+        if user.get('moodle_token') and not user.get('moodle_session'):
+            return response({'ok': False, 'error': '附件整理目前需使用 E3 Session 登入；API 登入仍可更新課程與作業。'}, 409)
         if not storage.consume_security_limit(f"course-files:{user['username']}", 12, 600):
             return response({'ok': False, 'error': '更新過於頻繁，請稍後再試。'}, 429)
         status = service.start(app, user, semester, courses, service.messages(user['username'], semester, courses))

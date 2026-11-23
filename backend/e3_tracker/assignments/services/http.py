@@ -18,7 +18,7 @@ class E3LoginError(RuntimeError):
         self.form = bool(form)
         self.menu = bool(menu)
         self.notice = notice if notice in {"credentials", "token", "cookies", "verification", "rate_limit", "challenge", "none"} else "unknown"
-        self.auth_step = auth_step if auth_step in {"token", "identity", "handoff", "web_session"} else None
+        self.auth_step = auth_step if auth_step in {"token", "identity", "handoff", "web_session", "courses", "assignments", "submission"} else None
         self.api_code = api_code if api_code in {
             "invalidlogin", "invalidtoken", "invalidprivatetoken", "accessexception", "servicenotavailable",
             "enablewsdescription", "apprequired", "autologinkeygenerationlockout", "autologinnotallowedtoadmins",
@@ -43,6 +43,7 @@ def login_failure_reason(exc: Exception) -> str:
     if isinstance(exc, E3LoginError) and exc.reason in {
         "login_rejected", "session_cookie_missing", "mobile_api_unavailable", "mobile_session_unavailable",
         "session_handoff_limited", "account_action_required", "identity_mismatch", "upstream_response_invalid",
+        "api_token_invalid",
     }:
         return exc.reason
     if isinstance(exc, requests.exceptions.SSLError) or isinstance(exc.__cause__, requests.exceptions.SSLError):
@@ -164,11 +165,10 @@ def _password_form(soup, login_url, base_url):
     raise E3LoginError("login_rejected")
 
 
-def login_with_password(sess: requests.Session, base_url: str, username: str, password: str, *, timeout: int = 20) -> None:
+def login_with_password(sess: requests.Session, base_url: str, username: str, password: str, *, timeout: int = 20) -> Optional[dict]:
     if base_url.rstrip("/") == "https://e3p.nycu.edu.tw":
         from e3_tracker.assignments.services.mobile_auth import login_with_mobile_api
-        login_with_mobile_api(sess, base_url, username, password, timeout=timeout)
-        return
+        return login_with_mobile_api(sess, base_url, username, password, timeout=timeout)
     login_url = f"{base_url}/login/index.php"
     resp = safe_request(sess, "GET", login_url, headers=HEADERS, timeout=timeout)
     soup = BeautifulSoup(resp.text, "html.parser")

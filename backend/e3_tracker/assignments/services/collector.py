@@ -1,5 +1,5 @@
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from html import unescape
 import json
@@ -37,6 +37,8 @@ class CollectOptions:
     username: Optional[str] = None
     password: Optional[str] = None
     moodle_session: Optional[str] = None
+    moodle_token: Optional[str] = None
+    moodle_user_id: Optional[int] = None
     cafile: Optional[str] = None
     insecure: bool = False
     timeout: int = 20
@@ -639,6 +641,9 @@ def _save_debug_file(path: str, text: str, created_paths: Set[str]) -> None:
 
 
 def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
+    if options.moodle_token:
+        from e3_tracker.assignments.services.moodle_api import collect_api_assignments
+        return collect_api_assignments(options)
     sess = requests.Session()
     created_debug: Set[str] = set()
 
@@ -652,13 +657,17 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
         apply_cookie(sess, options.base_url, options.moodle_session)
         login_method = "cookie"
     elif options.username and options.password:
-        login_with_password(
+        api_identity = login_with_password(
             sess,
             options.base_url,
             options.username,
             options.password,
             timeout=options.timeout,
         )
+        if isinstance(api_identity, dict) and api_identity.get("moodle_token"):
+            from e3_tracker.assignments.services.moodle_api import collect_api_assignments
+            return collect_api_assignments(replace(options, username=None, password=None,
+                moodle_token=api_identity["moodle_token"], moodle_user_id=api_identity["moodle_user_id"]))
         login_method = "password"
     else:
         raise RuntimeError("請提供 MoodleSession 或帳密以登入 E3。")

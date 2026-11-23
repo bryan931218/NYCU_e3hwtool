@@ -8,6 +8,7 @@ from sqlalchemy import Column, Float, Integer, String, Table, Text, insert, sele
 
 from e3_tracker.platform.persistence.metadata import metadata
 from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
+from e3_tracker.platform.moodle_credentials import unpack_moodle_credential
 from .notification_schema import line_bindings
 
 
@@ -40,9 +41,10 @@ class CourseFileStorage:
             return None
         try:
             credential = self.owner._credential_cipher.decrypt(row.moodle_credential, f'moodle:{username}')
+            decoded = unpack_moodle_credential(credential)
         except (ValueError, InvalidToken):
             return None
-        return {'username': username, 'moodle_session': credential} if credential else None
+        return {'username': username, **decoded} if credential else None
 
     def _encode(self, value, username, semester):
         return self.owner._credential_cipher.encrypt(json.dumps(value, ensure_ascii=False), f'course-files:{username}:{semester}')

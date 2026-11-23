@@ -9,7 +9,8 @@ from collections import deque
 import requests
 
 from e3_tracker.assignments.services.http import apply_cookie
-from e3_tracker.assignments.services.profile import fetch_session_identity, profile_surname
+from e3_tracker.assignments.services.profile import fetch_session_identity, profile_surname, _name_from_text
+from e3_tracker.assignments.services.mobile_auth import verified_site_info
 from e3_tracker.platform.security import production_mode
 from e3_tracker.platform.guest_privacy import is_guest_identity
 
@@ -37,7 +38,7 @@ class SessionIdentitySync:
 
     def refresh_user(self, user, *, force=False):
         username = str(user.get("username") or "")
-        if user.get("is_guest") or is_guest_identity(username) or not username or not user.get("moodle_session"):
+        if user.get("is_guest") or is_guest_identity(username) or not username or not (user.get("moodle_session") or user.get("moodle_token")):
             return
         claimed = False
         saved = False
@@ -48,9 +49,17 @@ class SessionIdentitySync:
             claimed = True
             needs_number = username.startswith('Session-') and not self.storage.load_student_number(username)
             with requests.Session() as sess:
-                apply_cookie(sess, self.base_url, user["moodle_session"])
-                identity = fetch_session_identity(sess, self.base_url, timeout=self.timeout, diagnostics=diagnostics,
-                                                  include_number=needs_number, profile_metadata=details)
+                if user.get("moodle_token"):
+                    info = verified_site_info(sess, self.base_url, user["moodle_token"], timeout=self.timeout,
+                                              username=username, user_id=user.get("moodle_user_id"))
+                    import re
+                    identity = {"name": _name_from_text(str(info.get("fullname") or "")),
+                                "student_number": info["username"] if re.fullmatch(r"[0-9]{9}", info["username"]) else ""}
+                    diagnostics["reason"] = "success"
+                else:
+                    apply_cookie(sess, self.base_url, user["moodle_session"])
+                    identity = fetch_session_identity(sess, self.base_url, timeout=self.timeout, diagnostics=diagnostics,
+                                                      include_number=needs_number, profile_metadata=details)
             number = identity["student_number"]
             name = identity["name"]
             saved = self.storage.save_identity_enrichment(username, name, profile_surname(name), number)

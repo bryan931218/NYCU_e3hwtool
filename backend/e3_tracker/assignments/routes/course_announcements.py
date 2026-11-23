@@ -124,6 +124,8 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
         semester, courses = selected_courses(user, payload.get('semester'))
         if not semester:
             return {'ok': False, 'error': '找不到該學期課程，請先更新作業。'}, 400
+        if user.get('moodle_token') and not user.get('moodle_session'):
+            return {'ok': False, 'error': f'課程{noun}目前需使用 E3 Session 登入才能更新；API 登入仍可更新課程與作業。'}, 409
         if not storage.consume_security_limit(f"{prefix}-refresh:{user['username']}", 12, 600):
             return {'ok': False, 'error': '更新過於頻繁，請稍後再試。'}, 429
         result = service.start(app, user, semester, courses)
@@ -157,6 +159,8 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
             return {'ok': False, 'error': f'{noun}不存在。'}, 404
         content = None
         if payload['read'] and payload.get('load_content', True) and 'content' not in item:
+            if user.get('moodle_token') and not user.get('moodle_session'):
+                return {'ok': False, 'error': f'課程{noun}內文目前需使用 E3 Session 登入才能讀取；API 登入仍可更新課程與作業。'}, 409
             if not storage.consume_security_limit(f"{prefix}-read:{user['username']}", 60, 600):
                 return {'ok': False, 'error': '讀取過於頻繁，請稍後再試。'}, 429
             try:

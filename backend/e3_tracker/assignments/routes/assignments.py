@@ -15,7 +15,7 @@ from e3_tracker.assignments.services.collector import annotate_result_semesters,
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
 from e3_tracker.assignments.services.http import E3LoginError, apply_cookie, login_failure_reason, login_with_password
 from e3_tracker.assignments.services.login_diagnostics import failure_metadata
-from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
+from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname, _name_from_text
 from e3_tracker.assignments.services.e3_navigation_extension import navigation_target
 from e3_tracker.platform.services.account_labels import account_label
 from e3_tracker.platform.analytics_integration import consent_choice
@@ -179,9 +179,10 @@ def register_assignments_routes(*,
                     login_stage = "e3_authentication"
                     try:
                         sess = requests.Session()
-                        login_with_password(sess, base_url, raw_username, raw_password, timeout=default_timeout)
-                        cookie_val = sess.cookies.get("MoodleSession")
-                        if not cookie_val:
+                        api_identity = login_with_password(sess, base_url, raw_username, raw_password, timeout=default_timeout)
+                        api_identity = api_identity if isinstance(api_identity, dict) else {}
+                        cookie_val = None if api_identity else sess.cookies.get("MoodleSession")
+                        if not cookie_val and not api_identity.get("moodle_token"):
                             raise E3LoginError("session_cookie_missing")
                         authenticated = True
                         login_stage = "web_session"
@@ -191,20 +192,29 @@ def register_assignments_routes(*,
                             is_guest=False,
                             is_admin=bool(admin_user_id and raw_username == admin_user_id),
                             permanent=True,
+                            moodle_token=api_identity.get("moodle_token"),
+                            moodle_user_id=api_identity.get("moodle_user_id"),
                         )
                         login_stage = "post_login"
                         record_login(raw_username)
+                        if api_identity:
+                            name = _name_from_text(str(api_identity.get("profile_name") or ""))
+                            storage.save_identity_enrichment(raw_username, name, profile_surname(name))
                         existing_cache = load_cache_from_disk(raw_username)
                         if existing_cache:
                             flash("已載入先前的課程資料，系統將在背景自動更新最新內容。", "info")
                         else:
                             try:
                                 result, excel_data = fetch_assignments_for(
-                                    {"username": raw_username, "moodle_session": cookie_val}
+                                    {"username": raw_username, "moodle_session": cookie_val, **api_identity}
                                 )
                                 set_assign_cache(result, excel_data)
                                 flash("已成功獲取最新資訊。", "success")
                             except Exception as exc:
+                                details = failure_metadata(exc, method="password", stage="post_login")
+                                record_ui_event("refresh_assignments", "error", {**details, "mode": "login"})
+                                app.logger.warning("E3 assignment fetch failed (reason=%s step=%s code=%s)",
+                                                   details["error_code"], details.get("auth_step", "none"), details.get("api_code") or "none")
                                 flash("登入成功但獲取資料失敗，程式將在背景重試。", "warning")
                         session_identity_sync.schedule_user(raw_username)
                         response = redirect(url_for("index"))
@@ -684,7 +694,7 @@ def register_assignments_routes(*,
             with app.app_context():
                 try:
                     result, excel_data = fetch_assignments_for(
-                        {"username": username, "moodle_session": moodle_session_val},
+                        {**user, "username": username, "moodle_session": moodle_session_val},
                         semester_keys=requested_semesters,
                         include_archived=include_archived,
                     )
@@ -699,8 +709,11 @@ def register_assignments_routes(*,
                         },
                     )
                 except Exception as exc:  # pragma: no cover - background logging
-                    record_ui_event("refresh_assignments", "error", {"reason": str(exc), "mode": "background"})
-                    _mark_refresh_job_done(username, status="error", error=str(exc))
+                    details = failure_metadata(exc, method="password" if user.get("moodle_token") else "session", stage="post_login")
+                    record_ui_event("refresh_assignments", "error", {**details, "mode": "background"})
+                    app.logger.warning("E3 assignment fetch failed (reason=%s step=%s code=%s)",
+                                       details["error_code"], details.get("auth_step", "none"), details.get("api_code") or "none")
+                    _mark_refresh_job_done(username, status="error", error=details["message"])
                 else:
                     _mark_refresh_job_done(username, status="success")
 

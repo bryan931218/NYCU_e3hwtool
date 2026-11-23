@@ -210,12 +210,15 @@ def create_app(
         is_guest: bool,
         is_admin: bool,
         permanent: bool,
+        moodle_token=None,
+        moodle_user_id=None,
     ) -> None:
         if session.get("session_token"):
             storage.clear_web_session(session["session_token"])
         session.clear()
         session_token = secrets.token_urlsafe(24)
-        storage.save_web_session(session_token, username, is_guest=is_guest, is_admin=is_admin, moodle_session=moodle_session)
+        storage.save_web_session(session_token, username, is_guest=is_guest, is_admin=is_admin, moodle_session=moodle_session,
+                                 moodle_token=moodle_token, moodle_user_id=moodle_user_id)
         session["session_token"] = session_token
         session.permanent = permanent
 

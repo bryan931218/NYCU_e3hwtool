@@ -20,6 +20,7 @@ FAILURE_MESSAGES = {
     "account_action_required": "E3 要求先完成帳號確認、密碼更新或額外驗證。",
     "identity_mismatch": "E3 回傳的帳號或網站與這次登入不一致，已停止登入。",
     "upstream_response_invalid": "E3 回傳的登入資料格式不符合預期。",
+    "api_token_invalid": "E3 API 登入憑證已失效，請重新登入。",
     "csrf_validation_failed": "本站表單安全驗證失敗，請重新整理登入頁後再試。",
     "login_rate_limited": "本站暫時限制登入嘗試，請等待五分鐘後再試。",
     "too_many_requests": "本站暫時限制過多的連線請求。",
@@ -60,7 +61,7 @@ def failure_metadata(exc, *, method, stage, username="", code=None):
         if exc.auth_step:
             meta["auth_step"] = exc.auth_step
             meta["api_code"] = exc.api_code
-            details.append("API 步驟：" + {"token": "取得登入憑證", "identity": "核對本人帳號", "handoff": "建立 E3 Session", "web_session": "確認 E3 網頁登入"}[exc.auth_step])
+            details.append("API 步驟：" + {"token": "取得登入憑證", "identity": "核對本人帳號", "handoff": "建立 E3 Session", "web_session": "確認 E3 網頁登入", "courses": "讀取課程", "assignments": "讀取作業", "submission": "讀取繳交狀態"}[exc.auth_step])
             if exc.api_code:
                 details.append("E3 API 錯誤代碼：" + exc.api_code)
         details.extend(["E3 回應：" + PAGE_LABELS[exc.page], NOTICE_MESSAGES[exc.notice],

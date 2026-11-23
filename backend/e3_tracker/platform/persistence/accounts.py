@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from e3_tracker.platform.guest_privacy import is_guest_identity
 from e3_tracker.platform.services.profile_names import is_academic_unit_name
+from e3_tracker.platform.moodle_credentials import pack_moodle_credential, unpack_moodle_credential
 from .guest_cleanup import (
     delete_guest_accounts,
     guest_account_condition,
@@ -173,9 +174,10 @@ class AccountsStorage:
             credential = self._credential_cipher.decrypt(
                 row["moodle_credential"], f"moodle:{username}"
             )
+            decoded = unpack_moodle_credential(credential)
         except (ValueError, InvalidToken):
             return None
-        return {"username": username, "moodle_session": credential} if credential else None
+        return {"username": username, **decoded} if credential else None
 
     def load_user_profile(self, username: str) -> dict:
         with self._lock, self._engine.connect() as conn:
@@ -248,6 +250,8 @@ class AccountsStorage:
         is_guest=False,
         is_admin=False,
         moodle_session=None,
+        moodle_token=None,
+        moodle_user_id=None,
         lifetime=86400,
     ) -> None:
         if not session_token or not username:
@@ -271,7 +275,7 @@ class AccountsStorage:
                     is_guest=int(bool(is_guest)),
                     is_admin=int(bool(is_admin) and not is_guest),
                     moodle_credential=self._credential_cipher.encrypt(
-                        moodle_session, f"moodle:{username}"
+                        pack_moodle_credential(moodle_session, token=moodle_token, user_id=moodle_user_id), f"moodle:{username}"
                     ),
                     expires_at=time.time() + lifetime,
                 )
@@ -303,6 +307,7 @@ class AccountsStorage:
             credential = self._credential_cipher.decrypt(
                 row["moodle_credential"], f"moodle:{row['username']}"
             )
+            decoded = unpack_moodle_credential(credential)
         except (ValueError, InvalidToken):
             return None
         is_guest = bool(row["is_guest"] or is_guest_identity(row["username"]))
@@ -310,7 +315,7 @@ class AccountsStorage:
             "username": row["username"],
             "is_guest": is_guest,
             "is_admin": bool(row["is_admin"] and not is_guest),
-            "moodle_session": credential,
+            **decoded,
         }
 
     def clear_web_session(self, session_token: str) -> None:

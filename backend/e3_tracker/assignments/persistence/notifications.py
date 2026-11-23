@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from urllib.parse import urlencode
 from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
 from e3_tracker.platform.guest_privacy import is_guest_identity
+from e3_tracker.platform.moodle_credentials import unpack_moodle_credential
 from e3_tracker.assignments.domain.notifications import (
     DEFAULT_NOTIFICATION_PREFERENCES,
     active_assignments,
@@ -494,6 +495,7 @@ class NotificationStorage:
                         web_sessions_table.c.username == username,
                         web_sessions_table.c.is_guest == 0,
                         web_sessions_table.c.expires_at > now,
+                        web_sessions_table.c.moodle_credential.is_not(None),
                     )
                     .order_by(web_sessions_table.c.updated_at.desc())
                     .limit(1)
@@ -512,7 +514,7 @@ class NotificationStorage:
             row["moodle_credential"], f"moodle:{username}"
         )
         return (
-            {"username": username, "moodle_session": credential} if credential else None
+            {"username": username, **unpack_moodle_credential(credential)} if credential else None
         )
 
     def notification_content_user(self, username, now):
@@ -520,11 +522,11 @@ class NotificationStorage:
         with self._lock, self._engine.connect() as conn:
             row = conn.execute(select(web_sessions_table).where(
                 web_sessions_table.c.username == username, web_sessions_table.c.is_guest == 0,
-                web_sessions_table.c.expires_at > now).order_by(web_sessions_table.c.updated_at.desc()).limit(1)).mappings().first()
+                web_sessions_table.c.expires_at > now, web_sessions_table.c.moodle_credential.is_not(None)).order_by(web_sessions_table.c.updated_at.desc()).limit(1)).mappings().first()
         if not row:
             return None
         credential = self._credential_cipher.decrypt(row['moodle_credential'], f'moodle:{username}')
-        return {'username': username, 'moodle_session': credential} if credential else None
+        return {'username': username, **unpack_moodle_credential(credential)} if credential else None
 
     def notification_sync_error(self, username):
         with self._lock, self._engine.begin() as conn:

@@ -732,6 +732,10 @@ def register_assignment_site(
         semester_keys: Optional[Sequence[str]] = None,
         include_archived: bool = False,
     ) -> Tuple[Dict[str, Any], Optional[str]]:
+        if not user.get("moodle_session") and not user.get("moodle_token"):
+            credentials = storage.load_session_identity_user(str(user.get("username") or ""), time.time())
+            if credentials:
+                user = {**user, **credentials}
         selected_semesters = normalize_semester_selection(semester_keys)
         if semester_keys is None:
             stored = _sanitize_preferences(
@@ -770,6 +774,8 @@ def register_assignment_site(
             username=None,
             password=None,
             moodle_session=user.get("moodle_session"),
+            moodle_token=user.get("moodle_token"),
+            moodle_user_id=user.get("moodle_user_id"),
             insecure=False,
             timeout=default_timeout,
             debug=False,
