@@ -278,7 +278,7 @@
     {% include 'shared/components/admin_account_distributions.html' %}
     <section class="admin-section" id="recent-activity" data-admin-panel="activity" data-activity-url="{{ url_for('admin_recent_activity') }}" aria-labelledby="activityTitle">
         <h2 id="activityTitle">近期動態</h2>
-        <p class="muted">作業操作、通知設定與 LINE 綁定紀錄 · 保留 {{ activity_retention_days }} 天</p>
+        <p class="muted">登入成功與失敗、作業操作、通知設定與 LINE 綁定紀錄 · 保留 {{ activity_retention_days }} 天</p>
         <div class="admin-list-tools">
             <label for="adminActivitySearch">篩選這頁紀錄<input id="adminActivitySearch" type="search" placeholder="學號、姓名或操作" autocomplete="off" data-admin-search="activity"></label>
             <a class="btn" href="{{ traffic_link(activity_before=None) }}#recent-activity" data-admin-activity-refresh>{{ '返回最新紀錄' if activity_before else '更新紀錄' }}</a>

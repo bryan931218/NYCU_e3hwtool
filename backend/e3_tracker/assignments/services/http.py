@@ -12,12 +12,22 @@ from e3_tracker.platform.constants import HEADERS
 class E3LoginError(RuntimeError):
     """A fixed login failure code; never include upstream content or credentials."""
 
-    def __init__(self, reason: str, *, page="unknown", form=False, menu=False, notice="unknown"):
+    def __init__(self, reason: str, *, page="unknown", form=False, menu=False, notice="unknown", trace=()):
         self.reason = reason
         self.page = page if page in {"login", "dashboard", "verification", "policy", "other"} else "unknown"
         self.form = bool(form)
         self.menu = bool(menu)
         self.notice = notice if notice in {"credentials", "token", "cookies", "verification", "rate_limit", "challenge", "none"} else "unknown"
+        self.trace = []
+        for step in trace[:8]:
+            if not isinstance(step, dict):
+                continue
+            self.trace.append({
+                "method": step.get("method") if step.get("method") in {"GET", "POST"} else "other",
+                "status": step.get("status") if isinstance(step.get("status"), int) and 100 <= step["status"] <= 599 else 0,
+                "page": step.get("page") if step.get("page") in {"home", "login", "dashboard", "verification", "policy", "other"} else "other",
+                "session_cookie": step.get("session_cookie") is True,
+            })
         super().__init__("E3 login could not be completed")
 
 
@@ -103,10 +113,20 @@ def _login_rejection(response):
         if any(marker in errors for marker in markers):
             notice = category
             break
+    trace = []
+    for step in [*response.history, response][:8]:
+        path = urlsplit(step.url).path
+        target = {"/": "home", "/login/index.php": "login", "/my/": "dashboard", "/my/index.php": "dashboard"}.get(path, "other")
+        if path.startswith("/admin/tool/mfa/"):
+            target = "verification"
+        elif path in {"/user/policy.php", "/admin/tool/policy/view.php"}:
+            target = "policy"
+        trace.append({"method": getattr(step.request, "method", "other"), "status": step.status_code,
+                      "page": target, "session_cookie": "MoodleSession" in step.cookies})
     return E3LoginError("login_rejected", page=page,
                         form=bool(soup.select_one('input[name="password"]')),
                         menu=bool(soup.select_one('.usermenu, #usermenu, #user-menu-toggle')),
-                        notice=notice)
+                        notice=notice, trace=trace)
 
 
 def _password_form(soup, login_url, base_url):

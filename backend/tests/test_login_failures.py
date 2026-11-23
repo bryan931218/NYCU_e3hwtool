@@ -120,6 +120,23 @@ class LoginFailureTests(unittest.TestCase):
         error = E3LoginError("login_rejected", page="private", notice="private")
         self.assertEqual((error.page, error.notice), ("unknown", "unknown"))
 
+    def test_rejected_redirect_trace_never_retains_urls_cookies_or_posted_credentials(self):
+        first = response("/?private-query", "", 303)
+        first.request = requests.Request("POST", BASE + "/login/index.php", data={"password": "private-password"}).prepare()
+        first.cookies.set("MoodleSession", "private-cookie")
+        final = response("/login/index.php?private-token", LOGIN + '<a href="/login/index.php">Login</a>')
+        final.history = [first]
+        final.request = requests.Request("GET", final.url).prepare()
+        with patch("e3_tracker.assignments.services.http.safe_request", side_effect=[
+            response("/login/index.php", LOGIN), final, response("/login/index.php", LOGIN, 302),
+        ]), self.assertRaises(E3LoginError) as raised:
+            login_with_password(Mock(), BASE, "synthetic-user", "synthetic-password")
+        self.assertEqual(raised.exception.trace, [
+            {"method": "POST", "status": 303, "page": "home", "session_cookie": True},
+            {"method": "GET", "status": 200, "page": "login", "session_cookie": False},
+        ])
+        self.assertNotIn("private", str(raised.exception.trace))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -839,6 +839,7 @@ def register_assignment_site(
         load_cache_from_disk=load_cache_from_disk,
         load_google_tokens=load_google_tokens,
         login_required=login_required,
+        record_activity=record_activity,
         record_ui_event=record_ui_event,
         save_google_tokens=save_google_tokens,
         set_announcement_vote=set_announcement_vote,

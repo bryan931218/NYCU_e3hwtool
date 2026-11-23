@@ -21,6 +21,7 @@ ACTION_LABELS = {
     **NOTIFICATION_ACTION_LABELS,
     **{f"usage_{key}": label for key, label in FEATURE_LABELS.items()},
     "login_success": "登入成功",
+    "login_failed": "登入失敗",
     "logout": "登出",
     "guest_login": "訪客登入",
     "guest_import": "匯入訪客資料",
@@ -55,15 +56,18 @@ def _activity_context(storage, profiles, before=None):
     page = storage.recent_activity_events(101, before_id=before)
     formatted_events = []
     detail_keys = ("info", "course", "message", "target", "action_detail")
-    hidden_keys = {"username", "is_guest", "is_admin", "site", "activity_only", "is_new_user", *detail_keys}
+    hidden_keys = {"username", "is_guest", "is_admin", "site", "activity_only", "is_new_user", "login_method", *detail_keys}
     for ev in page[:100]:
         meta = ev.get("meta") or {}
+        event_hidden_keys = hidden_keys
+        if ev.get("action") == "login_failed":
+            event_hidden_keys = hidden_keys | {"attempted_username", "login_method", "login_stage", "error_code", "response_page", "response_notice", "response_form", "response_menu", "response_trace"}
         detail_parts = []
         for key in detail_keys:
             if meta.get(key):
                 label = {"course": "課程：", "target": "對象："}.get(key, "")
                 detail_parts.append(f"{label}{meta[key]}")
-        extra = {key: value for key, value in meta.items() if key not in hidden_keys}
+        extra = {key: value for key, value in meta.items() if key not in event_hidden_keys}
         if extra:
             detail_parts.append(json.dumps(extra, ensure_ascii=False, default=str))
         status = ev.get("status") or "info"
@@ -72,7 +76,7 @@ def _activity_context(storage, profiles, before=None):
             "ip": ev.get("ip") or "-",
             "status": status,
             "status_label": {"success": "成功", "error": "失敗", "info": "操作", "start": "處理中"}.get(status, "操作"),
-            "username": meta.get("username") or ("訪客" if meta.get("is_guest") else "-"),
+            "username": meta.get("username") or (meta.get("attempted_username") if ev.get("action") == "login_failed" else None) or ("訪客" if meta.get("is_guest") else "-"),
             "student_number": student_numbers.get(meta.get("username"), ""),
             "description": _action_description(ev.get("action")),
             "is_new_user": ev.get("action") == "login_success" and meta.get("is_new_user") is True and not meta.get("is_guest"),

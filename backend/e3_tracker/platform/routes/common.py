@@ -115,7 +115,7 @@ def register_platform_routes(
             meta = {key: value for key, value in meta.items() if key != "is_new_user"}
         if not action:
             return {"ok": False, "error": "action required"}, 400
-        if action.lower().startswith("notification_"):
+        if action.lower().startswith("notification_") or action.lower() == "login_failed":
             return {"ok": False, "error": "server-confirmed action required"}, 400
         record_ui_event(action, status, meta)
         return {"ok": True}

@@ -14,6 +14,7 @@ from werkzeug.http import http_date
 from e3_tracker.assignments.services.collector import annotate_result_semesters, normalize_semester_selection
 from e3_tracker.assignments.services.google_calendar import GOOGLE_CALENDAR_SCOPE, GoogleUnauthorizedError, build_google_authorize_url, compute_expiry, exchange_code_for_google_token, sync_assignments_to_google_calendar
 from e3_tracker.assignments.services.http import E3LoginError, apply_cookie, login_failure_reason, login_with_password
+from e3_tracker.assignments.services.login_diagnostics import failure_metadata
 from e3_tracker.assignments.services.profile import fetch_profile_name, profile_surname
 from e3_tracker.assignments.services.e3_navigation_extension import navigation_target
 from e3_tracker.platform.services.account_labels import account_label
@@ -64,6 +65,7 @@ def register_assignments_routes(*,
     load_cache_from_disk,
     load_google_tokens,
     login_required,
+    record_activity,
     record_ui_event,
     save_google_tokens,
     set_announcement_vote,
@@ -82,9 +84,35 @@ def register_assignments_routes(*,
         except Exception:
             app.logger.warning("Assignment first-login record unavailable")
             is_new_user = False
-        record_ui_event("login_success", "success", {"username": username, "is_new_user": is_new_user})
+        method = "session" if request.form.get("login_type") == "session" else "password"
+        record_ui_event("login_success", "success", {
+            "username": username, "is_new_user": is_new_user, "login_method": method,
+            "action_detail": "登入方式：" + ("Session" if method == "session" else "帳號／密碼"),
+        })
         if consent_choice() == "granted":
             session["ga4_login_events"] = [{"method": "session" if request.form.get("login_type") == "session" else "password"}]
+
+    def record_login_failure(exc, *, method, stage, username="", code=None):
+        try:
+            record_activity("login_failed", status="error", metadata=failure_metadata(
+                exc, method=method, stage=stage, username=username, code=code,
+            ))
+        except Exception:
+            app.logger.warning("Login failure activity unavailable")
+
+    @app.after_request
+    def record_blocked_login(response):
+        if request.method == "POST" and request.path == "/login" and response.status_code >= 400 and response.is_json:
+            payload = response.get_json(silent=True)
+            code = payload.get("error") if isinstance(payload, dict) else None
+            if code in {"csrf_validation_failed", "login_rate_limited", "too_many_requests", "cross_origin_request", "cross_site_request"}:
+                # Bound records for rejected requests as well as accepted login attempts.
+                try:
+                    if storage.consume_security_limit(f"login-failure-record:{request.remote_addr or 'unknown'}", 20, 300):
+                        record_login_failure(None, code=code, method="unknown", stage="request_validation")
+                except Exception:
+                    app.logger.warning("Blocked login activity unavailable")
+        return response
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -96,11 +124,13 @@ def register_assignments_routes(*,
             if login_type == "session":
                 raw_session = request.form.get("moodle_session", "").strip()
                 if not raw_session:
+                    record_login_failure(None, method="session", stage="input")
                     flash("請貼上有效的 MoodleSession 值。", "error")
                 else:
                     digest = hashlib.sha1(raw_session.encode("utf-8")).hexdigest()[:10]
                     session_label = f"Session-{digest}"
                     existing_cache = load_cache_from_disk(session_label)
+                    login_stage = "session_validation"
                     try:
                         result = None
                         excel_data = None
@@ -108,6 +138,7 @@ def register_assignments_routes(*,
                             result, excel_data = fetch_assignments_for(
                                 {"username": session_label, "moodle_session": raw_session}
                             )
+                        login_stage = "web_session"
                         _start_web_session(
                             session_label,
                             moodle_session=raw_session,
@@ -115,6 +146,7 @@ def register_assignments_routes(*,
                             is_admin=bool(admin_user_id and session_label == admin_user_id),
                             permanent=True,
                         )
+                        login_stage = "post_login"
                         session_identity_sync.refresh_user(
                             {"username": session_label, "moodle_session": raw_session}, force=True
                         )
@@ -133,15 +165,18 @@ def register_assignments_routes(*,
                         response.headers["Expires"] = "0"
                         return response
                     except Exception as exc:
+                        record_login_failure(exc, method="session", stage=login_stage)
                         app.logger.warning("E3 session validation failed (%s)", type(exc).__name__)
                         flash("Session 驗證失敗，請確認 MoodleSession 是否正確。", "error")
             else:
                 raw_username = request.form.get("username", "").strip()
                 raw_password = request.form.get("password", "")
                 if not raw_username or not raw_password:
+                    record_login_failure(None, method="password", stage="input", username=raw_username)
                     flash("請輸入帳號與密碼。", "error")
                 else:
                     authenticated = False
+                    login_stage = "e3_authentication"
                     try:
                         sess = requests.Session()
                         login_with_password(sess, base_url, raw_username, raw_password, timeout=default_timeout)
@@ -149,6 +184,7 @@ def register_assignments_routes(*,
                         if not cookie_val:
                             raise E3LoginError("session_cookie_missing")
                         authenticated = True
+                        login_stage = "web_session"
                         _start_web_session(
                             raw_username,
                             moodle_session=cookie_val,
@@ -156,6 +192,7 @@ def register_assignments_routes(*,
                             is_admin=bool(admin_user_id and raw_username == admin_user_id),
                             permanent=True,
                         )
+                        login_stage = "post_login"
                         record_login(raw_username)
                         existing_cache = load_cache_from_disk(raw_username)
                         if existing_cache:
@@ -176,6 +213,7 @@ def register_assignments_routes(*,
                         response.headers["Expires"] = "0"
                         return response
                     except Exception as exc:
+                        record_login_failure(exc, method="password", stage=login_stage, username=raw_username)
                         reason = login_failure_reason(exc)
                         password_login_failed = not authenticated and reason in {"login_rejected", "internal_error"}
                         app.logger.warning("E3 login failed (reason=%s)", reason)
