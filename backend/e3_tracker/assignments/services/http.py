@@ -90,7 +90,7 @@ def _login_rejection(response):
     elif path in {"/user/policy.php", "/admin/tool/policy/view.php"}:
         page = "policy"
     errors = " ".join(node.get_text(" ", strip=True) for node in soup.select(
-        '#loginerrormessage, .loginerrors, [data-fieldtype="error"], .alert-danger'
+        '#loginerrormessage, .loginerrors, .errormessage, .notifyproblem, [role="alert"], [data-fieldtype="error"], .alert-danger'
     )).casefold()
     notice = "unknown" if errors else "none"
     for category, markers in (
@@ -109,16 +109,35 @@ def _login_rejection(response):
                         notice=notice)
 
 
+def _password_form(soup, login_url, base_url):
+    """Use one real form, including only that form's hidden fields."""
+    base = urlsplit(base_url)
+    for form in soup.select("form"):
+        if not form.select_one('input[name="username"]:not([type="hidden"])') or not form.select_one('input[name="password"][type="password"]'):
+            continue
+        target = urlsplit(urljoin(login_url, form.get("action") or login_url))
+        if ((target.scheme, target.netloc) != (base.scheme, base.netloc)
+                or target.username or target.password or target.path != "/login/index.php"
+                or str(form.get("method", "get")).casefold() != "post"):
+            continue
+        tokens = form.select('input[name="logintoken"][type="hidden"]')
+        if len(tokens) != 1 or not tokens[0].get("value"):
+            continue
+        payload = {field["name"]: field.get("value", "")
+                   for field in form.select('input[type="hidden"][name]') if not field.has_attr("disabled")}
+        return target.geturl(), payload
+    raise E3LoginError("login_rejected")
+
+
 def login_with_password(sess: requests.Session, base_url: str, username: str, password: str, *, timeout: int = 20) -> None:
     login_url = f"{base_url}/login/index.php"
     resp = safe_request(sess, "GET", login_url, headers=HEADERS, timeout=timeout)
     soup = BeautifulSoup(resp.text, "html.parser")
-    token_input = soup.find("input", {"name": "logintoken"})
-    token = token_input["value"] if token_input and token_input.has_attr("value") else ""
-    payload = {"username": username, "password": password, "logintoken": token, "anchor": ""}
+    post_url, payload = _password_form(soup, resp.url, base_url)
+    payload.update(username=username, password=password)
     origin = urlsplit(base_url)
     headers = {**HEADERS, "Referer": login_url, "Origin": f"{origin.scheme}://{origin.netloc}"}
-    resp = safe_request(sess, "POST", login_url, data=payload, headers=headers, timeout=timeout)
+    resp = safe_request(sess, "POST", post_url, data=payload, headers=headers, timeout=timeout)
     if need_login_redirect(resp.text):
         # Confirm the authenticated session with one read-only request. A footer,
         # announcement or switch-account link can also mention login/index.php.

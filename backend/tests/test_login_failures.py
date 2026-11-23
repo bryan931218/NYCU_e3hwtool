@@ -9,7 +9,7 @@ from e3_tracker.assignments.services.http import E3LoginError, login_failure_rea
 
 
 BASE = "https://e3.example.test"
-LOGIN = '<form><input name="logintoken" value="synthetic-token"><input name="password"></form>'
+LOGIN = '<form method="post"><input name="logintoken" type="hidden" value="synthetic-token"><input name="username"><input name="password" type="password"></form>'
 MENU = '''<div class="usermenu"><a href="/user/profile.php?id=42">Profile</a>
 <a href="/login/logout.php?sesskey=synthetic-key">Logout</a></div>'''
 
@@ -63,7 +63,30 @@ class LoginFailureTests(unittest.TestCase):
         self.assertEqual(post.kwargs["headers"]["Origin"], BASE)
         self.assertEqual(post.kwargs["headers"]["Referer"], BASE + "/login/index.php")
         self.assertEqual(post.kwargs["data"]["logintoken"], "synthetic-token")
+        self.assertNotIn("anchor", post.kwargs["data"])
         self.assertFalse(request.call_args.kwargs["allow_redirects"])
+
+    def test_fields_are_taken_from_one_form_even_when_the_page_has_duplicate_ids(self):
+        second = LOGIN.replace("synthetic-token", "other-form-token").replace('</form>', '<input type="hidden" name="anchor" value="other-form"></form>')
+        with patch("e3_tracker.assignments.services.http.safe_request", side_effect=[
+            response("/login/index.php", LOGIN + second), response("/my/", MENU),
+        ]) as request:
+            login_with_password(Mock(), BASE, "synthetic-user", "synthetic-password")
+        self.assertEqual(request.call_args.kwargs["data"], {
+            "logintoken": "synthetic-token", "username": "synthetic-user", "password": "synthetic-password",
+        })
+
+    def test_unsupported_forms_never_receive_credentials(self):
+        for html in (
+            LOGIN.replace('method="post"', 'method="get"'),
+            LOGIN.replace('method="post"', 'method="post" action="https://other.example.test/login/index.php"'),
+            LOGIN.replace('method="post"', 'method="post" action="/login/logout.php"'),
+            LOGIN.replace('value="synthetic-token"', 'value=""'),
+            LOGIN.replace('name="logintoken"', 'name="unsupported"'),
+        ):
+            with self.subTest(html=html), patch("e3_tracker.assignments.services.http.safe_request", return_value=response("/login/index.php", html)) as request, self.assertRaises(E3LoginError):
+                login_with_password(Mock(), BASE, "synthetic-user", "synthetic-password")
+            self.assertEqual(request.call_count, 1)
 
     def test_login_form_redirect_and_unverified_menus_cannot_be_treated_as_success(self):
         pages = (
