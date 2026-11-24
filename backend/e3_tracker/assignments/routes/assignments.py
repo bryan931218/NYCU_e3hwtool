@@ -339,7 +339,18 @@ def register_assignments_routes(*,
                 contents = api_call(sess, base_url, user["moodle_token"], "core_course_get_contents", courseid=course["id"], timeout=8)
                 modules = [module for section in contents for module in section.get("modules", []) if module.get("modname") == "assign"]
                 functions = [entry.get("name", "") for entry in info.get("functions", []) if isinstance(entry, dict)]
-                course_state = api_call(sess, base_url, user["moodle_token"], "core_courseformat_get_state", courseid=course["id"], timeout=8) if "core_courseformat_get_state" in functions else None
+                course_state = None
+                if "core_courseformat_get_state" in functions:
+                    from e3_tracker.assignments.services.http import safe_request
+                    from e3_tracker.assignments.services.mobile_auth import API_HEADERS
+                    response = safe_request(sess, "POST", base_url.rstrip("/") + "/webservice/rest/server.php", timeout=8,
+                        headers=API_HEADERS, allow_redirects=False, data={"wstoken": user["moodle_token"],
+                        "wsfunction": "core_courseformat_get_state", "moodlewsrestformat": "json", "courseid": course["id"]})
+                    course_state = response.json()
+                    if isinstance(course_state, str):
+                        course_state = json.loads(course_state)
+                    if isinstance(course_state, dict) and isinstance(course_state.get("cm"), list):
+                        course_state = {"module": next((module for module in course_state["cm"] if module.get("id") == assignment.get("cmid")), None)}
             return {"ok": True, "assignment": shape(assignment), "status": shape(status), "module": shape(modules[0]) if modules else None,
                     "course_state": shape(course_state, "state"), "course_functions": [name for name in functions if name.startswith("core_course") or name.startswith("core_completion")]}
         except (requests.RequestException, RuntimeError):
