@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from datetime import datetime
 from typing import List, Optional, Sequence, Set, Tuple
 
@@ -192,6 +193,18 @@ def parse_due_text_to_dt(due_text: Optional[str]):
         return None
 
 
+def _submission_counts(cell) -> Tuple[Optional[int], Optional[int]]:
+    # E3 local/courseextension translates both the header and count labels.
+    text = unicodedata.normalize("NFKC", cell.get_text(" ", strip=True))
+    number = r"(?<![\d,])(\d{1,3}(?:,\d{3})+|\d+)(?![\d,])\s*(?:(?:個|人)\s*)?"
+    submitted = re.search(number + r"(?:已繳(?:交)?|submitted\b)", text, re.I)
+    unsubmitted = re.search(number + r"(?:未繳(?:交)?|not\s+submitted\b|unsubmitted\b)", text, re.I)
+    if not submitted or not unsubmitted:
+        return None, None
+    submitted_count = int(submitted.group(1).replace(",", ""))
+    return submitted_count, submitted_count + int(unsubmitted.group(1).replace(",", ""))
+
+
 def gather_assign_links_from_list_page(
     html: str, base_url: str
 ) -> List[Tuple[str, str, Optional[str], Optional[int], Optional[int]]]:
@@ -210,7 +223,7 @@ def gather_assign_links_from_list_page(
         for idx, header in enumerate(headers):
             if any(lbl in header for lbl in DUE_LABELS) or any(lbl.lower() in header.lower() for lbl in DUE_LABELS):
                 due_col_idx = idx
-            if "繳交狀態" in header or "submission status" in header.lower():
+            if "繳交狀態" in header or "submission status" in header.lower() or _normalize_label(header) == "status":
                 status_col_idx = idx
 
         for tr in table.find_all("tr"):
@@ -247,15 +260,7 @@ def gather_assign_links_from_list_page(
 
             submitted_count, participant_count = None, None
             if status_col_idx != -1 and len(cells) > status_col_idx:
-                status_text = extract_text(cells[status_col_idx])
-                s_match = re.search(r"(\d+)\s*(?:個)?已繳", status_text)
-                u_match = re.search(r"(\d+)\s*(?:個)?未繳", status_text)
-                submitted = int(s_match.group(1)) if s_match else 0
-                unsubmitted = int(u_match.group(1)) if u_match else 0
-                
-                if s_match or u_match:
-                    submitted_count = submitted
-                    participant_count = submitted + unsubmitted
+                submitted_count, participant_count = _submission_counts(cells[status_col_idx])
 
             links.append((title, url, due_text, submitted_count, participant_count))
 
