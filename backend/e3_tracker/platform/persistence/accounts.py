@@ -318,6 +318,27 @@ class AccountsStorage:
             **decoded,
         }
 
+    def attach_moodle_web_session(self, session_token, username, moodle_user_id, cookie):
+        if not isinstance(session_token, str) or not session_token or type(moodle_user_id) is not int:
+            return False
+        digest = hashlib.sha256(session_token.encode()).hexdigest()
+        with self._lock, self._engine.begin() as conn:
+            row = conn.execute(select(web_sessions_table).where(
+                web_sessions_table.c.session_token == digest,
+                web_sessions_table.c.username == username,
+                web_sessions_table.c.is_guest == 0,
+                web_sessions_table.c.expires_at > time.time(),
+            )).mappings().first()
+            if not row:
+                return False
+            credential = unpack_moodle_credential(self._credential_cipher.decrypt(row["moodle_credential"], f"moodle:{username}"))
+            if not credential.get("moodle_token") or credential.get("moodle_user_id") != moodle_user_id:
+                return False
+            packed = pack_moodle_credential(cookie, token=credential["moodle_token"], user_id=moodle_user_id)
+            conn.execute(update(web_sessions_table).where(web_sessions_table.c.session_token == digest).values(
+                moodle_credential=self._credential_cipher.encrypt(packed, f"moodle:{username}"), updated_at=self._now_iso()))
+            return True
+
     def clear_web_session(self, session_token: str) -> None:
         if not session_token:
             return

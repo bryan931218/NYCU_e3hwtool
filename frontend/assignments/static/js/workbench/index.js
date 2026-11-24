@@ -47,3 +47,8 @@ const features = [
 // Register callbacks before initializing state and wiring DOM listeners.
 features.forEach((feature) => feature.register(context));
 features.forEach((feature) => feature.initialize(context));
+
+// Keep the optional school-login flow out of the normal workbench startup.
+if (document.getElementById("serverSsoPanel")) {
+  import("./server-sso.js").then((feature) => feature.initialize(context));
+}

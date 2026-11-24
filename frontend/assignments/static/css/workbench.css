@@ -1,3 +1,11 @@
+.server-sso[hidden], .server-sso [hidden] { display: none !important; }
+.server-sso { margin-bottom: 16px; border-inline-start: 3px solid var(--primary); }
+.server-sso p { margin: 0; color: var(--muted); }
+.server-sso form { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.server-sso label { font-size: 14px; }
+.server-sso input { width: 8em; min-width: 0; padding: 10px 12px; font: inherit; letter-spacing: .15em;
+  color: var(--fg); background: var(--card-2); border: 1px solid var(--border); border-radius: 8px; }
+.server-sso input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .remaining-text {
   display: inline-block;
   font-size: 13px;

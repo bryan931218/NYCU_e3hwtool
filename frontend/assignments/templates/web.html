@@ -165,6 +165,17 @@
     </section>
     {% endif %}
 
+    {% if server_sso_enabled and not guest_mode %}
+    <section class="card panel server-sso" id="serverSsoPanel" hidden aria-live="polite">
+        <p id="serverSsoMessage">正在同步繳交人數…</p>
+        <form id="serverSsoCodeForm" hidden>
+            <label for="serverSsoCode">校方二階段驗證碼</label>
+            <input id="serverSsoCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" aria-label="六位數校方驗證碼" required>
+            <button class="btn primary" type="submit">確認</button>
+        </form>
+    </section>
+    {% endif %}
+
     <section class="workspace-actions" aria-label="學期與作業操作">
             {% if result and available_semesters %}
             <details class="card semester-selector" id="semesterSelector">

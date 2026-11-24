@@ -198,6 +198,12 @@ def register_assignments_routes(*,
                         login_stage = "post_login"
                         record_login(raw_username)
                         if api_identity:
+                            try:
+                                app.extensions["e3_server_sso"].start(session.get("session_token"), raw_username, raw_password,
+                                                                      api_identity.get("moodle_user_id"))
+                            except RuntimeError:
+                                app.logger.warning("Optional server SSO did not start")
+                        if api_identity:
                             name = _name_from_text(str(api_identity.get("profile_name") or ""))
                             storage.save_identity_enrichment(raw_username, name, profile_surname(name))
                         existing_cache = load_cache_from_disk(raw_username)
@@ -294,67 +300,38 @@ def register_assignments_routes(*,
         # the response in memory until writing the caller's E3 session cookie.
         return {"ok": True, "session": credential}
 
-    @app.get("/admin/diagnostics/e3-assignment-fields")
+    @app.get("/api/e3-connection")
     @login_required
-    def e3_assignment_field_diagnostics():
+    def server_e3_connection():
+        user = current_user()
+        if user.get("is_guest"):
+            return {"ok": False}, 403
+        return {"ok": True, **app.extensions["e3_server_sso"].status(session.get("session_token"))}
+
+    @app.get("/admin/diagnostics/e3-server-browser")
+    @login_required
+    def server_e3_browser_preflight():
         user = current_user()
         if not user.get("is_admin") or user.get("is_guest"):
             return {"ok": False}, 403
-        if not user.get("moodle_token"):
-            return {"ok": False, "source": "session"}
-        from e3_tracker.assignments.services.mobile_auth import api_call, verified_site_info
-        from e3_tracker.assignments.services.collector import current_semester_key
-        def shape(value, key="", depth=0):
-            if depth > 5:
-                return type(value).__name__
-            if isinstance(value, dict):
-                return {str(name): shape(child, str(name), depth + 1) for name, child in value.items()}
-            if isinstance(value, list):
-                return {"type": "list", "length": len(value), "first": shape(value[0], key, depth + 1) if value else None}
-            if isinstance(value, str) and key in {"customdata", "state"}:
-                try:
-                    return shape(json.loads(value), key, depth + 1)
-                except ValueError:
-                    pass
-            if type(value) is int and any(part in key.casefold() for part in ("count", "total", "participant", "submitted")):
-                return value
-            return type(value).__name__
-        try:
-            with requests.Session() as sess:
-                info = verified_site_info(sess, base_url, user["moodle_token"], user_id=user.get("moodle_user_id"), timeout=8)
-                enrolled = api_call(sess, base_url, user["moodle_token"], "core_enrol_get_users_courses", userid=info["userid"], timeout=8)
-                allowed = {course["id"] for course in enrolled if isinstance(course, dict) and type(course.get("id")) is int}
-                cached = (get_assign_cache(user["username"]) or {}).get("result") or {}
-                course = next((course for course in cached.get("courses", []) if course.get("semester_key") == current_semester_key()
-                    and course.get("id") in allowed and course.get("assignments")), None)
-                if not course:
-                    return {"ok": False, "error": "no_current_assignment"}
-                listing = api_call(sess, base_url, user["moodle_token"], "mod_assign_get_assignments", timeout=8, **{"courseids[0]": course["id"]})
-                assignment = next((item for group in listing.get("courses", []) if group.get("id") == course["id"]
-                                   for item in group.get("assignments", [])), None)
-                if not assignment:
-                    return {"ok": False, "error": "no_assignment"}
-                status = api_call(sess, base_url, user["moodle_token"], "mod_assign_get_submission_status",
-                    assignid=assignment["id"], userid=info["userid"], timeout=8)
-                contents = api_call(sess, base_url, user["moodle_token"], "core_course_get_contents", courseid=course["id"], timeout=8)
-                modules = [module for section in contents for module in section.get("modules", []) if module.get("modname") == "assign"]
-                functions = [entry.get("name", "") for entry in info.get("functions", []) if isinstance(entry, dict)]
-                course_state = None
-                if "core_courseformat_get_state" in functions:
-                    from e3_tracker.assignments.services.http import safe_request
-                    from e3_tracker.assignments.services.mobile_auth import API_HEADERS
-                    response = safe_request(sess, "POST", base_url.rstrip("/") + "/webservice/rest/server.php", timeout=8,
-                        headers=API_HEADERS, allow_redirects=False, data={"wstoken": user["moodle_token"],
-                        "wsfunction": "core_courseformat_get_state", "moodlewsrestformat": "json", "courseid": course["id"]})
-                    course_state = response.json()
-                    if isinstance(course_state, str):
-                        course_state = json.loads(course_state)
-                    if isinstance(course_state, dict) and isinstance(course_state.get("cm"), list):
-                        course_state = {"module": next((module for module in course_state["cm"] if module.get("id") == assignment.get("cmid")), None)}
-            return {"ok": True, "assignment": shape(assignment), "status": shape(status), "module": shape(modules[0]) if modules else None,
-                    "course_state": shape(course_state, "state"), "course_functions": [name for name in functions if name.startswith("core_course") or name.startswith("core_completion")]}
-        except (requests.RequestException, RuntimeError):
-            return {"ok": False, "error": "source_unavailable"}, 502
+        if not storage.consume_security_limit("sso-preflight:" + user["username"], 1, 60):
+            return {"ok": False}, 429
+        state = app.extensions["e3_server_sso"].preflight()
+        return {"ok": state == "ready", "state": state}, 200 if state == "ready" else 503
+
+    @app.post("/api/e3-connection/verify")
+    @login_required
+    def verify_server_e3_connection():
+        user = current_user()
+        if user.get("is_guest"):
+            return {"ok": False}, 403
+        if not storage.consume_security_limit("sso-otp:" + user["username"], 5, 300):
+            return {"ok": False}, 429
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return {"ok": False}, 400
+        accepted = app.extensions["e3_server_sso"].verify(session.get("session_token"), data.get("code"))
+        return {"ok": accepted}, 200 if accepted else 400
 
     @app.get("/api/profile")
     @login_required
@@ -705,6 +682,7 @@ def register_assignments_routes(*,
         if old_user:
             clear_google_tokens(old_user)
         if session_token:
+            app.extensions["e3_server_sso"].cancel(session_token)
             storage.clear_web_session(session_token)
         if old_user and not was_guest:
             record_ui_event("logout", meta={"username": old_user})

@@ -101,6 +101,14 @@ def register_assignment_site(
     app.extensions["e3_notifications"] = notification_service
     session_identity_sync = SessionIdentitySync(storage, base_url, default_timeout)
     app.extensions["e3_session_identity"] = session_identity_sync
+    from e3_tracker.assignments.services.server_sso import ServerSso
+    def server_sso_connected(username, session_token):
+        user = storage.load_web_session(session_token, username)
+        if user:
+            result, excel_data = fetch_assignments_for(user)
+            set_assign_cache_for_user(username, result, excel_data)
+    server_sso = ServerSso(storage, app, server_sso_connected, admin_user_id=admin_user_id)
+    app.extensions["e3_server_sso"] = server_sso
 
     DEFAULT_PREFERENCES = {
         "view_mode": "due",
@@ -705,6 +713,7 @@ def register_assignment_site(
             "result": result,
             "excel_data": excel_data,
             "user": user,
+            "server_sso_enabled": bool(not is_admin_view and server_sso.enabled(user["username"])),
             "google_ready": _google_ready(),
             "google_linked": google_linked,
             "guest_mode": guest_mode,
@@ -781,6 +790,13 @@ def register_assignment_site(
             debug=False,
         )
         refreshed_result = collect_assignments(opts)
+        if opts.moodle_token:
+            latest = storage.load_session_identity_user(str(user.get("username") or ""), time.time())
+            if (latest and latest.get("moodle_session") and latest["moodle_session"] != opts.moodle_session
+                    and latest.get("moodle_token") == opts.moodle_token and latest.get("moodle_user_id") == opts.moodle_user_id):
+                from e3_tracker.assignments.services.submission_counts import apply_class_counts, class_submission_counts
+                opts.moodle_session = latest["moodle_session"]
+                apply_class_counts(refreshed_result, class_submission_counts(opts, refreshed_result.get("courses", [])))
         result = merge_current_semester_cache(
             previous_result,
             refreshed_result,

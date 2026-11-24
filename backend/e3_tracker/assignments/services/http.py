@@ -83,7 +83,7 @@ def _authenticated_principal(response, base_url):
     """A login URL elsewhere in the page is not proof that authentication failed."""
     base, target = urlsplit(base_url), urlsplit(response.url)
     if (response.status_code != 200 or (target.scheme, target.netloc) != (base.scheme, base.netloc)
-            or target.path not in {"/my/", "/my/index.php"}):
+            or target.path not in {"/", "/my/", "/my/index.php"}):
         return None
     soup = BeautifulSoup(response.text, "html.parser")
     if soup.select_one('input[name="password"]'):

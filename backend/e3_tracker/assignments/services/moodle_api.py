@@ -9,6 +9,7 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.assignments.domain.parsing import assignment_description
 from e3_tracker.assignments.services.http import E3LoginError, configure_tls
 from e3_tracker.assignments.services.mobile_auth import api_call, verified_site_info
+from e3_tracker.assignments.services.submission_counts import class_submission_counts
 
 
 def _text(value):
@@ -76,6 +77,7 @@ def collect_api_assignments(options):
                 if not isinstance(group, dict) or group.get("id") not in allowed or not isinstance(group.get("assignments"), list):
                     raise E3LoginError("upstream_response_invalid", auth_step="assignments")
                 grouped[group["id"]] = group["assignments"]
+        totals = class_submission_counts(options, [course for course in courses if grouped.get(course["id"])])
         all_items = []
         for course in courses:
             items = []
@@ -111,6 +113,7 @@ def collect_api_assignments(options):
                         if field.get("text"):
                             comments.append(_text(field["text"]))
                 summary = status.get("gradingsummary") or {}
+                counts = totals.get((course["id"], assignment["cmid"]))
                 item = {
                     "course_id": course["id"], "course_title": course["title"],
                     "semester_key": course["semester_key"], "semester_label": course["semester_label"],
@@ -121,8 +124,8 @@ def collect_api_assignments(options):
                     "completed": complete,
                     "raw_status_text": "已評分" if graded else "已提交" if submitted else "草稿" if submission.get("status") == "draft" else "尚未提交",
                     "grade_text": grade, "feedback_text": "\n".join(comments) or None, "description": intro,
-                    "submitted_count": summary.get("submissionssubmittedcount"),
-                    "participant_count": summary.get("participantcount"),
+                    "submitted_count": counts[0] if counts else summary.get("submissionssubmittedcount"),
+                    "participant_count": counts[1] if counts else summary.get("participantcount"),
                 }
                 items.append(item)
             items.sort(key=_course_sort_key)
