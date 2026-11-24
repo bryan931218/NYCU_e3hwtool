@@ -180,6 +180,42 @@ class ApiPasswordTests(unittest.TestCase):
         self.assertNotIn("moodle_session", result)
         self.assertFalse(any(call[0] == "POST" and call[1].endswith("/login/index.php") for call in self.calls))
 
+    def test_moodle_cookie_check_redirect_is_followed_with_get_only(self):
+        original = self.respond
+        def redirects(sess, method, url, **kwargs):
+            if url == BASE + "/login/index.php?testsession=42":
+                self.calls.append((method, url, kwargs))
+                self.assertEqual(method, "GET")
+                self.assertNotIn("data", kwargs)
+                response = requests.Response()
+                response.status_code, response.url = 303, url
+                response.headers["Location"] = "/my/"
+                response._content = b""
+                return response
+            response = original(sess, method, url, **kwargs)
+            if method == "POST" and url.endswith("/login/index.php"):
+                response.status_code = 303
+                response.headers["Location"] = "/login/index.php?testsession=42"
+            return response
+        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirects), requests.Session() as session:
+            result = login_with_password(session, BASE, USER, "private-password")
+        self.assertEqual(result["moodle_session"], "s" * 32)
+        self.assertTrue(any(call[1].endswith("?testsession=42") for call in self.calls))
+
+    def test_foreign_login_redirect_is_not_followed_or_retained(self):
+        original = self.respond
+        def redirect(sess, method, url, **kwargs):
+            response = original(sess, method, url, **kwargs)
+            if method == "POST" and url.endswith("/login/index.php"):
+                response.status_code = 303
+                response.headers["Location"] = "https://foreign.example/my/"
+            return response
+        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirect), requests.Session() as session:
+            result = login_with_password(session, BASE, USER, "private-password")
+        self.assertEqual(result["moodle_token"], TOKEN)
+        self.assertNotIn("moodle_session", result)
+        self.assertFalse(any(call[1].startswith("https://foreign.example") for call in self.calls))
+
     def test_student_api_login_supplements_counts_and_reuses_verified_web_session(self):
         with self.mocked():
             first = collect_assignments(self.options(moodle_session="s" * 32))
