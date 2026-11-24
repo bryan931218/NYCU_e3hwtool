@@ -295,7 +295,7 @@
                         const result = await sendStudySnapshot(latest, keepalive, false);
                         progressBuffer.acknowledge(latest, result);
                         if (latest.kind === 'video') {
-                            applyProgressResult(result);
+                            await applyProgressResult(result);
                             if (String(videoSelect.value) === String(latest.payload.video_id)) {
                                 playerLastSaved.textContent = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
                                 playerSyncState.textContent = progressBuffer.read(latest.key)?.conflict ? '已保留伺服器較新的紀錄' : '已自動儲存';
@@ -1308,7 +1308,25 @@
                     if (player && typeof player.stopVideo === 'function') player.stopVideo();
                 }
             };
-            const applyProgressResult = function (result) {
+            const refreshWeekPanels = async function (panels) {
+                try {
+                    const response = await fetch({{ url_for("admin_study_plan", subject=selected_subject, view="week-panels")|tojson }}, {
+                        credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+                        signal: AbortSignal.timeout(5000),
+                    });
+                    if (!response.ok) return;
+                    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+                    const nextPanels = doc.getElementById('study-plan-week-panels');
+                    if (!nextPanels || !panels.isConnected) return;
+                    const timelineOffset = panels.querySelector('.timeline')?.scrollTop || 0;
+                    panels.replaceWith(nextPanels);
+                    const timeline = nextPanels.querySelector('.timeline');
+                    if (timeline) timeline.scrollTop = timelineOffset;
+                } catch (error) {
+                    // Leave the old panels coherent; the next save retries the swap.
+                }
+            };
+            const applyProgressResult = async function (result) {
                 const option = result ? optionByValue(result.video_id) : null;
                 if (!result || !result.ok || !option) return false;
                 const watchedSeconds = Number(result.watched_seconds || 0);
@@ -1368,13 +1386,18 @@
                     if (summaryTotal) summaryTotal.textContent = result.summary.total_videos;
                 }
                 if (result.current_week) {
+                    const panels = document.getElementById('study-plan-week-panels');
+                    if (panels && panels.dataset.currentWeekStart !== result.current_week.start) {
+                        await refreshWeekPanels(panels);
+                        return isSelectedVideo;
+                    }
                     const weekWatched = document.getElementById('current-week-watched');
                     const weekRemaining = document.getElementById('current-week-remaining');
                     const weekCompletion = document.getElementById('current-week-completion');
                     const weekFill = document.getElementById('current-week-fill');
                     const weekState = document.getElementById('current-week-state');
                     if (weekWatched) weekWatched.textContent = result.current_week.watched_hours;
-                    if (weekRemaining) weekRemaining.textContent = result.current_week.remaining_hours;
+                    if (weekRemaining) weekRemaining.textContent = result.current_week.remaining_label;
                     if (weekCompletion) weekCompletion.textContent = result.current_week.completion;
                     if (weekFill) weekFill.style.setProperty('--progress', result.current_week.completion + '%');
                     if (weekState && result.current_week.state) {
@@ -1398,21 +1421,23 @@
                             timelineWatched.textContent = Number(result.current_week.watched_hours || 0).toFixed(1) + 'h';
                         }
                         if (timelineRemaining) {
-                            timelineRemaining.textContent = Number(result.current_week.remaining_hours || 0).toFixed(1) + 'h';
+                            timelineRemaining.textContent = result.current_week.remaining_label;
                         }
                         if (timelineCompletion) {
                             timelineCompletion.textContent = Number(result.current_week.completion || 0).toFixed(1) + '%';
                         }
                     }
-                    (result.current_week.daily_recommendations || []).forEach(function (day, index) {
-                        const card = document.querySelector('[data-focus-day-index="' + index + '"]');
+                    (result.current_week.daily_recommendations || []).forEach(function (day) {
+                        const card = document.querySelector('[data-focus-day-date="' + day.date + '"]');
                         if (!card) return;
                         card.className = 'day-chip ' + day.state;
                         card.style.setProperty('--day-progress', day.completion + '%');
                         const status = card.querySelector('.day-status');
                         const completion = card.querySelector('.day-completion strong');
+                        const restForm = card.querySelector('.day-rest-form');
                         if (status) status.textContent = day.state_label;
                         if (completion) completion.textContent = day.has_target ? Number(day.completion || 0) + '%' : '—';
+                        if (restForm) restForm.hidden = !(day.is_rest_day || day.can_be_rest_day);
                         (day.subject_progress || []).forEach(function (subjectProgress) {
                             const subjectRow = Array.from(card.querySelectorAll('[data-day-subject]')).find(function (row) {
                                 return row.dataset.daySubject === subjectProgress.name;
@@ -1429,7 +1454,9 @@
                             timelineCard.style.setProperty('--day-progress', Number(day.completion || 0) + '%');
                             const timelineStatus = timelineCard.querySelector('.day-status');
                             const timelineCompletion = timelineCard.querySelector('.day-completion strong');
+                            const timelineRestForm = timelineCard.querySelector('.day-rest-form');
                             if (timelineStatus) timelineStatus.textContent = day.state_label || '';
+                            if (timelineRestForm) timelineRestForm.hidden = !(day.is_rest_day || day.can_be_rest_day);
                             if (timelineCompletion) {
                                 timelineCompletion.textContent = day.has_target
                                     ? Number(day.completion || 0) + '%'

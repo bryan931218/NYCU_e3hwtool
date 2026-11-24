@@ -149,10 +149,53 @@ class StudyPlanProgressTests(unittest.TestCase):
                 self.assertIn('class="pace-number">0.4', html)
                 self.assertIn('目前差距</span><strong>+0.4h', html)
                 focus_cards = re.findall(
-                    r'<div class="day-chip (\w+)" data-focus-day-index="\d+".*?(?=<div class="day-chip|</section>)',
+                    r'<div class="day-chip (\w+)" data-focus-day-date="[^"]+".*?(?=<div class="day-chip|</section>)',
                     admin, re.S,
                 )
                 self.assertEqual(focus_cards[-3:], ["complete", "early", "upcoming"])
+
+                # On Tuesday the focus week and timeline must use the same
+                # dates, even with a shortfall left at the previous Sunday.
+                os_advance = os_target * 5
+                for missing_seconds in (12, 25):
+                    with self.subTest(missing_seconds=missing_seconds):
+                        progress = {"作業系統": os_advance, "演算法": algo_target * 3 - missing_seconds}
+                        _, cards, admin = load_page(date(2026, 11, 24), 18276, progress)
+                        self.assertIn('data-current-week-start="2026-11-23"', admin)
+                        self.assertIn('data-focus-day-date="2026-11-24"', admin)
+                        self.assertNotIn('data-focus-day-date="2026-11-22"', admin)
+                        self.assertIn("11/24", cards)
+                        previous_row = admin.split('data-timeline-week-start="2026-11-16"', 1)[1].split(
+                            'data-timeline-week-start="2026-11-23"', 1
+                        )[0]
+                        if missing_seconds == 12:
+                            self.assertIn("已達標", previous_row)
+                            self.assertIn("data-week-completion>100.0%", previous_row)
+                        else:
+                            self.assertIn("待補", previous_row)
+                            self.assertIn("data-week-completion>99.9%", previous_row)
+                            self.assertIn("data-week-remaining>少於 1 分鐘", previous_row)
+
+                with patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 11, 24)):
+                    panels_response = client.get("/admin/study-plan?view=week-panels&subject=作業系統")
+                    first_video = inventory[0]
+                    progress_response = client.post(
+                        "/admin/study-plan/video-progress",
+                        json={
+                            "video_id": first_video["id"],
+                            "watched_seconds": 10,
+                            "expected_version": first_video["progress_version"],
+                        },
+                    )
+                panels_html = panels_response.get_data(as_text=True)
+                self.assertEqual(panels_response.status_code, 200)
+                self.assertIn('data-current-week-start="2026-11-23"', panels_html)
+                self.assertIn('data-focus-day-date="2026-11-24"', panels_html)
+                self.assertNotIn("<script", panels_html)
+                self.assertEqual(progress_response.status_code, 200)
+                synced_week = progress_response.get_json()["current_week"]
+                self.assertEqual(synced_week["start"], "2026-11-23")
+                self.assertEqual(synced_week["daily_recommendations"][1]["date"], "2026-11-24")
             finally:
                 storage._engine.dispose()
 
@@ -1412,7 +1455,9 @@ class StudyPlanProgressTests(unittest.TestCase):
         self.assertEqual(summary["completion"], 0)
         self.assertTrue(math.isfinite(summary["completion"]))
 
-    def test_progress_api_and_rendered_summary_use_the_same_completion_rule(self):
+    @patch("e3_tracker.study.application._study_plan_business_date", return_value=date(2026, 6, 29))
+    @patch("e3_tracker.platform.storage.PersistentStorage._now_iso", lambda _storage: "2026-06-29T03:00:00")
+    def test_progress_api_and_rendered_summary_use_the_same_completion_rule(self, clock):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict(
                 os.environ,
@@ -1449,6 +1494,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["completed_videos"], 1)
             self.assertEqual(payload["progress_version"], 1)
             self.assertIn("today_task_videos", payload)
+            self.assertEqual(payload["current_week"]["start"], "2026-06-29")
             self.assertNotIn(
                 int(first_video["id"]),
                 {int(video["id"]) for video in payload["today_task_videos"]},
@@ -1531,7 +1577,7 @@ class StudyPlanProgressTests(unittest.TestCase):
             )
             self.assertIsNotNone(home_calendar_match)
             home_calendar = json.loads(home_calendar_match.group(1))
-            learning_day = _study_plan_business_date().isoformat()
+            learning_day = clock.return_value.isoformat()
             today_entry = next(
                 item for item in home_calendar["days"] if item["date"] == learning_day
             )

@@ -45,7 +45,6 @@ from e3_tracker.study.services.study_progress import (
     _study_plan_progress_summary,
     _study_plan_task_video_queue,
     _study_plan_interleave_video_queues,
-    _study_plan_progress_week,
     _study_plan_subject_status,
     _study_plan_progress_race,
     _study_plan_pace_history,
@@ -187,6 +186,7 @@ STUDY_PLAN_SUBJECTS = (
 )
 
 STUDY_PLAN_DAILY_VIDEO_SECONDS = 3.5 * 60 * 60
+STUDY_PLAN_DAY_COMPLETION_TOLERANCE_SECONDS = 15
 
 STUDY_PLAN_PHASE_ONE_SUBJECTS = ("離散數學", "資料結構")
 
@@ -1323,33 +1323,41 @@ def register_study_site(
                             ),
                         }
                     )
-                checkpoint_fields = {}
-                if use_checkpoint and current_day_key < CHECKPOINT_PLAN_START:
+                historical_checkpoint = use_checkpoint and current_day_key < CHECKPOINT_PLAN_START
+                if historical_checkpoint:
                     # Keep the confirmed historical schedule. From the replan
                     # boundary onward, daily badges and pace must use the same
                     # subject credits as the two progress bars above.
                     if current_day_key < FIRST_TRACKED_DAY:
-                        credited_seconds = credit_before_today = target_seconds
+                        credited_seconds = target_seconds
                     else:
                         credited_seconds = min(target_seconds, checkpoint_day_credit)
-                        credit_before_today = 0.0
-                    if _study_plan_total_is_complete(target_seconds, credited_seconds):
-                        credited_seconds = target_seconds
-                        for progress in daily_subject_progress:
-                            progress["credited_seconds"] = progress["target_seconds"]
-                            progress["credited_hours"] = progress["target_hours"]
-                            progress["completion"] = 100.0
-                    else:
+                has_target = target_seconds > 0
+                # One auto-save interval of rounding at a scheduled day boundary
+                # should not leave a phantom to-do. Apply only to the schedule,
+                # not to the video's actual watched time or remaining credit.
+                day_is_complete = (
+                    has_target and credited_seconds > 0
+                    and target_seconds - credited_seconds <= STUDY_PLAN_DAY_COMPLETION_TOLERANCE_SECONDS
+                )
+                if day_is_complete:
+                    credited_seconds = target_seconds
+                    for progress in daily_subject_progress:
+                        progress["credited_seconds"] = progress["target_seconds"]
+                        progress["credited_hours"] = progress["target_hours"]
+                        progress["completion"] = 100.0
+                checkpoint_fields = {}
+                if historical_checkpoint:
+                    if not day_is_complete:
                         # The transition day used one combined time target.
                         daily_subject_progress = []
-                    if current_day < today:
-                        credit_before_today = credited_seconds
-                    checkpoint_fields["checkpoint_credit_before_today"] = credit_before_today
-                has_target = target_seconds > 0
+                    checkpoint_fields["checkpoint_credit_before_today"] = (
+                        credited_seconds if current_day < today else 0.0
+                    )
                 if has_target:
                     completion = _study_plan_completion_percent(
                         target_seconds, credited_seconds
-                    )
+                    ) if credited_seconds > 0 else 0.0
                 else:
                     completion = 0.0
                 is_rest_day = bool(daily_target.get("is_rest_day"))
@@ -1363,7 +1371,7 @@ def register_study_site(
                     else:
                         state = "upcoming"
                         state_label = "未排程"
-                elif completion >= 100:
+                elif day_is_complete:
                     state = "early" if today < current_day else "complete"
                     state_label = "提早完成" if state == "early" else "完成"
                 elif completion > 0:
@@ -1396,9 +1404,7 @@ def register_study_site(
                             daily_target.get("can_be_rest_day")
                             and has_target
                             and not is_rest_day
-                            and not _study_plan_total_is_complete(
-                                target_seconds, credited_seconds
-                            )
+                            and not day_is_complete
                         ),
                         "redistributed_seconds": float(
                             daily_target.get("redistributed_seconds") or 0
@@ -1419,14 +1425,24 @@ def register_study_site(
 
             target_seconds = sum(subject_targets.values())
             watched_seconds = sum(day["credited_seconds"] for day in daily_recommendations)
-            week_is_complete = _study_plan_total_is_complete(
-                target_seconds, watched_seconds
+            week_is_complete = target_seconds > 0 and all(
+                day["completion"] == 100 for day in daily_recommendations if day["has_target"]
             )
-            completion = _study_plan_completion_percent(
-                target_seconds,
-                watched_seconds,
-                complete_override=week_is_complete,
-            )
+            if week_is_complete:
+                completion = 100.0
+            elif target_seconds > 0:
+                completion = min(99.9, round(watched_seconds / target_seconds * 100, 1))
+            else:
+                completion = 0.0
+            remaining_seconds = max(
+                0.0, target_seconds - watched_seconds
+            ) if not week_is_complete else 0.0
+            remaining_hours = round(remaining_seconds / 3600, 1)
+            remaining_label = f"{remaining_hours:.1f}h"
+            if 0 < remaining_seconds < 60:
+                remaining_label = "少於 1 分鐘"
+            elif remaining_seconds > 0 and not remaining_hours:
+                remaining_label = f"{math.ceil(remaining_seconds / 60)} 分鐘"
             if week_is_complete:
                 state = "early" if today < week_end else "complete"
                 state_label = "提早完成" if state == "early" else "已達標"
@@ -1497,10 +1513,8 @@ def register_study_site(
                     "watched_seconds": watched_seconds,
                     "watched_minutes": round(watched_seconds / 60, 1),
                     "watched_hours": round(watched_seconds / 3600, 2),
-                    "remaining_hours": round(
-                        max(0.0, target_seconds - watched_seconds) / 3600,
-                        1,
-                    ),
+                    "remaining_hours": remaining_hours,
+                    "remaining_label": remaining_label,
                     "completion": completion,
                     "state": state,
                     "state_label": state_label,
@@ -3382,9 +3396,6 @@ def register_study_site(
         _study_plan_nonnegative_number=lambda *args, **kwargs: _study_plan_nonnegative_number(
             *args, **kwargs
         ),
-        _study_plan_progress_week=lambda *args, **kwargs: _study_plan_progress_week(
-            *args, **kwargs
-        ),
         _study_plan_replan_preview=lambda *args, **kwargs: _study_plan_replan_preview(
             *args, **kwargs
         ),
@@ -3433,9 +3444,6 @@ def register_study_site(
         _repair_study_decoded_text=_repair_study_decoded_text,
         _request_openai_response=_request_openai_response,
         _study_plan_business_date=lambda *args, **kwargs: _study_plan_business_date(
-            *args, **kwargs
-        ),
-        _study_plan_progress_week=lambda *args, **kwargs: _study_plan_progress_week(
             *args, **kwargs
         ),
         _study_plan_today_task_videos=_study_plan_today_task_videos,

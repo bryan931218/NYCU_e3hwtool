@@ -1,9 +1,9 @@
 """Study plan routes and their feature helpers."""
 
-from e3_tracker.study.services.study_progress import _study_plan_business_date, _study_plan_nonnegative_number, _study_plan_video_completion, _study_plan_default_video, _parse_youtube_url, _study_plan_total_is_complete, _study_plan_progress_week, _study_plan_week_start
+from e3_tracker.study.services.study_progress import _study_plan_business_date, _study_plan_nonnegative_number, _study_plan_video_completion, _study_plan_default_video, _parse_youtube_url, _study_plan_total_is_complete, _study_plan_week_start
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
-from flask import flash, redirect, render_template_string, request, url_for
+from flask import flash, redirect, render_template, render_template_string, request, url_for
 from e3_tracker.study.services.youtube_playlists import KNOWN_YOUTUBE_PLAYLISTS, YoutubePlaylistSyncBusyError, sync_known_youtube_playlists
 
 
@@ -22,7 +22,6 @@ def register_study_plan_routes(*,
     _study_plan_default_video,
     _study_plan_minutes,
     _study_plan_nonnegative_number,
-    _study_plan_progress_week,
     _study_plan_replan_preview,
     _study_plan_schedule_definitions,
     _study_plan_today_task_videos,
@@ -206,8 +205,9 @@ def register_study_plan_routes(*,
     @app.route("/admin/study-plan", methods=["GET", "POST"])
     @admin_required
     def admin_study_plan():
+        week_panels_only = request.method == "GET" and request.args.get("view") == "week-panels"
         user = current_user()
-        if user:
+        if user and not week_panels_only:
             _repair_legacy_study_assistant_time_moves(str(user.get("username") or ""))
         if request.method == "POST":
             action = (request.form.get("action") or "save_video").strip()
@@ -238,8 +238,18 @@ def register_study_plan_routes(*,
             return redirect(url_for("admin_study_plan", subject=selected_subject))
 
         videos = storage.list_study_plan_videos_with_records()
-        week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
-        current_week = _study_plan_progress_week(week_rows)
+        week_rows, current_week, summary = _study_plan_week_rows(videos)
+        if week_panels_only:
+            selected_subject = (request.args.get("subject") or "").strip()
+            if selected_subject not in STUDY_PLAN_SUBJECTS:
+                selected_subject = STUDY_PLAN_SUBJECTS[0]
+            return render_template(
+                "study/_study_plan_week_panels.html",
+                current_week=current_week,
+                week_rows=week_rows,
+                selected_subject=selected_subject,
+                plan_total_weeks=len(week_rows),
+            )
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {subject: [] for subject in STUDY_PLAN_SUBJECTS}
         for video in videos:
             video["duration_minutes"] = round(float(video["duration_seconds"]) / 60, 1)

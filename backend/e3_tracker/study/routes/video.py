@@ -25,7 +25,6 @@ def register_video_routes(*,
     _repair_study_decoded_text,
     _request_openai_response,
     _study_plan_business_date,
-    _study_plan_progress_week,
     _study_plan_today_task_videos,
     _study_plan_video_completion,
     _study_plan_week_rows,
@@ -716,8 +715,7 @@ def register_video_routes(*,
         if not result.get("stale"):
             _invalidate_study_progress_context()
         videos = storage.list_study_plan_videos_with_records()
-        week_rows, _calendar_week, summary = _study_plan_week_rows(videos)
-        current_week = _study_plan_progress_week(week_rows)
+        week_rows, current_week, summary = _study_plan_week_rows(videos)
         videos_by_subject: Dict[str, List[Dict[str, Any]]] = {
             subject: [] for subject in STUDY_PLAN_SUBJECTS
         }
@@ -749,6 +747,7 @@ def register_video_routes(*,
                 "watched_minutes": round(float(current_week["watched_minutes"]), 1),
                 "watched_hours": round(float(current_week["watched_seconds"]) / 3600, 2),
                 "remaining_hours": round(float(current_week["remaining_hours"]), 1),
+                "remaining_label": current_week["remaining_label"],
                 "completion": round(float(current_week["completion"]), 1),
                 "state": current_week["state"],
                 "state_label": current_week["state_label"],
