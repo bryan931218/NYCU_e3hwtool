@@ -167,7 +167,7 @@
 
     {% if server_sso_enabled and not guest_mode %}
     <section class="card panel server-sso" id="serverSsoPanel" hidden aria-live="polite">
-        <p id="serverSsoMessage">正在同步繳交人數…</p>
+        <p id="serverSsoMessage">請完成校方二階段驗證。</p>
         <form id="serverSsoCodeForm" hidden>
             <label for="serverSsoCode">校方二階段驗證碼</label>
             <input id="serverSsoCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" aria-label="六位數校方驗證碼" required>

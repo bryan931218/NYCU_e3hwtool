@@ -27,21 +27,17 @@ export function initialize(ctx) {
       if (!data.ok || !["idle", "queued", "busy", "starting", "verifying", "otp_required", "complete", "expired", "unavailable", "cancelled"].includes(data.state)) throw new Error();
       failures = 0;
       const state = data.state;
-      panel.hidden = state === "idle" || state === "complete";
+      // Counts use the ordinary background refresh. Only a school-required
+      // authentication step needs additional UI.
+      panel.hidden = state !== "otp_required";
       form.hidden = state !== "otp_required";
       if (state === "otp_required") {
-        message.textContent = data.attempts ? "請重新輸入校方驗證碼。" : "請完成校方二階段驗證，即可繼續同步。";
+        message.textContent = data.attempts ? "請重新輸入校方驗證碼。" : "請完成校方二階段驗證。";
         if (previousState !== state) input.focus();
       } else if (state === "busy") {
-        message.textContent = "人數同步暫時忙碌，稍後重新登入即可重試。";
         stopped = true;
       } else if (["expired", "unavailable", "cancelled"].includes(state)) {
-        message.textContent = "校方登入尚未完成，作業列表仍可正常使用。";
         stopped = true;
-      } else if (state === "queued") {
-        message.textContent = "正在排隊同步繳交人數…";
-      } else {
-        message.textContent = "正在同步繳交人數…";
       }
       if (state === "complete") {
         stopped = true;
@@ -52,8 +48,7 @@ export function initialize(ctx) {
     } catch {
       failures += 1;
       stopped = failures >= 3;
-      panel.hidden = stopped;
-      if (!stopped) message.textContent = "正在重新連線…";
+      panel.hidden = stopped || previousState !== "otp_required";
     } finally {
       inFlight = false;
       if (!stopped) timer = window.setTimeout(poll, 2000);

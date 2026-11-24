@@ -65,6 +65,43 @@ test('unavailable school login stops polling and preserves the workbench', async
   initialize({fetchAndSwapContent: () => assert.fail('failure must not replace assignments')});
   await settle();
   assert.equal(page.form.hidden, true);
-  assert.match(page.message.textContent, /作業列表仍可正常使用/);
+  assert.equal(page.panel.hidden, true);
+  assert.equal(page.timers.size, 0);
+}));
+
+test('background connection states remain silent while counts follow the ordinary refresh', async () => withPage(async page => {
+  page.responses.push({ok: true, state: 'queued'}, {ok: true, state: 'starting'}, {ok: true, state: 'verifying'}, {ok: true, state: 'complete'});
+  let updates = 0;
+  initialize({fetchAndSwapContent: async () => { updates++; }});
+  await settle();
+  for (let step = 0; step < 3; step++) {
+    assert.equal(page.panel.hidden, true);
+    const [id, callback] = page.timers.entries().next().value;
+    page.timers.delete(id);
+    await callback();
+  }
+  assert.equal(page.panel.hidden, true);
+  assert.equal(page.message.textContent, undefined);
+  assert.equal(updates, 1);
+  assert.equal(page.timers.size, 0);
+}));
+
+test('temporary connection failures do not expose a background status banner', async () => withPage(async page => {
+  const request = globalThis.fetch;
+  let attempts = 0;
+  globalThis.fetch = async (...args) => {
+    if (++attempts < 3) throw new Error('offline');
+    return request(...args);
+  };
+  page.responses.push({ok: true, state: 'idle'});
+  initialize({});
+  await settle();
+  for (let step = 0; step < 2; step++) {
+    assert.equal(page.panel.hidden, true);
+    const [id, callback] = page.timers.entries().next().value;
+    page.timers.delete(id);
+    await callback();
+  }
+  assert.equal(page.panel.hidden, true);
   assert.equal(page.timers.size, 0);
 }));
