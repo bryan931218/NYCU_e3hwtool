@@ -105,9 +105,10 @@ def fetch_submission_counts(options, courses):
                 return {}, "unavailable"
         except (requests.RequestException, RuntimeError) as exc:
             # Fixed codes only: upstream exceptions can contain credential URLs.
-            logger.warning("E3 submission totals web session unavailable (reason=%s code=%s)",
+            logger.warning("E3 submission totals web session unavailable (reason=%s code=%s type=%s status=%s)",
                            exc.reason if isinstance(exc, E3LoginError) else "request_failed",
-                           exc.api_code if isinstance(exc, E3LoginError) else "none")
+                           exc.api_code if isinstance(exc, E3LoginError) else "none", type(exc).__name__,
+                           exc.response.status_code if isinstance(exc, requests.HTTPError) and exc.response is not None else 0)
             entry["cookie"] = None
             return {}, "unavailable"
         base = options.base_url.rstrip("/")
