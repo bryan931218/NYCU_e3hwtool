@@ -181,7 +181,7 @@ def register_assignments_routes(*,
                         sess = requests.Session()
                         api_identity = login_with_password(sess, base_url, raw_username, raw_password, timeout=default_timeout)
                         api_identity = api_identity if isinstance(api_identity, dict) else {}
-                        cookie_val = None if api_identity else sess.cookies.get("MoodleSession")
+                        cookie_val = api_identity.get("moodle_session") if api_identity else sess.cookies.get("MoodleSession")
                         if not cookie_val and not api_identity.get("moodle_token"):
                             raise E3LoginError("session_cookie_missing")
                         authenticated = True
@@ -194,7 +194,6 @@ def register_assignments_routes(*,
                             permanent=True,
                             moodle_token=api_identity.get("moodle_token"),
                             moodle_user_id=api_identity.get("moodle_user_id"),
-                            moodle_private_token=api_identity.get("moodle_private_token"),
                         )
                         login_stage = "post_login"
                         record_login(raw_username)

@@ -165,6 +165,10 @@
     </section>
     {% endif %}
 
+    {% if submission_counts_relogin %}
+    <p class="muted" role="status">繳交人數尚未連線。請重新登入，或改用 Session 登入。</p>
+    {% endif %}
+
     <section class="workspace-actions" aria-label="學期與作業操作">
             {% if result and available_semesters %}
             <details class="card semester-selector" id="semesterSelector">

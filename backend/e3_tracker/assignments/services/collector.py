@@ -39,7 +39,6 @@ class CollectOptions:
     moodle_session: Optional[str] = None
     moodle_token: Optional[str] = None
     moodle_user_id: Optional[int] = None
-    moodle_private_token: Optional[str] = None
     cafile: Optional[str] = None
     insecure: bool = False
     timeout: int = 20
@@ -669,7 +668,7 @@ def collect_assignments(options: CollectOptions) -> Dict[str, Any]:
             from e3_tracker.assignments.services.moodle_api import collect_api_assignments
             return collect_api_assignments(replace(options, username=None, password=None,
                 moodle_token=api_identity["moodle_token"], moodle_user_id=api_identity["moodle_user_id"],
-                moodle_private_token=api_identity.get("moodle_private_token")))
+                moodle_session=api_identity.get("moodle_session")))
         login_method = "password"
     else:
         raise RuntimeError("請提供 MoodleSession 或帳密以登入 E3。")
