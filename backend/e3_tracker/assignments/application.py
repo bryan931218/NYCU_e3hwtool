@@ -705,7 +705,9 @@ def register_assignment_site(
             "result": result,
             "excel_data": excel_data,
             "user": user,
-            "submission_counts_relogin": bool(user.get("moodle_token") and not user.get("moodle_session") and not is_admin_view),
+            "submission_counts_need_session": bool(user.get("moodle_token") and not is_admin_view and result
+                and any(item.get("submitted_count") is None or item.get("participant_count") is None
+                        for item in result.get("all_assignments", []))),
             "google_ready": _google_ready(),
             "google_linked": google_linked,
             "guest_mode": guest_mode,

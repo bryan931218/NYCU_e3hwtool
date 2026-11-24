@@ -9,7 +9,6 @@ from e3_tracker.platform.constants import TAIPEI_TZ
 from e3_tracker.assignments.domain.parsing import assignment_description
 from e3_tracker.assignments.services.http import E3LoginError, configure_tls
 from e3_tracker.assignments.services.mobile_auth import api_call, verified_site_info
-from e3_tracker.assignments.services.submission_counts import fetch_submission_counts
 
 
 def _text(value):
@@ -77,8 +76,6 @@ def collect_api_assignments(options):
                 if not isinstance(group, dict) or group.get("id") not in allowed or not isinstance(group.get("assignments"), list):
                     raise E3LoginError("upstream_response_invalid", auth_step="assignments")
                 grouped[group["id"]] = group["assignments"]
-        count_courses = [course for course in courses if grouped.get(course["id"])]
-        totals, totals_status = fetch_submission_counts(options, count_courses) if count_courses else ({}, "available")
         all_items = []
         for course in courses:
             items = []
@@ -114,7 +111,6 @@ def collect_api_assignments(options):
                         if field.get("text"):
                             comments.append(_text(field["text"]))
                 summary = status.get("gradingsummary") or {}
-                counts = totals.get((course["id"], assignment["cmid"]))
                 item = {
                     "course_id": course["id"], "course_title": course["title"],
                     "semester_key": course["semester_key"], "semester_label": course["semester_label"],
@@ -125,8 +121,8 @@ def collect_api_assignments(options):
                     "completed": complete,
                     "raw_status_text": "已評分" if graded else "已提交" if submitted else "草稿" if submission.get("status") == "draft" else "尚未提交",
                     "grade_text": grade, "feedback_text": "\n".join(comments) or None, "description": intro,
-                    "submitted_count": counts[0] if counts else summary.get("submissionssubmittedcount"),
-                    "participant_count": counts[1] if counts else summary.get("participantcount"),
+                    "submitted_count": summary.get("submissionssubmittedcount"),
+                    "participant_count": summary.get("participantcount"),
                 }
                 items.append(item)
             items.sort(key=_course_sort_key)
@@ -134,5 +130,5 @@ def collect_api_assignments(options):
             all_items.extend(items)
         all_items.sort(key=_global_sort_key)
         return {"courses": courses, "all_assignments": all_items, "debug_files": [], "errors": [],
-                "login_method": "api", "submission_counts_status": totals_status, "available_semesters": catalog,
+                "login_method": "api", "available_semesters": catalog,
                 "selected_semesters": selected or [entry["key"] for entry in catalog]}

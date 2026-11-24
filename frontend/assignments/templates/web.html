@@ -165,8 +165,8 @@
     </section>
     {% endif %}
 
-    {% if submission_counts_relogin %}
-    <p class="muted" role="status">繳交人數尚未連線。請重新登入，或改用 Session 登入。</p>
+    {% if submission_counts_need_session %}
+    <p class="muted" role="status">繳交人數需使用 MoodleSession 登入才能顯示。</p>
     {% endif %}
 
     <section class="workspace-actions" aria-label="學期與作業操作">

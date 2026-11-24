@@ -3,7 +3,6 @@ import os
 import tempfile
 import time
 import unittest
-from contextlib import ExitStack
 from unittest.mock import patch
 
 import requests
@@ -38,18 +37,6 @@ class ApiPasswordTests(unittest.TestCase):
         self.calls.append((method, url, kwargs))
         if url == BASE + "/login/token.php":
             result = {"token": TOKEN, "privatetoken": PRIVATE}
-        elif url == BASE + "/login/index.php":
-            if method == "POST":
-                self.assertEqual(data["username"], USER)
-                self.assertEqual(data["password"], "private-password")
-                self.assertEqual(data["logintoken"], "form-csrf")
-                sess.cookies.set("MoodleSession", "s" * 32, domain="e3p.nycu.edu.tw", path="/")
-            result = {}
-        elif url == BASE + "/my/":
-            result = {}
-        elif url == BASE + "/local/courseextension/index.php":
-            self.assertEqual(kwargs["params"]["courseid"], 10)
-            result = {}
         else:
             self.assertEqual(url, BASE + "/webservice/rest/server.php")
             function = data.get("wsfunction")
@@ -71,36 +58,25 @@ class ApiPasswordTests(unittest.TestCase):
             result = self.failure
         response = requests.Response()
         response.status_code, response.url = 200, url
-        response._content = b""
-        if url == BASE + "/login/index.php":
-            response._content = b'<form action="/login/index.php" method="post"><input type="hidden" name="logintoken" value="form-csrf"><input name="username"><input name="password" type="password"></form>'
-        elif url == BASE + "/my/":
-            response._content = b'<div class="usermenu"><a href="/user/profile.php?id=42">Me</a><a href="/login/logout.php?sesskey=test">Logout</a></div>'
-        elif url == BASE + "/local/courseextension/index.php":
-            response._content = b'<table><tr><th>Name</th><th>status</th><th>Function</th></tr><tr><td>HW</td><td>3 Submitted<br>90 Not Submitted</td><td><a href="/mod/assign/view.php?id=456">View</a></td></tr></table>'
         response.json = lambda: result
         return response
 
     def mocked(self):
-        stack = ExitStack()
-        stack.enter_context(patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=self.respond))
-        stack.enter_context(patch("e3_tracker.assignments.services.submission_counts.safe_request", side_effect=self.respond))
-        stack.enter_context(patch("e3_tracker.assignments.services.http.safe_request", side_effect=self.respond))
-        return stack
+        return patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=self.respond)
 
     def options(self, **extra):
         return CollectOptions(BASE, moodle_token=TOKEN, moodle_user_id=42, include_completed=True, **extra)
 
-    def test_password_auth_verifies_api_and_companion_session_without_handoff(self):
+    def test_password_auth_uses_only_the_token_api_and_verifies_the_actual_account(self):
         with self.mocked(), requests.Session() as session:
             result = login_with_password(session, BASE, USER, "private-password")
-            self.assertEqual(len(session.cookies), 1)
+            self.assertEqual(len(session.cookies), 0)
         self.assertEqual(result["moodle_token"], TOKEN)
         self.assertEqual(result["moodle_user_id"], 42)
-        self.assertEqual(result["moodle_session"], "s" * 32)
         self.assertNotIn(PRIVATE, str(result))
-        self.assertEqual(len(self.calls), 5)
+        self.assertEqual(len(self.calls), 2)
         for method, url, kwargs in self.calls:
+            self.assertEqual(method, "POST")
             self.assertFalse(kwargs["allow_redirects"])
             for secret in (TOKEN, PRIVATE, "private-password"):
                 self.assertNotIn(secret, url)
@@ -152,144 +128,6 @@ class ApiPasswordTests(unittest.TestCase):
         self.assertTrue(item["completed"])
         self.assertEqual(item["submitted_count"], 18)
 
-    def test_optional_web_login_failure_keeps_verified_api_login(self):
-        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth._password_form",
-                                 side_effect=E3LoginError("login_rejected")), requests.Session() as session:
-            result = login_with_password(session, BASE, USER, "private-password")
-        self.assertEqual(result["moodle_token"], TOKEN)
-        self.assertNotIn("moodle_session", result)
-        self.assertNotIn(PRIVATE, str(result))
-
-    def test_wrong_companion_identity_is_discarded_without_losing_api_login(self):
-        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth._authenticated_principal",
-                                 return_value="99"), requests.Session() as session:
-            result = login_with_password(session, BASE, USER, "private-password")
-            self.assertEqual(len(session.cookies), 0)
-        self.assertEqual(result["moodle_token"], TOKEN)
-        self.assertNotIn("moodle_session", result)
-
-    def test_untrusted_login_form_never_receives_password(self):
-        original = self.respond
-        def changed_form(sess, method, url, **kwargs):
-            response = original(sess, method, url, **kwargs)
-            if method == "GET" and url.endswith("/login/index.php"):
-                response._content = response.content.replace(b'action="/login/index.php"', b'action="https://foreign.example/login/index.php"')
-            return response
-        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=changed_form), requests.Session() as session:
-            result = login_with_password(session, BASE, USER, "private-password")
-        self.assertEqual(result["moodle_token"], TOKEN)
-        self.assertNotIn("moodle_session", result)
-        self.assertFalse(any(call[0] == "POST" and call[1].endswith("/login/index.php") for call in self.calls))
-
-    def test_moodle_cookie_check_redirect_is_followed_with_get_only(self):
-        original = self.respond
-        def redirects(sess, method, url, **kwargs):
-            if url == BASE + "/login/index.php?testsession=42":
-                self.calls.append((method, url, kwargs))
-                self.assertEqual(method, "GET")
-                self.assertNotIn("data", kwargs)
-                response = requests.Response()
-                response.status_code, response.url = 303, url
-                response.headers["Location"] = "/my/"
-                response._content = b""
-                return response
-            response = original(sess, method, url, **kwargs)
-            if method == "POST" and url.endswith("/login/index.php"):
-                response.status_code = 303
-                response.headers["Location"] = "/login/index.php?testsession=42"
-            return response
-        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirects), patch("e3_tracker.assignments.services.http.safe_request", side_effect=redirects), requests.Session() as session:
-            result = login_with_password(session, BASE, USER, "private-password")
-        self.assertEqual(result["moodle_session"], "s" * 32)
-        self.assertTrue(any(call[1].endswith("?testsession=42") for call in self.calls))
-
-    def test_foreign_login_redirect_is_not_followed_or_retained(self):
-        original = self.respond
-        def redirect(sess, method, url, **kwargs):
-            response = original(sess, method, url, **kwargs)
-            if method == "POST" and url.endswith("/login/index.php"):
-                response.status_code = 303
-                response.headers["Location"] = "https://foreign.example/my/"
-            return response
-        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirect), patch("e3_tracker.assignments.services.http.safe_request", side_effect=redirect), requests.Session() as session:
-            result = login_with_password(session, BASE, USER, "private-password")
-        self.assertEqual(result["moodle_token"], TOKEN)
-        self.assertNotIn("moodle_session", result)
-        self.assertFalse(any(call[1].startswith("https://foreign.example") for call in self.calls))
-
-    def test_dashboard_redirects_are_verified_for_login_and_counts(self):
-        original = self.respond
-        for landing in ("/my/index.php", "/"):
-            def redirect_dashboard(sess, method, url, **kwargs):
-                if url == BASE + landing:
-                    response = original(sess, method, BASE + "/my/", **kwargs)
-                    response.url = url
-                    self.calls[-1] = (method, url, kwargs)
-                    return response
-                response = original(sess, method, url, **kwargs)
-                if url == BASE + "/my/":
-                    response.status_code = 303
-                    response.headers["Location"] = landing
-                return response
-            with self.subTest(landing=landing), self.mocked(), ExitStack() as stack:
-                for module in ("mobile_auth", "http", "submission_counts"):
-                    stack.enter_context(patch("e3_tracker.assignments.services." + module + ".safe_request",
-                                              side_effect=redirect_dashboard))
-                with requests.Session() as session:
-                    identity = login_with_password(session, BASE, USER, "private-password")
-                self.assertEqual(identity["moodle_session"], "s" * 32)
-                item, = collect_assignments(self.options(moodle_session=identity["moodle_session"]))["all_assignments"]
-                self.assertEqual((item["submitted_count"], item["participant_count"]), (3, 93))
-
-    def test_student_api_login_supplements_counts_and_reuses_verified_web_session(self):
-        with self.mocked():
-            first = collect_assignments(self.options(moodle_session="s" * 32))
-            second = collect_assignments(self.options(moodle_session="s" * 32))
-        for result in (first, second):
-            self.assertEqual(result["submission_counts_status"], "available")
-            item, = result["all_assignments"]
-            self.assertEqual((item["submitted_count"], item["participant_count"]), (3, 93))
-        self.assertFalse(any("autologin" in call[1] for call in self.calls))
-        self.assertEqual(sum(call[1].endswith("/local/courseextension/index.php") for call in self.calls), 2)
-        for _, url, kwargs in self.calls:
-            self.assertFalse(kwargs["allow_redirects"])
-            for secret in (TOKEN, PRIVATE, "k" * 32):
-                self.assertNotIn(secret, url)
-
-    def test_expired_web_session_does_not_break_api_or_retry_password_login(self):
-        with self.mocked(), patch("e3_tracker.assignments.services.submission_counts._authenticated_principal",
-                                 return_value=None):
-            for _ in range(2):
-                result = collect_assignments(self.options(moodle_session="s" * 32))
-                self.assertEqual(result["submission_counts_status"], "requires_relogin")
-                self.assertEqual(result["all_assignments"][0]["title"], "HW")
-                self.assertIsNone(result["all_assignments"][0]["submitted_count"])
-            self.assertFalse(any(call[1].endswith("/login/index.php") for call in self.calls))
-
-    def test_wrong_web_identity_never_reads_course_counts(self):
-        from e3_tracker.assignments.services import submission_counts
-        with self.mocked(), patch.object(submission_counts, "_authenticated_principal", return_value="99"):
-            result = collect_assignments(self.options(moodle_session="s" * 32))
-        self.assertEqual(result["submission_counts_status"], "requires_relogin")
-        self.assertFalse(any(call[1].endswith("/local/courseextension/index.php") for call in self.calls))
-
-    def test_missing_and_zero_web_counts_do_not_fabricate_or_lose_values(self):
-        from e3_tracker.assignments.services import submission_counts
-        for rows, expected in (([("HW", BASE + "/mod/assign/view.php?id=456", None, 0, 93)], (0, 93)),
-                               ([("HW", BASE + "/mod/assign/view.php?id=999", None, 3, 93)], (None, None)),
-                               ([("HW", "https://foreign.example/mod/assign/view.php?id=456", None, 3, 93)], (None, None))):
-            with self.subTest(expected=expected), self.mocked(), patch.object(
-                    submission_counts, "gather_assign_links_from_list_page", return_value=rows):
-                item, = collect_assignments(self.options(moodle_session="s" * 32))["all_assignments"]
-            self.assertEqual((item["submitted_count"], item["participant_count"]), expected)
-
-    def test_companion_credential_roundtrips_without_changing_legacy_records(self):
-        value = pack_moodle_credential("s" * 32, token=TOKEN, user_id=42)
-        self.assertEqual(unpack_moodle_credential(value)["moodle_session"], "s" * 32)
-        for cookie in (True, "short", "secret\nvalue"):
-            with self.subTest(cookie=type(cookie).__name__), self.assertRaises(ValueError):
-                pack_moodle_credential(cookie, token=TOKEN, user_id=42)
-
     def test_expired_token_cannot_return_an_empty_success_or_another_users_courses(self):
         self.failure = {"exception": "private", "errorcode": "invalidtoken", "message": "private"}
         with self.mocked(), self.assertRaises(E3LoginError) as raised:
@@ -327,21 +165,17 @@ class ApiPasswordTests(unittest.TestCase):
                 self.assertTrue(account["is_admin"])
                 self.assertEqual(account["username"], USER)
                 self.assertEqual(account["moodle_token"], TOKEN)
-                self.assertEqual(account["moodle_session"], "s" * 32)
-                self.assertNotIn("moodle_private_token", account)
+                self.assertIsNone(account["moodle_session"])
                 self.assertEqual(storage.load_user_cache(USER)["result"]["all_assignments"][0]["title"], "HW")
-                self.assertEqual(storage.load_user_cache(USER)["result"]["all_assignments"][0]["submitted_count"], 3)
                 with storage._engine.connect() as connection:
                     encrypted = connection.execute(select(web_sessions_table.c.moodle_credential)).scalar_one()
                 self.assertTrue(encrypted.startswith("enc:v1:"))
                 self.assertNotIn(TOKEN, encrypted)
-                self.assertNotIn(PRIVATE, encrypted)
                 self.assertNotIn(TOKEN, str(result.headers))
-                self.assertNotIn(PRIVATE, str(result.headers))
-                for path in ("/", "/api/cache?include_cache=1"):
-                    body = client.get(path).get_data(as_text=True)
-                    for secret in (TOKEN, PRIVATE, "s" * 32, "private-password"):
-                        self.assertNotIn(secret, body)
+                page = client.get("/").get_data(as_text=True)
+                self.assertIn("繳交人數需使用 MoodleSession 登入才能顯示。", page)
+                self.assertNotIn(TOKEN, page)
+                self.assertNotIn(PRIVATE, page)
                 self.assertEqual(storage.notification_content_user(USER, time.time())["moodle_token"], TOKEN)
                 self.assertEqual(storage.load_session_identity_user(USER, time.time())["moodle_token"], TOKEN)
                 activity = client.get("/admin/traffic/activity")

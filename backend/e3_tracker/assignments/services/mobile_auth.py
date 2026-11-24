@@ -1,11 +1,7 @@
 """Authenticate against the enabled Moodle API without a browser handoff."""
 import re
-import logging
 from urllib.parse import urlsplit
-from e3_tracker.assignments.services.http import E3LoginError, _authenticated_principal, _login_rejection, _password_form, follow_local_redirects, safe_request
-from e3_tracker.platform.constants import HEADERS
-from bs4 import BeautifulSoup
-import requests
+from e3_tracker.assignments.services.http import E3LoginError, safe_request
 
 API_HEADERS = {"User-Agent": "E3hwtool/1.0 (Moodle API client)", "Accept": "application/json"}
 SERVICE = "moodle_mobile_app"
@@ -58,41 +54,4 @@ def login_with_mobile_api(sess, base_url, username, password, *, timeout=20):
     if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", token):
         raise E3LoginError("upstream_response_invalid", auth_step="token")
     info = verified_site_info(sess, base_url, token, timeout=timeout, username=username)
-    identity = {"moodle_token": token, "moodle_user_id": info["userid"], "profile_name": info.get("fullname", "")}
-    # A student REST token does not expose class submission totals. Try the
-    # ordinary login form once while the password is available, and retain only
-    # a web session whose principal matches the verified REST account.
-    try:
-        login_url = base_url.rstrip("/") + "/login/index.php"
-        page = safe_request(sess, "GET", login_url, headers=HEADERS, timeout=min(timeout, 8), allow_redirects=False)
-        if page.status_code != 200:
-            raise E3LoginError("mobile_session_unavailable", auth_step="web_session")
-        post_url, payload = _password_form(BeautifulSoup(page.text, "html.parser"), page.url, base_url)
-        payload.update(username=username, password=password)
-        response = safe_request(sess, "POST", post_url, data=payload, headers={**HEADERS,
-            "Referer": login_url, "Origin": base_url.rstrip("/")}, timeout=min(timeout, 8), allow_redirects=False)
-        response = follow_local_redirects(sess, response, base_url, timeout=min(timeout, 8))
-        if response.status_code not in {200, 302, 303}:
-            raise E3LoginError("mobile_session_unavailable", auth_step="web_session")
-        dashboard = safe_request(sess, "GET", base_url.rstrip("/") + "/my/", headers=HEADERS,
-                                 timeout=min(timeout, 8), allow_redirects=False)
-        dashboard = follow_local_redirects(sess, dashboard, base_url, timeout=min(timeout, 8))
-        if _authenticated_principal(dashboard, base_url) != str(info["userid"]):
-            details = _login_rejection(dashboard)
-            raise E3LoginError("identity_mismatch", auth_step="web_session", page=details.page,
-                               form=details.form, menu=details.menu, notice=details.notice,
-                               trace=[{"method": "GET", "status": dashboard.status_code, "page": details.page}])
-        cookies = [cookie.value for cookie in sess.cookies if cookie.name == "MoodleSession" and cookie.value]
-        if len(cookies) != 1 or not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", cookies[0]):
-            raise E3LoginError("session_cookie_missing", auth_step="web_session")
-        identity["moodle_session"] = cookies[0]
-    except (RuntimeError, requests.RequestException) as exc:
-        sess.cookies.clear()
-        logging.getLogger(__name__).warning("E3 optional class totals login unavailable (type=%s reason=%s status=%s page=%s form=%s menu=%s)",
-            type(exc).__name__, exc.reason if isinstance(exc, E3LoginError) else "request_failed",
-            exc.response.status_code if isinstance(exc, requests.HTTPError) and exc.response is not None else
-                (exc.trace[-1]["status"] if isinstance(exc, E3LoginError) and exc.trace else 0),
-            exc.page if isinstance(exc, E3LoginError) else "unknown",
-            exc.form if isinstance(exc, E3LoginError) else False,
-            exc.menu if isinstance(exc, E3LoginError) else False)
-    return identity
+    return {"moodle_token": token, "moodle_user_id": info["userid"], "profile_name": info.get("fullname", "")}
