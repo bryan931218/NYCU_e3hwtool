@@ -85,6 +85,7 @@ class ApiPasswordTests(unittest.TestCase):
         stack = ExitStack()
         stack.enter_context(patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=self.respond))
         stack.enter_context(patch("e3_tracker.assignments.services.submission_counts.safe_request", side_effect=self.respond))
+        stack.enter_context(patch("e3_tracker.assignments.services.http.safe_request", side_effect=self.respond))
         return stack
 
     def options(self, **extra):
@@ -197,7 +198,7 @@ class ApiPasswordTests(unittest.TestCase):
                 response.status_code = 303
                 response.headers["Location"] = "/login/index.php?testsession=42"
             return response
-        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirects), requests.Session() as session:
+        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirects), patch("e3_tracker.assignments.services.http.safe_request", side_effect=redirects), requests.Session() as session:
             result = login_with_password(session, BASE, USER, "private-password")
         self.assertEqual(result["moodle_session"], "s" * 32)
         self.assertTrue(any(call[1].endswith("?testsession=42") for call in self.calls))
@@ -210,11 +211,35 @@ class ApiPasswordTests(unittest.TestCase):
                 response.status_code = 303
                 response.headers["Location"] = "https://foreign.example/my/"
             return response
-        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirect), requests.Session() as session:
+        with self.mocked(), patch("e3_tracker.assignments.services.mobile_auth.safe_request", side_effect=redirect), patch("e3_tracker.assignments.services.http.safe_request", side_effect=redirect), requests.Session() as session:
             result = login_with_password(session, BASE, USER, "private-password")
         self.assertEqual(result["moodle_token"], TOKEN)
         self.assertNotIn("moodle_session", result)
         self.assertFalse(any(call[1].startswith("https://foreign.example") for call in self.calls))
+
+    def test_dashboard_redirects_are_verified_for_login_and_counts(self):
+        original = self.respond
+        for landing in ("/my/index.php", "/"):
+            def redirect_dashboard(sess, method, url, **kwargs):
+                if url == BASE + landing:
+                    response = original(sess, method, BASE + "/my/", **kwargs)
+                    response.url = url
+                    self.calls[-1] = (method, url, kwargs)
+                    return response
+                response = original(sess, method, url, **kwargs)
+                if url == BASE + "/my/":
+                    response.status_code = 303
+                    response.headers["Location"] = landing
+                return response
+            with self.subTest(landing=landing), self.mocked(), ExitStack() as stack:
+                for module in ("mobile_auth", "http", "submission_counts"):
+                    stack.enter_context(patch("e3_tracker.assignments.services." + module + ".safe_request",
+                                              side_effect=redirect_dashboard))
+                with requests.Session() as session:
+                    identity = login_with_password(session, BASE, USER, "private-password")
+                self.assertEqual(identity["moodle_session"], "s" * 32)
+                item, = collect_assignments(self.options(moodle_session=identity["moodle_session"]))["all_assignments"]
+                self.assertEqual((item["submitted_count"], item["participant_count"]), (3, 93))
 
     def test_student_api_login_supplements_counts_and_reuses_verified_web_session(self):
         with self.mocked():

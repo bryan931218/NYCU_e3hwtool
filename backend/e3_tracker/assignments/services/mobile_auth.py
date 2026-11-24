@@ -1,8 +1,8 @@
 """Authenticate against the enabled Moodle API without a browser handoff."""
 import re
 import logging
-from urllib.parse import urljoin, urlsplit
-from e3_tracker.assignments.services.http import E3LoginError, _authenticated_principal, _login_rejection, _password_form, safe_request
+from urllib.parse import urlsplit
+from e3_tracker.assignments.services.http import E3LoginError, _authenticated_principal, _login_rejection, _password_form, follow_local_redirects, safe_request
 from e3_tracker.platform.constants import HEADERS
 from bs4 import BeautifulSoup
 import requests
@@ -71,21 +71,12 @@ def login_with_mobile_api(sess, base_url, username, password, *, timeout=20):
         payload.update(username=username, password=password)
         response = safe_request(sess, "POST", post_url, data=payload, headers={**HEADERS,
             "Referer": login_url, "Origin": base_url.rstrip("/")}, timeout=min(timeout, 8), allow_redirects=False)
-        for _ in range(4):
-            if response.status_code not in {301, 302, 303}:
-                break
-            location = response.headers.get("Location", "")
-            target = urlsplit(urljoin(response.url, location))
-            origin = urlsplit(base_url)
-            if (not location or any(c in location for c in "\r\n\\") or target.username or target.password
-                    or (target.scheme, target.netloc) != (origin.scheme, origin.netloc)):
-                raise E3LoginError("mobile_session_unavailable", auth_step="web_session")
-            response = safe_request(sess, "GET", target.geturl(), headers=HEADERS,
-                                    timeout=min(timeout, 8), allow_redirects=False)
+        response = follow_local_redirects(sess, response, base_url, timeout=min(timeout, 8))
         if response.status_code not in {200, 302, 303}:
             raise E3LoginError("mobile_session_unavailable", auth_step="web_session")
         dashboard = safe_request(sess, "GET", base_url.rstrip("/") + "/my/", headers=HEADERS,
                                  timeout=min(timeout, 8), allow_redirects=False)
+        dashboard = follow_local_redirects(sess, dashboard, base_url, timeout=min(timeout, 8))
         if _authenticated_principal(dashboard, base_url) != str(info["userid"]):
             details = _login_rejection(dashboard)
             raise E3LoginError("identity_mismatch", auth_step="web_session", page=details.page,

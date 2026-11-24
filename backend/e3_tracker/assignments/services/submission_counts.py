@@ -5,7 +5,7 @@ import requests
 
 from e3_tracker.assignments.domain.parsing import gather_assign_links_from_list_page
 from e3_tracker.assignments.services.http import (
-    _authenticated_principal, apply_cookie, configure_tls, safe_request,
+    _authenticated_principal, apply_cookie, configure_tls, follow_local_redirects, safe_request,
 )
 from e3_tracker.platform.constants import HEADERS
 
@@ -23,6 +23,7 @@ def fetch_submission_counts(options, courses):
         try:
             dashboard = safe_request(sess, "GET", base + "/my/", headers=HEADERS,
                                      timeout=timeout, allow_redirects=False)
+            dashboard = follow_local_redirects(sess, dashboard, base, timeout=timeout)
             if _authenticated_principal(dashboard, base) != str(options.moodle_user_id):
                 return {}, "requires_relogin"
         except (requests.RequestException, RuntimeError):

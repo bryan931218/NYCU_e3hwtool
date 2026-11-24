@@ -79,11 +79,27 @@ def _authenticated_dashboard(response, base_url):
     return _authenticated_principal(response, base_url) is not None
 
 
+def follow_local_redirects(sess, response, base_url, *, timeout=8):
+    """Finish Moodle's cookie checks without replaying credentials elsewhere."""
+    base = urlsplit(base_url)
+    for _ in range(4):
+        if response.status_code not in {301, 302, 303}:
+            break
+        location = response.headers.get("Location", "")
+        target = urlsplit(urljoin(response.url, location))
+        if (not location or any(c in location for c in "\r\n\\") or target.username or target.password
+                or (target.scheme, target.netloc) != (base.scheme, base.netloc)):
+            raise E3LoginError("mobile_session_unavailable", auth_step="web_session")
+        response = safe_request(sess, "GET", target.geturl(), headers=HEADERS,
+                                timeout=timeout, allow_redirects=False)
+    return response
+
+
 def _authenticated_principal(response, base_url):
     """A login URL elsewhere in the page is not proof that authentication failed."""
     base, target = urlsplit(base_url), urlsplit(response.url)
     if (response.status_code != 200 or (target.scheme, target.netloc) != (base.scheme, base.netloc)
-            or target.path not in {"/my/", "/my/index.php"}):
+            or target.path not in {"/", "/my/", "/my/index.php"}):
         return None
     soup = BeautifulSoup(response.text, "html.parser")
     if soup.select_one('input[name="password"]'):
