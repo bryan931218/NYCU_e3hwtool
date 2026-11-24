@@ -294,26 +294,6 @@ def register_assignments_routes(*,
         # the response in memory until writing the caller's E3 session cookie.
         return {"ok": True, "session": credential}
 
-    @app.get("/admin/diagnostics/e3-mobile-plugins")
-    @login_required
-    def e3_mobile_plugin_diagnostics():
-        user = current_user()
-        if not user.get("is_admin") or user.get("is_guest"):
-            return {"ok": False}, 403
-        if not user.get("moodle_token"):
-            return {"ok": False, "source": "session"}
-        from e3_tracker.assignments.services.mobile_auth import api_call, verified_site_info
-        try:
-            with requests.Session() as sess:
-                verified_site_info(sess, base_url, user["moodle_token"], user_id=user.get("moodle_user_id"), timeout=8)
-                result = api_call(sess, base_url, user["moodle_token"], "tool_mobile_get_plugins_supporting_mobile", timeout=8)
-            plugins = result.get("plugins", []) if isinstance(result, dict) else []
-            return {"ok": True, "plugins": [{"component": plugin.get("component"),
-                "handlers": plugin.get("handlers") if plugin.get("component") == "local_courseextension" else None}
-                for plugin in plugins if isinstance(plugin, dict)]}
-        except (requests.RequestException, RuntimeError):
-            return {"ok": False, "error": "source_unavailable"}, 502
-
     @app.get("/api/profile")
     @login_required
     def user_profile():
