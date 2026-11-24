@@ -308,17 +308,6 @@ def register_assignments_routes(*,
             return {"ok": False}, 403
         return {"ok": True, **app.extensions["e3_server_sso"].status(session.get("session_token"))}
 
-    @app.get("/admin/diagnostics/e3-server-browser")
-    @login_required
-    def server_e3_browser_preflight():
-        user = current_user()
-        if not user.get("is_admin") or user.get("is_guest"):
-            return {"ok": False}, 403
-        if not storage.consume_security_limit("sso-preflight:" + user["username"], 1, 60):
-            return {"ok": False}, 429
-        state = app.extensions["e3_server_sso"].preflight()
-        return {"ok": state == "ready", "state": state}, 200 if state == "ready" else 503
-
     @app.post("/api/e3-connection/verify")
     @login_required
     def verify_server_e3_connection():
