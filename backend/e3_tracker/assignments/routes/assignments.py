@@ -294,6 +294,27 @@ def register_assignments_routes(*,
         # the response in memory until writing the caller's E3 session cookie.
         return {"ok": True, "session": credential}
 
+    @app.get("/admin/diagnostics/submission-counts")
+    @login_required
+    def submission_count_diagnostics():
+        user = current_user()
+        if not user.get("is_admin") or user.get("is_guest"):
+            return {"ok": False}, 403
+        if not user.get("moodle_token"):
+            return {"ok": True, "source": "session"}
+        from e3_tracker.assignments.services.mobile_auth import verified_site_info
+        try:
+            with requests.Session() as sess:
+                info = verified_site_info(sess, base_url, user["moodle_token"],
+                    user_id=user.get("moodle_user_id"), timeout=min(default_timeout, 8))
+            return {"ok": True, "source": "api", "methods": sorted(
+                row["name"] for row in info.get("functions", [])
+                if isinstance(row, dict) and isinstance(row.get("name"), str)
+                and any(part in row["name"] for part in ("local_", "assign", "mobile", "report"))
+            )}
+        except (requests.RequestException, RuntimeError):
+            return {"ok": False, "error": "source_unavailable"}, 502
+
     @app.get("/api/profile")
     @login_required
     def user_profile():
