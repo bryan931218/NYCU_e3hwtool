@@ -311,7 +311,7 @@ def register_assignments_routes(*,
                 return {str(name): shape(child, str(name), depth + 1) for name, child in value.items()}
             if isinstance(value, list):
                 return {"type": "list", "length": len(value), "first": shape(value[0], key, depth + 1) if value else None}
-            if isinstance(value, str) and key == "customdata":
+            if isinstance(value, str) and key in {"customdata", "state"}:
                 try:
                     return shape(json.loads(value), key, depth + 1)
                 except ValueError:
@@ -338,7 +338,10 @@ def register_assignments_routes(*,
                     assignid=assignment["id"], userid=info["userid"], timeout=8)
                 contents = api_call(sess, base_url, user["moodle_token"], "core_course_get_contents", courseid=course["id"], timeout=8)
                 modules = [module for section in contents for module in section.get("modules", []) if module.get("modname") == "assign"]
-            return {"ok": True, "assignment": shape(assignment), "status": shape(status), "module": shape(modules[0]) if modules else None}
+                functions = [entry.get("name", "") for entry in info.get("functions", []) if isinstance(entry, dict)]
+                course_state = api_call(sess, base_url, user["moodle_token"], "core_courseformat_get_state", courseid=course["id"], timeout=8) if "core_courseformat_get_state" in functions else None
+            return {"ok": True, "assignment": shape(assignment), "status": shape(status), "module": shape(modules[0]) if modules else None,
+                    "course_state": shape(course_state, "state"), "course_functions": [name for name in functions if name.startswith("core_course") or name.startswith("core_completion")]}
         except (requests.RequestException, RuntimeError):
             return {"ok": False, "error": "source_unavailable"}, 502
 
