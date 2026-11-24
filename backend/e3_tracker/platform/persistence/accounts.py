@@ -252,6 +252,7 @@ class AccountsStorage:
         moodle_session=None,
         moodle_token=None,
         moodle_user_id=None,
+        moodle_private_token=None,
         lifetime=86400,
     ) -> None:
         if not session_token or not username:
@@ -275,7 +276,8 @@ class AccountsStorage:
                     is_guest=int(bool(is_guest)),
                     is_admin=int(bool(is_admin) and not is_guest),
                     moodle_credential=self._credential_cipher.encrypt(
-                        pack_moodle_credential(moodle_session, token=moodle_token, user_id=moodle_user_id), f"moodle:{username}"
+                        pack_moodle_credential(moodle_session, token=moodle_token, user_id=moodle_user_id,
+                                               private_token=moodle_private_token), f"moodle:{username}"
                     ),
                     expires_at=time.time() + lifetime,
                 )

@@ -776,6 +776,7 @@ def register_assignment_site(
             moodle_session=user.get("moodle_session"),
             moodle_token=user.get("moodle_token"),
             moodle_user_id=user.get("moodle_user_id"),
+            moodle_private_token=user.get("moodle_private_token"),
             insecure=False,
             timeout=default_timeout,
             debug=False,

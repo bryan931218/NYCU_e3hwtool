@@ -6,8 +6,8 @@ from e3_tracker.assignments.services.http import E3LoginError, safe_request
 API_HEADERS = {"User-Agent": "E3hwtool/1.0 (Moodle API client)", "Accept": "application/json"}
 SERVICE = "moodle_mobile_app"
 
-def _json_post(sess, url, data, *, step, timeout):
-    response = safe_request(sess, "POST", url, data=data, headers=API_HEADERS, timeout=timeout, allow_redirects=False)
+def _json_post(sess, url, data, *, step, timeout, headers=None):
+    response = safe_request(sess, "POST", url, data=data, headers=headers or API_HEADERS, timeout=timeout, allow_redirects=False)
     if response.status_code != 200:
         raise E3LoginError("upstream_response_invalid", auth_step=step)
     try:
@@ -54,4 +54,8 @@ def login_with_mobile_api(sess, base_url, username, password, *, timeout=20):
     if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", token):
         raise E3LoginError("upstream_response_invalid", auth_step="token")
     info = verified_site_info(sess, base_url, token, timeout=timeout, username=username)
-    return {"moodle_token": token, "moodle_user_id": info["userid"], "profile_name": info.get("fullname", "")}
+    identity = {"moodle_token": token, "moodle_user_id": info["userid"], "profile_name": info.get("fullname", "")}
+    private = result.get("privatetoken")
+    if isinstance(private, str) and re.fullmatch(r"[A-Za-z0-9_-]{16,256}", private):
+        identity["moodle_private_token"] = private
+    return identity
