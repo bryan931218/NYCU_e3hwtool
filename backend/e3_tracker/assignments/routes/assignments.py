@@ -294,6 +294,54 @@ def register_assignments_routes(*,
         # the response in memory until writing the caller's E3 session cookie.
         return {"ok": True, "session": credential}
 
+    @app.get("/admin/diagnostics/e3-assignment-fields")
+    @login_required
+    def e3_assignment_field_diagnostics():
+        user = current_user()
+        if not user.get("is_admin") or user.get("is_guest"):
+            return {"ok": False}, 403
+        if not user.get("moodle_token"):
+            return {"ok": False, "source": "session"}
+        from e3_tracker.assignments.services.mobile_auth import api_call, verified_site_info
+        from e3_tracker.assignments.services.collector import current_semester_key
+        def shape(value, key="", depth=0):
+            if depth > 5:
+                return type(value).__name__
+            if isinstance(value, dict):
+                return {str(name): shape(child, str(name), depth + 1) for name, child in value.items()}
+            if isinstance(value, list):
+                return {"type": "list", "length": len(value), "first": shape(value[0], key, depth + 1) if value else None}
+            if isinstance(value, str) and key == "customdata":
+                try:
+                    return shape(json.loads(value), key, depth + 1)
+                except ValueError:
+                    pass
+            if type(value) is int and any(part in key.casefold() for part in ("count", "total", "participant", "submitted")):
+                return value
+            return type(value).__name__
+        try:
+            with requests.Session() as sess:
+                info = verified_site_info(sess, base_url, user["moodle_token"], user_id=user.get("moodle_user_id"), timeout=8)
+                enrolled = api_call(sess, base_url, user["moodle_token"], "core_enrol_get_users_courses", userid=info["userid"], timeout=8)
+                allowed = {course["id"] for course in enrolled if isinstance(course, dict) and type(course.get("id")) is int}
+                cached = (get_assign_cache(user["username"]) or {}).get("result") or {}
+                course = next((course for course in cached.get("courses", []) if course.get("semester_key") == current_semester_key()
+                    and course.get("id") in allowed and course.get("assignments")), None)
+                if not course:
+                    return {"ok": False, "error": "no_current_assignment"}
+                listing = api_call(sess, base_url, user["moodle_token"], "mod_assign_get_assignments", timeout=8, **{"courseids[0]": course["id"]})
+                assignment = next((item for group in listing.get("courses", []) if group.get("id") == course["id"]
+                                   for item in group.get("assignments", [])), None)
+                if not assignment:
+                    return {"ok": False, "error": "no_assignment"}
+                status = api_call(sess, base_url, user["moodle_token"], "mod_assign_get_submission_status",
+                    assignid=assignment["id"], userid=info["userid"], timeout=8)
+                contents = api_call(sess, base_url, user["moodle_token"], "core_course_get_contents", courseid=course["id"], timeout=8)
+                modules = [module for section in contents for module in section.get("modules", []) if module.get("modname") == "assign"]
+            return {"ok": True, "assignment": shape(assignment), "status": shape(status), "module": shape(modules[0]) if modules else None}
+        except (requests.RequestException, RuntimeError):
+            return {"ok": False, "error": "source_unavailable"}, 502
+
     @app.get("/api/profile")
     @login_required
     def user_profile():
