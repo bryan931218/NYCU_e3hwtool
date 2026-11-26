@@ -12,6 +12,8 @@ from e3_tracker.assignments.domain.assignment_actions import effective_result
 from e3_tracker.assignments.services.session_identity import SessionIdentitySync
 from e3_tracker.platform.services.account_identity import AccountIdentities
 import base64
+import hashlib
+import hmac
 import json
 import secrets
 import threading
@@ -119,6 +121,7 @@ def register_assignment_site(
         "show_completed": False,
         "show_graded": False,
         "ignored_assignment_uids": [],
+        "onboarding_completed": False,
     }
 
     NEW_ASSIGNMENT_WINDOW_SECONDS = 5 * 60
@@ -195,6 +198,8 @@ def register_assignment_site(
         clean: Dict[str, Any] = {}
         if not isinstance(raw, dict):
             return clean
+        if type(raw.get("onboarding_completed")) is bool:
+            clean["onboarding_completed"] = raw["onboarding_completed"]
         view_mode = raw.get("view_mode")
         if view_mode is None:
             view_mode = raw.get("viewMode")
@@ -721,6 +726,9 @@ def register_assignment_site(
             "stats_version": stats_version_value,
             "now_ts": now_ts,
             "preferences": preferences,
+            "onboarding_key": "guest" if guest_mode else hmac.new(
+                str(app.secret_key).encode(), str(user["username"]).encode(), hashlib.sha256
+            ).hexdigest()[:24],
             "ignored_semester_count": ignored_semester_count,
             "cache_ts": cache_ts_val,
             "last_updated_ts": cache_ts_val,

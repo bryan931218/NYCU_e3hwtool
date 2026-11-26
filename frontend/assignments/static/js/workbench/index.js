@@ -52,3 +52,10 @@ features.forEach((feature) => feature.initialize(context));
 if (document.getElementById("serverSsoPanel")) {
   import("./server-sso.js").then((feature) => feature.initialize(context));
 }
+
+// Load the small guide after the workbench is usable, without delaying data or controls.
+if (document.getElementById("workbenchTour")) {
+  const loadGuide = () => import("./onboarding.js").then((feature) => feature.initialize(context)).catch(() => {});
+  if ("requestIdleCallback" in window) window.requestIdleCallback(loadGuide, { timeout: 1500 });
+  else window.setTimeout(loadGuide, 300);
+}

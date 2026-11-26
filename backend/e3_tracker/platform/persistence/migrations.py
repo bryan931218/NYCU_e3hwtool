@@ -186,6 +186,10 @@ def _traffic_activity_retention(conn):
         index.create(conn, checkfirst=True)
 
 
+def _workbench_onboarding(conn):
+    _add_columns(conn, "user_preferences", {"onboarding_completed": "INTEGER NOT NULL DEFAULT 0"})
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -206,6 +210,7 @@ MIGRATIONS = (
     ("0017_traffic_activity_retention", _traffic_activity_retention),
     ("0018_course_files", _course_files),
     ("0019_profile_metadata", _user_profile_metadata_schema),
+    ("0020_workbench_onboarding", _workbench_onboarding),
 )
 
 

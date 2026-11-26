@@ -1,0 +1,10 @@
+<dialog id="workbenchTour" class="workbench-tour" aria-labelledby="tourTitle" aria-describedby="tourDescription">
+    <svg class="tour-shade" aria-hidden="true" focusable="false"><path fill-rule="evenodd" id="tourMask"></path></svg>
+    <div class="tour-ring" id="tourRing" aria-hidden="true"></div>
+    <section class="tour-card" id="tourCard">
+        <div class="tour-topline"><span class="tour-eyebrow"><span class="tour-help-icon" aria-hidden="true">?</span>使用教學</span><button type="button" class="tour-skip" id="tourSkip">略過</button></div>
+        <div class="tour-copy" aria-live="polite" aria-atomic="true"><h2 id="tourTitle" tabindex="-1"></h2><p id="tourDescription"></p></div>
+        <div class="tour-progress-row"><div class="tour-progress" id="tourProgress" role="progressbar" aria-label="導覽進度" aria-valuemin="1"><span id="tourProgressFill"></span></div><span class="tour-count" id="tourCount" aria-hidden="true"></span></div>
+        <div class="tour-actions"><button type="button" class="tour-back" id="tourBack">上一步</button><button type="button" class="tour-next" id="tourNext">下一步<span aria-hidden="true">→</span></button></div>
+    </section>
+</dialog>

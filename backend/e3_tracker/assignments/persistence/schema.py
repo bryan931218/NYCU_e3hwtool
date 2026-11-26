@@ -23,6 +23,7 @@ user_preferences_table = Table(
     Column("show_overdue", Integer, nullable=False, default=0),
     Column("show_completed", Integer, nullable=False, default=0),
     Column("show_graded", Integer, nullable=False, default=0),
+    Column("onboarding_completed", Integer, nullable=False, default=0, server_default="0"),
     Column("ignored_overdue_uids", Text),
     Column("updated_at", String(64)),
 )

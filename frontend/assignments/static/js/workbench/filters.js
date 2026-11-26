@@ -203,6 +203,10 @@ export function register(ctx) {
     if (ctx.IS_READONLY_VIEW) return;
     if (!ctx.PREFERENCES_ENDPOINT) return;
     const payload = {};
+    if (typeof partial.onboardingCompleted === "boolean") {
+      ctx.USER_PREFERENCES.onboarding_completed = partial.onboardingCompleted;
+      payload.onboarding_completed = partial.onboardingCompleted;
+    }
     if (Object.prototype.hasOwnProperty.call(partial, "viewMode")) {
       const mode = ["due", "course", "calendar"].includes(partial.viewMode)
         ? partial.viewMode : "due";

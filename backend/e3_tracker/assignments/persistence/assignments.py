@@ -32,6 +32,7 @@ class AssignmentsStorage:
                     user_preferences_table.c.show_overdue,
                     user_preferences_table.c.show_completed,
                     user_preferences_table.c.show_graded,
+                    user_preferences_table.c.onboarding_completed,
                     user_preferences_table.c.ignored_overdue_uids,
                 )
                 .select_from(
@@ -72,6 +73,7 @@ class AssignmentsStorage:
             "show_overdue": bool(row.show_overdue),
             "show_completed": bool(row.show_completed),
             "show_graded": bool(row.show_graded),
+            "onboarding_completed": bool(row.onboarding_completed),
             "ignored_assignment_uids": ignored_assignment_uids,
             # Retain the legacy API alias for already-open clients.
             "ignored_overdue_uids": ignored_assignment_uids,
@@ -112,6 +114,9 @@ class AssignmentsStorage:
         now = self._now_iso()
         with self._lock, self._engine.begin() as conn:
             user_id = self._ensure_user(conn, username)
+            completed = conn.execute(select(user_preferences_table.c.onboarding_completed).where(
+                user_preferences_table.c.user_id == user_id
+            )).scalar()
             conn.execute(
                 delete(user_preferences_table).where(
                     user_preferences_table.c.user_id == user_id
@@ -127,6 +132,8 @@ class AssignmentsStorage:
                     show_overdue=show_overdue,
                     show_completed=show_completed,
                     show_graded=show_graded,
+                    # Completion is monotonic: an old tab/cache cannot restart the guide.
+                    onboarding_completed=int(bool(completed) or prefs.get("onboarding_completed") is True),
                     # Keep the physical column to preserve existing records and rollbacks.
                     ignored_overdue_uids=json.dumps(
                         ignored_assignment_uids, ensure_ascii=False

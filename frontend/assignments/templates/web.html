@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/workbench.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-picker.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/deadline-calendar.css') }}">
+{% if user and not is_admin_view %}<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/onboarding.css') }}">{% endif %}
 {% for module in ['workbench/feedback', 'workbench/cache', 'workbench/filter-state', 'workbench/course-filter', 'workbench/course-colors', 'workbench/search', 'workbench/local-assignments', 'workbench/custom-todo-notifications', 'workbench/filters', 'workbench/calendar', 'workbench/deadline-calendar', 'workbench/interactions', 'workbench/cache-events', 'workbench/calendar-events', 'workbench/startup', 'workbench/announcements', 'workbench/profile', 'workbench/usage-events', 'workbench/course-messages', 'content-motion', 'course-message-unread'] %}
 <link rel="modulepreload" nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" href="{{ url_for('frontend_asset', filename='assignments/js/' ~ module ~ '.js') }}">
 {% endfor %}
@@ -287,6 +288,11 @@
                     <a class="more-action" href="{{ url_for('e3_navigation_extension') }}" target="_blank" rel="noopener"><span class="more-icon" data-icon="puzzle" aria-hidden="true"></span><span>安裝自動跳轉套件</span><span class="more-icon more-external" data-icon="external" aria-hidden="true"></span><span class="more-sr-only">（開啟新分頁）</span></a>
                 </section>
                 {% endif %}
+                {% if not is_admin_view %}
+                <section class="more-group" aria-label="使用說明">
+                    <button class="more-action" type="button" id="onboardingReplay"><span aria-hidden="true" class="tour-help-icon">?</span><span>使用教學</span></button>
+                </section>
+                {% endif %}
             </div>
         </details>
         {% if google_ready and google_linked %}<form method="post" action="{{ url_for('google_sync') }}" id="googleSyncForm" style="display:none"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"><input type="hidden" name="selected_uids" id="googleSyncInput"></form>{% endif %}
@@ -526,6 +532,7 @@
 </footer>
 
 {% include 'assignments/pages/web/config.html' %}
+{% if user and not is_admin_view %}{% include 'assignments/components/onboarding.html' %}{% endif %}
 <script nonce="{{ csp_nonce() if csp_nonce is defined else '' }}" src="{{ url_for('frontend_asset', filename='shared/js/traffic-stats.js') }}" defer></script>
 </body>
 </html>
