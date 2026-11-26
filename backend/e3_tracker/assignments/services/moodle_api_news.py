@@ -184,7 +184,12 @@ class MoodleApiNewsClient:
             if root is None:
                 raise ValueError('Announcement root post unavailable')
             author = escape(str((root.get('author') or {}).get('fullname') or ''))
-            return '<article class="forumpost firstpost"><div class="author"><a>' + author + '</a></div><div class="post-content-container">' + self._html(root.get('message')) + '</div><div class="attachments">' + self._files(root.get('attachments')) + self._files(root.get('messageinlinefiles')) + '</div></article>'
+            created = int(root.get('timecreated') or 0)
+            modified = int(root.get('timemodified') or created)
+            return (f'<article class="forumpost firstpost" data-post-modified="{modified}"><div class="author"><a>'
+                    + author + f'</a><time data-timestamp="{created}"></time></div><div class="post-content-container">'
+                    + self._html(root.get('message')) + '</div><div class="attachments">'
+                    + self._files(root.get('attachments')) + self._files(root.get('messageinlinefiles')) + '</div></article>')
 
         if target.path == '/local/dcpcmail/view.php':
             cid = number('c')

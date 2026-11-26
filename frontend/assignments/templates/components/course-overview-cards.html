@@ -1,0 +1,31 @@
+{% macro citation(origin) %}
+<details class="insight-source">
+    <summary>{{ origin.title }}{% if origin.location %} · {{ origin.location }}{% endif %}</summary>
+    <blockquote>{{ origin.quote }}</blockquote>
+    <a href="{{ origin.url | safe_link }}" target="_blank" rel="noopener noreferrer">在 E3 查看來源 ↗</a>
+</details>
+{% endmacro %}
+{% for course in courses %}
+{% set snapshot = snapshots.get(course.id, {}) %}
+<details class="insight-panel insight-course" data-insight-course="{{ course.id }}"{% if loop.first and snapshot.analyzed %} open{% endif %}>
+    <summary>{{ course.title }}</summary>
+    {% if snapshot.analyzed %}
+    {% if snapshot.summary %}<p>{{ snapshot.summary }}</p>{% endif %}
+    <h3>評分方式</h3>
+    {% if snapshot.grading %}
+    <ul class="insight-list">{% for item in snapshot.grading %}<li><strong>{{ item.label }}</strong> {{ item.detail }}{{ citation(item.origin) }}</li>{% endfor %}</ul>
+    {% else %}<p class="insight-muted">已讀取的來源未列出明確評分方式。</p>{% endif %}
+    <h3>考試與期限</h3>
+    {% if snapshot.events %}
+    <ul class="insight-list">{% for item in snapshot.events.values()|sort(attribute='date') %}<li>
+        <div class="insight-event-title"><strong>{{ item.title }}{% if item.kind == 'deadline' %} · 作業期限{% endif %}</strong>
+            {% if item.cancelled %}<span class="insight-muted">已取消</span>
+            {% else %}<time datetime="{{ item.date }}">{{ item.date[:16]|replace('T', ' ') }}</time>{% endif %}
+        </div>
+        {{ citation(item.origin) }}
+    </li>{% endfor %}</ul>
+    {% else %}<p class="insight-muted">目前未找到可確認的日期。</p>{% endif %}
+    {% if snapshot.partial or not snapshot.document %}<p class="insight-muted">部分來源尚未讀取，請以 E3 原文為準。</p>{% endif %}
+    {% else %}<p class="insight-muted">{{ '等候整理' if configured else '尚未啟用課程 AI' }}</p>{% endif %}
+</details>
+{% endfor %}

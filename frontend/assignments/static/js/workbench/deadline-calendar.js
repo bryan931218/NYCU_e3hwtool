@@ -64,11 +64,44 @@ export function calendarAssignments(rows) {
   }).sort((a, b) => a.dueTs - b.dueTs || titleCollator.compare(a.title, b.title));
 }
 
+export function withCourseSchedule(items, events, courseFilter) {
+  const updated = [...items];
+  const changed = new Map(events.filter(event => event.kind === "deadline")
+    .map(event => [`${event.course_id}:${event.id.split(":")[1]}`, event]));
+  for (let index = 0; index < updated.length; index += 1) {
+    const item = updated[index];
+    if (!item.url || item.row.dataset.personalDue === "1" || ["completed", "graded"].includes(item.status)) continue;
+    const url = safeCalendarUrl(item.url, "https://localhost");
+    const ref = url ? new URL(url).searchParams.get("id") : null;
+    const event = changed.get(`${item.row.dataset.courseId}:${ref}`);
+    if (event) updated[index] = { ...item, ...scheduleDate(event.date), schedule: "課程期限", sourceUrl: event.origin.url };
+  }
+  for (const event of events) {
+    if (event.kind === "deadline" || (courseFilter && courseFilter !== event.course)) continue;
+    updated.push({
+      uid: `course-event:${event.course_id}:${event.id}`,
+      title: event.title, course: event.course,
+      courseKey: courseColorKey({ courseId: event.course_id, course: event.course }),
+      status: "exam", schedule: "考試", sourceUrl: event.origin.url,
+      ...scheduleDate(event.date),
+    });
+  }
+  return updated.sort((a, b) => a.dueTs - b.dueTs || titleCollator.compare(a.title, b.title));
+}
+
+function scheduleDate(value) {
+  const day = value.slice(0, 10);
+  const allDay = value.length === 10;
+  const iso = allDay ? day : value;
+  return { deadline: { day, time: allDay ? "全天" : value.slice(11, 16), iso },
+    dueTs: Date.parse(allDay ? day + "T00:00:00+08:00" : iso) / 1000 };
+}
+
 export function calendarEventsInRange(items, start, end) {
   return items.filter(item => item.deadline && item.deadline.day >= start && item.deadline.day < end).map(item => ({
     id: item.uid, title: item.title, start: item.deadline.day, allDay: true,
     classNames: [`calendar-event-${item.status}`],
-    extendedProps: { course: item.course, courseKey: item.courseKey, day: item.deadline.day, time: item.deadline.time, status: item.status, deadlineTs: item.dueTs },
+    extendedProps: { course: item.course, courseKey: item.courseKey, day: item.deadline.day, time: item.deadline.time, status: item.status, deadlineTs: item.dueTs, schedule: item.schedule },
   }));
 }
 
@@ -198,7 +231,8 @@ export function register(ctx) {
     const date = new Date(`${day}T12:00:00+08:00`);
     document.getElementById("calendarDayLabel").textContent = undated ? "無截止日期" : new Intl.DateTimeFormat("zh-TW", { timeZone: TAIPEI, month: "long", day: "numeric" }).format(date);
     document.getElementById("calendarDayWeekday").textContent = undated ? "作業清單" : new Intl.DateTimeFormat("zh-TW", { timeZone: TAIPEI, weekday: "long" }).format(date);
-    document.getElementById("calendarDaySummary").textContent = `${items.length} 件作業`;
+    const exams = items.filter(item => item.status === "exam").length;
+    document.getElementById("calendarDaySummary").textContent = `${items.length - exams} 件作業${exams ? ` · ${exams} 場考試` : ""}`;
     document.getElementById("calendarUndated")?.setAttribute("aria-pressed", String(undated));
     const addButton = document.getElementById("calendarAddTask");
     if (addButton) addButton.hidden = undated;
@@ -218,13 +252,13 @@ export function register(ctx) {
       const top = element("div", "calendar-task-top");
       const course = element("span", "calendar-task-course", item.course);
       course.title = item.course;
-      top.append(course, element("span", `calendar-task-status calendar-status-${item.status}`, ctx.STATUS_FILTER_LABELS[item.status] || "待處理"));
+      top.append(course, element("span", `calendar-task-status calendar-status-${item.status}`, item.schedule || ctx.STATUS_FILTER_LABELS[item.status] || "待處理"));
       const title = element("h4", "calendar-task-title", item.title);
       const bottom = element("div", "calendar-task-bottom");
       const time = element("time", "calendar-task-time", item.deadline?.time || "無截止日期");
       if (item.deadline) time.dateTime = item.deadline.iso;
       const actions = element("div", "calendar-task-actions");
-      if (!ctx.IS_READONLY_VIEW) {
+      if (!ctx.IS_READONLY_VIEW && item.status !== "exam") {
         actions.append(action("pencil", "修改繳交期限", "data-edit-due", item.uid));
         if (item.uid.startsWith("custom|")) {
           actions.append(action("trash-2", "刪除代辦", "data-delete-custom", item.uid));
@@ -243,6 +277,14 @@ export function register(ctx) {
         link.rel = "noopener noreferrer";
         link.setAttribute("data-e3-assignment", "");
         link.append(icon("arrow-up-right"));
+        actions.append(link);
+      }
+      const source = safeCalendarUrl(item.sourceUrl, window.location.href);
+      if (source) {
+        const link = element("a", "calendar-task-open", "查看來源");
+        link.href = source;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
         actions.append(link);
       }
       bottom.append(time, actions);
@@ -313,6 +355,11 @@ export function register(ctx) {
       return;
     }
     ctx.deadlineAssignments = calendarAssignments(document.querySelectorAll("#flatTable tbody tr[data-uid]"));
+    const schedule = document.getElementById("courseInsightHome");
+    if (schedule?.dataset.events) {
+      ctx.deadlineAssignments = withCourseSchedule(ctx.deadlineAssignments,
+        JSON.parse(schedule.dataset.events), document.getElementById("courseFilter")?.value || "");
+    }
     const signature = JSON.stringify(ctx.deadlineAssignments.map(({row, ...item}) => item));
     if (ctx.deadlineCalendar && signature === ctx.calendarDataSignature) {
       ctx.renderCalendarAgenda();
@@ -360,8 +407,8 @@ export function register(ctx) {
           return { domNodes: [wrapper] };
         },
         eventDidMount: (arg) => {
-          const { course, courseKey, time, status } = arg.event.extendedProps;
-          arg.el.title = arg.event.extendedProps.overflow ? `${arg.event.extendedProps.day} ${arg.event.title}，查看全部作業` : `${time} ${arg.event.title}｜${course}｜${ctx.STATUS_FILTER_LABELS[status] || "待處理"}`;
+          const { course, courseKey, time, status, schedule } = arg.event.extendedProps;
+          arg.el.title = arg.event.extendedProps.overflow ? `${arg.event.extendedProps.day} ${arg.event.title}，查看全部事件` : `${time} ${arg.event.title}｜${course}｜${schedule || ctx.STATUS_FILTER_LABELS[status] || "待處理"}`;
           if (!arg.event.extendedProps.overflow) arg.el.style.setProperty("--course-accent", ctx.courseAccent(courseKey));
           arg.el.setAttribute("role", "button");
           arg.el.setAttribute("tabindex", "0");

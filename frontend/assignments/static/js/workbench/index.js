@@ -53,6 +53,12 @@ if (document.getElementById("serverSsoPanel")) {
   import("./server-sso.js").then((feature) => feature.initialize(context));
 }
 
+if (document.getElementById("courseInsightHome")) {
+  const load = () => import("../course-insights.js").then(({ initHomeInsights }) => initHomeInsights(context)).catch(() => {});
+  if ("requestIdleCallback" in window) window.requestIdleCallback(load, { timeout: 2000 });
+  else window.setTimeout(load, 500);
+}
+
 // Load the small guide after the workbench is usable, without delaying data or controls.
 if (document.getElementById("workbenchTour")) {
   const loadGuide = () => import("./onboarding.js").then((feature) => feature.initialize(context)).catch(() => {});

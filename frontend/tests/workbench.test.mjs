@@ -6,7 +6,7 @@ import { semesterCourseTitles, register as registerCourses, initialize as initia
 import { register as registerFilters, initialize as initializeFilters } from '../assignments/static/js/workbench/filter-state.js';
 import { register as registerAssignments } from '../assignments/static/js/workbench/local-assignments.js';
 import { register as registerProfile } from '../assignments/static/js/workbench/profile.js';
-import { calendarAssignments, calendarEventsInRange, calendarPreviewEvents, register as registerDeadlineCalendar, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay } from '../assignments/static/js/workbench/deadline-calendar.js';
+import { calendarAssignments, calendarEventsInRange, calendarPreviewEvents, register as registerDeadlineCalendar, taipeiDeadline, safeCalendarUrl, nextActionableAssignment, adjacentCalendarDay, withCourseSchedule } from '../assignments/static/js/workbench/deadline-calendar.js';
 import { register as registerGoogleCalendar } from '../assignments/static/js/workbench/calendar.js';
 import { register as registerInteractions, initializeMoreMenu } from '../assignments/static/js/workbench/interactions.js';
 import { register as registerWorkspaceFilters } from '../assignments/static/js/workbench/filters.js';
@@ -38,6 +38,20 @@ test('more operations close on actions, outside click and Escape while keeping i
   handlers.keydown({key: 'Escape'});
   assert.equal(focus, 1);
   initializeMoreMenu({getElementById: () => null});
+});
+
+test('calendar uses the course deadline once, preserves a manually chosen deadline, and adds exams', () => {
+  const old = { uid: 'assignment', title: 'HW4', course: '資料結構', url: '/mod/assign/view.php?id=31', status: 'pending',
+    deadline: { day: '2026-12-07' }, dueTs: 1, row: { dataset: { courseId: '42', personalDue: '0' } } };
+  const exam = { id: 'final', kind: 'final', course: '資料結構', course_id: 42, origin: { url: 'https://example.test' },
+    date: '2026-12-03', title: '期末考' };
+  const change = { ...exam, id: 'deadline:31', kind: 'deadline', date: '2026-12-10T23:59:00+08:00' };
+  const scheduled = withCourseSchedule([old], [exam, change], '');
+  assert.deepEqual(scheduled.map(item => [item.uid, item.deadline.day, item.deadline.time]),
+    [['course-event:42:final', '2026-12-03', '全天'], ['assignment', '2026-12-10', '23:59']]);
+  old.row.dataset.personalDue = '1';
+  assert.equal(withCourseSchedule([old], [change], '')[0].deadline.day, '2026-12-07');
+  assert.deepEqual(withCourseSchedule([], [exam], '其他課程'), []);
 });
 
 test('calendar event source processes only visible days, including adjacent month cells, with an exclusive end', () => {

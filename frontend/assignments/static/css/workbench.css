@@ -2077,6 +2077,13 @@ html[data-theme="dark"]
     min-width: 0;
     width: 100%;
   }
+  .toolbar-stack:has(#courseOverviewLink) .assignment-search {
+    grid-column: 1;
+  }
+  #courseOverviewLink {
+    grid-column: 2;
+    white-space: nowrap;
+  }
   .course-filter {
     width: 100%;
     max-width: none;

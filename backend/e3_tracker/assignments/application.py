@@ -4,6 +4,8 @@ from e3_tracker.assignments.routes.notifications import register_notification_ro
 from e3_tracker.assignments.routes.course_announcements import register_course_announcement_routes, register_course_message_entry
 from e3_tracker.assignments.services.course_announcements import CourseAnnouncementService
 from e3_tracker.assignments.services.course_files import CourseFileService
+from e3_tracker.assignments.services.course_insights import CourseInsightService
+from e3_tracker.assignments.routes.course_insights import register_course_insight_routes
 from e3_tracker.assignments.routes.course_files import register_course_file_routes
 from e3_tracker.assignments.services.course_mail import CourseMailService
 from e3_tracker.assignments.services.notifications import NotificationService
@@ -917,6 +919,9 @@ def register_assignment_site(
     app.extensions['e3_course_files'] = course_files
     register_course_file_routes(app, storage, current_user, login_required, load_cache_from_disk,
         course_files, record_activity)
+    course_insights = CourseInsightService(storage, course_files)
+    register_course_insight_routes(app, current_user, login_required, course_insights)
+    course_insights.start_worker(app)
     register_notification_routes(app, storage, current_user, login_required, notification_service, record_activity,
         file_service=course_files)
     notification_service.start(app, fetch_assignments_for, set_assign_cache_for_user)

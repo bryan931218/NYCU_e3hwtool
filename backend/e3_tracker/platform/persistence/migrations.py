@@ -190,6 +190,12 @@ def _workbench_onboarding(conn):
     _add_columns(conn, "user_preferences", {"onboarding_completed": "INTEGER NOT NULL DEFAULT 0"})
 
 
+def _course_insights(conn):
+    from e3_tracker.assignments.persistence.course_insights import insight_courses, insight_settings
+    for table in (insight_settings, insight_courses):
+        table.create(conn, checkfirst=True)
+
+
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
     ("0002_feature_schema", _feature_schema),
@@ -211,6 +217,7 @@ MIGRATIONS = (
     ("0018_course_files", _course_files),
     ("0019_profile_metadata", _user_profile_metadata_schema),
     ("0020_workbench_onboarding", _workbench_onboarding),
+    ("0021_course_insights", _course_insights),
 )
 
 
