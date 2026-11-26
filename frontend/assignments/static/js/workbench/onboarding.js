@@ -12,18 +12,32 @@ export function rememberTour(ctx, storage) {
   if (!ctx.IS_GUEST) ctx.persistPreferences({ onboardingCompleted: true });
 }
 
+export function hasVisibleLabel(element, getStyle) {
+  function visibleText(node) {
+    if (node.nodeType === 3) {
+      return /\p{L}/u.test(node.textContent) && parseFloat(getStyle(node.parentElement).fontSize) > 0;
+    }
+    if (node.nodeType !== 1 || node.matches('svg, [aria-hidden="true"], [hidden], .sr-only, .visually-hidden, .more-sr-only')) return false;
+    const style = getStyle(node);
+    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || parseFloat(style.opacity) === 0) return false;
+    return Array.from(node.childNodes).some(visibleText);
+  }
+  return !!element && visibleText(element);
+}
+
 export function tourSteps(doc) {
+  const getStyle = node => doc.defaultView.getComputedStyle(node);
   return [
-    { selector: "#guestFile", title: "先匯入作業資料", text: "使用匯出工具產生 JSON，再從這裡匯入。訪客模式不會自動連線 E3。" },
-    { selector: ".workspace-actions", title: "掌握本學期的作業", text: doc.querySelector("#semesterSelector") ? "這裡可以切換學期，也會統計待處理與逾期作業。" : "待處理與逾期作業的數量會顯示在這裡。課程同步後，也能切換學期。" },
-    { selector: ".toolbar-stack", title: "快速找到作業", text: "輸入關鍵字、選擇課程，再用「篩選」切換作業狀態。已忽略的作業也能在篩選中復原。" },
-    { selector: ".seg", title: "切換列表或日曆", text: "按到期日安排先後、依課程分類，或用日曆查看每天的截止作業。" },
-    { selector: ".workspace-messages", title: "查看課程訊息", text: "課程公告與信件集中在這裡，分頁查看。有新訊息時，入口會亮起紅點。" },
-    { selector: ".workspace-files", menu: "#moreOperations", title: "附件與匯出工具", text: "從這裡找課程附件。這個選單也有 Excel 匯出、Google 日曆，以及可重看的「使用教學」。" },
-    { selector: "#moreOperations > summary", title: "更多工具", text: "匯出與整合工具都在這裡。之後想重看導覽，點選單內的「使用教學」。", fallback: ".workspace-files" },
-    { selector: "#addCustomAssignmentBtn", title: "新增個人代辦", text: "考試、報告或個人任務也能加入，並設定期限。代辦會保存在這台瀏覽器。" },
-    { selector: 'a[aria-label="通知設定"]', title: "設定作業提醒", text: "開啟瀏覽器或 LINE 通知，選擇新作業、到期前提醒或成績通知。" },
-  ].filter(step => doc.querySelector(step.selector) && !(step.fallback && doc.querySelector(step.fallback)));
+    { selector: "#announcementToggle", title: "系統公告", text: "點鈴鐺查看網站更新與系統公告。" },
+    { selector: 'a[aria-label="通知設定"]', title: "通知設定", text: "設定 LINE、瀏覽器通知與作業提醒時間。" },
+    { selector: "#themeToggle", title: "切換外觀", text: "切換深色或淺色模式。" },
+    { selector: "#manualRefreshBtn", title: "更新作業", text: "重新同步 E3 的課程與作業資料。" },
+    { selector: "#filterMenu > summary", title: "篩選作業", text: "切換作業狀態，也能查看或復原已忽略的作業。" },
+    { selector: "#moreOperations > summary", title: "更多工具", text: doc.querySelector(".workspace-files") ? "附件、Excel 匯出與 Google 日曆都在這裡，也能重新開啟使用教學。" : "匯出與整合工具都在這裡，也能重新開啟使用教學。" },
+  ].filter(step => {
+    const target = doc.querySelector(step.selector);
+    return target && !hasVisibleLabel(target, getStyle);
+  });
 }
 
 export function placeTourCard(rect, viewport, card) {
@@ -62,22 +76,14 @@ export function initialize(ctx) {
   let storage;
   try { storage = window.localStorage; } catch {}
   let pending = !tourSeen(ctx.USER_PREFERENCES, storage, ctx.config.onboardingKey);
-  let steps = [], index = 0, frame = 0, timer = 0, activeMenu = null;
-  let menuWasOpen = false, menuScroll = 0, originalFocus = null, originalScroll = 0;
+  let steps = [], index = 0, frame = 0, timer = 0;
+  let originalFocus = null, originalScroll = 0;
   const blockers = [...document.querySelectorAll(".modal-root, #loader, #serverSsoPanel")];
 
   function isBusy() {
     return document.hidden || blockers.some(node => node.getClientRects().length && (
       node.id === "loader" ? node.classList.contains("active") : !node.hidden && !node.classList.contains("hidden")
     )) || [...document.querySelectorAll("dialog[open]")].some(node => node !== dialog);
-  }
-
-  function restoreMenu() {
-    if (!activeMenu) return;
-    activeMenu.open = menuWasOpen;
-    const panel = activeMenu.querySelector(".more-panel");
-    if (panel) panel.scrollTop = menuScroll;
-    activeMenu = null;
   }
 
   function paint() {
@@ -104,16 +110,7 @@ export function initialize(ctx) {
   const resize = typeof ResizeObserver === "function" ? new ResizeObserver(schedulePaint) : null;
 
   function render() {
-    restoreMenu();
     const step = steps[index];
-    if (step.menu) {
-      activeMenu = document.querySelector(step.menu);
-      if (activeMenu) {
-        menuWasOpen = activeMenu.open;
-        menuScroll = activeMenu.querySelector(".more-panel")?.scrollTop || 0;
-        activeMenu.open = true;
-      }
-    }
     const target = document.querySelector(step.selector);
     title.textContent = step.title;
     description.textContent = step.text;
@@ -139,7 +136,6 @@ export function initialize(ctx) {
     window.clearTimeout(timer);
     frame = 0;
     resize?.disconnect();
-    restoreMenu();
     dialog.close();
     document.documentElement.classList.remove("tour-open");
     window.scrollTo({ top: originalScroll, behavior: "instant" });
@@ -183,7 +179,17 @@ export function initialize(ctx) {
     else if (event.key === "ArrowRight") next.click();
     else if (!back.disabled) back.click();
   });
-  window.addEventListener("resize", schedulePaint);
+  window.addEventListener("resize", () => {
+    if (!dialog.open) return;
+    const updated = tourSteps(document);
+    if (updated.map(step => step.selector).join() !== steps.map(step => step.selector).join()) {
+      if (!updated.length) { close(); return; }
+      const current = updated.findIndex(step => step.selector === steps[index]?.selector);
+      steps = updated;
+      index = current >= 0 ? current : Math.min(index, steps.length - 1);
+      render();
+    } else schedulePaint();
+  });
   window.addEventListener("scroll", schedulePaint, { capture: true, passive: true });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { attemptStart(); schedulePaint(); } });
   if (typeof MutationObserver === "function") {

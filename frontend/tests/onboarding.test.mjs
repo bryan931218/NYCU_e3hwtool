@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {placeTourCard, tourSteps, tourSeen, rememberTour} from '../assignments/static/js/workbench/onboarding.js';
+import {hasVisibleLabel, placeTourCard, tourSteps, tourSeen, rememberTour} from '../assignments/static/js/workbench/onboarding.js';
 
 test('completion follows the account and a browser fallback never suppresses another account', () => {
   const values = new Map();
@@ -28,18 +28,47 @@ test('blocked storage still saves account completion and guest completion stays 
   assert.equal(ctx.saved, false);
 });
 
-test('guide skips unavailable features and selects the guest menu fallback', () => {
-  const normal = new Set(['.workspace-actions','.toolbar-stack','.seg','.workspace-messages','.workspace-files',
-    '#moreOperations > summary','#addCustomAssignmentBtn','a[aria-label="通知設定"]','#semesterSelector']);
-  const doc = {querySelector: selector => normal.has(selector) ? {} : null};
-  assert.equal(tourSteps(doc).length, 7);
-  assert.equal(tourSteps(doc).filter(step => step.menu).length, 1);
-  normal.delete('.workspace-files'); normal.delete('.workspace-messages'); normal.delete('a[aria-label="通知設定"]');
-  normal.add('#guestFile');
-  const guest = tourSteps(doc);
-  assert.equal(guest[0].selector, '#guestFile');
-  assert.equal(guest.some(step => step.selector === '#moreOperations > summary'), true);
-  assert.equal(guest.some(step => step.menu), false);
+function label(text = '', styles = {}, hidden = false) {
+  const element = {nodeType: 1, styles: {display:'block',visibility:'visible',fontSize:'14px',opacity:'1',...styles},
+    matches: () => hidden, childNodes: []};
+  if (text) element.childNodes.push({nodeType:3,textContent:text,parentElement:element});
+  return element;
+}
+
+test('guide only teaches icon buttons and skips clearly labelled features', () => {
+  const nodes = new Map([
+    ['#announcementToggle',label()], ['a[aria-label="通知設定"]',label()], ['#themeToggle',label()],
+    ['#moreOperations > summary',label('⋯')], ['#manualRefreshBtn',label('更新作業')],
+    ['#filterMenu > summary',label('篩選')], ['.workspace-actions',label('本學期')],
+    ['.toolbar-stack',label('搜尋作業或課程')], ['.seg',label('日曆')],
+    ['.workspace-messages',label('課程訊息')], ['.workspace-files',label('附件收納')],
+    ['#addCustomAssignmentBtn',label('新增代辦')],
+  ]);
+  const doc = {querySelector: selector => nodes.get(selector), defaultView:{getComputedStyle:node=>node.styles}};
+  assert.deepEqual(tourSteps(doc).map(step=>step.selector), ['#announcementToggle','a[aria-label="通知設定"]','#themeToggle','#moreOperations > summary']);
+  nodes.delete('a[aria-label="通知設定"]'); nodes.delete('.workspace-files'); nodes.delete('#manualRefreshBtn');
+  assert.equal(tourSteps(doc).length, 3);
+  assert.match(tourSteps(doc).at(-1).text, /重新開啟使用教學/);
+});
+
+test('responsive hidden labels count as icons; numeric badges and accessible names are not visible labels', () => {
+  const getStyle = node => node.styles;
+  assert.equal(hasVisibleLabel(label('更新作業',{fontSize:'0px'}),getStyle), false);
+  const filter = label();
+  filter.childNodes.push(label('篩選',{display:'none'}),label('5'));
+  assert.equal(hasVisibleLabel(filter,getStyle), false);
+  filter.childNodes[0].styles.display = 'block';
+  assert.equal(hasVisibleLabel(filter,getStyle), true);
+  const namedIcon = label(); namedIcon['aria-label'] = '通知設定';
+  assert.equal(hasVisibleLabel(namedIcon,getStyle), false);
+  const childLabel = label('更新作業');
+  const zeroParent = label('',{fontSize:'0px'}); zeroParent.childNodes.push(childLabel);
+  assert.equal(hasVisibleLabel(zeroParent,getStyle), true);
+  const nodes = new Map([['#manualRefreshBtn',label('更新作業',{fontSize:'0px'})],['#filterMenu > summary',filter]]);
+  const doc = {querySelector: selector=>nodes.get(selector),defaultView:{getComputedStyle:getStyle}};
+  assert.deepEqual(tourSteps(doc).map(step=>step.selector),['#manualRefreshBtn']);
+  filter.childNodes[0].styles.display = 'none';
+  assert.deepEqual(tourSteps(doc).map(step=>step.selector),['#manualRefreshBtn','#filterMenu > summary']);
 });
 
 test('popover stays within desktop, mobile and short landscape viewports', () => {
