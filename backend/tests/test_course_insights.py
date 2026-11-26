@@ -72,6 +72,17 @@ class CourseInsightTests(unittest.TestCase):
         self.assertEqual(result['midterm']['date'], '2026-11-26T14:30:00+08:00')
         self.assertEqual(result, apply([original], [file], result))
 
+    def test_conflicting_same_version_updates_preserve_last_confirmed_date(self):
+        confirmed = source('original', '期中考：11 月 26 日 10:10')
+        previous = apply([event(confirmed, '11 月 26 日 10:10')], [confirmed])
+        news = source('a', '期中考改至 12 月 3 日', kind='announcements', version=300)
+        mail = source('b', '期中考改至 12 月 4 日', kind='mail', version=300)
+        conflicting = [event(news, '12 月 3 日'), event(mail, '12 月 4 日')]
+        for order in (conflicting, list(reversed(conflicting))):
+            self.assertEqual(apply(order, [news, mail], previous), previous)
+        misleading = source('c', '期中考改至 12 月 5 日，時間改為 15:00', kind='mail', version=600)
+        self.assertEqual(apply([event(misleading, '15:00')], [misleading], previous), previous)
+
     def test_exact_assignment_and_all_day_or_relative_time(self):
         now = TAIPEI_TZ.localize(datetime(2026, 11, 26, 10)).timestamp()
         mail = source('a', 'HW4 期限延至下週三 23:59', kind='mail', version=now)

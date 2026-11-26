@@ -171,10 +171,14 @@ def course_sources(client, user, course, services, previous_sources):
                 any_failure = True
                 continue
             key = hashlib.sha256(urlsplit(direct).path.encode()).hexdigest()[:24]
+            document_rows = []
             for index, (location, content) in enumerate(document_sections(data, _extension(direct))):
                 source = _row('file', f'{key}:{index}', title, direct, content, location=location)
                 if source:
-                    files.append(source)
+                    document_rows.append(source)
+            if not document_rows:
+                any_failure = True
+            files.extend(document_rows)
         except AnnouncementSessionExpired:
             raise
         except Exception:
