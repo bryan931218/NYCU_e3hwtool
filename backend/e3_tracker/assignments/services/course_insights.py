@@ -20,7 +20,8 @@ from e3_tracker.platform.security import production_mode
 
 MODEL = 'gemini-3.1-flash-lite'
 ENDPOINT = f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent'
-ANALYSIS_REVISION = 5
+ANALYSIS_REVISION = 6
+VERIFIED_GRADING_REVISION = 5
 
 
 class CourseAIError(Exception):

@@ -53,7 +53,7 @@
 </section>
 {% for course in courses %}
 {% set snapshot = snapshots.get(course.id, {}) %}
-{% set grading_outdated = snapshot.attempt_revision and snapshot.analysis_revision != verification_revision %}
+{% set grading_outdated = snapshot.attempt_revision and snapshot.get('analysis_revision', 0) < verification_revision %}
 <section class="insight-section insight-overview" data-view-key="course-{{ course.id }}" data-course-info="{{ course.id }}"
          data-scan-state="{{ 'pending' if snapshot.material_progress or (snapshot.analysis_pending and snapshot.analysis_pending.failures < 3) or (not snapshot.analyzed and not snapshot.partial) else 'partial' if snapshot.partial else 'ready' }}"
          aria-labelledby="insightOverview-{{ course.id }}"{% if selected_course != course.id|string %} hidden{% endif %}>

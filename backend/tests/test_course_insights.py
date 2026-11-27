@@ -184,6 +184,14 @@ class CourseInsightTests(unittest.TestCase):
         class_note = source('mail', '期末考週取消上課。', kind='mail', version=300)
         self.assertEqual(apply([event(class_note, '', kind='final', title='期末考', cancelled=True)], [class_note], revised), revised)
 
+    def test_course_wide_teacher_weights_do_not_mix_with_conditional_formulas(self):
+        text = ('特殊情形總成績＝10（保底分數）+ 0.2 * 期末報告成績 + 0.7 * 指導教授評分。'
+                '本專題由指導教授給70%分數，這門課開課老師評定30%分數。')
+        announcement = source('notice', text, kind='announcements', version=200)
+        result = reconcile_analysis({}, [announcement], {}, {}, '114-2')
+        self.assertEqual([(row['label'], row['weight']) for row in result['grading']],
+                         [('指導教授評分', '70%'), ('開課老師評分', '30%')])
+
     def test_only_fixed_moodle_document_paths_and_presentation_positions(self):
         local = BASE + '/pluginfile.php/42/mod_resource/content/1/file.pdf'
         self.assertEqual(_file_url(local, BASE), local)

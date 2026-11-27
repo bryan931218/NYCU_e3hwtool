@@ -43,6 +43,9 @@ GRADING_UPDATE = re.compile(
 SUBGRADE = re.compile(r'(?:專題|專案|報告|作業|考試)(?:內部|內的|的)?(?:占比|配分|評分|成績)|\b(?:project|exam|assignment) grad(?:e|ing)\b', re.I)
 COURSE_GRADING = re.compile(r'課程(?:評分|配分|計分)|\bgrading (?:policy|scheme)\b', re.I)
 AGGREGATE_GRADE = re.compile(r'總計|合計|共計|小計|總分|\b(?:sub)?total\b', re.I)
+TEACHER_GRADE_SPLIT = re.compile(
+    r'由\s*(指導(?:教授|老師|教師))\s*(?:給|評定)\s*(\d{1,3})\s*%\s*(?:的)?分數\s*[,，、]\s*'
+    r'(?:這門課|本課程|本課)\s*((?:開課|授課)(?:教授|老師|教師))\s*(?:給|評定)\s*(\d{1,3})\s*%\s*(?:的)?分數')
 FINAL_PROJECT = re.compile(r'期末\s*(?:專題|專案)|\bfinal\s+project\b', re.I)
 PROJECT_DEADLINE = re.compile(r'截止|期限|最晚|due|deadline', re.I)
 EXAM_SCHEDULE_LINE = re.compile(
@@ -329,6 +332,15 @@ def _published_rubric(source):
         lines = source.get('lines') or [text]
     elif source['kind'] in {'announcements', 'mail', 'page', 'file'} and source.get('version'):
         heading = RUBRIC_HEADING.search(text)
+        if not heading and source['kind'] in {'announcements', 'mail'}:
+            split = TEACHER_GRADE_SPLIT.search(text)
+            if split:
+                lead = re.split(r'[。！？]', text[:split.start()])[-1]
+                if (not re.search(r'若|如果|假設', lead)
+                        and not TENTATIVE_GRADING.search(lead)
+                        and sum(int(split[i]) for i in (2, 4)) == 100):
+                    return [{'label': f'{split[i]}評分', 'weight': f'{split[i+1]}%', 'detail': '',
+                             'origin': _origin(source, split[0])} for i in (1, 3)]
         if not heading or TENTATIVE_GRADING.search(text[max(0, heading.start() - 30):heading.end() + 30]):
             return []
         context = source['title'] + ' ' + text[max(0, heading.start() - 100):heading.end()]

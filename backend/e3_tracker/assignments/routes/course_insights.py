@@ -9,7 +9,7 @@ from e3_tracker.assignments.domain.course_files import course_display_name
 from e3_tracker.assignments.domain.course_insights import grading_fields
 from e3_tracker.assignments.services.collector import _semester_from_key, current_semester_key, normalize_semester_selection
 from e3_tracker.assignments.services.course_announcements import AnnouncementSessionExpired
-from e3_tracker.assignments.services.course_insights import ANALYSIS_REVISION
+from e3_tracker.assignments.services.course_insights import ANALYSIS_REVISION, VERIFIED_GRADING_REVISION
 from e3_tracker.assignments.services.http import E3LoginError
 
 
@@ -64,7 +64,7 @@ def register_course_insight_routes(app, current_user, login_required, service):
             semesters=semesters, courses=courses, selected_course=course if selected else '',
             selected_name=course_display_name(selected['title']) if selected else '全部課程', configured=bool(settings),
             snapshots=snapshots, course_name=course_display_name, grading_fields=grading_fields,
-            verification_revision=ANALYSIS_REVISION,
+            verification_revision=VERIFIED_GRADING_REVISION,
             course_states=course_states(snapshots), historical=historical,
             e3_course_base=e3_course_base,
             overview_version=overview_version(courses, snapshots),
@@ -170,7 +170,7 @@ def register_course_insight_routes(app, current_user, login_required, service):
         if version and request.args.get('overview_version') != version:
             overview = render_template('assignments/components/course-overview-cards.html',
                 courses=courses, snapshots=data, configured=True, selected_course='',
-                course_name=course_display_name, grading_fields=grading_fields, verification_revision=ANALYSIS_REVISION)
+                course_name=course_display_name, grading_fields=grading_fields, verification_revision=VERIFIED_GRADING_REVISION)
         running = settings['lease_until'] > time.time()
         states = course_states(data)
         needs_scan = any(data.get(cid, {}).get('attempt_revision') != ANALYSIS_REVISION or
