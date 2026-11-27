@@ -148,6 +148,46 @@ class CourseInsightPipelineTests(unittest.TestCase):
                     self.assertEqual(page.select_one('.news-kinds [aria-current="page"]').get_text(strip=True),
                                      '信件' if '?tab=mail' in path else '公告')
 
+    def test_refresh_semesters_keeps_existing_assignments_and_recovers_old_courses(self):
+        other = self.account('987654322', [COURSE])
+        self.pages['/my/'] = '<script>M.cfg = {"sesskey":"synthetic-sesskey"}</script>'
+        for path in ('/my/courses.php', '/my/courses.php?classification=all',
+                     '/my/courses.php?classification=past', '/my/courses.php?classification=hidden',
+                     '/grade/report/overview/index.php'):
+            self.pages[path] = '<main>我的課程</main>'
+
+        def timeline(session, method, url, **kwargs):
+            if method == 'GET':
+                return self.moodle_get(session, url, **{**kwargs, 'allow_redirects': False})
+            self.assertEqual(url.split('?')[0], BASE + '/lib/ajax/service.php')
+            self.assertEqual(kwargs['json'][0]['methodname'], 'core_course_get_enrolled_courses_by_timeline_classification')
+            classification = kwargs['json'][0]['args']['classification']
+            if classification == 'allincludinghidden':
+                course = {'id': 42, 'fullname': COURSE['title']}
+            else:
+                self.assertEqual(classification, 'past')
+                course = {'id': 73, 'fullname': '基礎物理', 'shortname': '1142.560001'}
+            return http_response(json.dumps([{'error': False, 'data': {'courses': [course]}}]))
+
+        with patch('requests.sessions.Session.request', autospec=True, side_effect=timeline), \
+                patch('e3_tracker.assignments.services.collector.current_semester_key', return_value=TERM):
+            response = self.client.post('/courses/overview/semesters',
+                                        data={'semester': TERM, 'course': '42'}, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        page = BeautifulSoup(response.data, 'html.parser')
+        self.assertEqual(page.select_one('#overviewSemester option[selected]')['value'], TERM)
+        self.assertIsNotNone(page.select_one('#overviewSemester option[value="114-2"]'))
+        self.assertIn('新增 1 個學期', page.select_one('.insight-semester-notice').get_text())
+        self.assertIn('基礎物理', self.client.get('/courses/overview?semester=114-2').get_data(as_text=True))
+        for path in ('/courses/messages', '/courses/files'):
+            page = BeautifulSoup(self.client.get(path + '?semester=114-2').data, 'html.parser')
+            self.assertIsNotNone(page.select_one('select[data-course-semester] option[value="114-2"][selected]'))
+        self.assertNotIn('基礎物理', other.get('/courses/overview').get_data(as_text=True))
+        cached = self.db.load_user_cache(USERNAME)['result']
+        self.assertEqual([course['id'] for course in cached['courses']], [42])
+        self.assertEqual(cached['all_assignments'][0]['title'], COURSE['assignments'][0]['title'])
+        self.provider.assert_not_called()
+
     def news_listing(self, latest_post):
         return ('<table><tr><th><a href="/mod/forum/discuss.php?d=7">考試異動</a></th>'
                 f'<td class="lastpost"><time datetime="{latest_post}"></time></td></tr></table>')

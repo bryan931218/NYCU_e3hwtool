@@ -9,8 +9,9 @@ import requests
 from e3_tracker.assignments.domain.course_announcements import discussion_summaries, moodle_url
 from e3_tracker.assignments.domain.course_files import assignment_files, course_display_name, course_materials, file_index, folder_files
 from e3_tracker.assignments.persistence.course_files import CourseFileStorage
-from .collector import annotate_result_semesters, current_semester_key
+from .collector import _semester_catalog, annotate_result_semesters, current_semester_key, gather_my_courses
 from .course_announcements import AnnouncementSessionExpired, news_client
+from .moodle_api import collect_api_course_catalog
 
 
 class CourseFileService:
@@ -19,12 +20,49 @@ class CourseFileService:
         self.base_url = base_url.rstrip('/')
         self.news = news_service
         self.slots = news_service.slots
+        self.catalog_slots = threading.BoundedSemaphore(2)
         self.message_services = message_services or {'announcements': news_service}
 
     def catalog(self, username, result=None):
         result = result if result is not None else (self.storage.owner.load_user_cache(username) or {}).get('result') or {}
-        annotate_result_semesters(result, selected_keys=self.storage.owner.load_user_preferences(username).get('semester_filter'))
-        return result
+        combined = {int(course['id']): course for course in result.get('courses', [])}
+        for course in self.storage.load_catalog(username):
+            cached = combined.get(course['id'], {})
+            if cached and course['semester_key'] == 'other':
+                continue
+            combined[course['id']] = {'assignments': [], **cached, **course}
+        # Only offer terms with course IDs. An assignment-cache term can be
+        # listed even when its assignments and course rows were never loaded.
+        result = {**result, 'courses': list(combined.values()), 'available_semesters': []}
+        return annotate_result_semesters(result, selected_keys=self.storage.owner.load_user_preferences(username).get('semester_filter'))
+
+    def refresh_catalog(self, user):
+        if not (user.get('moodle_session') or user.get('moodle_token')):
+            raise AnnouncementSessionExpired()
+        if not self.catalog_slots.acquire(blocking=False):
+            return None
+        try:
+            if user.get('moodle_token'):
+                with requests.Session() as session:
+                    _, courses = collect_api_course_catalog(session, self.base_url, user['moodle_token'],
+                        user.get('moodle_user_id'), username=user['username'], timeout=6)
+            else:
+                deadline = time.monotonic() + 18
+                client = news_client(self.base_url, user, timeout=5, deadline=deadline)
+                try:
+                    dashboard = client.get(f'{self.base_url}/my/')
+                    courses = gather_my_courses(client.session, self.base_url, timeout=3, only_current_term=False,
+                                                dashboard_html=dashboard, deadline=deadline)
+                finally:
+                    client.close()
+            if courses:
+                for course in courses:
+                    course['url'] = f"{self.base_url}/course/view.php?id={course['id']}"
+                _semester_catalog(courses)
+                self.storage.save_catalog(user['username'], courses)
+            return courses
+        finally:
+            self.catalog_slots.release()
 
     def scope(self, username, semester=None, *, result=None, prefer_current=False, max_courses=30):
         result = self.catalog(username, result)

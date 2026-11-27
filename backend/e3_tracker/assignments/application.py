@@ -906,19 +906,18 @@ def register_assignment_site(
     app.extensions['e3_assignment_actions'] = notification_service.actions
     course_news = CourseAnnouncementService(storage, base_url, default_timeout)
     app.extensions['e3_course_announcements'] = course_news
-    register_course_announcement_routes(app, storage, current_user, login_required,
-        load_cache_from_disk, get_user_preferences, course_news, record_activity)
     course_mail = CourseMailService(storage, base_url, default_timeout, slots=course_news.slots)
     app.extensions['e3_course_mail'] = course_mail
-    register_course_announcement_routes(app, storage, current_user, login_required,
-        load_cache_from_disk, get_user_preferences, course_mail, record_activity, kind='mail')
     notification_service.course_message_services = {'announcements': course_news, 'mail': course_mail}
-    register_course_message_entry(app, login_required, current_user, load_cache_from_disk, get_user_preferences,
-        notification_service.course_message_services)
     course_files = CourseFileService(storage, base_url, course_news, notification_service.course_message_services)
     app.extensions['e3_course_files'] = course_files
-    register_course_file_routes(app, storage, current_user, login_required, load_cache_from_disk,
-        course_files, record_activity)
+    register_course_announcement_routes(app, storage, current_user, login_required,
+        course_files.catalog, course_news, record_activity)
+    register_course_announcement_routes(app, storage, current_user, login_required,
+        course_files.catalog, course_mail, record_activity, kind='mail')
+    register_course_message_entry(app, login_required, current_user, course_files.catalog,
+        notification_service.course_message_services)
+    register_course_file_routes(app, storage, current_user, login_required, course_files, record_activity)
     course_insights = CourseInsightService(storage, course_files)
     register_course_insight_routes(app, current_user, login_required, course_insights)
     course_insights.start_worker(app)

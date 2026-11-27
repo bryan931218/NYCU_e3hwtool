@@ -5,6 +5,7 @@ import time
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import Column, Float, Integer, String, Table, Text, insert, select, update
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 
 from e3_tracker.platform.persistence.metadata import metadata
 from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
@@ -21,6 +22,11 @@ course_file_cache = Table(
     Column('attempt', Float, nullable=False, default=0),
     Column('status', String(16), nullable=False, default='idle'),
     Column('error', String(300), nullable=False, default=''),
+)
+course_semester_catalog = Table(
+    'course_semester_catalog', metadata,
+    Column('user_id', Integer, primary_key=True),
+    Column('payload', Text().with_variant(MEDIUMTEXT(), 'mysql', 'mariadb'), nullable=False),
 )
 
 
@@ -57,6 +63,29 @@ class CourseFileStorage:
             conn.exec_driver_sql('BEGIN IMMEDIATE')
         query = select(users_table.c.id).where(users_table.c.username == username, users_table.c.is_guest == 0)
         return conn.execute(query.with_for_update() if write else query).scalar()
+
+    def _read_catalog(self, conn, user_id, username):
+        payload = conn.execute(select(course_semester_catalog.c.payload)
+                               .where(course_semester_catalog.c.user_id == user_id)).scalar()
+        return json.loads(self._decode(payload, username, 'catalog')) if payload else []
+
+    def load_catalog(self, username):
+        with self.owner._lock, self.owner._engine.connect() as conn:
+            return self._read_catalog(conn, self._user(conn, username), username)
+
+    def save_catalog(self, username, courses):
+        if not courses:
+            return
+        with self.owner._lock, self.owner._engine.begin() as conn:
+            user_id = self._user(conn, username, True)
+            if user_id is None:
+                return
+            previous = self._read_catalog(conn, user_id, username)
+            combined = {course['id']: course for course in [*previous, *courses]}
+            payload = self._encode(list(combined.values()), username, 'catalog')
+            statement = (update(course_semester_catalog).where(course_semester_catalog.c.user_id == user_id)
+                         if previous else insert(course_semester_catalog).values(user_id=user_id))
+            conn.execute(statement.values(payload=payload))
 
     def load(self, username, semester):
         with self.owner._lock, self.owner._engine.connect() as conn:

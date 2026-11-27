@@ -72,7 +72,7 @@ class SchemaMigrationTests(unittest.TestCase):
             conn.execute(text("INSERT INTO assignments (id, course_id, title, grade_text) VALUES (12, 1, 'existing homework', '85')"))
         with patch.object(migrations, 'MIGRATIONS', tuple(item for item in migrations.MIGRATIONS if item[0] < '0016')):
             migrations.run_migrations(self.engine)
-        self.assertEqual(migrations.run_migrations(self.engine), ['0016_grading_notifications', '0017_traffic_activity_retention', '0018_course_files', '0019_profile_metadata', '0020_workbench_onboarding', '0021_course_insights'])
+        self.assertEqual(migrations.run_migrations(self.engine), ['0016_grading_notifications', '0017_traffic_activity_retention', '0018_course_files', '0019_profile_metadata', '0020_workbench_onboarding', '0021_course_insights', '0022_course_semester_catalog'])
 
         with self.engine.begin() as conn:
             row = conn.execute(text('SELECT * FROM assignment_notification_seen')).mappings().one()

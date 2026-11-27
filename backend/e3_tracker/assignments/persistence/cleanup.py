@@ -7,7 +7,7 @@ from .assignment_actions import ACTION_TABLES
 from .usage_schema import feature_usage
 from .course_announcements import course_announcement_cache
 from .course_mail import course_mail_cache
-from .course_files import course_file_cache
+from .course_files import course_file_cache, course_semester_catalog
 from .course_insights import insight_courses, insight_settings
 
 from .schema import (
@@ -36,6 +36,6 @@ def delete_assignment_account_data(conn, user_ids):
     ):
         conn.execute(delete(table).where(table.c.user_id.in_(user_ids)))
     for table in (*NOTIFICATION_TABLES, *ACTION_TABLES, feature_usage, course_announcement_cache, course_mail_cache,
-                  course_file_cache, insight_courses, insight_settings):
+                  course_file_cache, course_semester_catalog, insight_courses, insight_settings):
         if inspect(conn).has_table(table.name):
             conn.execute(delete(table).where(table.c.user_id.in_(user_ids)))

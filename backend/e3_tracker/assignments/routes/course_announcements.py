@@ -5,14 +5,13 @@ import re
 
 from flask import render_template, request, url_for
 
-from e3_tracker.assignments.services.collector import annotate_result_semesters, normalize_semester_selection
+from e3_tracker.assignments.services.collector import normalize_semester_selection
 from e3_tracker.assignments.services.course_announcements import AnnouncementSessionExpired
 
 
-def register_course_message_entry(app, login_required, current_user, load_cache, get_preferences, sources):
+def register_course_message_entry(app, login_required, current_user, catalog, sources):
     def scope(user, requested):
-        result = (load_cache(user['username']) or {}).get('result') or {}
-        annotate_result_semesters(result, selected_keys=get_preferences(user['username']).get('semester_filter'))
+        result = catalog(user['username'])
         semester = requested or (result.get('selected_semesters') or [''])[0]
         courses = {int(course['id']) for course in result.get('courses', []) if course.get('semester_key') == semester}
         return semester, courses
@@ -54,7 +53,7 @@ def register_course_message_entry(app, login_required, current_user, load_cache,
         return {'ok': True}, 200, {'Cache-Control': 'no-store'}
 
 
-def register_course_announcement_routes(app, storage, current_user, login_required, load_cache, get_preferences, service, record_activity, *, kind='announcements'):
+def register_course_announcement_routes(app, storage, current_user, login_required, course_catalog, service, record_activity, *, kind='announcements'):
     is_mail = kind == 'mail'
     noun = '信件' if is_mail else '公告'
     prefix = 'course_mail' if is_mail else 'course_announcements'
@@ -62,9 +61,7 @@ def register_course_announcement_routes(app, storage, current_user, login_requir
     api_path = '/api/course-mail' if is_mail else '/api/course-announcements'
     cache_storage = service.storage
     def catalog(user):
-        result = (load_cache(user['username']) or {}).get('result') or {}
-        annotate_result_semesters(result, selected_keys=get_preferences(user['username']).get('semester_filter'))
-        return result
+        return course_catalog(user['username'])
 
     def selected_courses(user, requested):
         if requested is not None and (not isinstance(requested, str) or len(requested) > 16):

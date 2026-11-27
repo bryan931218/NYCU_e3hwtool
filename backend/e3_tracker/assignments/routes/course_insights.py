@@ -2,10 +2,14 @@ import hashlib
 import re
 import time
 
-from flask import abort, redirect, render_template, request, url_for
+import requests
+from flask import abort, flash, redirect, render_template, request, url_for
 
 from e3_tracker.assignments.domain.course_files import course_display_name
 from e3_tracker.assignments.domain.course_insights import grading_fields
+from e3_tracker.assignments.services.collector import normalize_semester_selection
+from e3_tracker.assignments.services.course_announcements import AnnouncementSessionExpired
+from e3_tracker.assignments.services.http import E3LoginError
 
 
 ERRORS = {
@@ -95,6 +99,43 @@ def register_course_insight_routes(app, current_user, login_required, service):
             semester, courses, semesters = scope(name, None)
         settings = service.storage.settings(name)
         return overview_view(name, semester, courses, semesters, settings), 200, {'Cache-Control': 'no-store'}
+
+    @app.post('/courses/overview/semesters')
+    @login_required
+    def course_overview_semesters():
+        name = username()
+        semester = normalize_semester_selection(request.form.get('semester', ''))
+        course = request.form.get('course', '')
+        target = url_for('course_overviews', semester=semester[0] if semester else None,
+                         course=course if re.fullmatch(r'[1-9][0-9]{0,9}', course) else None)
+        owner = service.storage.owner
+        if not owner.consume_security_limit(f'course-semesters:{name}', 1, 30):
+            flash('剛更新過學期，請稍候再試。', 'semester-error')
+            return redirect(target, code=303)
+        user = current_user()
+        if not (user.get('moodle_session') or user.get('moodle_token')):
+            user = {**user, **(owner.load_session_identity_user(name, time.time()) or {})}
+        previous = {entry['key'] for entry in service.files.catalog(name)['available_semesters']}
+        try:
+            courses = service.files.refresh_catalog(user)
+        except AnnouncementSessionExpired:
+            flash('E3 登入已失效，請重新登入後更新學期。', 'semester-login')
+        except E3LoginError as exc:
+            if exc.reason in {'api_token_invalid', 'identity_mismatch'}:
+                flash('E3 登入已失效，請重新登入後更新學期。', 'semester-login')
+            else:
+                flash('暫時無法讀取 E3 學期清單，請稍後再試。', 'semester-error')
+        except (requests.RequestException, TimeoutError, ValueError, RuntimeError):
+            flash('暫時無法讀取 E3 學期清單，請稍後再試。', 'semester-error')
+        else:
+            if courses is None:
+                flash('目前有其他學期正在更新，請稍後再試。', 'semester-error')
+            elif not courses:
+                flash('E3 目前沒有回傳修課清單。', 'semester-error')
+            else:
+                added = len({course['semester_key'] for course in courses} - previous - {'other'})
+                flash(f'學期清單已更新，新增 {added} 個學期。' if added else '學期清單已更新。', 'semester-success')
+        return redirect(target, code=303)
 
     @app.get('/api/course-overview')
     @login_required

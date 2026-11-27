@@ -14,12 +14,23 @@
       data-overview-version="{{ overview_version }}"
       data-csrf="{{ csrf_token() }}" data-configured="{{ 1 if configured else 0 }}"{% endblock %}
 {% block page_content %}
-    {% if semesters %}
-    <form method="get" action="{{ url_for('course_overviews') }}" id="insightSemesterForm" class="insight-semester">
-        <select id="overviewSemester" name="semester" aria-label="選擇學期">{% for entry in semesters %}<option value="{{ entry.key }}"{% if entry.key == semester %} selected{% endif %}>{{ entry.label }}</option>{% endfor %}</select>
-        <noscript><button type="submit" class="btn">切換</button></noscript>
-    </form>
-    {% endif %}
+    <div class="insight-semester-bar">
+        {% if semesters %}
+        <form method="get" action="{{ url_for('course_overviews') }}" id="insightSemesterForm" class="insight-semester">
+            <select id="overviewSemester" name="semester" aria-label="選擇學期">{% for entry in semesters %}<option value="{{ entry.key }}"{% if entry.key == semester %} selected{% endif %}>{{ entry.label }}</option>{% endfor %}</select>
+            <noscript><button type="submit" class="btn">切換</button></noscript>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('course_overview_semesters') }}" id="insightSemesterRefresh">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="semester" value="{{ semester }}">
+            <input type="hidden" name="course" data-current-course value="{{ selected_course }}">
+            <button type="submit" class="btn">更新學期</button>
+        </form>
+    </div>
+    {% for category, message in get_flashed_messages(with_categories=true, category_filter=['semester-success', 'semester-error', 'semester-login']) %}
+    <p class="insight-semester-notice" data-status="{{ category }}" role="status">{{ message }}{% if category == 'semester-login' %} <a href="{{ url_for('login') }}">重新登入</a>{% endif %}</p>
+    {% endfor %}
     <div class="insight-utility{% if configured and courses %} insight-utility-ready{% endif %}">
         {% include 'assignments/components/course-ai-setup.html' %}
         {% if configured and courses %}
@@ -70,8 +81,7 @@
     {% elif configured %}
     <section class="insight-empty insight-panel">
         <h2>這個學期還沒有課程</h2>
-        <p>先從作業列表更新 E3，就能開始整理。</p>
-        <a class="btn" href="{{ url_for('index') }}">前往作業列表</a>
+        <p>點「更新學期」從 E3 取得修課清單。</p>
     </section>
     {% endif %}
 {% endblock %}

@@ -4,6 +4,7 @@ from datetime import datetime
 from html import unescape
 import json
 import re
+import time
 from typing import Any, Dict, List, Optional, Sequence, Set
 
 import requests
@@ -408,6 +409,7 @@ def _merge_course(
     if existing and len(str(existing.get("title") or "")) > len(normalized_title):
         return
     found[cid] = {
+        **(existing or {}),
         "id": cid,
         "title": normalized_title or (str(existing.get("title")) if existing else f"Course {cid}"),
         "url": normalized_url,
@@ -420,6 +422,7 @@ def _gather_timeline_courses(
     sesskey: str,
     *,
     timeout: int,
+    deadline: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     found: Dict[int, Dict[str, Any]] = {}
 
@@ -444,9 +447,10 @@ def _gather_timeline_courses(
             for course in courses:
                 if not isinstance(course, dict):
                     continue
+                course_id = course.get("id") or course.get("courseid")
                 _merge_course(
                     found,
-                    course_id=course.get("id") or course.get("courseid"),
+                    course_id=course_id,
                     title=(
                         course.get("fullname")
                         or course.get("displayname")
@@ -456,8 +460,16 @@ def _gather_timeline_courses(
                     url=course.get("viewurl") or course.get("url"),
                     base_url=base_url,
                 )
+                if str(course_id).isdecimal() and int(course_id) in found:
+                    entry = found[int(course_id)]
+                    semester = parse_course_semester(course.get("shortname"))
+                    if semester["key"] != "other" and _course_semester(entry)["key"] == "other":
+                        entry.update(semester_key=semester["key"], semester_label=semester["label"])
 
     def call_ajax(method_name: str, args: Dict[str, Any]) -> None:
+        remaining = deadline - time.monotonic() if deadline is not None else timeout
+        if remaining <= 0:
+            return
         endpoint = f"{base_url.rstrip('/')}/lib/ajax/service.php?sesskey={sesskey}"
         response = safe_request(
             sess,
@@ -465,7 +477,7 @@ def _gather_timeline_courses(
             endpoint,
             headers={**HEADERS, "Accept": "application/json", "Content-Type": "application/json"},
             json=[{"index": 0, "methodname": method_name, "args": args}],
-            timeout=timeout,
+            timeout=min(timeout, remaining),
         )
         collect_payload(response.json())
 
@@ -476,6 +488,13 @@ def _gather_timeline_courses(
     except Exception:
         pass
     if found:
+        if deadline is not None:
+            current = current_semester_key()
+            if not any(_course_semester(course)["key"] not in {current, "other"} for course in found.values()):
+                try:
+                    call_ajax(timeline_method, {**common_args, "classification": "past"})
+                except Exception:
+                    pass
         return list(found.values())
 
     for classification in ("all", "past", "inprogress", "future", "hidden"):
@@ -543,6 +562,8 @@ def gather_my_courses(
     *,
     timeout: int = 20,
     only_current_term: bool = True,
+    dashboard_html: Optional[str] = None,
+    deadline: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     pages = [
         f"{base_url}/my/",
@@ -560,15 +581,27 @@ def gather_my_courses(
                 f"{base_url}/calendar/export.php",
             ]
         )
+        if dashboard_html is not None:
+            pages = [url for url in pages if '/course/index.php' not in url and '/calendar/' not in url]
     found: Dict[int, Dict[str, Any]] = {}
     current_key = current_semester_key()
     sesskey: Optional[str] = None
-    for url in pages:
+    timeline_scanned = False
+    for index, url in enumerate(pages):
+        remaining = deadline - time.monotonic() if deadline is not None else timeout
+        if remaining <= 0:
+            break
         try:
-            resp = safe_request(sess, "GET", url, headers=HEADERS, timeout=timeout)
+            html = dashboard_html if index == 0 and dashboard_html is not None else safe_request(
+                sess, "GET", url, headers=HEADERS, timeout=min(timeout, remaining),
+            ).text
             if not sesskey:
-                sesskey = _extract_moodle_sesskey(resp.text)
-            for course in _gather_embedded_courses(resp.text, base_url, allow_unmarked=False):
+                sesskey = _extract_moodle_sesskey(html)
+            if dashboard_html is not None and sesskey and not only_current_term and not timeline_scanned:
+                timeline_scanned = True
+                for course in _gather_timeline_courses(sess, base_url, sesskey, timeout=timeout, deadline=deadline):
+                    found[course["id"]] = course
+            for course in _gather_embedded_courses(html, base_url, allow_unmarked=False):
                 course_title = str(course.get("title") or "")
                 semester = parse_course_semester(course_title)
                 if only_current_term and semester["key"] != current_key:
@@ -580,7 +613,7 @@ def gather_my_courses(
                     url=course.get("url"),
                     base_url=base_url,
                 )
-            soup = BeautifulSoup(resp.text, "html.parser")
+            soup = BeautifulSoup(html, "html.parser")
             for a_tag in soup.find_all("a", href=True):
                 match = COURSE_LINK_RE.search(a_tag["href"])
                 if not match:
@@ -599,9 +632,9 @@ def gather_my_courses(
                 )
         except Exception:
             continue
-    if not only_current_term and sesskey:
+    if not only_current_term and sesskey and not timeline_scanned:
         try:
-            for course in _gather_timeline_courses(sess, base_url, sesskey, timeout=timeout):
+            for course in _gather_timeline_courses(sess, base_url, sesskey, timeout=timeout, deadline=deadline):
                 _merge_course(
                     found,
                     course_id=course.get("id"),

@@ -190,6 +190,19 @@ function setupNavigation(page, cards) {
 function initOverview(page) {
   const semesterForm = page.querySelector("#insightSemesterForm");
   semesterForm?.querySelector("select").addEventListener("change", () => semesterForm.requestSubmit());
+  const semesterRefresh = page.querySelector("#insightSemesterRefresh");
+  const semesterButton = semesterRefresh?.querySelector("button");
+  semesterRefresh?.addEventListener("submit", () => {
+    semesterButton.disabled = true;
+    semesterButton.textContent = "更新學期中…";
+    semesterRefresh.setAttribute("aria-busy", "true");
+  });
+  window.addEventListener("pageshow", event => {
+    if (!event.persisted || !semesterButton) return;
+    semesterButton.disabled = false;
+    semesterButton.textContent = "更新學期";
+    semesterRefresh.removeAttribute("aria-busy");
+  });
   const cards = page.querySelector("#overviewCards");
   const renderNavigation = setupNavigation(page, cards);
   if (page.dataset.configured !== "1" || !page.dataset.semester || !cards) return;

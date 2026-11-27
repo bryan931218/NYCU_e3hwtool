@@ -58,6 +58,9 @@ class MobileCourseFeaturesTests(unittest.TestCase):
         self.assertNotIn(TOKEN, url)
         if function == 'core_webservice_get_site_info':
             result = {'userid': 42, 'username': USER, 'siteurl': BASE, 'fullname': '王小明'}
+        elif function == 'core_enrol_get_users_courses':
+            self.assertEqual(data['userid'], 42)
+            result = [{'id': 11, 'fullname': '線性代數', 'shortname': '1142.510001'}]
         elif function == 'core_course_get_contents':
             self.assertEqual(data['courseid'], 10)
             result = [{'modules': self.modules}]
@@ -140,6 +143,15 @@ class MobileCourseFeaturesTests(unittest.TestCase):
         self.assertEqual(sources[0]['text'], 'Final project: 40%.')
         self.assertIn('mod_page_get_pages_by_courses', self.calls)
         self.assertNotIn('mod_forum_get_forums_by_courses', self.calls)
+
+    def test_course_catalog_refresh_reads_enrolments_only(self):
+        service = CourseFileService(Mock(), BASE, Mock())
+        service.storage = Mock()
+        with self.mocked():
+            courses = service.refresh_catalog(self.user)
+        self.assertEqual([(course['id'], course['semester_key']) for course in courses], [(11, '114-2')])
+        self.assertEqual(self.calls, ['core_webservice_get_site_info', 'core_enrol_get_users_courses'])
+        service.storage.save_catalog.assert_called_once_with(USER, courses)
 
     def test_file_collection_keeps_all_origins_and_does_not_open_unread_mail(self):
         with self.mocked():

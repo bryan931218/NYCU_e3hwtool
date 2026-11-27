@@ -195,6 +195,10 @@ def _course_insights(conn):
     for table in (insight_settings, insight_courses):
         table.create(conn, checkfirst=True)
 
+def _course_semester_catalog(conn):
+    from e3_tracker.assignments.persistence.course_files import course_semester_catalog
+    course_semester_catalog.create(conn, checkfirst=True)
+
 
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
@@ -218,6 +222,7 @@ MIGRATIONS = (
     ("0019_profile_metadata", _user_profile_metadata_schema),
     ("0020_workbench_onboarding", _workbench_onboarding),
     ("0021_course_insights", _course_insights),
+    ("0022_course_semester_catalog", _course_semester_catalog),
 )
 
 

@@ -9,7 +9,12 @@
 .insight-semester, .insight-mobile-scope { display: flex; align-items: center; gap: 8px; }
 .insight-mobile-scope label { color: var(--muted); white-space: nowrap; font-size: .85rem; }
 .insight-page .insight-semester select { width: var(--course-semester-width); border-radius: 6px; }
-.insight-semester, .insight-utility { margin-bottom: 16px; }
+.insight-semester-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.insight-semester-bar .btn { min-height: 44px; }
+.insight-page .insight-semester-notice { margin: -4px 0 16px; font-size: .86rem; color: var(--muted); }
+.insight-semester-notice[data-status="semester-error"], .insight-semester-notice[data-status="semester-login"] { color: var(--warn-fg); }
+.insight-semester-notice a { color: var(--primary); }
+.insight-utility { margin-bottom: 16px; }
 .insight-panel, .insight-setup {
     min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow-wrap: anywhere;
 }

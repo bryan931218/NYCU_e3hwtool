@@ -24,33 +24,39 @@ def _date(value):
     return datetime.fromtimestamp(value, TAIPEI_TZ).strftime("%Y-%m-%d %H:%M") if value else None
 
 
+def collect_api_course_catalog(sess, base, token, user_id, *, timeout, username=None):
+    from e3_tracker.assignments.services.collector import _course_semester, _is_non_assignment_course
+
+    info = verified_site_info(sess, base, token, user_id=user_id, username=username, timeout=timeout)
+    user_id = info["userid"]
+    raw_courses = api_call(sess, base, token, "core_enrol_get_users_courses", userid=user_id,
+                           timeout=timeout, step="courses")
+    if not isinstance(raw_courses, list):
+        raise E3LoginError("upstream_response_invalid", auth_step="courses")
+    courses = []
+    for raw in raw_courses:
+        if not isinstance(raw, dict) or not _positive(raw.get("id")):
+            raise E3LoginError("upstream_response_invalid", auth_step="courses")
+        title = unescape(str(raw.get("fullname") or raw.get("shortname") or ""))
+        if _is_non_assignment_course(raw["id"], title):
+            continue
+        semester = _course_semester({"title": title})
+        if semester["key"] == "other":
+            semester = _course_semester({"title": raw.get("shortname")})
+        courses.append({"id": raw["id"], "title": title, "url": f"{base}/course/view.php?id={raw['id']}",
+                        "semester_key": semester["key"], "semester_label": semester["label"]})
+    return user_id, courses
+
+
 def collect_api_assignments(options):
     from e3_tracker.assignments.services.collector import (
-        _course_semester, _course_sort_key, _global_sort_key, _is_non_assignment_course,
-        _semester_catalog, current_semester_key, normalize_semester_keys,
+        _course_sort_key, _global_sort_key, _semester_catalog, current_semester_key, normalize_semester_keys,
     )
     base = options.base_url.rstrip("/")
     token, user_id = options.moodle_token, options.moodle_user_id
     with requests.Session() as sess:
         configure_tls(sess, cafile=options.cafile, insecure=options.insecure)
-        info = verified_site_info(sess, base, token, user_id=user_id, timeout=options.timeout)
-        user_id = info["userid"]
-        raw_courses = api_call(sess, base, token, "core_enrol_get_users_courses", userid=user_id,
-                               timeout=options.timeout, step="courses")
-        if not isinstance(raw_courses, list):
-            raise E3LoginError("upstream_response_invalid", auth_step="courses")
-        courses = []
-        for raw in raw_courses:
-            if not isinstance(raw, dict) or not _positive(raw.get("id")):
-                raise E3LoginError("upstream_response_invalid", auth_step="courses")
-            title = unescape(str(raw.get("fullname") or raw.get("shortname") or ""))
-            if _is_non_assignment_course(raw["id"], title):
-                continue
-            semester = _course_semester({"title": title})
-            if semester["key"] == "other":
-                semester = _course_semester({"title": raw.get("shortname")})
-            courses.append({"id": raw["id"], "title": title, "url": f"{base}/course/view.php?id={raw['id']}",
-                            "semester_key": semester["key"], "semester_label": semester["label"]})
+        user_id, courses = collect_api_course_catalog(sess, base, token, user_id, timeout=options.timeout)
         catalog = _semester_catalog(courses)
         selected = normalize_semester_keys(options.semester_keys)
         if options.course_id:
