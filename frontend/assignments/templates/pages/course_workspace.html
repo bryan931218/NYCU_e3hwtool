@@ -22,7 +22,7 @@
         </div>
         <h1>{{ course_page_title }}{% block title_count %}{% endblock %}</h1>
         <nav class="course-workspace-nav" aria-label="課程功能">
-            {% if show_course_center %}<a href="{{ url_for('course_overviews', semester=workspace_semester) }}" data-course-semester-link{% if course_page == 'overview' %} aria-current="page"{% endif %}>課程中心</a>{% endif %}
+            {% if show_course_center and config['E3_COURSE_OVERVIEW_ENABLED'] %}<a href="{{ url_for('course_overviews', semester=workspace_semester) }}" data-course-semester-link{% if course_page == 'overview' %} aria-current="page"{% endif %}>課程中心</a>{% endif %}
             <a href="{{ url_for('course_messages_page', semester=workspace_semester) }}" data-course-semester-link{% if course_page == 'messages' %} aria-current="page"{% endif %}>課程訊息</a>
             <a href="{{ url_for('course_files_page', semester=workspace_semester) }}" data-course-semester-link{% if course_page == 'files' %} aria-current="page"{% endif %}>附件收納</a>
         </nav>

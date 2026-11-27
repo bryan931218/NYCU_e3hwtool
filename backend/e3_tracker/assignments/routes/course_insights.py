@@ -38,6 +38,9 @@ def course_states(snapshots):
 
 
 def register_course_insight_routes(app, current_user, login_required, service):
+    if not service.enabled:
+        return
+
     def username():
         user = current_user()
         if not user or user.get('is_guest'):

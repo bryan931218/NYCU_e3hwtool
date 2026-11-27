@@ -135,15 +135,16 @@ def keep_partial_grading(current, previous):
 
 
 class CourseInsightService:
-    def __init__(self, storage, files):
+    def __init__(self, storage, files, *, enabled=True):
         self.storage = CourseInsightStorage(storage)
         self.files = files
+        self.enabled = enabled
         self.slots = threading.BoundedSemaphore(2)
         self.worker_lock = threading.Lock()
         self.worker_started = False
 
     def start_worker(self, app):
-        if os.getenv('E3_COURSE_AI_WORKER', '1' if production_mode() else '0').lower() not in {'1', 'true', 'on'}:
+        if not self.enabled or os.getenv('E3_COURSE_AI_WORKER', '1' if production_mode() else '0').lower() not in {'1', 'true', 'on'}:
             return
 
         def run():
@@ -179,6 +180,8 @@ class CourseInsightService:
                 break
 
     def start(self, app, user, semester, courses, *, manual=False):
+        if not self.enabled:
+            return 'disabled'
         if not (user.get('moodle_session') or user.get('moodle_token')):
             return 'session_expired'
         if not self.slots.acquire(blocking=False):

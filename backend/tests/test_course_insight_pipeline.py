@@ -149,6 +149,28 @@ class CourseInsightPipelineTests(unittest.TestCase):
                     self.assertEqual(page.select_one('.news-kinds [aria-current="page"]').get_text(strip=True),
                                      '信件' if '?tab=mail' in path else '公告')
 
+    def test_disabled_overview_stops_old_page_requests_and_background_scans(self):
+        with patch.dict(os.environ, {'E3_COURSE_OVERVIEW_ENABLED': '0', 'E3_COURSE_AI_WORKER': '1'}), \
+                patch.object(CourseInsightStorage, 'has_configured_accounts') as worker_check:
+            disabled = create_app(default_base_url=BASE)
+            self.addCleanup(disabled.extensions['e3_storage']._engine.dispose)
+        worker_check.assert_not_called()
+        client = csrf_client(disabled)
+        with client.session_transaction() as session:
+            session['session_token'] = f'course-insight-session-{USERNAME}'
+        self.assertNotIn(b'id="courseInsightHome"', client.get('/').data)
+        for path in ('/courses/overview', '/api/course-overview', '/settings/course-ai'):
+            self.assertEqual(client.get(path).status_code, 404)
+        for path in ('/api/course-overview/refresh', '/courses/overview/semesters', '/settings/course-ai'):
+            self.assertEqual(client.post(path, json={'semester': TERM, 'manual': True}).status_code, 404)
+        for path in ('/courses/messages', '/courses/files'):
+            response = client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn(b'/courses/overview', response.data)
+        self.assertTrue(self.store.settings(USERNAME))
+        self.moodle.assert_not_called()
+        self.provider.assert_not_called()
+
     def test_refresh_semesters_keeps_existing_assignments_and_recovers_old_courses(self):
         other = self.account('987654322', [COURSE])
         self.pages['/my/'] = '<script>M.cfg = {"sesskey":"synthetic-sesskey"}</script>'

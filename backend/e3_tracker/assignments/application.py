@@ -17,6 +17,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import threading
 import time
@@ -918,7 +919,9 @@ def register_assignment_site(
     register_course_message_entry(app, login_required, current_user, course_files.catalog,
         notification_service.course_message_services)
     register_course_file_routes(app, storage, current_user, login_required, course_files, record_activity)
-    course_insights = CourseInsightService(storage, course_files)
+    course_overview_enabled = _env_flag_truthy(os.getenv('E3_COURSE_OVERVIEW_ENABLED', '1'))
+    app.config['E3_COURSE_OVERVIEW_ENABLED'] = course_overview_enabled
+    course_insights = CourseInsightService(storage, course_files, enabled=course_overview_enabled)
     register_course_insight_routes(app, current_user, login_required, course_insights)
     course_insights.start_worker(app)
     register_notification_routes(app, storage, current_user, login_required, notification_service, record_activity,
