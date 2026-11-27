@@ -32,7 +32,7 @@ COURSE = {'id': 42, 'title': '【115上】資料結構', 'semester_key': TERM, '
 FIRST_FILE = '/pluginfile.php/42/mod_resource/content/1/01.pdf'
 SECOND_FILE = '/pluginfile.php/42/mod_resource/content/1/course-outline.txt'
 OUTLINE_QUOTE = 'Final exam: December 3, 2026 at 10:10.'
-GRADE_QUOTE = 'Homework: 40%.'
+GRADE_QUOTE = 'Overall grade: Homework: 40%.'
 MAIL_QUOTE = '期末考改至 12 月 8 日 14:30。HW4 繳交期限延至 12 月 10 日 23:59。'
 NEWS_QUOTE = '期末考改至 12 月 5 日 09:30。'
 SESSION = 'synthetic-moodle-session'
@@ -231,6 +231,21 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.assertEqual(outline_sources(BASE, course, rows, time.monotonic() + 5), (rows, False))
         session.post.assert_called_once()
 
+    def test_later_course_file_uses_its_moodle_revision_to_replace_the_outline_weights(self):
+        module = 'e3_tracker.assignments.services.course_insights.outline_sources'
+        outline = {'kind': 'syllabus', 'topic': 'grading', 'key': 'outline:grading', 'title': '課程綱要',
+                   'url': TIMETABLE, 'text': '作業 80% 期末專題 20%', 'lines': ['作業 80%', '期末專題 20%']}
+        self.pages[SECOND_FILE] = http_response('學期總成績配分：作業 60%、期末專題 40%。',
+            content_type='text/plain', **{'Last-Modified': 'Mon, 02 Jan 2023 00:00:00 GMT'})
+        self.provider.side_effect = lambda *args, **kwargs: model_response({'grading': [], 'events': []})
+        with patch(module, return_value=([outline], False)):
+            self.refresh()
+            self.wait_for_worker()
+        markup = BeautifulSoup(self.overview()['overview'], 'html.parser')
+        grades = markup.select('.insight-grades tbody tr')
+        self.assertEqual([row.select('td')[-1].get_text(strip=True) for row in grades], ['60%', '40%'])
+        self.assertTrue(all(row.find('a')['href'].endswith(SECOND_FILE) for row in grades))
+
     def add_mail(self):
         self.pages['/local/dcpcmail/view.php?c=42&t=inbox'] = (
             '<div class="mail_list"><div class="mail_item mail_unread">'
@@ -269,8 +284,12 @@ class CourseInsightPipelineTests(unittest.TestCase):
                 events.extend([self.event(source, MAIL_QUOTE, '12 月 8 日 14:30'),
                     self.event(source, MAIL_QUOTE, '12 月 10 日 23:59', kind='deadline', assignment='49')])
         return model_response({'summary': '這是合成課程概要。', 'grading': [
-            {'label': '作業', 'detail': '40%', 'source': sources[0]['id'], 'quote': GRADE_QUOTE},
+            self.grade(sources[0], '作業', '40%', GRADE_QUOTE, source_label='Homework'),
         ], 'events': events})
+
+    def grade(self, source, label, weight, quote, *, scope_quote='', source_label=''):
+        return {'scope': 'course', 'scope_quote': scope_quote, 'label': label,
+                'source_label': source_label, 'weight': weight, 'source': source['id'], 'quote': quote}
 
     def event(self, source, quote, date, *, kind='final', assignment=''):
         return {'kind': kind, 'title': '期末考' if kind == 'final' else 'HW4',
@@ -373,13 +392,13 @@ class CourseInsightPipelineTests(unittest.TestCase):
         for index in range(9):
             path = f'/pluginfile.php/42/mod_resource/content/1/week-{index}.txt'
             links.append(f'<a href="{path}">第 {index + 1} 週教材</a>')
-            text = '平時測驗 10%' if index == 8 else '課堂練習及閱讀重點。' * 1600
+            text = '學期成績：平時測驗 10%' if index == 8 else '課堂練習及閱讀重點。' * 1600
             self.pages[path] = http_response(text, content_type='text/plain')
         links.append(f'<a href="{SECOND_FILE}">評分與課程大綱</a>')
         links.append('<a href="/mod/page/view.php?id=77">評量補充</a>')
         self.pages['/course/view.php?id=42'] = '<div class="course-content">' + ''.join(links) + '</div>'
-        self.pages[SECOND_FILE] = http_response('作業：４０％。期末專題：30 percent。', content_type='text/plain')
-        self.pages['/mod/page/view.php?id=77'] = ('<div class="mod_page-content">出席採簽到。課堂討論：三十分鐘。'
+        self.pages[SECOND_FILE] = http_response('學期成績：作業：４０％。期末專題：30 percent。', content_type='text/plain')
+        self.pages['/mod/page/view.php?id=77'] = ('<div class="mod_page-content">學期成績：出席採簽到。課堂討論：三十分鐘。'
             '<table><tr><th>項目</th><th>配分 (%)</th></tr><tr><td>實作</td><td>15</td></tr></table></div>')
 
         def model(_, **kwargs):
@@ -388,13 +407,13 @@ class CourseInsightPipelineTests(unittest.TestCase):
             page = next(source for source in sources if '出席採簽到' in source['text'])
             late = next(source for source in sources if '平時測驗 10%' in source['text'])
             return model_response({'summary': '', 'events': [], 'grading': [
-                {'label': '作業', 'weight': '40.0%', 'source': outline['id'], 'quote': '作業：４０％。'},
-                {'label': '期末專題', 'weight': '30 percent', 'source': outline['id'], 'quote': '期末專題：30 percent。'},
-                {'label': '出席', 'detail': '採簽到', 'source': page['id'], 'quote': '出席採簽到。'},
-                {'label': '實作', 'weight': '15%', 'source': page['id'], 'quote': '實作 15%'},
-                {'label': '平時測驗', 'weight': '10%', 'source': late['id'], 'quote': '平時測驗 10%'},
-                {'label': '課堂討論', 'weight': '30 分', 'source': page['id'], 'quote': '課堂討論：三十分鐘。'},
-                {'label': '期中考', 'weight': '30%', 'source': outline['id'], 'quote': '作業：４０％。期末專題：30 percent。'},
+                self.grade(outline, '作業', '40.0%', '作業：４０％。', scope_quote='學期成績'),
+                self.grade(outline, '期末專題', '30 percent', '期末專題：30 percent。', scope_quote='學期成績'),
+                self.grade(page, '出席', '', '出席採簽到。', scope_quote='學期成績'),
+                self.grade(page, '實作', '15%', '實作 15%', scope_quote='學期成績'),
+                self.grade(late, '平時測驗', '10%', '平時測驗 10%', scope_quote='學期成績'),
+                self.grade(page, '課堂討論', '30 分', '課堂討論：三十分鐘。', scope_quote='學期成績'),
+                self.grade(outline, '期中考', '30%', '作業：４０％。期末專題：30 percent。', scope_quote='學期成績'),
             ]})
 
         self.provider.side_effect = model
@@ -410,8 +429,8 @@ class CourseInsightPipelineTests(unittest.TestCase):
         markup = BeautifulSoup(self.overview()['overview'], 'html.parser')
         grades = markup.select('.insight-grades tbody tr')
         self.assertEqual([(row.strong.get_text(), row.select('td')[-1].get_text(strip=True)) for row in grades],
-                         [('作業', '40%'), ('期末專題', '30%'), ('出席', '未列'), ('實作', '15%'), ('平時測驗', '10%')])
-        self.assertIn('採簽到', grades[2].get_text())
+                         [('作業', '40%'), ('期末專題', '30%'), ('實作', '15%'), ('平時測驗', '10%')])
+        self.assertNotIn('採簽到', markup.select_one('.insight-grades').get_text())
         self.assertTrue(grades[2].find('a')['href'].endswith('/mod/page/view.php?id=77'))
 
     def test_worker_resumes_selected_archived_semester_for_all_nine_courses(self):
@@ -461,11 +480,12 @@ class CourseInsightPipelineTests(unittest.TestCase):
         courses = [COURSE, {**COURSE, 'id': 43}, {**COURSE, 'id': 44}]
         self.client = self.account(USERNAME, courses)
         self.pages['/course/view.php?id=43'] = '<body id="page-enrol-index">無法選課</body>'
-        self.pages['/course/view.php?id=44'] = '<div class="course-content">Participation accounts for 20%.</div>'
+        self.pages['/course/view.php?id=44'] = '<div class="course-content">Overall grade: Participation accounts for 20%.</div>'
         self.pages['/local/dcpcmail/view.php?c=44&t=inbox'] = '<div class="mail_list">沒有郵件</div>'
         self.provider.side_effect = [model_response({'grading': None}), model_response({
             'summary': '課堂參與', 'events': [],
-            'grading': [{'label': '課堂參與', 'weight': '20%', 'source': '1', 'quote': 'Participation accounts for 20%.'}],
+            'grading': [self.grade({'id': '1'}, '課堂參與', '20%', 'Participation accounts for 20%.',
+                                   scope_quote='Overall grade', source_label='Participation')],
         })]
         self.refresh()
         self.wait_for_worker()
@@ -503,20 +523,20 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.pages['/course/view.php?id=42'] = ('<div class="course-content"><li class="section">'
             '<a href="/course/section.php?id=12">課程大綱</a></li>'
             '<div class="block_news_items"><a href="/mod/forum/view.php?id=3">課程公告</a></div></div>')
-        self.pages['/course/section.php?id=12'] = '<div id="region-main">報告配分 30%</div>'
+        self.pages['/course/section.php?id=12'] = '<div id="region-main">學期成績：報告配分 30%</div>'
         self.pages['/mod/forum/view.php?id=3'] = self.news_listing('2026-11-23T10:00:00+08:00').replace('考試異動', '評分方式')
         self.pages['/mod/forum/discuss.php?d=7'] = (
             '<article class="forumpost firstpost"><div class="post-content-container">詳見附件</div>'
             f'<div class="attachments"><a href="{attachment}">配分表</a></div></article>')
-        self.pages[attachment] = http_response('作業配分 70%', content_type='text/plain')
+        self.pages[attachment] = http_response('學期成績：作業配分 70%', content_type='text/plain')
 
         def model(_, **kwargs):
             sources = json.loads(kwargs['json']['contents'][0]['parts'][0]['text'])['sources']
             section = next(source for source in sources if '報告配分 30%' in source['text'])
             file = next(source for source in sources if '作業配分 70%' in source['text'])
             return model_response({'summary': '', 'events': [], 'grading': [
-                {'label': '報告', 'weight': '30%', 'source': section['id'], 'quote': '報告配分 30%'},
-                {'label': '作業', 'weight': '70%', 'source': file['id'], 'quote': '作業配分 70%'},
+                self.grade(section, '報告', '30%', '報告配分 30%', scope_quote='學期成績'),
+                self.grade(file, '作業', '70%', '作業配分 70%', scope_quote='學期成績'),
             ]})
 
         self.provider.side_effect = model

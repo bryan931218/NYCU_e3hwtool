@@ -8,7 +8,7 @@ from decimal import Decimal
 from dateutil.parser import parse
 
 from e3_tracker.platform.constants import TAIPEI_TZ
-from .deadline_parser import ENGLISH, NUMERIC, ORIGINAL, RELATIVE, WEEKDAYS, _clock, _normalize, chinese_number
+from .deadline_parser import CLOCK, ENGLISH, NAMED_CLOCK, NUMERIC, ORIGINAL, RELATIVE, WEEKDAYS, _clock, _normalize, chinese_number
 
 
 EXAMS = {
@@ -33,12 +33,24 @@ EXAM_VARIANTS = {
     'practical': r'上機|實機|實作(?:考|測驗)|\bpractical\b',
 }
 TENTATIVE_GRADING = re.compile(r'暫定|僅供參考|可能調整|\b(?:tentative|provisional|subject to change)\b', re.I)
-RUBRIC_HEADING = re.compile(r'(?:分數配比|成績配比|總成績(?:配分|計算方式)|(?:final|overall) grade breakdown)\s*[:：]', re.I)
+RUBRIC_HEADING = re.compile(r'(?:分數配比|成績配比|課程(?:配分|評分)|(?:學期(?:總)?成績|總成績)(?:配分|計算方式)|(?:final|overall|course) grad(?:e breakdown|ing))\s*[:：]', re.I)
+COURSE_LEVEL_GRADE = re.compile(r'學期(?:總)?(?:成績|配分)|總成績|全(?:課程|學期)配分|\b(?:overall|course|semester) grad(?:e|ing)\b', re.I)
+GRADING_UPDATE = re.compile(
+    r'(?:評分|配分|權重|計分|配比).{0,12}(?:更新|修訂|修正|調整|變更|改為|改成)'
+    r'|(?:更新|修訂|修正|新版|變更).{0,12}(?:評分|配分|計分|配比)'
+    r'|\b(?:updated|revised|new|change[ds]?)\b.{0,24}\b(?:grading|weights?|breakdown)\b'
+    r'|\b(?:grading|weight|breakdown)\b.{0,24}\b(?:updated|changed|revised)\b', re.I)
+SUBGRADE = re.compile(r'(?:專題|專案|報告|作業|考試)(?:內部|內的|的)?(?:占比|配分|評分|成績)|\b(?:project|exam|assignment) grad(?:e|ing)\b', re.I)
+COURSE_GRADING = re.compile(r'課程(?:評分|配分|計分)|\bgrading (?:policy|scheme)\b', re.I)
+AGGREGATE_GRADE = re.compile(r'總計|合計|共計|小計|總分|\b(?:sub)?total\b', re.I)
 FINAL_PROJECT = re.compile(r'期末\s*(?:專題|專案)|\bfinal\s+project\b', re.I)
 PROJECT_DEADLINE = re.compile(r'截止|期限|最晚|due|deadline', re.I)
 EXAM_SCHEDULE_LINE = re.compile(
-    r'(?P<label>(?:(?:團體|分組|小組|個人|個別)\s*)?(?:期末\s*)?'
-    r'(?:(?:上機|實機|實作)(?:考試|考|測驗)|筆試))(?:日期|時間)\s*[:：]\s*')
+    r'(?P<label>(?:(?:團體|分組|小組|個人|個別)\s*)?(?:(?:期中|期末)\s*)?'
+    r'(?:(?:上機|實機|實作)(?:考試|考|測驗)|筆試)|(?:期中|期末)考(?:試)?'
+    r'|\b(?:mid[\s-]*term|final)\s+(?:written\s+|practical\s+)?exam\b)'
+    r'(?:\s*(?:日期|時間|date|time))?\s*[:：]\s*', re.I)
+CLASS_CANCELLATION = re.compile(r'停課|取消(?:上課|課程)|class (?:is )?cancel(?:led|ed)', re.I)
 
 
 def normalized(value):
@@ -81,9 +93,13 @@ def _literal_date(phrase, source, semester):
                 month, day = day, month
             if not year_text and '月' not in numeric[0] and max(month, day) <= 12 and month != day:
                 options = [(month, day), (day, month)]
-                weekday = re.match(r'\s*\((?:週|星期)?([一二三四五六日天])\)', value[numeric.end():])
+                weekday = re.match(r'\s*\((?:週|星期)?([一二三四五六日天A-Za-z]{1,10})\)', value[numeric.end():])
+                day_index = -1
                 if weekday:
-                    day_index = '一二三四五六日'.index(weekday[1].replace('天', '日'))
+                    label = weekday[1].lower().replace('天', '日')
+                    day_index = '一二三四五六日'.find(label) if len(label) == 1 else next(
+                        (index for index, name in enumerate(WEEKDAYS) if label in {name, name[:3]}), -1)
+                if day_index >= 0:
                     options = [(m, d) for m, d in options if (y := _term_year(semester, m))
                                and datetime(y, m, d).weekday() == day_index]
                 else:
@@ -205,18 +221,30 @@ def _assignment(assignment_refs, ref, evidence):
 
 def _schedule_rows(sources):
     for source in sources:
-        if source['kind'] != 'announcements' or not source.get('version'):
-            continue
-        if not re.search(EXAMS['final'], source['title'], re.I):
+        if source['kind'] not in {'syllabus', 'announcements', 'mail'}:
             continue
         text = source['text']
-        if UNCERTAIN.search(text) or HISTORICAL.search(source['title']):
+        if UNCERTAIN.search(text) or HISTORICAL.search(source['title']) or CLASS_CANCELLATION.search(text):
             continue
         for match in EXAM_SCHEDULE_LINE.finditer(text):
-            date = NUMERIC.match(text, match.end()) or ENGLISH.match(text, match.end())
-            if date:
-                yield {'kind': 'final', 'title': f"期末 {match['label'].removeprefix('期末').strip()}",
-                       'source': source['id'], 'quote': text[match.start():date.end()], 'date_phrase': date[0]}
+            label = match['label']
+            kind = next((stage for stage in ('midterm', 'final') if re.search(EXAMS[stage], label, re.I)), '')
+            if not kind:
+                kind = next((stage for stage in ('midterm', 'final')
+                             if re.search(EXAMS[stage], source['title'], re.I)), '')
+                if not kind:
+                    continue
+                label = f"{'期中' if kind == 'midterm' else '期末'} {label}"
+            date = NUMERIC.match(text, match.end()) or ENGLISH.match(text, match.end()) or RELATIVE.match(text, match.end())
+            if not date:
+                continue
+            tail = text[date.end():]
+            clock = CLOCK.match(tail)
+            timed = clock if clock and any(clock[name] for name in ('period', 'colon', 'unit', 'ampm')) else NAMED_CLOCK.match(tail)
+            weekday = re.match(r'\s*\((?:週|星期)?[一二三四五六日天A-Za-z]{1,10}\)', tail)
+            end = date.end() + (timed.end() if timed else weekday.end() if weekday else 0)
+            yield {'kind': kind, 'title': label, 'source': source['id'],
+                   'quote': text[match.start():end].strip(), 'date_phrase': text[date.start():end].strip()}
 
 
 def _origin(source, quote):
@@ -265,11 +293,21 @@ def _bound_weights(label, evidence):
         return set()
     value = unicodedata.normalize('NFKC', evidence)
     previous = 0
+    previous_label = False
+    previous_amounts = set()
     amounts = set()
     for match in GRADE_AMOUNT.finditer(value):
-        prefix = normalized(value[previous:match.start()])
-        if prefix.endswith(label) or prefix.endswith(label + '佔') or prefix.endswith(label + '占'):
-            amounts.update(_grade_amounts(match[0]))
+        before = value[previous:match.start()]
+        prefix = normalized(before)
+        direct = bool(re.search(rf'{re.escape(label)}(?:的)?(?:(?:配分|比重|權重)?(?:改為|改成|調整為)?|(?:佔|占|accountsfor|worth|changesto|increasesto|decreasesto)(?:學期總成績|總成績)?)$', prefix))
+        original = bool(re.search(rf'{re.escape(label)}(?:的)?(?:配分|比重|權重|weight)?(?:原為|原本|原|由|從|changedfrom|was)$', prefix))
+        transition = previous_label and bool(re.fullmatch(r'\s*(?:調整為|改為|改成|變更為|更新為|to|→|->)\s*', before, re.I))
+        current = _grade_amounts(match[0])
+        if transition:
+            amounts.difference_update(previous_amounts)
+        if direct or transition:
+            amounts.update(current)
+        previous_label, previous_amounts = direct or original, current
         previous = match.end()
     return amounts
 
@@ -289,9 +327,13 @@ def _published_rubric(source):
         if TENTATIVE_GRADING.search(text):
             return []
         lines = source.get('lines') or [text]
-    elif source['kind'] in {'announcements', 'mail'} and source.get('version'):
+    elif source['kind'] in {'announcements', 'mail', 'page', 'file'} and source.get('version'):
         heading = RUBRIC_HEADING.search(text)
         if not heading or TENTATIVE_GRADING.search(text[max(0, heading.start() - 30):heading.end() + 30]):
+            return []
+        context = source['title'] + ' ' + text[max(0, heading.start() - 100):heading.end()]
+        course_level = bool(COURSE_LEVEL_GRADE.search(context) or COURSE_GRADING.search(context))
+        if (SUBGRADE.search(context) and not course_level) or (source['kind'] in {'page', 'file'} and not course_level):
             return []
         lines = re.split(r'[。；;]', text[heading.end():], maxsplit=1)[:1]
     else:
@@ -315,7 +357,7 @@ def _published_rubric(source):
             weight = next(iter(amounts), '')
             if not weight.endswith('%') or not 2 <= len(label) <= 85 or not normalized(label):
                 break
-            if re.search(r'[=+×*]|每次|範例|最高|加分|\b(?:each|bonus)\b', label, re.I):
+            if AGGREGATE_GRADE.fullmatch(label) or re.search(r'[=+×*]|每次|範例|最高|加分|\b(?:each|bonus)\b', label, re.I):
                 break
             tail = re.match(r'^\)?\s*\(([^()]{1,180})\)', value[match.end():])
             detail = tail[1] if tail and source['kind'] == 'syllabus' else ''
@@ -331,23 +373,118 @@ def _published_rubric(source):
     return rows
 
 
-def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
+def _weight_signature(rows):
+    return {grading_key(row['label']): row['weight'] for row in rows}
+
+
+def _grading_revision(source, quote, label, weight):
+    """Date and scope are checked separately from AI's choice of item name."""
+    version = source.get('version') or 0
+    if not version or source['kind'] not in {'announcements', 'mail', 'page', 'file'}:
+        return 0
+    context = f"{source['title']} {quote}"
+    if not weight or weight not in _bound_weights(label, quote):
+        return 0
+    course_level = bool(COURSE_LEVEL_GRADE.search(context))
+    if SUBGRADE.search(context) and not course_level:
+        return 0
+    return version if course_level or GRADING_UPDATE.search(context) else 0
+
+
+def _grading_scope(item, source, quote):
+    if item.get('scope') != 'course':
+        return ''
+    heading = ' '.join(_text_field(item, 'scope_quote', 250).split())
+    if heading and heading not in source['text']:
+        return ''
+    if heading:
+        # The header and item must refer to the same section of the same source.
+        starts = [match.start() for match in re.finditer(re.escape(heading), source['text'])]
+        if not any(quote in source['text'][start:max(0, start + len(heading) + 650)]
+                   or heading in quote for start in starts):
+            return ''
+    context = heading or quote
+    if TENTATIVE_GRADING.search(context) or (SUBGRADE.search(context) and not COURSE_LEVEL_GRADE.search(context)):
+        return ''
+    if source.get('topic') == 'grading' or COURSE_LEVEL_GRADE.search(context) or COURSE_GRADING.search(context):
+        return context
+    return ''
+
+
+def _reconcile_grading(sources, candidates, prior):
+    basis = prior.get('basis', [])
+    scheme_version = prior.get('version', 0)
+    schemes = {}
+    for source in sources:
+        if rubric := _published_rubric(source):
+            schemes.setdefault(source.get('version') or 0, []).append(rubric)
+    for version in sorted(schemes):
+        choices = schemes[version]
+        signature = _weight_signature(choices[0])
+        if version < scheme_version or any(_weight_signature(rows) != signature for rows in choices):
+            continue
+        if version and version == scheme_version and basis and signature != _weight_signature(basis):
+            continue
+        basis, scheme_version = choices[0], version
+
+    patches = {key: row for key, row in prior.get('patches', {}).items() if row['version'] > scheme_version}
+    rows = {grading_key(row['label']): row for row in basis}
+    if not rows:
+        fallback = {}
+        for key, display, _, version in candidates:
+            rank = (version, display['origin']['kind'] == 'syllabus')
+            if key not in fallback or rank > fallback[key][0]:
+                fallback[key] = (rank, [display])
+            elif rank == fallback[key][0]:
+                fallback[key][1].append(display)
+        rows = {key: items[0] for key, (_, items) in fallback.items()
+                if len({item['weight'] for item in items}) == 1}
+
+    changes = {}
+    aliases = {grading_key(row['label']): key for key, row in rows.items()}
+    aliases.update({grading_key(entry['row']['label']): key for key, entry in patches.items()})
+    for key, display, replaces, version in candidates:
+        if version <= scheme_version:
+            continue
+        target = aliases.get(key) or aliases.get(replaces) or key
+        changes.setdefault(target, []).append((version, display))
+    for key, offers in changes.items():
+        newest = max(version for version, _ in offers)
+        latest = [row for version, row in offers if version == newest]
+        old = patches.get(key)
+        if old and old['version'] > newest:
+            continue
+        if len({row['weight'] for row in latest}) != 1:
+            continue
+        if old and old['version'] == newest and old['row']['weight'] != latest[0]['weight']:
+            continue
+        patches[key] = {'version': newest, 'row': latest[0]}
+    rows.update({key: entry['row'] for key, entry in patches.items()})
+    return list(rows.values()), {'basis': basis, 'version': scheme_version, 'patches': patches}
+
+
+def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester, *, prior_grading=None):
     lookup = {source['id']: source for source in sources}
     events = dict(prior_events)
-    grading = {}
+    grade_candidates = []
     for item in raw.get('grading', [])[:30]:
         source, quote = _evidence(item, lookup)
         label = _text_field(item, 'label', 110)
         if (not source or not label or HISTORICAL.search(quote) or TENTATIVE_GRADING.search(quote)
                 or (source.get('topic') == 'grading' and TENTATIVE_GRADING.search(source['text']))):
             continue
-        display = grading_fields(item, quote)
-        if not (display['weight'] or display['detail']):
+        heading = _grading_scope(item, source, quote)
+        if not heading or AGGREGATE_GRADE.fullmatch(label):
             continue
-        rank = (bool(display['weight']), source.get('version') or 0)
-        key = grading_key(label)
-        if key not in grading or rank > grading[key][0]:
-            grading[key] = (rank, {'label': label, **display, 'origin': _origin(source, quote)})
+        original_label = _text_field(item, 'source_label', 110) or label
+        display = grading_fields({**item, 'label': original_label}, quote)
+        weight = display['weight']
+        if not weight or weight not in _bound_weights(original_label, quote):
+            continue
+        row = {'label': label, 'weight': weight, 'detail': '', 'origin': _origin(source, quote)}
+        version = _grading_revision(source, f'{heading} {quote}', original_label, display['weight'])
+        grade_candidates.append((grading_key(label), row,
+                                 grading_key(_text_field(item, 'replaces', 110)), version))
     candidates = {}
     for item in [*raw.get('events', [])[:60], *_schedule_rows(sources)]:
         source, quote = _evidence(item, lookup)
@@ -360,6 +497,9 @@ def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
         if UNCERTAIN.search(context) or HISTORICAL.search(context):
             continue
         is_message = source['kind'] in {'announcements', 'mail'}
+        changed = bool(CHANGE.search(context))
+        is_updated_document = source['kind'] in {'page', 'file'} and bool(source.get('version')) and changed
+        can_update = is_message or is_updated_document
         if kind == 'deadline':
             assignment = _assignment(assignment_refs, item.get('assignment'), context)
             if assignment and ASSIGNMENT.search(context):
@@ -374,7 +514,9 @@ def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
                 continue
         else:
             continue
-        cancelled = (item.get('cancelled') is True and is_message and CANCEL.search(context)
+        if kind != 'deadline' and CLASS_CANCELLATION.search(quote):
+            continue
+        cancelled = (item.get('cancelled') is True and can_update and CANCEL.search(context)
                      and not re.search(r'取消(?:延期|延後|延長)|cancel(?:led|ed)? (?:the )?(?:extension|rescheduling)', context, re.I))
         clock_only = ''
         if not cancelled:
@@ -384,7 +526,7 @@ def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
             date = _literal_date(phrase, source, semester)
             if not date:
                 surrounding_text = _normalize(quote[:position] + quote[position+len(phrase):])
-                if (is_message and CHANGE.search(context) and TIME_CHANGE.search(context)
+                if (can_update and changed and TIME_CHANGE.search(context)
                         and not re.search(r'下[週月]|next (?:week|month)', context, re.I)
                         and not any(pattern.search(surrounding_text) for pattern in (NUMERIC, ENGLISH, RELATIVE))
                         and _clock_change(phrase, '2000-01-01')):
@@ -396,7 +538,7 @@ def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
         timestamp = source.get('version', 0)
         if is_message and not timestamp:
             continue
-        rank = [2 if is_message and (cancelled or CHANGE.search(context)) else 1 if is_message else 0, timestamp]
+        rank = [2 if can_update and (cancelled or changed) else 1 if is_message else 0, timestamp]
         event = {'id': key, 'kind': kind, 'title': title, 'date': date, 'cancelled': bool(cancelled),
                  'rank': rank, 'source_key': source['key'], 'origin': _origin(source, quote), 'clock_only': clock_only}
         candidates.setdefault(key, []).append(event)
@@ -435,14 +577,14 @@ def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
             variant = _exam_key(old['title'], kind, old['origin']['quote'])
             if variant != kind and variant in events and events[variant]['rank'] >= old['rank']:
                 del events[kind]
-    published = sorted(sources, key=lambda row: row.get('version') or 0, reverse=True)
-    rubric = next((rows for source in published if (rows := _published_rubric(source))), [])
-    grading_outline = next((row for row in sources if row['kind'] == 'syllabus' and row.get('topic') == 'grading'), None)
-    grading_note = _origin(grading_outline, '\n'.join(grading_outline.get('lines', []))[:1300]) if grading_outline and not rubric else None
+    grading, grading_state = _reconcile_grading(sources, grade_candidates, prior_grading or {})
+    rubric = bool(grading_state['basis'])
     summary_request = {'source': raw.get('summary_source'), 'quote': raw.get('summary_quote')}
     _, summary_quote = _evidence(summary_request, lookup)
     if not summary_quote:
         summary_quote = next((row['text'] for row in sources if row['kind'] == 'syllabus'
                               and row.get('topic') == 'overview'), '')
-    return {'summary': summary_quote[:850], 'grading': rubric or [row[1] for row in grading.values()], 'grading_note': grading_note,
-            'published_grading': bool(rubric), 'events': events}
+    conflict = bool(rubric and grading_state['patches']
+                    and sum(Decimal(row['weight'][:-1]) for row in grading if row['weight'].endswith('%')) != 100)
+    return {'summary': summary_quote[:850], 'grading': grading, 'grading_state': grading_state,
+            'grading_conflict': conflict, 'published_grading': rubric, 'events': events}

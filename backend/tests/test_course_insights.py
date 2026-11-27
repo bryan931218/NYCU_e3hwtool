@@ -122,15 +122,67 @@ class CourseInsightTests(unittest.TestCase):
 
     def test_tentative_rubric_and_wrong_item_weight_are_rejected(self):
         outline = {**source('syllabus', 'Tentative grading Assignment 1: 25%', kind='syllabus'), 'topic': 'grading'}
-        file = source('file', '期末筆試 20%；個人上機 30%')
+        file = source('file', '學期成績：期末筆試 20%；個人上機 30%')
         raw = {'grading': [
-            {'source': 'syllabus', 'label': 'Assignment 1', 'weight': '25%', 'quote': 'Assignment 1: 25%'},
-            {'source': 'file', 'label': '期末筆試', 'weight': '30%', 'quote': file['text']},
-            {'source': 'file', 'label': '期末筆試', 'weight': '20%', 'quote': file['text']},
-            {'source': 'file', 'label': 'Final (筆試)', 'weight': '20%', 'quote': '期末筆試 20%'},
+            self.grade(outline, 'Assignment 1', '25%', 'Assignment 1: 25%'),
+            self.grade(file, '期末筆試', '30%', file['text']),
+            self.grade(file, '期末筆試', '20%', file['text']),
+            self.grade(file, 'Final (筆試)', '20%', '期末筆試 20%', scope_quote='學期成績', source_label='期末筆試'),
         ]}
         result = reconcile_analysis(raw, [file, outline], {}, {}, '114-2')
         self.assertEqual([(row['label'], row['weight']) for row in result['grading']], [('期末筆試', '20%')])
+
+    def grade(self, row, label, weight, quote, **context):
+        return {'scope': 'course', 'source': row['id'], 'label': label, 'weight': weight, 'quote': quote, **context}
+
+    def test_video_compression_uses_course_weights_instead_of_assignment_subscores(self):
+        lines = [
+            'Programming projects x4 (80%) - includes both individual assignments and team-based projects.',
+            'Project presentation x2 (20%) - Students will present two of the four programming projects.',
+        ]
+        outline = {**source('outline', ' '.join(lines), kind='syllabus'), 'topic': 'grading', 'lines': lines}
+        first_file = source('first', 'Grading Programming Assignments (4-5): 100%', version=100, title='CourseOutline.pdf')
+        project = source('project', 'Submission Requirements Slides 70% Files 20% Report 10%',
+                         version=300, title='FinalProject.pdf')
+        claims = [
+            self.grade(first_file, 'Programming Assignments', '100%', first_file['text']),
+            self.grade(project, 'Slides', '70%', 'Slides 70%', scope_quote='Submission Requirements'),
+            self.grade(project, 'Files', '20%', 'Files 20%', scope_quote='Submission Requirements'),
+            self.grade(project, 'Report', '10%', 'Report 10%', scope_quote='Submission Requirements'),
+        ]
+        result = reconcile_analysis({'grading': claims}, [outline, first_file, project], {}, {}, TERM)
+        self.assertEqual([(row['label'], row['weight']) for row in result['grading']],
+                         [('Programming projects x4', '80%'), ('Project presentation x2', '20%')])
+        self.assertEqual(reconcile_analysis({'grading': claims}, [project], {}, {}, TERM)['grading'], [])
+
+    def test_later_course_file_updates_only_named_items_and_old_files_cannot_restore_them(self):
+        lines = ['Homework: 50%', 'Midterm: 20%', 'Final: 30%']
+        outline = {**source('outline', ' '.join(lines), kind='syllabus'), 'topic': 'grading', 'lines': lines}
+        later = source('later', '學期成績：程式練習配分由 50% 調整為 60%。', version=300, title='課程配分調整')
+        earlier = source('earlier', '學期成績：Homework 55%。', version=200)
+        updated = self.grade(later, '程式練習', '60%', later['text'], replaces='Homework')
+        stale_value = self.grade(later, '程式練習', '50%', later['text'], replaces='Homework')
+        older = self.grade(earlier, 'Homework', '55%', earlier['text'])
+        revised = reconcile_analysis({'grading': [older, updated, stale_value]}, [outline, earlier, later], {}, {}, TERM)
+        self.assertEqual([row['weight'] for row in revised['grading']], ['60%', '20%', '30%'])
+        self.assertTrue(revised['grading_conflict'])
+        replay = reconcile_analysis({'grading': [older]}, [outline, earlier], {}, {}, TERM, prior_grading=revised['grading_state'])
+        self.assertEqual(replay['grading'], revised['grading'])
+        full = source('complete', '學期總成績配分：作業 60%、期中考 15%、期末考 25%。', version=400)
+        replacement = reconcile_analysis({}, [outline, full], {}, {}, TERM, prior_grading=revised['grading_state'])
+        self.assertEqual([row['weight'] for row in replacement['grading']], ['60%', '15%', '25%'])
+        self.assertFalse(replacement['grading_conflict'])
+
+    def test_syllabus_exam_is_found_and_dated_revised_file_can_reschedule_it(self):
+        outline = source('outline', 'Final exam: December 17, 2026 at 10:10.', kind='syllabus')
+        revision = source('revision', 'Final exam is rescheduled to 12/21 at 14:30.', version=200)
+        base = apply([], [outline])
+        self.assertEqual(base['final']['date'], '2026-12-17T10:10:00+08:00')
+        revised = apply([event(revision, '12/21 at 14:30', kind='final', title='Final exam')], [revision], base)
+        self.assertEqual(revised['final']['date'], '2026-12-21T14:30:00+08:00')
+        self.assertEqual(apply([], [outline], revised), revised)
+        class_note = source('mail', '期末考週取消上課。', kind='mail', version=300)
+        self.assertEqual(apply([event(class_note, '', kind='final', title='期末考', cancelled=True)], [class_note], revised), revised)
 
     def test_only_fixed_moodle_document_paths_and_presentation_positions(self):
         local = BASE + '/pluginfile.php/42/mod_resource/content/1/file.pdf'

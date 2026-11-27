@@ -126,7 +126,6 @@
 .insight-grades td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .insight-grades tr:last-child td { border-bottom: 0; }
 .insight-grades :is(th, td):last-child { width: 1%; text-align: end; white-space: nowrap; }
-.insight-grade-detail { color: var(--muted); font-size: .86rem; }
 .insight-grade-weight { color: var(--primary); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .insight-grade-unlisted { color: var(--muted); font-size: .84rem; }
 .insight-coverage { color: var(--warn-fg); font-size: .8rem; padding-block: 3px; }

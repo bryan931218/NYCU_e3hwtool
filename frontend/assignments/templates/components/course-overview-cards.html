@@ -53,6 +53,7 @@
 </section>
 {% for course in courses %}
 {% set snapshot = snapshots.get(course.id, {}) %}
+{% set grading_outdated = snapshot.attempt_revision and snapshot.analysis_revision != verification_revision %}
 <section class="insight-section insight-overview" data-view-key="course-{{ course.id }}" data-course-info="{{ course.id }}"
          data-scan-state="{{ 'pending' if snapshot.material_progress or (snapshot.analysis_pending and snapshot.analysis_pending.failures < 3) or (not snapshot.analyzed and not snapshot.partial) else 'partial' if snapshot.partial else 'ready' }}"
          aria-labelledby="insightOverview-{{ course.id }}"{% if selected_course != course.id|string %} hidden{% endif %}>
@@ -66,17 +67,19 @@
     {% if snapshot.analyzed %}
         {% if snapshot.summary %}<p class="insight-course-description">{{ snapshot.summary }}</p>{% endif %}
         <section class="insight-grading" aria-labelledby="insightGrades-{{ course.id }}">
-            <h4 id="insightGrades-{{ course.id }}">評分與配分</h4>
-            {% if snapshot.grading %}
+            <h4 id="insightGrades-{{ course.id }}">學期配分</h4>
+            {% if grading_outdated %}
+            <p class="insight-empty-copy">正在重新核對配分來源。</p>
+            {% elif snapshot.grading %}
+            {% if snapshot.grading_conflict %}<p class="insight-coverage">部分項目已更新，整體配分仍待核對。</p>{% endif %}
             <table class="insight-grades" aria-labelledby="insightGrades-{{ course.id }}">
-                <thead><tr><th scope="col">評量項目</th><th scope="col">配分</th></tr></thead>
+                <thead><tr><th scope="col">評量項目</th><th scope="col">學期占比</th></tr></thead>
                 <tbody>
                     {% for item in snapshot.grading %}
                     {% set display = item if item.weight is defined else grading_fields(item, item.origin.quote) %}
                     <tr>
                         <td>
                             <strong>{{ item.label }}</strong>
-                            {% if display.detail %}<p class="insight-grade-detail">{{ display.detail }}</p>{% endif %}
                             {{ citation(item.origin) }}
                         </td>
                         <td>{% if display.weight %}<strong class="insight-grade-weight">{{ display.weight }}</strong>{% else %}<span class="insight-grade-unlisted">未列</span>{% endif %}</td>
@@ -85,7 +88,6 @@
                 </tbody>
             </table>
             {% else %}<p class="insight-empty-copy">{{ '目前讀到的來源還無法確認配分。' if snapshot.partial or snapshot.material_progress else '已讀取的來源未列出評量項目或配分。' }}</p>{% endif %}
-            {% if snapshot.grading_note %}{{ citation(snapshot.grading_note) }}{% endif %}
         </section>
     {% else %}
         <p class="insight-empty-copy">{{ '教材讀完後會在這裡顯示概要與配分。' if snapshot.material_progress else '課程分析完成後會在這裡顯示概要與配分。' if snapshot.analysis_pending else '這門課的來源暫時無法完整讀取。' if snapshot.partial else '這門課還在等候整理。' if configured else '啟用課程 AI 後就能查看概要和評分。' }}</p>

@@ -6,6 +6,7 @@ import posixpath
 import re
 import time
 import zipfile
+from email.utils import parsedate_to_datetime
 from urllib.parse import parse_qs, unquote, urljoin, urlsplit, urlunsplit
 from xml.etree import ElementTree
 
@@ -52,7 +53,7 @@ def _file_url(url, base, *, announcement=False):
     return safe if _extension(safe) in EXTENSIONS else None
 
 
-def _read_file(client, user, url, base):
+def _read_file(client, user, url):
     token = user.get('moodle_token')
     if token:
         # The API client verifies that this bearer belongs to the signed-in account.
@@ -65,14 +66,21 @@ def _read_file(client, user, url, base):
                             stream=True, allow_redirects=False,
                             timeout=max(0.5, min(8, client.deadline - time.monotonic()))) as response:
         if response.status_code != 200 or 'text/html' in response.headers.get('Content-Type', '').lower():
-            return b''
+            return b'', 0
         if int(response.headers.get('Content-Length') or 0) > MAX_BYTES:
-            return b''
+            return b'', 0
+        try:
+            modified = parsedate_to_datetime(response.headers.get('Last-Modified', ''))
+            version = int(modified.timestamp()) if modified.tzinfo else 0
+            if version <= 0 or version > time.time():
+                version = 0
+        except (ValueError, OverflowError, OSError):
+            version = 0
         for chunk in response.iter_content(65536):
             data.extend(chunk)
             if len(data) > MAX_BYTES or time.monotonic() >= client.deadline:
-                return b''
-    return bytes(data)
+                return b'', 0
+    return bytes(data), version
 
 
 def document_sections(data, extension, *, deadline=None, coverage=None):
@@ -224,7 +232,7 @@ def _text_sections(kind, key, title, url, location, text):
 
 
 def _document_rows(client, user, url, title, *, limit):
-    data = _read_file(client, user, url, client.base_url)
+    data, version = _read_file(client, user, url)
     if not data:
         return [], True
     key = hashlib.sha256(urlsplit(url).path.encode()).hexdigest()[:24]
@@ -233,7 +241,7 @@ def _document_rows(client, user, url, title, *, limit):
     rows = []
     for index, (location, text) in enumerate(document):
         rows.extend(_text_sections('file', f'{key}:{index}', title, url, location, text))
-    return sorted(rows, key=_document_priority)[:limit], bool(coverage) or not rows
+    return [{**row, 'version': version} for row in sorted(rows, key=_document_priority)[:limit]], bool(coverage) or not rows
 
 
 def _material_sources(client, user, main, course_url, progress, previous_sources):

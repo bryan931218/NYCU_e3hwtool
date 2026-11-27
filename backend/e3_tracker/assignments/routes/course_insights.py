@@ -64,6 +64,7 @@ def register_course_insight_routes(app, current_user, login_required, service):
             semesters=semesters, courses=courses, selected_course=course if selected else '',
             selected_name=course_display_name(selected['title']) if selected else '全部課程', configured=bool(settings),
             snapshots=snapshots, course_name=course_display_name, grading_fields=grading_fields,
+            verification_revision=ANALYSIS_REVISION,
             course_states=course_states(snapshots), historical=historical,
             e3_course_base=e3_course_base,
             overview_version=overview_version(courses, snapshots),
@@ -169,7 +170,7 @@ def register_course_insight_routes(app, current_user, login_required, service):
         if version and request.args.get('overview_version') != version:
             overview = render_template('assignments/components/course-overview-cards.html',
                 courses=courses, snapshots=data, configured=True, selected_course='',
-                course_name=course_display_name, grading_fields=grading_fields)
+                course_name=course_display_name, grading_fields=grading_fields, verification_revision=ANALYSIS_REVISION)
         running = settings['lease_until'] > time.time()
         states = course_states(data)
         needs_scan = any(data.get(cid, {}).get('attempt_revision') != ANALYSIS_REVISION or
