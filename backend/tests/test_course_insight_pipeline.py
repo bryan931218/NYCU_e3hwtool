@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 import requests
+from bs4 import BeautifulSoup
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from sqlalchemy import update
@@ -124,6 +125,29 @@ class CourseInsightPipelineTests(unittest.TestCase):
             session['session_token'] = token
         return client
 
+    def test_course_pages_share_header_and_keep_the_selected_semester(self):
+        for path, title in (
+            ('/courses/overview', '課程中心'),
+            ('/courses/messages', '課程訊息'),
+            ('/courses/messages?tab=mail', '課程訊息'),
+            ('/courses/files', '附件收納'),
+        ):
+            with self.subTest(path=path):
+                response = self.client.get(path, follow_redirects=True)
+                self.assertEqual(response.status_code, 200)
+                page = BeautifulSoup(response.data, 'html.parser')
+                header = page.select_one('.course-workspace-header')
+                self.assertIn(title, header.h1.get_text())
+                self.assertEqual(header.select_one('.course-workspace-back')['href'], '/')
+                self.assertIsNotNone(header.select_one('[data-course-theme]'))
+                links = header.select('.course-workspace-nav a')
+                self.assertEqual([link.get_text(strip=True) for link in links], ['課程中心', '課程訊息', '附件收納'])
+                self.assertEqual([link.get_text(strip=True) for link in links if link.get('aria-current') == 'page'], [title])
+                self.assertTrue(all(f'semester={TERM}' in link['href'] for link in links))
+                if title == '課程訊息':
+                    self.assertEqual(page.select_one('.news-kinds [aria-current="page"]').get_text(strip=True),
+                                     '信件' if '?tab=mail' in path else '公告')
+
     def news_listing(self, latest_post):
         return ('<table><tr><th><a href="/mod/forum/discuss.php?d=7">考試異動</a></th>'
                 f'<td class="lastpost"><time datetime="{latest_post}"></time></td></tr></table>')
@@ -155,12 +179,6 @@ class CourseInsightPipelineTests(unittest.TestCase):
             self.assertNotIn(secret, serialized)
         inputs = json.loads(serialized)
         sources = inputs['sources']
-        if 'question' in inputs:
-            document = next(source for source in sources if OUTLINE_QUOTE in source['text'])
-            return model_response({'points': [
-                {'text': '課綱列出期末考時間。', 'source': document['id'], 'quote': OUTLINE_QUOTE},
-                {'text': '虛構資料', 'source': document['id'], 'quote': '這段文字不存在於文件'},
-            ]})
         self.assertEqual(sources[0]['location'], '第 2 頁', 'First readable file takes priority over named syllabus')
         events = []
         for source in sources:
@@ -197,7 +215,7 @@ class CourseInsightPipelineTests(unittest.TestCase):
     def overview(self):
         return self.client.get(f'/api/course-overview?semester={TERM}&include=overview').get_json()
 
-    def test_first_pdf_and_new_mail_reconcile_through_background_job_and_search(self):
+    def test_first_pdf_and_new_mail_reconcile_through_background_job(self):
         self.refresh()
         self.wait_for_worker()
         initial = self.overview()
@@ -222,16 +240,10 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.assertEqual(self.overview()['events'], updated['events'])
         self.assertEqual(self.provider.call_count, 2, 'An unchanged reply must not consume more Gemini quota')
 
-        result = self.client.post('/api/course-overview/search', json={
-            'semester': TERM, 'course_id': 42, 'query': 'Final exam time'}).get_json()
-        self.assertEqual(len(result['points']), 1)
-        self.assertEqual(result['points'][0]['source']['location'], '第 2 頁')
-        self.assertNotIn('text', result['points'][0]['source'])
         other = self.account('987654322', [COURSE])
         self.assertEqual(other.get(f'/api/course-overview?semester={TERM}').get_json(), {'configured': False})
-        self.assertEqual(other.post('/api/course-overview/search', json={
-            'semester': TERM, 'course_id': 42, 'query': 'Final exam time'}).status_code, 409)
-        self.assertEqual(self.provider.call_count, 3)
+        self.assertNotIn('40%', other.get(f'/courses/overview?semester={TERM}&course=42').get_data(as_text=True))
+        self.assertEqual(self.provider.call_count, 2)
 
     def test_quota_failure_keeps_schedule_and_applies_retry_cooldown(self):
         self.refresh()
@@ -276,9 +288,6 @@ class CourseInsightPipelineTests(unittest.TestCase):
         indexed = self.store.snapshots(USERNAME, TERM, [42], include_sources=True)[42]
         self.assertTrue(indexed['document'], 'The later text file still parses')
         self.assertTrue(indexed['partial'], 'The first PDF had no extractable text')
-        result = self.client.post('/api/course-overview/search', json={
-            'semester': TERM, 'course_id': 42, 'query': '參考書目'}).get_json()
-        self.assertEqual(result, {'points': [], 'partial': True})
 
     def test_expired_moodle_session_keeps_schedule_without_spending_gemini_quota(self):
         self.refresh()
@@ -292,7 +301,7 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.assertIn('請重新登入 E3', data['error'])
         self.assertEqual(self.provider.call_count, 1)
 
-    def test_ambiguous_search_asks_for_course_before_calling_gemini(self):
+    def test_course_selection_uses_one_timeline_with_source_links_and_no_ai_search(self):
         other_course = {**COURSE, 'id': 43, 'title': '【115上】離散數學', 'assignments': []}
         self.client = self.account(USERNAME, [COURSE, other_course])
         self.pages['/course/view.php?id=43'] = (
@@ -301,20 +310,19 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.refresh()
         self.wait_for_worker()
         self.assertEqual(self.overview()['ready'], 2)
-        self.provider.reset_mock()
-
-        query = {'semester': TERM, 'query': 'Final exam time'}
-        choices = self.client.post('/api/course-overview/search', json=query).get_json()
-        self.assertCountEqual(choices['choices'], [{'id': 42, 'title': '資料結構'}, {'id': 43, 'title': '離散數學'}])
-        self.assertFalse(choices['partial'])
-        self.assertEqual(self.client.post('/api/course-overview/search', json={**query, 'course_id': 99}).status_code, 400)
-        self.provider.assert_not_called()
-
-        result = self.client.post('/api/course-overview/search', json={**query, 'course_id': 43}).get_json()
-        self.assertEqual([point['course'] for point in result['points']], ['離散數學'])
-        self.provider.assert_called_once()
-        sent = self.provider.call_args.kwargs['json']['contents'][0]['parts'][0]['text']
-        self.assertNotIn(NEWS_QUOTE, sent)
+        all_courses = BeautifulSoup(self.client.get(f'/courses/overview?semester={TERM}').get_data(as_text=True), 'html.parser')
+        selected = BeautifulSoup(self.client.get(f'/courses/overview?semester={TERM}&course=43').get_data(as_text=True), 'html.parser')
+        for page in (all_courses, selected):
+            self.assertIsNone(page.select_one('input[type=search]'))
+            self.assertEqual(len(page.select('.insight-schedule-list')), 1)
+            self.assertEqual(len(page.select('#insight-event-43-final')), 1)
+            self.assertIn('第 2 頁', page.select_one('#insight-event-43-final details').get_text())
+        self.assertFalse(all_courses.select_one('#insight-event-42-final').has_attr('hidden'))
+        self.assertTrue(selected.select_one('#insight-event-42-final').has_attr('hidden'))
+        self.assertFalse(selected.select_one('[data-course-info="43"]').has_attr('hidden'))
+        self.assertTrue(selected.select_one('[data-course-info="42"]').has_attr('hidden'))
+        self.assertEqual(self.client.post('/api/course-overview/search', json={}).status_code, 404)
+        self.assertEqual(self.provider.call_count, 2)
 
     def test_disconnect_while_gemini_runs_discards_pending_write(self):
         entered = threading.Event()

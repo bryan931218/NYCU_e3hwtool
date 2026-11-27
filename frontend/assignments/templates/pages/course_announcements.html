@@ -1,38 +1,28 @@
-<!doctype html>
-<html lang="zh-Hant" data-theme>
-<head>
-{% include 'shared/components/security.html' %}
-{% include 'shared/components/page-transitions.html' %}
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>課程訊息 · {{ message_noun }} | E3作業追蹤系統</title>
-<script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
-<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
-<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
+{% extends 'assignments/pages/course_workspace.html' %}
+{% set course_page = 'messages' %}
+{% set course_page_title = '課程訊息' %}
+{% set workspace_semester = selected_semester %}
+{% set show_course_center = not user.is_guest %}
+{% block document_title %}{{ course_page_title }} · {{ message_noun }}{% endblock %}
+{% block title_count %}<span class="course-workspace-count" id="newsCount" aria-label="{{ message_noun }}數量">0</span>{% endblock %}
+{% block page_assets %}
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-announcements.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-picker.css') }}">
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/assignment-actions.css') }}">
 <script nonce="{{ csp_nonce() }}" type="application/json" id="course-news-config">{{ announcement_config|tojson }}</script>
 <script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/course-announcements.js') }}"></script>
-</head>
-<body>
-<main class="news-shell">
-    <header class="news-header">
-        <a class="news-brand" href="{{ url_for('index') }}">E3作業追蹤系統</a>
-        <div class="news-header-actions"><a class="btn" href="{{ url_for('index') }}"><span class="news-icon news-back" aria-hidden="true"></span> 作業列表</a><button class="icon-button" type="button" id="newsTheme" title="切換主題" aria-label="切換主題"><span class="news-icon news-theme" aria-hidden="true"></span></button></div>
-    </header>
-    <section class="news-heading" aria-labelledby="newsTitle">
-        <div><h1 id="newsTitle">課程訊息 <span class="news-count" id="newsCount" aria-label="{{ message_noun }}數量">0</span></h1><p id="newsUpdated" class="news-updated"></p></div>
-        <div class="news-heading-actions"><a class="icon-button" href="{{ url_for('notification_settings_page') }}" title="通知設定" aria-label="通知設定"><span class="news-icon news-settings" aria-hidden="true"></span></a><button class="btn" type="button" id="newsRefresh"><span class="news-icon news-refresh-icon" aria-hidden="true"></span>更新{{ message_noun }}</button></div>
-    </section>
-    <nav class="news-tabs" aria-label="課程訊息分類">
-        <a href="{{ url_for('course_messages_page') }}" data-message-kind="announcements"{% if message_kind == 'announcements' %} aria-current="page"{% endif %}>課程公告<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
-        <a href="{{ url_for('course_messages_page', tab='mail') }}" data-message-kind="mail"{% if message_kind == 'mail' %} aria-current="page"{% endif %}>課程信件<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
-        <a href="{{ url_for('course_files_page', semester=selected_semester) }}" data-files-tab>附件收納</a>
-        {% if not user.is_guest %}<a href="{{ url_for('course_overviews', semester=selected_semester) }}">課程中心</a>{% endif %}
-    </nav>
+{% endblock %}
+{% block page_content %}
+    <div class="course-page-tools">
+        <nav class="news-kinds" aria-label="課程訊息分類">
+            <a href="{{ url_for('course_messages_page', semester=selected_semester) }}" data-course-semester-link data-message-kind="announcements"{% if message_kind == 'announcements' %} aria-current="page"{% endif %}>公告<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
+            <a href="{{ url_for('course_messages_page', tab='mail', semester=selected_semester) }}" data-course-semester-link data-message-kind="mail"{% if message_kind == 'mail' %} aria-current="page"{% endif %}>信件<span class="message-indicator" aria-hidden="true"><span class="message-unread-dot" data-unread-dot hidden></span></span></a>
+        </nav>
+        <div class="course-page-actions"><a class="icon-button" href="{{ url_for('notification_settings_page') }}" title="通知設定" aria-label="通知設定"><span class="news-icon news-settings" aria-hidden="true"></span></a><button class="btn" type="button" id="newsRefresh"><span class="news-icon news-refresh-icon" aria-hidden="true"></span>更新{{ message_noun }}</button></div>
+        <p class="course-page-updated news-sync-time" id="newsUpdated"></p>
+    </div>
     <section class="news-toolbar" aria-label="{{ message_noun }}篩選">
-        <select id="newsSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>
+        <select id="newsSemester" data-course-semester aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>
         <div class="course-picker"><select class="course-filter" id="courseFilter" aria-label="篩選課程"><option value="">全部課程</option></select><button type="button" class="course-filter course-picker-toggle" id="courseFilterToggle" role="combobox" aria-label="篩選課程" aria-haspopup="listbox" aria-expanded="false" aria-controls="courseFilterOptions" hidden><span id="courseFilterLabel">全部課程</span><span class="course-picker-chevron" aria-hidden="true"></span></button><div class="course-options" id="courseFilterOptions" role="listbox" aria-label="課程" popover="auto" hidden></div></div>
         <form role="search" id="newsSearchForm" autocomplete="off"><input type="search" id="newsSearch" name="course_message_query" placeholder="搜尋{{ message_noun }}" aria-label="搜尋{{ message_noun }}" autocomplete="off" data-lpignore="true" data-1p-ignore></form>
         <label class="news-unread"><input type="checkbox" id="newsUnread">只看未讀 <span id="newsUnreadCount">0</span></label>
@@ -42,6 +32,4 @@
         <section class="news-inbox" aria-label="課程{{ message_noun }}列表"><div class="news-list-heading">{{ message_noun }}列表 <span id="newsListCount">0</span></div><div id="newsList" class="news-list"></div><p id="newsEmpty" class="news-empty" hidden>目前沒有課程{{ message_noun }}</p></section>
         <section id="newsReader" class="news-reader" aria-label="{{ message_noun }}內文" aria-live="polite"><p class="news-reader-empty">選擇{{ message_noun }}</p></section>
     </div>
-</main>
-</body>
-</html>
+{% endblock %}

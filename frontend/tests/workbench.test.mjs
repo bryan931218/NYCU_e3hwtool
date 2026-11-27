@@ -47,6 +47,8 @@ test('course center keeps same-day events in the upcoming list and reserves past
   assert.equal(showScheduleEntry({ range: 'upcoming', day: '2026-11-26', cancelled: false, today }), false);
   assert.equal(showScheduleEntry({ range: 'upcoming', day: '2026-11-28', cancelled: true, today }), false);
   assert.equal(showScheduleEntry({ range: 'all', day: '', cancelled: true, today }), true);
+  assert.equal(showScheduleEntry({ range: 'all', day: today, cancelled: false, today, course: '42', selectedCourse: '43' }), false);
+  assert.equal(showScheduleEntry({ range: 'upcoming', day: today, cancelled: false, today, course: '42', selectedCourse: '42' }), true);
 });
 
 test('calendar uses the course deadline once, preserves a manually chosen deadline, and adds exams', () => {

@@ -57,12 +57,6 @@ class CourseInsightStorage(CourseFileStorage):
                 conn.execute(delete(insight_courses).where(insight_courses.c.user_id == uid))
             return True
 
-    def credential(self, username):
-        with self.owner._lock, self.owner._engine.connect() as conn:
-            uid = self._user(conn, username)
-            secret = conn.execute(select(insight_settings.c.secret).where(insight_settings.c.user_id == uid)).scalar()
-        return self.owner._credential_cipher.decrypt(secret, f'course-ai-key:{uid}') if secret else None
-
     def due_accounts(self, now):
         session = select(web_sessions_table.c.session_token).where(
             web_sessions_table.c.username == users_table.c.username,

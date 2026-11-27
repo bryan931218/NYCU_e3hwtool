@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme>
+<head>
+{% include 'shared/components/security.html' %}
+{% include 'shared/components/page-transitions.html' %}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block document_title %}{{ course_page_title }}{% endblock %} | E3作業追蹤系統</title>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
+<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-workspace.css') }}">
+<script nonce="{{ csp_nonce() }}" type="module" src="{{ url_for('frontend_asset', filename='assignments/js/course-workspace.js') }}"></script>
+{% block page_assets %}{% endblock %}
+</head>
+<body class="course-workspace-page {{ course_body_class|default('') }}">
+<main class="course-workspace-shell" {% block page_attributes %}{% endblock %}>
+    <header class="course-workspace-header">
+        <div class="course-workspace-top">
+            <a class="btn course-workspace-back" href="{{ url_for('index') }}"><span class="course-workspace-back-icon" aria-hidden="true"></span>作業列表</a>
+            <button type="button" class="icon-button course-workspace-theme" data-course-theme aria-label="切換主題" title="切換主題"><span aria-hidden="true"></span></button>
+        </div>
+        <h1>{{ course_page_title }}{% block title_count %}{% endblock %}</h1>
+        <nav class="course-workspace-nav" aria-label="課程功能">
+            {% if show_course_center %}<a href="{{ url_for('course_overviews', semester=workspace_semester) }}" data-course-semester-link{% if course_page == 'overview' %} aria-current="page"{% endif %}>課程中心</a>{% endif %}
+            <a href="{{ url_for('course_messages_page', semester=workspace_semester) }}" data-course-semester-link{% if course_page == 'messages' %} aria-current="page"{% endif %}>課程訊息</a>
+            <a href="{{ url_for('course_files_page', semester=workspace_semester) }}" data-course-semester-link{% if course_page == 'files' %} aria-current="page"{% endif %}>附件收納</a>
+        </nav>
+    </header>
+    {% block page_content %}{% endblock %}
+</main>
+</body>
+</html>

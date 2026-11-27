@@ -246,17 +246,11 @@ function initialize(config) {
     Object.assign(state, {items: [], courses: [], ready: false, running: false, remaining: 0, limit: 50, error: ''});
     course.value = ''; state.requestedCourse = ''; byId('filesUpdated').textContent = '';
     const url = new URL(location.href); url.searchParams.set('semester', semester.value); url.searchParams.delete('course'); history.replaceState(null, '', url);
-    document.querySelectorAll('[data-semester-link]').forEach(link => { const target = new URL(link.href); target.searchParams.set('semester', semester.value); link.href = target.href; });
     status('讀取附件中…'); render(); void load();
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(poll); else void load(); });
   window.addEventListener('pageshow', event => { if (event.persisted) void load(); });
   window.addEventListener('pagehide', () => { controller?.abort(); clearTimeout(poll); });
-  byId('filesTheme').addEventListener('click', () => {
-    const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme;
-    try { localStorage.setItem('e3_theme', theme); } catch {}
-  });
   document.addEventListener('click', event => { if (!byId('filesFilters').contains(event.target)) byId('filesFilters').open = false; });
   byId('filesFilters').addEventListener('keydown', event => { if (event.key === 'Escape') { byId('filesFilters').open = false; byId('filesFilters').querySelector('summary').focus(); } });
   if (config.guest || !semester.value) {

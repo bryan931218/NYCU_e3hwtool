@@ -2,85 +2,75 @@
 <details class="insight-source">
     <summary>查看依據 <span>{{ origin.title }}{% if origin.location %} · {{ origin.location }}{% endif %}</span></summary>
     <blockquote>{{ origin.quote }}</blockquote>
-    <a href="{{ origin.url | safe_link }}" target="_blank" rel="noopener noreferrer">在 E3 查看來源 ↗</a>
+    <a href="{{ origin.url | safe_link }}" target="_blank" rel="noopener noreferrer">在 E3 查看原文 ↗</a>
 </details>
 {% endmacro %}
 
-{% macro schedule_row(item, course, show_course=false) %}
-<li class="insight-schedule-item"{% if not show_course %} id="insight-event-{{ course.id }}-{{ item.id }}"{% endif %} data-schedule-date="{{ item.date[:10] }}" data-schedule-cancelled="{{ 1 if item.cancelled else 0 }}">
-    {% if item.cancelled %}
-    <span class="insight-day insight-day-cancelled">已取消</span>
-    {% else %}
-    <time class="insight-day" datetime="{{ item.date }}"><strong>{{ item.date[5:10]|replace('-', '/') }}</strong><span>{{ item.date[11:16] or '未列時間' }}</span></time>
-    {% endif %}
-    <div class="insight-event-body">
-        <div class="insight-event-heading">
-            <span class="insight-tag{{ ' insight-tag-due' if item.kind == 'deadline' else '' }}">{{ '作業期限' if item.kind == 'deadline' else '考試' }}</span>
-            {% if show_course %}
-            <a class="insight-event-course" data-course-option="{{ course.id }}" href="{{ url_for('course_overviews', semester=course.semester_key, course=course.id) }}">{{ course_name(course.title) }}</a>
-            {% endif %}
-        </div>
-        <strong class="insight-event-name">{{ item.title }}</strong>
-        {{ citation(item.origin) }}
-    </div>
-</li>
-{% endmacro %}
-
-{% set schedule = namespace(items=[]) %}
+{% set schedule = namespace(items=[], in_scope=0) %}
 {% for course in courses %}
     {% for item in snapshots.get(course.id, {}).get('events', {}).values() %}
         {% set schedule.items = schedule.items + [{'item': item, 'course': course}] %}
+        {% if not selected_course or selected_course == course.id|string %}{% set schedule.in_scope = schedule.in_scope + 1 %}{% endif %}
     {% endfor %}
 {% endfor %}
-<section class="insight-panel insight-schedule" data-course-panel="" aria-labelledby="insightScheduleTitle"{% if selected_course %} hidden{% endif %}>
-    <header class="insight-panel-head">
-        <div><h2 id="insightScheduleTitle">考試與期限</h2><p>全部課程</p></div>
-        {% if schedule.items %}
+<section class="insight-section insight-schedule" data-view-key="schedule" aria-labelledby="insightScheduleTitle">
+    <header class="insight-section-head">
+        <h3 id="insightScheduleTitle">考試與期限</h3>
         <div class="insight-range" role="group" aria-label="顯示日期範圍" hidden>
             <button type="button" data-schedule-range="upcoming" aria-pressed="true">即將到來</button>
             <button type="button" data-schedule-range="all" aria-pressed="false">所有日期</button>
         </div>
-        {% endif %}
     </header>
-    {% if schedule.items %}
     <ol class="insight-schedule-list">
         {% for row in schedule.items|sort(attribute='item.date') %}
-        {{ schedule_row(row.item, row.course, true) }}
+        {% set item = row.item %}
+        {% set course = row.course %}
+        <li class="insight-schedule-item" id="insight-event-{{ course.id }}-{{ item.id }}"
+            data-event-course="{{ course.id }}" data-schedule-date="{{ item.date[:10] }}"
+            data-schedule-cancelled="{{ 1 if item.cancelled else 0 }}"
+            {% if selected_course and selected_course != course.id|string %}hidden{% endif %}>
+            {% if item.cancelled %}
+            <span class="insight-day insight-day-cancelled">已取消</span>
+            {% else %}
+            <time class="insight-day" datetime="{{ item.date }}"><strong>{{ item.date[5:10]|replace('-', '/') }}</strong><span>{{ item.date[11:16] or '未列時間' }}</span></time>
+            {% endif %}
+            <div class="insight-event-body">
+                <div class="insight-event-heading">
+                    <strong>{{ item.title }}</strong>
+                    <span class="insight-tag{{ ' insight-tag-due' if item.kind == 'deadline' else '' }}">{{ '作業期限' if item.kind == 'deadline' else '考試' }}</span>
+                </div>
+                <a class="insight-event-course" data-course-option="{{ course.id }}" data-event-scope-link
+                   href="{{ url_for('course_overviews', semester=course.semester_key, course=course.id) }}"
+                   {% if selected_course %}hidden{% endif %}>{{ course_name(course.title) }}</a>
+                {{ citation(item.origin) }}
+            </div>
+        </li>
         {% endfor %}
     </ol>
-    <p class="insight-empty-copy" data-empty-schedule hidden>近期沒有已確認的考試或期限。</p>
-    {% else %}
-    <p class="insight-empty-copy">{{ '綁定金鑰後，確認的日期會顯示在這裡。' if not configured else '目前沒有已確認的考試或期限。' }}</p>
-    {% endif %}
+    <p class="insight-empty-copy" data-empty-schedule data-empty-label="{{ '目前沒有已確認的考試或期限。' if configured else '啟用課程 AI 後，整理出的日期會顯示在這裡。' }}"
+       {% if schedule.in_scope %}hidden{% endif %}>{{ '目前沒有已確認的考試或期限。' if configured else '啟用課程 AI 後，整理出的日期會顯示在這裡。' }}</p>
 </section>
 {% for course in courses %}
 {% set snapshot = snapshots.get(course.id, {}) %}
-<section class="insight-panel insight-course" data-course-panel="{{ course.id }}" aria-labelledby="insightCourseTitle-{{ course.id }}"{% if selected_course != course.id|string %} hidden{% endif %}>
-    <header class="insight-panel-head">
-        <div><h2 id="insightCourseTitle-{{ course.id }}">{{ course_name(course.title) }}</h2><p>課堂概要</p></div>
+<section class="insight-section insight-overview" data-view-key="course-{{ course.id }}" data-course-info="{{ course.id }}"
+         aria-labelledby="insightOverview-{{ course.id }}"{% if selected_course != course.id|string %} hidden{% endif %}>
+    <header class="insight-section-head">
+        <h3 id="insightOverview-{{ course.id }}">課堂概要</h3>
         {% if snapshot.analyzed and (snapshot.partial or not snapshot.document) %}<span class="insight-coverage">部分來源尚未讀取</span>{% endif %}
     </header>
     {% if snapshot.analyzed %}
         {% if snapshot.summary %}<p class="insight-course-description">{{ snapshot.summary }}</p>{% endif %}
-        <div class="insight-course-sections">
-            <section aria-labelledby="insightGrades-{{ course.id }}">
-                <h3 id="insightGrades-{{ course.id }}">評分方式</h3>
-                {% if snapshot.grading %}
-                <ul class="insight-grades">{% for item in snapshot.grading %}<li>
-                    <div><strong>{{ item.label }}</strong><span>{{ item.detail }}</span></div>
-                    {{ citation(item.origin) }}
-                </li>{% endfor %}</ul>
-                {% else %}<p class="insight-empty-copy">已讀取的來源未列出評分方式。</p>{% endif %}
-            </section>
-            <section aria-labelledby="insightDates-{{ course.id }}">
-                <h3 id="insightDates-{{ course.id }}">考試與期限</h3>
-                {% if snapshot.events %}
-                <ol class="insight-schedule-list">{% for item in snapshot.events.values()|sort(attribute='date') %}{{ schedule_row(item, course) }}{% endfor %}</ol>
-                {% else %}<p class="insight-empty-copy">目前沒有已確認的日期。</p>{% endif %}
-            </section>
-        </div>
+        <section class="insight-grading" aria-labelledby="insightGrades-{{ course.id }}">
+            <h4 id="insightGrades-{{ course.id }}">評分方式</h4>
+            {% if snapshot.grading %}
+            <ul class="insight-grades">{% for item in snapshot.grading %}<li>
+                <div class="insight-grade-line"><strong>{{ item.label }}</strong><span>{{ item.detail }}</span></div>
+                {{ citation(item.origin) }}
+            </li>{% endfor %}</ul>
+            {% else %}<p class="insight-empty-copy">已讀取的來源未列出評分方式。</p>{% endif %}
+        </section>
     {% else %}
-        <p class="insight-empty-copy">{{ '這門課還在等候整理，完成後會自動顯示。' if configured else '啟用課程 AI 後就能查看課堂概要。' }}</p>
+        <p class="insight-empty-copy">{{ '這門課還在等候整理。' if configured else '啟用課程 AI 後就能查看概要和評分。' }}</p>
     {% endif %}
 </section>
 {% endfor %}

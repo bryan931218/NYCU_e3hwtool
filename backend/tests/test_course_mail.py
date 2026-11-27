@@ -106,7 +106,7 @@ class MailAccountTests(unittest.TestCase):
         self.seed_mail()
         html = self.client.get('/courses/mail').get_data(as_text=True)
         self.assertIn('課程信件', html); self.assertIn('"autoOpen": false', html)
-        self.assertIn('/api/course-mail', html); self.assertIn('aria-current="page">課程信件', html)
+        self.assertIn('/api/course-mail', html); self.assertIn('aria-current="page">信件', html)
         home = self.client.get('/').get_data(as_text=True)
         self.assertIn('/courses/messages', home)
         self.assertNotIn('href="/courses/mail"', home)

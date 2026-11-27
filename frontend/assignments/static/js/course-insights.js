@@ -10,23 +10,13 @@ function dateText(value) {
   return value.length === 10 ? day : day + " " + value.slice(11, 16);
 }
 
-function sourceLink(url, label) {
-  const target = new URL(url, window.location.href);
-  if (!["https:", "http:"].includes(target.protocol)) return node("span", label);
-  const anchor = node("a", label);
-  anchor.href = target.href;
-  anchor.target = "_blank";
-  anchor.rel = "noopener noreferrer";
-  return anchor;
-}
-
-async function courseRequest(url, data, csrf, signal) {
+async function courseRequest(url, data, csrf) {
   const options = data === undefined ? {} : {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
     body: JSON.stringify(data),
   };
-  const response = await fetch(url, { ...options, cache: "no-store", credentials: "same-origin", signal });
+  const response = await fetch(url, { ...options, cache: "no-store", credentials: "same-origin" });
   if (!response.headers.get("content-type")?.includes("application/json")) {
     throw new Error("請重新登入後再試。");
   }
@@ -66,9 +56,6 @@ export function initHomeInsights(context) {
   };
   entry?.addEventListener("click", () => {
     entry.href = link();
-    try {
-      sessionStorage.setItem("e3.courseOverviewQuestion", document.getElementById("assignmentSearch").value.trim());
-    } catch { /* Search still opens if browser storage is unavailable. */ }
   });
   async function update() {
     clearTimeout(timer);
@@ -117,49 +104,62 @@ function activeDay() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
 }
 
-export function showScheduleEntry({ range, day, cancelled, today }) {
+export function showScheduleEntry({ range, day, cancelled, today, course, selectedCourse }) {
+  if (selectedCourse && course !== selectedCourse) return false;
   return range === "all" || (!cancelled && day >= today);
 }
 
-function setupNavigation(page, cards, onSelectionChanged) {
+function setupNavigation(page, cards) {
   if (!cards) return null;
   const courseSelect = page.querySelector("#insightCourseSelect");
-  const label = page.querySelector("#insightSearchScope");
+  const title = page.querySelector("#insightScopeTitle");
   const links = new Map([...page.querySelectorAll("#insightCourseNav a")].map(link => [link.dataset.courseOption, link]));
   let range = "upcoming";
+  const target = document.getElementById(location.hash.slice(1));
+  if (target?.dataset.scheduleDate && cards.contains(target) && !showScheduleEntry({ range, day: target.dataset.scheduleDate,
+    cancelled: target.dataset.scheduleCancelled === "1", today: activeDay() })) {
+    range = "all";
+  }
   function render() {
     const selected = page.dataset.course;
     if (courseSelect) courseSelect.value = selected;
-    if (label) label.textContent = links.get(selected)?.dataset.courseName || "全部課程";
+    if (title) title.textContent = links.get(selected)?.dataset.courseName || "全部課程";
     for (const [id, link] of links) {
       if (id === selected) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     }
     page.querySelectorAll("[data-current-course]").forEach(input => { input.value = selected; });
-    cards.querySelectorAll("[data-course-panel]").forEach(panel => {
-      panel.hidden = panel.dataset.coursePanel !== selected;
+    cards.querySelectorAll("[data-course-info]").forEach(panel => {
+      panel.hidden = panel.dataset.courseInfo !== selected;
     });
     const schedule = cards.querySelector(".insight-schedule");
     if (!schedule) return;
     const rows = [...schedule.querySelectorAll("[data-schedule-date]")];
+    const inScope = rows.some(row => !selected || row.dataset.eventCourse === selected);
     const controls = schedule.querySelector(".insight-range");
-    if (controls) controls.hidden = false;
+    if (controls) controls.hidden = !inScope;
     controls?.querySelectorAll("button").forEach(button => {
       button.setAttribute("aria-pressed", String(button.dataset.scheduleRange === range));
     });
     const today = activeDay();
     for (const row of rows) {
       row.hidden = !showScheduleEntry({ range, day: row.dataset.scheduleDate,
-        cancelled: row.dataset.scheduleCancelled === "1", today });
+        cancelled: row.dataset.scheduleCancelled === "1", today,
+        course: row.dataset.eventCourse, selectedCourse: selected });
+      row.querySelector("[data-event-scope-link]").hidden = Boolean(selected);
     }
     const empty = schedule.querySelector("[data-empty-schedule]");
-    if (empty) empty.hidden = rows.some(row => !row.hidden);
+    if (empty) {
+      empty.hidden = rows.some(row => !row.hidden);
+      empty.textContent = inScope && range === "upcoming"
+        ? "近期沒有已確認的考試或期限。" : empty.dataset.emptyLabel;
+    }
   }
   function select(course) {
     if (!links.has(course) || course === page.dataset.course) return;
     page.dataset.course = course;
     const url = new URL(location.href);
-    // Preserve a shareable course selection, but leave setup and search inputs local.
+    // Keep course links bookmarkable without leaving a stale setup or event anchor.
     url.pathname = new URL(links.get(course).href).pathname;
     url.searchParams.delete("setup");
     url.searchParams.delete("q");
@@ -168,7 +168,6 @@ function setupNavigation(page, cards, onSelectionChanged) {
     else url.searchParams.delete("course");
     history.replaceState(history.state, "", url);
     render();
-    onSelectionChanged();
   }
   page.addEventListener("click", event => {
     const link = event.target.closest("a[data-course-option]");
@@ -185,99 +184,15 @@ function setupNavigation(page, cards, onSelectionChanged) {
   });
   courseSelect?.addEventListener("change", () => select(courseSelect.value));
   render();
-  return { render, select };
-}
-
-function setupSearch(page, navigation) {
-  const answer = page.querySelector("#overviewAnswer");
-  const query = page.querySelector("#overviewQuery");
-  const form = page.querySelector("#overviewSearch");
-  if (!form || !answer || !query) return () => {};
-  const button = form.querySelector("button");
-  const suggestions = page.querySelector("#insightSuggestions");
-  let pending;
-  try {
-    const carried = sessionStorage.getItem("e3.courseOverviewQuestion");
-    sessionStorage.removeItem("e3.courseOverviewQuestion");
-    if (carried && !query.value) query.value = carried.slice(0, 300);
-  } catch { /* Browser storage is optional. */ }
-  function clearAnswer(focus = false) {
-    pending?.abort();
-    pending = undefined;
-    button.disabled = false;
-    answer.hidden = true;
-    answer.replaceChildren();
-    if (focus) query.focus();
-  }
-  async function search() {
-    const question = query.value.trim();
-    if (question.length < 2) return;
-    pending?.abort();
-    const request = new AbortController();
-    pending = request;
-    button.disabled = true;
-    answer.hidden = false;
-    answer.textContent = "正在查找原文…";
-    try {
-      const result = await courseRequest(page.dataset.searchUrl, {
-        query: question, course_id: Number(page.dataset.course) || null, semester: page.dataset.semester,
-      }, page.dataset.csrf, request.signal);
-      if (pending !== request) return;
-      const heading = node("div", "", "insight-answer-heading");
-      const dismiss = node("button", "收合結果", "insight-answer-dismiss");
-      dismiss.type = "button";
-      dismiss.addEventListener("click", () => clearAnswer(true));
-      heading.append(node("h3", question), dismiss);
-      answer.replaceChildren(heading);
-      if (result.choices?.length) {
-        const options = node("div", "", "insight-answer-options");
-        answer.append(node("p", "要查哪一門課？"), options);
-        for (const choice of result.choices) {
-          const option = node("button", choice.title, "btn");
-          option.type = "button";
-          option.addEventListener("click", () => { navigation.select(String(choice.id)); search(); });
-          options.append(option);
-        }
-      } else if (result.points?.length) {
-        for (const point of result.points) {
-          const item = node("article", "", "insight-answer-item");
-          const detail = node("details", "", "insight-source");
-          detail.append(node("summary", ["查看依據", point.source.title, point.source.location].filter(Boolean).join(" · ")),
-            node("blockquote", point.quote), sourceLink(point.source.url, "在 E3 查看來源 ↗"));
-          item.append(node("span", point.course, "insight-tag"), node("p", point.text), detail);
-          answer.append(item);
-        }
-      } else {
-        answer.append(node("p", "目前已同步資料找不到明確說明。"));
-      }
-      if (result.partial) answer.append(node("p", "部分課程資料仍未讀取。", "insight-muted"));
-    } catch (error) {
-      if (pending === request) answer.textContent = error.message;
-    } finally {
-      if (pending === request) {
-        pending = undefined;
-        button.disabled = false;
-      }
-    }
-  }
-  form.addEventListener("submit", event => { event.preventDefault(); if (!button.disabled) search(); });
-  suggestions?.addEventListener("click", event => {
-    const suggestion = event.target.closest("[data-question]");
-    if (!suggestion) return;
-    query.value = suggestion.dataset.question;
-    search();
-  });
-  return clearAnswer;
+  return render;
 }
 
 function initOverview(page) {
   const semesterForm = page.querySelector("#insightSemesterForm");
   semesterForm?.querySelector("select").addEventListener("change", () => semesterForm.requestSubmit());
   const cards = page.querySelector("#overviewCards");
-  let clearAnswer = () => {};
-  const navigation = setupNavigation(page, cards, () => clearAnswer());
+  const renderNavigation = setupNavigation(page, cards);
   if (page.dataset.configured !== "1" || !page.dataset.semester || !cards) return;
-  clearAnswer = setupSearch(page, navigation);
   const status = page.querySelector("#overviewStatus");
   const action = page.querySelector("#overviewSyncAction");
   const syncButton = page.querySelector("#insightRefresh");
@@ -306,14 +221,14 @@ function initOverview(page) {
 
   function renderCards(markup) {
     if (typeof markup !== "string" || markup === renderedOverview) {
-      navigation.render();
+      renderNavigation();
       return;
     }
     const fragment = document.createElement("template");
     fragment.innerHTML = markup;
-    const existing = new Map([...cards.children].map(card => [card.dataset.coursePanel, card]));
+    const existing = new Map([...cards.children].map(card => [card.dataset.viewKey, card]));
     for (const card of [...fragment.content.children]) {
-      const previous = existing.get(card.dataset.coursePanel);
+      const previous = existing.get(card.dataset.viewKey);
       if (!previous) cards.append(card);
       else if (previous.innerHTML !== card.innerHTML) {
         const expanded = new Set([...previous.querySelectorAll("details[open]")].map(detail => detail.textContent));
@@ -322,11 +237,11 @@ function initOverview(page) {
         }
         previous.replaceWith(card);
       }
-      existing.delete(card.dataset.coursePanel);
+      existing.delete(card.dataset.viewKey);
     }
     for (const stale of existing.values()) stale.remove();
     renderedOverview = markup;
-    navigation.render();
+    renderNavigation();
   }
 
   async function refresh(manual = false) {

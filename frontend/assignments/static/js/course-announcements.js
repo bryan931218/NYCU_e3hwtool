@@ -323,11 +323,6 @@ function initialize(config) {
       state.loadError = data.error || '';
       state.running = data.running || (refreshing && state.running);
       syncCourses();
-      for (const tab of tabs) {
-        const url = new URL(tab.href); url.searchParams.set('semester', semester.value); tab.href = url.href;
-      }
-      const filesTab = document.querySelector('[data-files-tab]');
-      if (filesTab) { const url = new URL(filesTab.href); url.searchParams.set('semester', semester.value); filesTab.href = url.href; }
       byId('newsUpdated').textContent = data.fetched_at ? `上次更新 ${announcementDate(data.fetched_at)}` : '';
       message(data.error || (state.running ? `${noun}更新中…` : ''), !!data.error);
       loading = false;
@@ -369,7 +364,7 @@ function initialize(config) {
   refreshButton.addEventListener('click', refresh);
   semester.addEventListener('change', () => {
     state.generation++; state.active = ''; state.errors.clear(); state.items = []; state.courses = []; state.running = false;
-    state.loadError = ''; state.requested = '';
+    state.loadError = ''; state.requested = ''; byId('newsUpdated').textContent = '';
     workspace.dataset.reading = 'false';
     clearTimeout(pollTimer); syncCourses(); render(); void load();
   });
@@ -380,12 +375,6 @@ function initialize(config) {
   document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(pollTimer); else void load(false); });
   window.addEventListener('pageshow', event => {
     if (event.persisted) { acknowledgedGeneration = -1; void load(false); }
-  });
-  byId('newsTheme').addEventListener('click', () => {
-    const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    try { localStorage.setItem('e3_theme', theme); } catch {}
   });
   if (config.guest || !semester.value) {
     refreshButton.disabled = true;

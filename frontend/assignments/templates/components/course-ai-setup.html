@@ -26,7 +26,7 @@
                 <label for="courseAiKey">Gemini API 金鑰</label>
                 <input id="courseAiKey" type="password" name="api_key" autocomplete="off" spellcheck="false" autocapitalize="none"
                        placeholder="{{ '貼上新的 API 金鑰' if configured else '貼上從 AI Studio 複製的金鑰' }}" maxlength="512" required>
-                <label class="insight-consent"><input type="checkbox" name="consent" value="yes" required><span>同意將課程相關文字送至 Google Gemini。Google 可能使用免費方案的內容改善服務。</span></label>
+                <label class="insight-consent"><input type="checkbox" name="consent" value="yes" required><span>同意將教材、公告與課程信件的相關文字送至 Google Gemini。Google 可能使用免費方案的內容改善服務。</span></label>
                 <button type="submit" name="action" value="connect" class="btn accent">{{ '更新金鑰' if configured else '啟用並整理' }}</button>
             </form>
         </div>

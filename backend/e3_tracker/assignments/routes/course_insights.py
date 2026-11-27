@@ -5,7 +5,6 @@ import time
 from flask import abort, redirect, render_template, request, url_for
 
 from e3_tracker.assignments.domain.course_files import course_display_name
-from e3_tracker.assignments.services.course_insights import CourseAIError
 
 
 ERRORS = {
@@ -15,7 +14,6 @@ ERRORS = {
     'source': '部分課程來源暫時讀不到，已保留先前的整理結果。',
     'provider': 'Gemini 暫時無法使用，請稍後再試。',
     'output': 'Gemini 回傳格式有誤，請稍後再試。',
-    'unconfigured': '請先設定自己的 Gemini API 金鑰。',
 }
 
 
@@ -54,7 +52,7 @@ def register_course_insight_routes(app, current_user, login_required, service):
             ready=sum(bool(row.get('analyzed')) for row in snapshots.values()),
             setup_requested=request.args.get('setup') == '1' or bool(error),
             setup_error=error, error=ERRORS.get((settings or {}).get('error'), ''),
-            error_code=(settings or {}).get('error'), initial_query=request.args.get('q', '')[:300])
+            error_code=(settings or {}).get('error'))
 
     @app.route('/settings/course-ai', methods=['GET', 'POST'])
     @login_required
@@ -136,32 +134,3 @@ def register_course_insight_routes(app, current_user, login_required, service):
             return response({'error': '更新過於頻繁，請稍後再試。'}, 429)
         status = service.start(app, current_user(), semester, courses, manual=data.get('manual') is True)
         return response({'status': status, 'error': ERRORS.get(status, '')}, 202 if status == 'running' else 200)
-
-    @app.post('/api/course-overview/search')
-    @login_required
-    def course_overview_search():
-        name = username()
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict) or not isinstance(data.get('query'), str) or not isinstance(data.get('semester'), str):
-            return response({'error': '請輸入課程問題。'}, 400)
-        query = data['query'].strip()
-        if not 2 <= len(query) <= 300:
-            return response({'error': '問題須在 2–300 字內。'}, 400)
-        if not service.storage.owner.consume_security_limit(f'course-search:{name}', 8, 300):
-            return response({'error': '查詢過於頻繁，請稍後再試。'}, 429)
-        semester, courses, _ = scope(name, data['semester'])
-        titles = {course['id']: course_display_name(course['title']) for course in courses}
-        course_id = data.get('course_id')
-        if course_id is not None:
-            if type(course_id) is not int or course_id not in titles:
-                return response({'error': '找不到該課程。'}, 400)
-            titles = {course_id: titles[course_id]}
-        snapshots = service.storage.snapshots(name, semester, list(titles), include_sources=True)
-        try:
-            result = service.search(name, query, snapshots, titles)
-        except CourseAIError as exc:
-            return response({'error': ERRORS.get(str(exc), ERRORS['provider'])}, 409)
-        if result.get('choices'):
-            result['choices'] = [{'id': choice, 'title': titles[choice]} for choice in result['choices']]
-        result['partial'] = len(snapshots) < len(titles) or any(state.get('partial') for state in snapshots.values())
-        return response(result)

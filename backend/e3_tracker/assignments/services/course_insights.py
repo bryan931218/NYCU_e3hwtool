@@ -10,7 +10,7 @@ from urllib.parse import urlsplit, parse_qs
 
 import requests
 
-from e3_tracker.assignments.domain.course_insights import compact_text, normalized, reconcile_analysis
+from e3_tracker.assignments.domain.course_insights import compact_text, reconcile_analysis
 from e3_tracker.assignments.persistence.course_insights import CourseInsightStorage
 from .course_announcements import AnnouncementSessionExpired, news_client
 from .course_insight_sources import course_sources
@@ -65,9 +65,6 @@ deadline 只收錄明確的正式作業期限，選唯一相符的 ref。延期�
 若公告或信件明確只更改當天的鐘點，date_phrase 可填新鐘點原文；程式會沿用已確認的日期。
 忽略已引用的舊信、歷屆考古題、範例、暫定或有歧義的資訊。明確取消該事件才設 cancelled=true。
 不要將報告繳交期限當作期末考。若原文有日期和時間範圍，date_phrase 取到開始時間即可。"""
-ANSWER = RULES + """
-輸出 {"points":[{"text":"一句直接回答","source":"來源 id","quote":"逐字依據"}]}，最多 5 點。
-只在有明確答案時回答。來源相衝突時分開說明來源及日期，不猜哪份最新。原文無法支持則回傳空清單。"""
 
 
 def public_sources(sources):
@@ -229,40 +226,3 @@ class CourseInsightService:
                 self.storage.finish(claim, error=error, pause=pause)
             finally:
                 self.slots.release()
-
-    def search(self, username, question, snapshots, titles):
-        key = self.storage.credential(username)
-        if not key:
-            raise CourseAIError('unconfigured')
-        terms = re.findall(r'[A-Za-z0-9]+|[\u3400-\u9fff]+', question.casefold())
-        words = {term if term.isascii() else term[index:index + 2]
-                 for term in terms for index in range(max(1, len(term) - 1))}
-        ranked = []
-        for course_id, state in snapshots.items():
-            for row in state.get('sources', []):
-                haystack = normalized(f"{titles[course_id]} {row['title']} {row['text']}")
-                score = sum(len(term) for term in words if term in haystack)
-                if score:
-                    ranked.append((score, course_id, row))
-        ranked.sort(key=lambda entry: -entry[0])
-        if not ranked:
-            return {'points': []}
-        top_by_course = {}
-        for score, course_id, _ in ranked:
-            top_by_course.setdefault(course_id, score)
-        plausible = [course_id for course_id, score in top_by_course.items() if score >= ranked[0][0] * .65]
-        if len(plausible) > 1:
-            return {'choices': plausible}
-        course_id = ranked[0][1]
-        rows = numbered_sources([row for _, cid, row in ranked if cid == course_id][:12])
-        lookup = {row['id']: row for row in rows}
-        raw = gemini(key, ANSWER, {'question': compact_text(question, 300), 'sources': public_sources(rows)})
-        points = []
-        for item in _list_of_records(raw, 'points')[:5]:
-            source = lookup.get(str(item.get('source')))
-            quote = ' '.join(str(item.get('quote') or '').split())[:700]
-            text = item.get('text')
-            if source and len(quote) >= 5 and quote in source['text'] and isinstance(text, str) and text.strip():
-                origin = {field: source[field] for field in ('title', 'url', 'kind', 'location')}
-                points.append({'text': text[:650], 'quote': quote, 'source': origin, 'course': titles[course_id]})
-        return {'points': points}

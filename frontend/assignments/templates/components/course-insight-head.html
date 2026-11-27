@@ -1,8 +1,0 @@
-{% include 'shared/components/security.html' %}
-{% include 'shared/components/page-transitions.html' %}
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='shared/js/theme-init.js') }}"></script>
-<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/tokens.css') }}">
-<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='shared/css/components.css') }}">
-<link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-insights.css') }}">

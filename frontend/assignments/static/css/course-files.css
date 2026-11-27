@@ -1,4 +1,4 @@
-.files-toolbar { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 12px; padding-bottom: 24px; }
+.files-toolbar { display: grid; grid-template-columns: var(--course-semester-width) minmax(0, 1fr) auto; gap: 12px; padding-bottom: 24px; }
 .files-toolbar select, .files-toolbar input, .files-filter-panel select { width: 100%; min-width: 0; height: 44px; border: 1px solid var(--border); border-radius: 6px; padding: 0 12px; background: var(--card); color: var(--fg); }
 .files-toolbar input::placeholder { color: var(--muted); }
 .files-toolbar form { min-width: 0; }
@@ -64,7 +64,7 @@
 @media (max-width: 1000px) { .files-workspace { grid-template-columns: 200px minmax(0, 1fr); gap: 24px; } }
 @media (max-width: 740px) {
   .files-toolbar { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding-bottom: 20px; }
-  .files-toolbar > select { grid-column: 1 / -1; width: 150px; }
+  .files-toolbar > select { grid-column: 1 / -1; width: var(--course-semester-width); }
   .files-workspace { display: block; padding-top: 18px; }
   .files-sidebar { display: none; }
   .files-mobile-course { display: block; margin-bottom: 20px; }

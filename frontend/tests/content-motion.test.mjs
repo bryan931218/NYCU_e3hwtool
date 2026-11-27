@@ -113,7 +113,7 @@ test('page transitions are opted in by E3 templates, not study templates, and re
   assert.doesNotMatch(css, /navigation: auto/);
   assert.match(css, /body\s*\{\s*animation: e3-page-arrive 120ms/);
   assert.match(css, /prefers-reduced-motion: reduce[\s\S]*body\s*\{\s*animation: none;/);
-  for (const path of ['web.html', 'home.html', 'login.html', 'settings/notifications.html', 'pages/course_announcements.html']) {
+  for (const path of ['web.html', 'home.html', 'login.html', 'settings/notifications.html', 'pages/course_workspace.html']) {
     assert.match(read(`../assignments/templates/${path}`), /include 'shared\/components\/page-transitions.html'/);
   }
   assert.doesNotMatch(read('../study/templates/admin_study_home.html'), /page-transitions/);
