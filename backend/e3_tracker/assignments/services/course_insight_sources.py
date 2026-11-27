@@ -19,10 +19,11 @@ from e3_tracker.platform.constants import HEADERS
 from .course_announcements import AnnouncementSessionExpired
 
 
-MAX_BYTES = 5 * 1024 * 1024
+MAX_BYTES = 8 * 1024 * 1024
 MAX_PAGES = 35
 EXTENSIONS = {'.pdf', '.docx', '.pptx', '.txt'}
-SYLLABUS = re.compile(r'課程(?:大綱|說明|簡介|介紹)|授課|教學大綱|評量|評分|syllabus|course[\s_-]*(?:outline|intro|overview)|grading', re.I)
+SYLLABUS = re.compile(r'課程(?:大綱|說明|簡介|介紹)|授課|教學大綱|評量|評分|配分|syllabus|course[\s_-]*(?:outline|intro|overview|information|policy)|grading|assessment', re.I)
+GRADE_CONTEXT = re.compile(r'評分|配分|成績|占比|佔比|比重|百分之|grade|grading|assessment|weight|\d\s*(?:[%％]|percent)', re.I)
 FILE_PATH = re.compile(r'^/pluginfile\.php/[1-9]\d*/(?:mod_resource/content|mod_folder/content|mod_page/content|course/section)/')
 
 
@@ -105,37 +106,35 @@ def document_sections(data, extension):
         return sections
 
 
-def _file_candidates(soup, course_url, base, *, folders=False):
+def _file_candidates(soup, course_url, base, *, pages=False):
     seen = set()
     for anchor in soup.select('a[href]'):
-        folder = moodle_url(anchor['href'], base, '/mod/folder/view.php', 'id', page_url=course_url) if folders else None
-        url = folder or safe_file_link(anchor['href'], course_url)
+        container = next((match for kind in (('folder', 'page') if pages else ('folder',))
+                          if (match := moodle_url(anchor['href'], base, f'/mod/{kind}/view.php', 'id',
+                                                 page_url=course_url))), None)
+        url = container or safe_file_link(anchor['href'], course_url)
         if not url or url in seen or _origin(url) != _origin(base):
             continue
-        if not folder and not _file_url(url, base) and urlsplit(url).path != '/mod/resource/view.php':
+        if not container and not _file_url(url, base) and urlsplit(url).path != '/mod/resource/view.php':
             continue
         seen.add(url)
         yield url, anchor.get_text(' ', strip=True)[:180] or unquote(urlsplit(url).path.rsplit('/', 1)[-1])
 
 
-def _resolve_file(client, user, url, base):
+def _resolve_file(client, url, base):
     if _file_url(url, base):
         return url
-    if urlsplit(url).path == '/mod/folder/view.php':
-        page = BeautifulSoup(client.get(url), 'html.parser')
-        body = page.select_one('.foldertree, .foldercontent, [data-region="folder-content"]')
-        return next((direct for link, _ in _file_candidates(body, url, base)
-                     if (direct := _file_url(link, base))), None) if body else None
-    if user.get('moodle_session') and not user.get('moodle_token'):
-        # Moodle file resources usually redirect to their own pluginfile URL.
-        with client.session.get(url, headers=HEADERS, timeout=max(.5, min(8, client.deadline - time.monotonic())),
-                                stream=True, allow_redirects=False) as response:
-            if response.is_redirect:
-                return _file_url(urljoin(url, response.headers['Location']), base)
-        page = BeautifulSoup(client.get(url), 'html.parser')
-        return next((direct for node in page.select('a[href], iframe[src], object[data]')
-                     if (direct := _file_url(urljoin(url, node.get('href') or node.get('src') or node.get('data')), base))), None)
-    return None
+    # Moodle file resources usually redirect to their own pluginfile URL.
+    with client.session.get(url, headers=HEADERS, timeout=max(.5, min(8, client.deadline - time.monotonic())),
+                            stream=True, allow_redirects=False) as response:
+        if response.is_redirect:
+            target = urljoin(url, response.headers.get('Location', ''))
+            if '/login/' in urlsplit(target).path:
+                raise AnnouncementSessionExpired()
+            return _file_url(target, base)
+    page = BeautifulSoup(client.get(url), 'html.parser')
+    return next((direct for node in page.select('a[href], iframe[src], object[data]')
+                 if (direct := _file_url(urljoin(url, node.get('href') or node.get('src') or node.get('data')), base))), None)
 
 
 def _row(kind, key, title, url, text, *, location='', published=0, version=0, limit=3500):
@@ -148,45 +147,98 @@ def _row(kind, key, title, url, text, *, location='', published=0, version=0, li
             'location': location, 'published': published, 'version': version, 'text': clean}
 
 
-def course_sources(client, user, course, services, previous_sources):
+def _prioritize_candidates(candidates):
+    return list(dict.fromkeys(candidates[:1] + [row for row in candidates if SYLLABUS.search(row[1])][:5] + candidates[1:14]))
+
+
+def _text_sections(kind, key, title, url, location, text):
+    # Preserve nearby rows for the model when a page contains a long grading table.
+    clean = compact_text(text, 20000)
+    offsets = [0, *range(3200, len(clean), 3200)]
+    return [_row(kind, f'{key}:{offset}', title, url, clean[offset:offset + 3500], location=location)
+            for offset in offsets if clean[offset:offset + 3500].strip()]
+
+
+def _material_sources(client, user, main, course_url):
     base = client.base_url
-    course_url = f"{base}/course/view.php?id={course['id']}"
-    html = client.get(course_url)
-    main = BeautifulSoup(html, 'html.parser').select_one('.course-content')
-    if main is None:
-        raise ValueError('Course content unavailable')
-    candidates = list(_file_candidates(main, course_url, base, folders=not user.get('moodle_token')))[:75]
-    priority = [row for row in candidates if SYLLABUS.search(row[1])][:2]
-    files, seen, any_failure = [], set(), False
-    for url, title in list(dict.fromkeys(candidates[:1] + priority + candidates[1:7])):
-        if time.monotonic() > client.deadline - 3 or len(seen) >= 3:
+    api = bool(user.get('moodle_token'))
+    candidates = list(_file_candidates(main, course_url, base, pages=True))[:150]
+    queue = _prioritize_candidates(candidates)
+    files, visited, downloaded, any_failure = [], set(), set(), False
+    while queue and len(visited) < 15 and len(downloaded) < 5:
+        if time.monotonic() > client.deadline - 6:
+            any_failure = True
             break
+        url, title = queue.pop(0)
+        if url in visited:
+            continue
+        visited.add(url)
+        path = urlsplit(url).path
         try:
-            direct = _resolve_file(client, user, url, base)
-            if not direct or urlsplit(direct).path in seen:
+            if path == '/mod/folder/view.php' or (api and path == '/mod/resource/view.php'):
+                container = BeautifulSoup(client.get(url), 'html.parser').select_one(
+                    '.foldertree, .foldercontent, [data-region="folder-content"], .resourcecontent')
+                if container:
+                    children = list(_file_candidates(container, url, base))
+                    # A module name can identify the syllabus even when the filename is generic.
+                    entries = [(link, name if SYLLABUS.search(name) else title + ' · ' + name)
+                               for link, name in _prioritize_candidates(children)[:5]]
+                    if entries:
+                        queue[:] = entries[:1] + sorted(queue + entries[1:], key=lambda row: not SYLLABUS.search(row[1]))
                 continue
-            seen.add(urlsplit(direct).path)
+            if path == '/mod/page/view.php':
+                content = BeautifulSoup(client.get(url), 'html.parser').select_one('.mod_page-content, #region-main .generalbox, main .generalbox')
+                if content:
+                    for node in content.select('script, style, form, blockquote, [hidden], [aria-hidden=true]'):
+                        node.decompose()
+                    queue[0:0] = _prioritize_candidates(list(_file_candidates(content, url, base)))[:5]
+                    files.extend(_text_sections('page', f'page:{urlsplit(url).query}', title, url, '',
+                                                content.get_text(' ', strip=True)))
+                else:
+                    any_failure = True
+                continue
+            direct = _resolve_file(client, url, base)
+            if not direct:
+                any_failure = True
+                continue
+            file_path = urlsplit(direct).path
+            if file_path in downloaded:
+                continue
+            downloaded.add(file_path)
             data = _read_file(client, user, direct, base)
             if not data:
                 any_failure = True
                 continue
-            key = hashlib.sha256(urlsplit(direct).path.encode()).hexdigest()[:24]
+            key = hashlib.sha256(file_path.encode()).hexdigest()[:24]
             document_rows = []
             for index, (location, content) in enumerate(document_sections(data, _extension(direct))):
-                source = _row('file', f'{key}:{index}', title, direct, content, location=location)
-                if source:
-                    document_rows.append(source)
+                document_rows.extend(_text_sections('file', f'{key}:{index}', title, direct, location, content))
             if not document_rows:
                 any_failure = True
-            files.extend(document_rows)
+            # Give each document a budget, prioritizing grading pages beyond the opening slides.
+            files.extend(sorted(document_rows, key=lambda row: not GRADE_CONTEXT.search(row['text']))[:8])
         except AnnouncementSessionExpired:
             raise
         except Exception:
             # Parser and transport details can contain Moodle links or credentials.
             any_failure = True
+    return files[:40], any_failure
+
+
+def course_sources(client, user, course, services, previous_sources):
+    base = client.base_url
+    course_url = f"{base}/course/view.php?id={course['id']}"
+    html = client.course_material_html(int(course['id'])) if user.get('moodle_token') else client.get(course_url)
+    soup = BeautifulSoup(html, 'html.parser')
+    main = soup.select_one('.course-content') or soup.select_one('body[id^="page-course-view-"] #region-main')
+    if main is None:
+        raise ValueError('Course content unavailable')
     for node in main.select('script, style, form, blockquote, [hidden], [aria-hidden=true]'):
         node.decompose()
-    overview = _row('course', f"course:{course['id']}", 'E3 課程頁', course_url, main.get_text(' ', strip=True))
+    files, any_failure = _material_sources(client, user, main, course_url)
+    overview = _text_sections('course', f"course:{course['id']}", 'E3 課程頁', course_url, '',
+                              main.get_text(' ', strip=True))
+    overview = sorted(overview, key=lambda row: not GRADE_CONTEXT.search(row['text']))[:4]
 
     cached = {row['key']: row for row in previous_sources if row['kind'] in services}
     messages = {}
@@ -238,8 +290,8 @@ def course_sources(client, user, course, services, previous_sources):
     if any_failure:
         messages = {**cached, **messages}
         if not files:
-            files = [row for row in previous_sources if row['kind'] == 'file']
+            files = [row for row in previous_sources if row['kind'] in {'file', 'page'}]
     recent = sorted(messages.values(), key=lambda row: -row['version'])[:20]
     # Leave room for both the first document and later messages in the model input.
-    sources = [*files[:30], *([overview] if overview else []), *recent]
+    sources = [*files, *overview, *recent]
     return sources, any_failure, bool(files)

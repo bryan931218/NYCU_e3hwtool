@@ -14,6 +14,7 @@ from e3_tracker.assignments.services.course_announcements import (
 )
 from e3_tracker.assignments.services.course_mail import collect_course_mail
 from e3_tracker.assignments.services.course_files import CourseFileService
+from e3_tracker.assignments.services.course_insight_sources import course_sources
 from e3_tracker.assignments.services.notifications import NotificationService
 from e3_tracker.assignments.domain.course_announcements import discussion_content, moodle_url
 from e3_tracker.assignments.domain.course_files import file_index
@@ -82,6 +83,12 @@ class MobileCourseFeaturesTests(unittest.TestCase):
         elif function == 'mod_assign_get_assignments':
             result = {'courses': [{'id': 10, 'assignments': [{'id': 123, 'cmid': 456, 'intro': '<p>作業說明</p>',
                 'introattachments': [{'fileurl': FILE, 'filename': 'slides.pdf'}]}]}]}
+        elif function == 'mod_page_get_pages_by_courses':
+            self.assertEqual(data['courseids[0]'], 10)
+            result = {'pages': [
+                {'course': 10, 'coursemodule': 118, 'content': '<p>Final project: 40%.</p>'},
+                {'course': 11, 'coursemodule': 118, 'content': '<p>Unrelated content.</p>'},
+            ]}
         else:
             self.fail('Unapproved read function: ' + function)
         if self.api_failure:
@@ -119,6 +126,20 @@ class MobileCourseFeaturesTests(unittest.TestCase):
                 self.assertFalse(any('set_' in f or 'view_' in f or 'send_' in f for f in self.calls))
             finally:
                 client.close()
+
+    def test_course_insights_can_read_module_pages_without_forum_access(self):
+        self.modules = [{'id': 118, 'name': '評分標準', 'modname': 'page'}]
+        with self.mocked():
+            client = self.client()
+            try:
+                sources, partial, document = course_sources(client, self.user, self.course, {}, [])
+            finally:
+                client.close()
+        self.assertTrue(document)
+        self.assertFalse(partial)
+        self.assertEqual(sources[0]['text'], 'Final project: 40%.')
+        self.assertIn('mod_page_get_pages_by_courses', self.calls)
+        self.assertNotIn('mod_forum_get_forums_by_courses', self.calls)
 
     def test_file_collection_keeps_all_origins_and_does_not_open_unread_mail(self):
         with self.mocked():

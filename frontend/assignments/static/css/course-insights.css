@@ -61,7 +61,8 @@
 .insight-rail nav a[aria-current="page"]:not(.btn) { background: var(--card); border-color: var(--border); box-shadow: inset 3px 0 var(--primary); color: var(--primary); font-weight: 650; }
 .insight-rail nav small { color: var(--muted); }
 .insight-course-state { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--muted); }
-.insight-course-state[data-ready="1"] { background: var(--primary); border-color: var(--primary); }
+.insight-course-state[data-state="ready"] { background: var(--primary); border-color: var(--primary); }
+.insight-course-state[data-state="partial"] { background: var(--warn-fg); border-color: var(--warn-fg); }
 .insight-main { display: grid; min-width: 0; gap: 12px; }
 .insight-mobile-scope { display: none; }
 .insight-range button {
@@ -80,10 +81,10 @@
 .insight-section-head h3 { font-size: 1rem; }
 .insight-empty-copy { color: var(--muted); font-size: .86rem; padding: 7px 0; }
 .insight-range { display: flex; gap: 3px; }
-.insight-schedule-list, .insight-grades { padding: 0; margin: 0; list-style: none; }
+.insight-schedule-list { padding: 0; margin: 0; list-style: none; }
 .insight-schedule-item { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 11px 0; }
 .insight-schedule-item:target { scroll-margin-top: 16px; background: color-mix(in srgb, var(--primary) 8%, var(--card)); }
-.insight-schedule-item:not([hidden]) ~ .insight-schedule-item:not([hidden]), .insight-grades li + li { border-top: 1px solid var(--border); }
+.insight-schedule-item:not([hidden]) ~ .insight-schedule-item:not([hidden]) { border-top: 1px solid var(--border); }
 .insight-day {
     align-self: start; display: grid; justify-items: center; padding: 5px 3px; border-radius: 8px; color: var(--primary);
     background: color-mix(in srgb, var(--primary) 9%, var(--card)); font-variant-numeric: tabular-nums; text-align: center;
@@ -100,10 +101,14 @@
 .insight-source summary span { margin-left: 4px; }
 .insight-source blockquote { margin: 6px 0; border-left: 2px solid var(--ring); padding-left: 10px; white-space: pre-wrap; }
 .insight-course-description { padding: 2px 0 10px; }
-.insight-grading h4 { margin: 6px 0 0; font-size: .9rem; color: var(--muted); }
-.insight-grades li { padding: 9px 0; }
-.insight-grade-line { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
-.insight-grade-line span { color: var(--primary); }
+.insight-grading h4 { margin: 8px 0; font-size: .95rem; }
+.insight-grades { width: 100%; border-collapse: collapse; text-align: start; }
+.insight-grades th { padding: 8px 12px; background: var(--card-2); color: var(--muted); font-size: .8rem; font-weight: 600; text-align: start; }
+.insight-grades td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.insight-grades :is(th, td):last-child { width: 1%; text-align: end; white-space: nowrap; }
+.insight-grade-detail { color: var(--muted); font-size: .86rem; }
+.insight-grade-weight { color: var(--primary); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.insight-grade-unlisted { color: var(--muted); font-size: .84rem; }
 .insight-coverage { color: var(--warn-fg); font-size: .8rem; padding-block: 3px; }
 .insight-empty { padding: 22px; display: grid; justify-items: start; gap: 8px; }
 .insight-empty h2 { font-size: 1.1rem; }

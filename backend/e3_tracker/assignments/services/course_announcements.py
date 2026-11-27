@@ -62,8 +62,10 @@ class MoodleNewsClient:
                         raise ValueError('Moodle response exceeded limits')
                 html = data.decode('utf-8', errors='replace')
                 soup = BeautifulSoup(html, 'html.parser')
-                if soup.select_one('input[name="logintoken"], body#page-login-index, body#page-enrol-index'):
+                if soup.select_one('input[name="logintoken"], body#page-login-index'):
                     raise AnnouncementSessionExpired()
+                if soup.select_one('body#page-enrol-index'):
+                    raise ValueError('Course is not available to this account')
                 return html
         raise ValueError('Moodle redirect limit exceeded')
 

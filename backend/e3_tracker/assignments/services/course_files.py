@@ -26,7 +26,7 @@ class CourseFileService:
         annotate_result_semesters(result, selected_keys=self.storage.owner.load_user_preferences(username).get('semester_filter'))
         return result
 
-    def scope(self, username, semester=None, *, result=None, prefer_current=False):
+    def scope(self, username, semester=None, *, result=None, prefer_current=False, max_courses=30):
         result = self.catalog(username, result)
         semesters = result.get('available_semesters') or []
         valid = {entry['key'] for entry in semesters}
@@ -35,7 +35,7 @@ class CourseFileService:
         if not isinstance(semester, str) or semester not in valid:
             raise ValueError('請先更新作業以取得該學期課程。')
         courses = [course for course in result.get('courses', []) if course.get('semester_key') == semester]
-        if not courses or len(courses) > 30:
+        if not courses or (max_courses is not None and len(courses) > max_courses):
             raise ValueError('請先更新作業以取得該學期課程。')
         return semester, courses, semesters
 

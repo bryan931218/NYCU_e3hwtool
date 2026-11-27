@@ -3,6 +3,7 @@
 import re
 import unicodedata
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from dateutil.parser import parse
 
@@ -23,6 +24,8 @@ CANCEL = re.compile(r'取消|cancel(?:led|ed|lation)?\b', re.I)
 ASSIGNMENT = re.compile(r'作業|習題|報告|繳交|提交|deadline|homework|\bhw\b|hw\s*\d|assignment|project|report|submission|\bdue\b', re.I)
 EXAM_CONTEXT = re.compile(r'考試|考核|小考|測驗|口試|期中考|期末考|mid[\s-]*term|\b(?:quiz|exam|test|assessment)\b', re.I)
 HISTORICAL = re.compile(r'歷屆|考古題|範例|去年|\b(?:past exam|sample schedule|last year|previous semester)\b', re.I)
+GRADE_AMOUNT = re.compile(r'(?<![\d.,])([+-]?\d{1,4}(?:[.,]\d{1,2})?)\s*(%|percent\b|分(?!\s*[鐘別])|points?\b|pts?\b)', re.I)
+CHINESE_PERCENT = re.compile(r'百分之(\d{1,3}|[零〇○一二兩三四五六七八九十]{1,3})')
 
 
 def normalized(value):
@@ -173,17 +176,53 @@ def _origin(source, quote):
             'kind': source['kind'], 'quote': quote}
 
 
+def _grade_amounts(value):
+    text = unicodedata.normalize('NFKC', value)
+    amounts = set()
+    for match in GRADE_AMOUNT.finditer(text):
+        number = format(Decimal(match[1].replace(',', '.')).normalize(), 'f')
+        unit = '%' if match[2].lower() in {'%', 'percent'} else ' 分'
+        amounts.add(f'{number}{unit}')
+    for match in CHINESE_PERCENT.finditer(text):
+        amounts.add((match[1] if match[1].isdigit() else chinese_number(match[1])) + '%')
+    return amounts
+
+
+def grading_fields(item, evidence):
+    detail = _text_field(item, 'detail', 350)
+    proposal = _text_field(item, 'weight', 60)
+    detail_amounts = _grade_amounts(detail)
+    evidence_amounts = _grade_amounts(evidence)
+    if not detail_amounts <= evidence_amounts:
+        detail = ''
+    proposed_amounts = _grade_amounts(proposal) if proposal else detail_amounts
+    weight = next(iter(proposed_amounts)) if len(proposed_amounts) == 1 and proposed_amounts <= evidence_amounts else ''
+    if weight and not CHANGE.search(evidence):
+        same_unit = [amount for amount in evidence_amounts if amount.endswith(weight[-1])]
+        if len(same_unit) > 1:
+            weight = ''
+    if weight and (_grade_amounts(detail) == {weight} and
+                   (GRADE_AMOUNT.fullmatch(unicodedata.normalize('NFKC', detail)) or CHINESE_PERCENT.fullmatch(detail))):
+        detail = ''
+    return {'weight': weight, 'detail': detail}
+
+
 def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
     lookup = {source['id']: source for source in sources}
     events = dict(prior_events)
-    grading = []
-    for item in raw.get('grading', [])[:16]:
+    grading = {}
+    for item in raw.get('grading', [])[:30]:
         source, quote = _evidence(item, lookup)
         label = _text_field(item, 'label', 110)
-        detail = _text_field(item, 'detail', 350)
-        percentages = r'(\d+(?:\.\d+)?)\s*[%％]'
-        if source and label and detail and set(re.findall(percentages, detail)) <= set(re.findall(percentages, quote)):
-            grading.append({'label': label, 'detail': detail, 'origin': _origin(source, quote)})
+        if not source or not label or HISTORICAL.search(quote):
+            continue
+        display = grading_fields(item, quote)
+        if not (display['weight'] or display['detail']):
+            continue
+        rank = (bool(display['weight']), source.get('version') or 0)
+        key = normalized(label)
+        if key not in grading or rank > grading[key][0]:
+            grading[key] = (rank, {'label': label, **display, 'origin': _origin(source, quote)})
     candidates = {}
     for item in raw.get('events', [])[:60]:
         source, quote = _evidence(item, lookup)
@@ -256,4 +295,4 @@ def reconcile_analysis(raw, sources, prior_events, assignment_refs, semester):
                 continue
             if len(events) < 160 or old:
                 events[key] = old = winner
-    return {'summary': _text_field(raw, 'summary', 850), 'grading': grading, 'events': events}
+    return {'summary': _text_field(raw, 'summary', 850), 'grading': [row[1] for row in grading.values()], 'events': events}

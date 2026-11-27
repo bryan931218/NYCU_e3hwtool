@@ -289,6 +289,57 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.assertTrue(indexed['document'], 'The later text file still parses')
         self.assertTrue(indexed['partial'], 'The first PDF had no extractable text')
 
+    def test_late_syllabus_and_moodle_page_produce_separate_verified_grading_rows(self):
+        links = []
+        for index in range(9):
+            path = f'/pluginfile.php/42/mod_resource/content/1/week-{index}.txt'
+            links.append(f'<a href="{path}">第 {index + 1} 週教材</a>')
+            self.pages[path] = http_response('課堂練習及閱讀重點。' * 1600, content_type='text/plain')
+        links.append(f'<a href="{SECOND_FILE}">評分與課程大綱</a>')
+        links.append('<a href="/mod/page/view.php?id=77">評量補充</a>')
+        self.pages['/course/view.php?id=42'] = '<div class="course-content">' + ''.join(links) + '</div>'
+        self.pages[SECOND_FILE] = http_response('作業：４０％。期末專題：30 percent。', content_type='text/plain')
+        self.pages['/mod/page/view.php?id=77'] = '<div class="mod_page-content">出席採簽到。課堂討論：三十分鐘。</div>'
+
+        def model(_, **kwargs):
+            sources = json.loads(kwargs['json']['contents'][0]['parts'][0]['text'])['sources']
+            outline = next(source for source in sources if '作業：４０％' in source['text'])
+            page = next(source for source in sources if '出席採簽到' in source['text'])
+            return model_response({'summary': '', 'events': [], 'grading': [
+                {'label': '作業', 'weight': '40.0%', 'source': outline['id'], 'quote': '作業：４０％。'},
+                {'label': '期末專題', 'weight': '30 percent', 'source': outline['id'], 'quote': '期末專題：30 percent。'},
+                {'label': '出席', 'detail': '採簽到', 'source': page['id'], 'quote': '出席採簽到。'},
+                {'label': '課堂討論', 'weight': '30 分', 'source': page['id'], 'quote': '課堂討論：三十分鐘。'},
+                {'label': '期中考', 'weight': '30%', 'source': outline['id'], 'quote': '作業：４０％。期末專題：30 percent。'},
+            ]})
+
+        self.provider.side_effect = model
+        self.refresh()
+        self.wait_for_worker()
+        markup = BeautifulSoup(self.overview()['overview'], 'html.parser')
+        grades = markup.select('.insight-grades tbody tr')
+        self.assertEqual([(row.strong.get_text(), row.select('td')[-1].get_text(strip=True)) for row in grades],
+                         [('作業', '40%'), ('期末專題', '30%'), ('出席', '未列')])
+        self.assertIn('採簽到', grades[-1].get_text())
+        self.assertTrue(grades[-1].find('a')['href'].endswith('/mod/page/view.php?id=77'))
+
+    def test_per_course_errors_do_not_block_other_courses(self):
+        courses = [COURSE, {**COURSE, 'id': 43}, {**COURSE, 'id': 44}]
+        self.client = self.account(USERNAME, courses)
+        self.pages['/course/view.php?id=43'] = '<body id="page-enrol-index">無法選課</body>'
+        self.pages['/course/view.php?id=44'] = '<div class="course-content">Participation accounts for 20%.</div>'
+        self.pages['/local/dcpcmail/view.php?c=44&t=inbox'] = '<div class="mail_list">沒有郵件</div>'
+        self.provider.side_effect = [model_response({'grading': None}), model_response({
+            'summary': '課堂參與', 'events': [],
+            'grading': [{'label': '課堂參與', 'weight': '20%', 'source': '1', 'quote': 'Participation accounts for 20%.'}],
+        })]
+        self.refresh()
+        self.wait_for_worker()
+        result = self.overview()
+        self.assertEqual(result['course_states'], {'42': 'partial', '43': 'partial', '44': 'ready'})
+        self.assertEqual(result['ready'], 1)
+        self.assertIn('20%', result['overview'])
+
     def test_expired_moodle_session_keeps_schedule_without_spending_gemini_quota(self):
         self.refresh()
         self.wait_for_worker()

@@ -27,6 +27,7 @@ class MoodleApiNewsClient:
         self.sections = {}
         self.forums = None
         self.assignments = {}
+        self.pages = {}
 
     def close(self):
         self.session.close()
@@ -108,6 +109,24 @@ class MoodleApiNewsClient:
     def _files(self, files):
         return ''.join(self._link(f.get('fileurl'), f.get('filename')) for f in files or [] if f.get('fileurl'))
 
+    def course_material_html(self, course_id, *, with_news=False):
+        fragments = ['<div class="course-content">']
+        news = {f['cmid'] for f in self._forums() if f.get('type') == 'news' and f.get('course') == course_id} if with_news else set()
+        for section in self._sections(course_id):
+            if section.get('uservisible') is False:
+                continue
+            fragments.append(self._html(section.get('summary')))
+            for module in section.get('modules', []):
+                if module.get('uservisible') is False:
+                    continue
+                kind, mid = module.get('modname'), module.get('id')
+                if kind == 'forum' and mid in news:
+                    fragments.append('<div class="block_news_items">' + self._link(f'{self.base_url}/mod/forum/view.php?id={mid}', module.get('name')) + '</div>')
+                elif kind in {'resource', 'url', 'folder', 'assign', 'forum', 'page'}:
+                    fragments.append(self._link(f'{self.base_url}/mod/{kind}/view.php?id={mid}', module.get('name')))
+                fragments.extend([self._html(module.get('description')), self._files(module.get('contents'))])
+        return ''.join(fragments) + '</div>'
+
     def get(self, url):
         target, base = urlsplit(url), urlsplit(self.base_url)
         if (target.scheme, target.netloc) != (base.scheme, base.netloc) or target.username or target.password:
@@ -120,29 +139,30 @@ class MoodleApiNewsClient:
             return int(values[0])
 
         if target.path == '/course/view.php':
-            cid = number('id')
-            fragments = ['<div class="course-content">']
-            news = {f['cmid'] for f in self._forums() if f.get('type') == 'news' and f.get('course') == cid}
-            for section in self._sections(cid):
-                if section.get('uservisible') is False:
-                    continue
-                fragments.append(self._html(section.get('summary')))
-                for module in section.get('modules', []):
-                    if module.get('uservisible') is False:
-                        continue
-                    kind, mid = module.get('modname'), module.get('id')
-                    if kind == 'forum' and mid in news:
-                        fragments.append('<div class="block_news_items">' + self._link(f'{self.base_url}/mod/forum/view.php?id={mid}', module.get('name')) + '</div>')
-                    elif kind in {'resource', 'url', 'folder', 'assign', 'forum'}:
-                        fragments.append(self._link(f'{self.base_url}/mod/{kind}/view.php?id={mid}', module.get('name')))
-                    fragments.extend([self._html(module.get('description')), self._files(module.get('contents'))])
-            return ''.join(fragments) + '</div>'
+            return self.course_material_html(number('id'), with_news=True)
 
-        if target.path == '/mod/folder/view.php':
+        if target.path in {'/mod/folder/view.php', '/mod/resource/view.php'}:
             _, module = self._module(number('id'))
-            if module.get('modname') != 'folder':
+            kind = 'folder' if target.path == '/mod/folder/view.php' else 'resource'
+            if module.get('modname') != kind:
                 raise ValueError('Unexpected module type')
-            return '<div class="foldertree">' + self._files(module.get('contents')) + '</div>'
+            css_class = 'foldertree' if kind == 'folder' else 'resourcecontent'
+            return f'<div class="{css_class}">' + self._files(module.get('contents')) + '</div>'
+
+        if target.path == '/mod/page/view.php':
+            mid = number('id')
+            cid, module = self._module(mid)
+            if module.get('modname') != 'page':
+                raise ValueError('Unexpected module type')
+            if cid not in self.pages:
+                listing = self._call('mod_page_get_pages_by_courses', **{'courseids[0]': cid})
+                self.pages[cid] = {page['coursemodule']: page for page in listing.get('pages', [])
+                                   if page.get('course') == cid and type(page.get('coursemodule')) is int}
+            page = self.pages[cid].get(mid)
+            if page is None:
+                raise ValueError('Course page unavailable')
+            return ('<div class="mod_page-content">' + self._html(page.get('content'))
+                    + self._files(page.get('contentfiles')) + '</div>')
 
         if target.path == '/mod/assign/view.php':
             mid = number('id')

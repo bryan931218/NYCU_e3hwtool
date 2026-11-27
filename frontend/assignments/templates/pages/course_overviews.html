@@ -42,7 +42,11 @@
                 {% for course in courses %}
                 <a data-course-option="{{ course.id }}" data-course-name="{{ course_name(course.title) }}" href="{{ url_for('course_overviews', semester=semester, course=course.id) }}"{% if selected_course == course.id|string %} aria-current="page"{% endif %}>
                     <span>{{ course_name(course.title) }}</span>
-                    {% if configured %}<span class="insight-course-state" data-course-state="{{ course.id }}" data-ready="{{ 1 if snapshots.get(course.id, {}).analyzed else 0 }}" role="img" aria-label="{{ '已整理' if snapshots.get(course.id, {}).analyzed else '待整理' }}"></span>{% endif %}
+                    {% if configured %}
+                    {% set state = course_states.get(course.id|string, 'pending') %}
+                    {% set status = {'ready': '已整理', 'partial': '部分來源尚未讀取', 'pending': '等候整理'}[state] %}
+                    <span class="insight-course-state" data-course-state="{{ course.id }}" data-state="{{ state }}" role="img" title="{{ status }}" aria-label="{{ status }}"></span>
+                    {% endif %}
                 </a>
                 {% endfor %}
             </nav>

@@ -212,10 +212,13 @@ function initOverview(page) {
     action.textContent = expired ? "重新登入" : "更新金鑰";
     action.href = expired ? page.dataset.loginUrl : "#courseSetup";
     if (setupState) setupState.textContent = result.error_code === "key" ? "金鑰需要更新" : "已啟用";
+    const stateLabels = {ready: "已整理", partial: "部分來源尚未讀取", pending: "等候整理"};
     for (const dot of page.querySelectorAll("[data-course-state]")) {
-      const ready = result.courses_ready?.includes(dot.dataset.courseState);
-      dot.dataset.ready = ready ? "1" : "0";
-      dot.setAttribute("aria-label", ready ? "已整理" : "待整理");
+      const state = result.course_states?.[dot.dataset.courseState] || "pending";
+      const label = stateLabels[state];
+      dot.dataset.state = state;
+      dot.title = label;
+      dot.setAttribute("aria-label", label);
     }
   }
 

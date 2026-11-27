@@ -5,6 +5,7 @@ import time
 from flask import abort, redirect, render_template, request, url_for
 
 from e3_tracker.assignments.domain.course_files import course_display_name
+from e3_tracker.assignments.domain.course_insights import grading_fields
 
 
 ERRORS = {
@@ -18,10 +19,15 @@ ERRORS = {
 
 
 def overview_version(courses, snapshots):
-    fields = ('analyzed', 'partial', 'document')
+    fields = ('analyzed', 'partial', 'document', 'attempt_revision')
     state = [(course['id'], course['title'], course.get('semester_key'),
               tuple(snapshots.get(course['id'], {}).get(field) for field in fields)) for course in courses]
     return hashlib.sha256(repr(state).encode()).hexdigest()[:20]
+
+
+def course_states(snapshots):
+    return {str(cid): 'partial' if row.get('partial') else 'ready'
+            for cid, row in snapshots.items() if row.get('analyzed') or row.get('partial')}
 
 
 def register_course_insight_routes(app, current_user, login_required, service):
@@ -33,7 +39,7 @@ def register_course_insight_routes(app, current_user, login_required, service):
 
     def scope(name, semester):
         try:
-            return service.files.scope(name, semester or None)
+            return service.files.scope(name, semester or None, max_courses=None)
         except ValueError:
             return '', [], []
 
@@ -47,7 +53,8 @@ def register_course_insight_routes(app, current_user, login_required, service):
         return render_template('assignments/pages/course_overviews.html', semester=semester,
             semesters=semesters, courses=courses, selected_course=course if selected else '',
             selected_name=course_display_name(selected['title']) if selected else '全部課程', configured=bool(settings),
-            snapshots=snapshots, course_name=course_display_name,
+            snapshots=snapshots, course_name=course_display_name, grading_fields=grading_fields,
+            course_states=course_states(snapshots),
             overview_version=overview_version(courses, snapshots),
             ready=sum(bool(row.get('analyzed')) for row in snapshots.values()),
             setup_requested=request.args.get('setup') == '1' or bool(error),
@@ -110,12 +117,13 @@ def register_course_insight_routes(app, current_user, login_required, service):
         if version and request.args.get('overview_version') != version:
             overview = render_template('assignments/components/course-overview-cards.html',
                 courses=courses, snapshots=data, configured=True, selected_course='',
-                course_name=course_display_name)
+                course_name=course_display_name, grading_fields=grading_fields)
         return response({'configured': True, 'semester': semester, 'events': sorted(events, key=lambda row: row['date']),
             'running': settings['lease_until'] > time.time(), 'retry_at': settings['retry_at'],
             'ready': sum(bool(snapshot.get('analyzed')) for snapshot in data.values()), 'count': len(courses),
             'error': ERRORS.get(settings['error'], ''), 'error_code': settings['error'],
             'overview': overview, 'overview_version': version,
+            'course_states': course_states(data),
             'courses_ready': [str(cid) for cid, row in data.items() if row.get('analyzed')]})
 
     @app.post('/api/course-overview/refresh')
