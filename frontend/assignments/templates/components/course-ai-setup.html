@@ -1,0 +1,45 @@
+<details class="insight-setup{% if not configured %} insight-setup-welcome{% endif %}" id="courseSetup"{% if not configured or setup_requested %} open{% endif %}>
+    <summary>
+        <span>
+            <strong>{{ '課程 AI 設定' if configured else '啟用課程 AI' }}</strong>
+            {% if not configured %}<small>自動整理考試、作業期限與評分方式。</small>{% endif %}
+        </span>
+        {% if configured %}<span class="insight-setup-state">{{ '金鑰需要更新' if error_code == 'key' else '已啟用' }}</span>{% endif %}
+        <span class="insight-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="insight-setup-body">
+        {% if setup_error %}<p class="insight-error" role="alert">{{ setup_error }}</p>{% endif %}
+        <div class="insight-setup-grid">
+            <section class="insight-key-help" aria-labelledby="insightGuideTitle">
+                <h2 id="insightGuideTitle">申請免費 API 金鑰</h2>
+                <p>用 Google 帳號登入 AI Studio，選擇免費層專案，按「建立 API 金鑰」後將金鑰貼回這裡。</p>
+                <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer" class="btn">開啟 Google AI Studio ↗</a>
+                <div class="insight-help-links">
+                    <a href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank" rel="noopener noreferrer">官方教學</a>
+                    <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">免費額度</a>
+                </div>
+            </section>
+            <form method="post" action="{{ url_for('course_ai_settings') }}" class="insight-form" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="semester" value="{{ semester }}">
+                <input type="hidden" name="course" value="{{ selected_course }}" data-current-course>
+                <label for="courseAiKey">Gemini API 金鑰</label>
+                <input id="courseAiKey" type="password" name="api_key" autocomplete="off" spellcheck="false" autocapitalize="none"
+                       placeholder="{{ '貼上新的 API 金鑰' if configured else '貼上從 AI Studio 複製的金鑰' }}" maxlength="512" required>
+                <label class="insight-consent"><input type="checkbox" name="consent" value="yes" required><span>同意將課程相關文字送至 Google Gemini。Google 可能使用免費方案的內容改善服務。</span></label>
+                <button type="submit" name="action" value="connect" class="btn accent">{{ '更新金鑰' if configured else '啟用並整理' }}</button>
+            </form>
+        </div>
+        {% if configured %}
+        <details class="insight-unlink">
+            <summary>解除綁定</summary>
+            <form method="post" action="{{ url_for('course_ai_settings') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="semester" value="{{ semester }}">
+                <input type="hidden" name="course" value="{{ selected_course }}" data-current-course>
+                <button class="btn insight-remove" type="submit" name="action" value="disconnect">解除綁定並清除整理結果</button>
+            </form>
+        </details>
+        {% endif %}
+    </div>
+</details>

@@ -141,7 +141,7 @@ class CourseInsightService:
             if self.start(app, user, semester, courses) == 'busy':
                 break
 
-    def start(self, app, user, semester, courses):
+    def start(self, app, user, semester, courses, *, manual=False):
         if not (user.get('moodle_session') or user.get('moodle_token')):
             return 'session_expired'
         if not self.slots.acquire(blocking=False):
@@ -152,7 +152,7 @@ class CourseInsightService:
             claim = self.storage.claim(user['username'])
             if claim:
                 worker = threading.Thread(target=self._refresh, args=(app, dict(user), semester, courses, claim),
-                                          daemon=True, name='course-insights')
+                                          kwargs={'manual': True} if manual else None, daemon=True, name='course-insights')
                 worker.start()
                 started = True
                 return 'running'
@@ -165,7 +165,7 @@ class CourseInsightService:
                 self.slots.release()
         return 'waiting'
 
-    def _refresh(self, app, user, semester, courses, claim):
+    def _refresh(self, app, user, semester, courses, claim, *, manual=False):
         username = user['username']
         error, pause = '', 90
         try:
@@ -177,7 +177,8 @@ class CourseInsightService:
                 if time.monotonic() > stop - 28 or not self.storage.active(claim):
                     break
                 old = previous.get(course['id'], {})
-                if time.time() - old.get('checked', 0) < (600 if old.get('partial') else 1800):
+                refresh_interval = 180 if manual else 600 if old.get('partial') else 1800
+                if time.time() - old.get('checked', 0) < refresh_interval:
                     continue
                 client = news_client(self.files.base_url, user, deadline=min(stop - 20, time.monotonic() + 38),
                                      courses=[course])

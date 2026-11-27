@@ -16,6 +16,7 @@ import { courseColorKey, createCourseColorRegistry, register as registerCourseCo
 import { initialize as initializeUsageEvents } from '../assignments/static/js/workbench/usage-events.js';
 import { initialize as initializeCacheEvents } from '../assignments/static/js/workbench/cache-events.js';
 import { register as registerCustomTodos } from '../assignments/static/js/workbench/custom-todo-notifications.js';
+import { showScheduleEntry } from '../assignments/static/js/course-insights.js';
 
 test('more operations close on actions, outside click and Escape while keeping inner headings usable', () => {
   const handlers = {};
@@ -38,6 +39,14 @@ test('more operations close on actions, outside click and Escape while keeping i
   handlers.keydown({key: 'Escape'});
   assert.equal(focus, 1);
   initializeMoreMenu({getElementById: () => null});
+});
+
+test('course center keeps same-day events in the upcoming list and reserves past or canceled dates for all dates', () => {
+  const today = '2026-11-27';
+  assert.equal(showScheduleEntry({ range: 'upcoming', day: today, cancelled: false, today }), true);
+  assert.equal(showScheduleEntry({ range: 'upcoming', day: '2026-11-26', cancelled: false, today }), false);
+  assert.equal(showScheduleEntry({ range: 'upcoming', day: '2026-11-28', cancelled: true, today }), false);
+  assert.equal(showScheduleEntry({ range: 'all', day: '', cancelled: true, today }), true);
 });
 
 test('calendar uses the course deadline once, preserves a manually chosen deadline, and adds exams', () => {

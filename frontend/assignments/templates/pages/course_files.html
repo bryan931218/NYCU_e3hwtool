@@ -29,7 +29,7 @@
         <a href="{{ url_for('course_messages_page', semester=selected_semester) }}" data-semester-link>課程公告</a>
         <a href="{{ url_for('course_messages_page', tab='mail', semester=selected_semester) }}" data-semester-link>課程信件</a>
         <a href="{{ url_for('course_files_page', semester=selected_semester) }}" aria-current="page" data-semester-link>附件收納</a>
-        {% if not files_config.guest %}<a href="{{ url_for('course_overviews', semester=selected_semester) }}" data-semester-link>課堂概要</a>{% endif %}
+        {% if not files_config.guest %}<a href="{{ url_for('course_overviews', semester=selected_semester) }}" data-semester-link>課程中心</a>{% endif %}
     </nav>
     <section class="files-toolbar" aria-label="搜尋附件">
         <select id="filesSemester" aria-label="選擇學期">{% for semester in semesters %}<option value="{{ semester.key }}"{% if semester.key == selected_semester %} selected{% endif %}>{{ semester.label }}</option>{% endfor %}</select>

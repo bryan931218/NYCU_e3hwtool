@@ -156,23 +156,37 @@ class CourseInsightTests(unittest.TestCase):
                 ], 'all_assignments': [], 'selected_semesters': [TERM]}, 'excel_data': ''})
                 with client.session_transaction() as session:
                     session['session_token'] = 'course-test'
-                self.assertIn('申請免費 API 金鑰', client.get('/settings/course-ai').get_data(as_text=True))
+                setup = client.get('/settings/course-ai?semester=115-1&course=42', follow_redirects=True)
+                self.assertIn('申請免費 API 金鑰', setup.get_data(as_text=True))
+                self.assertIn('data-course="42"', setup.get_data(as_text=True))
                 key = 'AQ.this-is-a-fake-unit-test-value'
-                self.assertEqual(client.post('/settings/course-ai', data={'action': 'connect', 'api_key': key}).status_code, 400)
-                self.assertEqual(client.post('/settings/course-ai', data={'action': 'connect', 'api_key': key, 'consent': 'yes'}).status_code, 302)
+                invalid = client.post('/settings/course-ai', data={'action': 'connect', 'api_key': key, 'semester': TERM, 'course': '42'})
+                self.assertEqual(invalid.status_code, 400)
+                self.assertIn('data-course="42"', invalid.get_data(as_text=True))
+                self.assertNotIn(key, invalid.get_data(as_text=True))
+                enabled = client.post('/settings/course-ai', data={'action': 'connect', 'api_key': key,
+                    'consent': 'yes', 'semester': TERM, 'course': '42'})
+                self.assertEqual(enabled.status_code, 302)
+                self.assertIn('course=42', enabled.location)
                 store = CourseInsightStorage(owner)
                 claim = store.claim(name)
                 plan = source('source', '期中考：12 月 10 日')
                 snapshot = {'analyzed': time.time(), 'document': True, 'summary': '<script>fake</script>',
                             'grading': [], 'events': apply([event(plan, '12 月 10 日')], [plan])}
                 self.assertTrue(store.save(name, TERM, 42, claim, snapshot))
-                page = client.get(f'/courses/overview?semester={TERM}').get_data(as_text=True)
+                page = client.get(f'/courses/overview?semester={TERM}&course=42').get_data(as_text=True)
+                self.assertIn('課程中心', page)
+                self.assertIn('data-course="42"', page)
                 self.assertIn('2026-12-10', page)
                 self.assertIn('&lt;script&gt;fake&lt;/script&gt;', page)
                 data = client.get(f'/api/course-overview?semester={TERM}&include=overview').get_json()
                 self.assertEqual(data['events'][0]['date'], '2026-12-10')
                 self.assertIn('考試與期限', data['overview'])
                 self.assertNotIn(key, str(data))
+                unchanged = client.get(f'/api/course-overview?semester={TERM}&include=overview'
+                    f"&overview_version={data['overview_version']}").get_json()
+                self.assertIsNone(unchanged['overview'])
+                self.assertEqual(unchanged['courses_ready'], ['42'])
                 self.assertEqual(client.post('/api/course-overview/refresh', json=[]).status_code, 400)
                 self.assertEqual(client.post('/settings/course-ai', data={'action': 'disconnect'}).status_code, 302)
                 self.assertEqual(client.get('/api/course-overview').get_json(), {'configured': False})

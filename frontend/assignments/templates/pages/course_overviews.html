@@ -2,48 +2,97 @@
 <html lang="zh-Hant" data-theme>
 <head>
 {% include 'assignments/components/course-insight-head.html' %}
-<title>課堂概要 | E3作業追蹤系統</title>
+<title>課程中心 | E3作業追蹤系統</title>
 <script type="module" nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='assignments/js/course-insights.js') }}"></script>
 </head>
 <body class="insight-page">
-<main class="insight-shell" id="courseOverviewPage" data-semester="{{ semester }}"
+<main class="insight-shell" id="courseOverviewPage" data-semester="{{ semester }}" data-course="{{ selected_course }}"
       data-search-url="{{ url_for('course_overview_search') }}" data-data-url="{{ url_for('course_overview_data') }}"
-      data-refresh-url="{{ url_for('course_overview_refresh') }}" data-csrf="{{ csrf_token() }}" data-configured="{{ 1 if configured else 0 }}">
-    <header class="insight-bar">
-        <h1>課堂概要</h1>
-        <div><a href="{{ url_for('course_ai_settings') }}" class="btn">AI 設定</a><a href="{{ url_for('index') }}" class="btn">作業列表</a></div>
+      data-refresh-url="{{ url_for('course_overview_refresh') }}" data-login-url="{{ url_for('login') }}"
+      data-overview-version="{{ overview_version }}"
+      data-csrf="{{ csrf_token() }}" data-configured="{{ 1 if configured else 0 }}">
+    <header class="insight-masthead">
+        <div>
+            <a class="insight-back" href="{{ url_for('index') }}"><span aria-hidden="true">‹</span> 作業列表</a>
+            <h1>課程中心</h1>
+        </div>
+        {% if semesters %}
+        <form method="get" action="{{ url_for('course_overviews') }}" id="insightSemesterForm" class="insight-semester">
+            <label for="overviewSemester">學期</label>
+            <select id="overviewSemester" name="semester">{% for entry in semesters %}<option value="{{ entry.key }}"{% if entry.key == semester %} selected{% endif %}>{{ entry.label }}</option>{% endfor %}</select>
+            <noscript><button type="submit" class="btn">切換</button></noscript>
+        </form>
+        {% endif %}
     </header>
     <nav class="insight-nav" aria-label="課程資料">
+        <a href="{{ url_for('course_overviews', semester=semester) }}" aria-current="page">課程中心</a>
         <a href="{{ url_for('course_messages_page', semester=semester) }}">課程訊息</a>
         <a href="{{ url_for('course_files_page', semester=semester) }}">附件收納</a>
-        <a href="{{ url_for('course_overviews', semester=semester) }}" aria-current="page">課堂概要</a>
     </nav>
-    {% if semesters %}
-    <form method="get" class="insight-semester">
-        <label for="overviewSemester">學期</label>
-        <select id="overviewSemester" name="semester">{% for entry in semesters %}<option value="{{ entry.key }}"{% if entry.key == semester %} selected{% endif %}>{{ entry.label }}</option>{% endfor %}</select>
-        <button class="btn" type="submit">切換</button>
-    </form>
-    {% endif %}
-    {% if configured and courses %}
-    <section class="insight-panel">
-        <form id="overviewSearch" class="insight-search" autocomplete="off">
-            <label for="overviewQuery">課程搜尋</label>
-            <input id="overviewQuery" type="search" placeholder="例如：期末考什麼時候？" required minlength="2" maxlength="300" value="{{ initial_query }}">
-            <select id="overviewCourse" aria-label="搜尋課程"><option value="">全部課程</option>{% for course in courses %}<option value="{{ course.id }}">{{ course.title }}</option>{% endfor %}</select>
-            <button type="submit" class="btn accent">查課程內容</button>
-        </form>
-        <div id="overviewAnswer" aria-live="polite"></div>
-    </section>
-    <p class="insight-progress" id="overviewStatus" role="status">{{ error or '課程內容會在背景整理。' }}</p>
-    {% elif not configured %}
-    <p class="insight-panel">綁定 Gemini API 後，可自動整理課程內容。 <a href="{{ url_for('course_ai_settings') }}">設定 API 金鑰</a></p>
-    {% elif not courses %}
-    <p class="insight-panel">這個學期尚無課程。請先更新 E3 作業。</p>
-    {% endif %}
-    <div class="insight-courses" id="overviewCards">
-        {% include 'assignments/components/course-overview-cards.html' %}
+    <div class="insight-utility{% if configured and courses %} insight-utility-ready{% endif %}">
+        {% include 'assignments/components/course-ai-setup.html' %}
+        {% if configured and courses %}
+        <div class="insight-sync">
+            <p id="overviewStatus" role="status">{{ error or ('已整理 %s／%s 門課'|format(ready, courses|length) if ready else '等候第一次整理') }}</p>
+            <a id="overviewSyncAction" href="{{ url_for('login') if error_code == 'session_expired' else '#courseSetup' }}"
+               {% if error_code not in ('key', 'session_expired') %}hidden{% endif %}>{{ '重新登入' if error_code == 'session_expired' else '更新金鑰' }}</a>
+            <button type="button" class="insight-sync-button" id="insightRefresh">檢查更新</button>
+        </div>
+        {% endif %}
     </div>
+    {% if courses %}
+    <div class="insight-workspace">
+        <aside class="insight-rail">
+            <h2>我的課程</h2>
+            <nav id="insightCourseNav" aria-label="我的課程">
+                <a data-course-option="" data-course-name="全部課程" href="{{ url_for('course_overviews', semester=semester) }}"{% if not selected_course %} aria-current="page"{% endif %}>
+                    <span>全部課程</span><small>{{ courses|length }}</small>
+                </a>
+                {% for course in courses %}
+                <a data-course-option="{{ course.id }}" data-course-name="{{ course_name(course.title) }}" href="{{ url_for('course_overviews', semester=semester, course=course.id) }}"{% if selected_course == course.id|string %} aria-current="page"{% endif %}>
+                    <span>{{ course_name(course.title) }}</span>
+                    {% if configured %}<span class="insight-course-state" data-course-state="{{ course.id }}" data-ready="{{ 1 if snapshots.get(course.id, {}).analyzed else 0 }}" role="img" aria-label="{{ '已整理' if snapshots.get(course.id, {}).analyzed else '待整理' }}"></span>{% endif %}
+                </a>
+                {% endfor %}
+            </nav>
+        </aside>
+        <div class="insight-main">
+            <form class="insight-mobile-scope" id="insightCourseForm" method="get" action="{{ url_for('course_overviews') }}">
+                <input type="hidden" name="semester" value="{{ semester }}">
+                <label for="insightCourseSelect">課程</label>
+                <select name="course" id="insightCourseSelect">
+                    <option value="">全部課程</option>
+                    {% for course in courses %}<option value="{{ course.id }}"{% if selected_course == course.id|string %} selected{% endif %}>{{ course_name(course.title) }}</option>{% endfor %}
+                </select>
+                <noscript><button type="submit" class="btn">選擇</button></noscript>
+            </form>
+            {% if configured %}
+            <section class="insight-question" aria-label="搜尋課程內容">
+                <form id="overviewSearch" class="insight-search" autocomplete="off">
+                    <label for="overviewQuery">問課程內容 <span id="insightSearchScope">{{ selected_name }}</span></label>
+                    <div class="insight-search-row">
+                        <input id="overviewQuery" type="search" placeholder="例如：期末考什麼時候？" required minlength="2" maxlength="300" value="{{ initial_query }}">
+                        <button type="submit" class="btn accent">搜尋</button>
+                    </div>
+                </form>
+                <div class="insight-suggestions" id="insightSuggestions">
+                    <button type="button" data-question="期末考什麼時候？">期末考時間</button>
+                    <button type="button" data-question="這門課的評分方式是什麼？">評分方式</button>
+                    <button type="button" data-question="有哪些作業延期？">作業延期</button>
+                </div>
+                <div id="overviewAnswer" class="insight-answer" aria-live="polite" hidden></div>
+            </section>
+            {% endif %}
+            <div id="overviewCards">{% include 'assignments/components/course-overview-cards.html' %}</div>
+        </div>
+    </div>
+    {% elif configured %}
+    <section class="insight-empty insight-panel">
+        <h2>這個學期還沒有課程</h2>
+        <p>先從作業列表更新 E3，就能開始整理。</p>
+        <a class="btn" href="{{ url_for('index') }}">前往作業列表</a>
+    </section>
+    {% endif %}
 </main>
 </body>
 </html>

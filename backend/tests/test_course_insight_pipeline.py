@@ -87,9 +87,9 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.has_pending_refresh = False
         refresh = CourseInsightService._refresh
 
-        def observe_refresh(service, *args):
+        def observe_refresh(service, *args, **kwargs):
             try:
-                return refresh(service, *args)
+                return refresh(service, *args, **kwargs)
             finally:
                 self.finished.set()
 
@@ -248,6 +248,21 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.assertGreater(data['retry_at'], time.time())
         retry = self.client.post('/api/course-overview/refresh', json={'semester': TERM})
         self.assertEqual(retry.get_json()['status'], 'waiting')
+        self.assertEqual(self.provider.call_count, 2)
+
+    def test_manual_refresh_can_check_for_changes_before_the_normal_update_interval(self):
+        self.refresh()
+        self.wait_for_worker()
+        self.add_mail()
+        with self.db._engine.begin() as connection:
+            connection.execute(update(insight_settings).values(retry_at=0))
+            connection.execute(update(insight_courses).values(checked=time.time() - 240))
+        self.finished.clear()
+        response = self.client.post('/api/course-overview/refresh', json={'semester': TERM, 'manual': True})
+        self.has_pending_refresh = response.status_code == 202
+        self.assertEqual(response.status_code, 202)
+        self.wait_for_worker()
+        self.assertEqual(self.overview()['events'][0]['date'], '2026-12-08T14:30:00+08:00')
         self.assertEqual(self.provider.call_count, 2)
 
     def test_unreadable_first_document_does_not_look_like_complete_coverage(self):
