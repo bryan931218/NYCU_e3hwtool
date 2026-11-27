@@ -252,8 +252,8 @@ class CourseInsightPipelineTests(unittest.TestCase):
             self.assertTrue(self.finished.wait(8), 'Background job did not finish before timeout')
             self.has_pending_refresh = False
 
-    def overview(self):
-        return self.client.get(f'/api/course-overview?semester={TERM}&include=overview').get_json()
+    def overview(self, semester=TERM):
+        return self.client.get(f'/api/course-overview?semester={semester}&include=overview').get_json()
 
     def test_first_pdf_and_new_mail_reconcile_through_background_job(self):
         self.refresh()
@@ -334,21 +334,26 @@ class CourseInsightPipelineTests(unittest.TestCase):
         for index in range(9):
             path = f'/pluginfile.php/42/mod_resource/content/1/week-{index}.txt'
             links.append(f'<a href="{path}">第 {index + 1} 週教材</a>')
-            self.pages[path] = http_response('課堂練習及閱讀重點。' * 1600, content_type='text/plain')
+            text = '平時測驗 10%' if index == 8 else '課堂練習及閱讀重點。' * 1600
+            self.pages[path] = http_response(text, content_type='text/plain')
         links.append(f'<a href="{SECOND_FILE}">評分與課程大綱</a>')
         links.append('<a href="/mod/page/view.php?id=77">評量補充</a>')
         self.pages['/course/view.php?id=42'] = '<div class="course-content">' + ''.join(links) + '</div>'
         self.pages[SECOND_FILE] = http_response('作業：４０％。期末專題：30 percent。', content_type='text/plain')
-        self.pages['/mod/page/view.php?id=77'] = '<div class="mod_page-content">出席採簽到。課堂討論：三十分鐘。</div>'
+        self.pages['/mod/page/view.php?id=77'] = ('<div class="mod_page-content">出席採簽到。課堂討論：三十分鐘。'
+            '<table><tr><th>項目</th><th>配分 (%)</th></tr><tr><td>實作</td><td>15</td></tr></table></div>')
 
         def model(_, **kwargs):
             sources = json.loads(kwargs['json']['contents'][0]['parts'][0]['text'])['sources']
             outline = next(source for source in sources if '作業：４０％' in source['text'])
             page = next(source for source in sources if '出席採簽到' in source['text'])
+            late = next(source for source in sources if '平時測驗 10%' in source['text'])
             return model_response({'summary': '', 'events': [], 'grading': [
                 {'label': '作業', 'weight': '40.0%', 'source': outline['id'], 'quote': '作業：４０％。'},
                 {'label': '期末專題', 'weight': '30 percent', 'source': outline['id'], 'quote': '期末專題：30 percent。'},
                 {'label': '出席', 'detail': '採簽到', 'source': page['id'], 'quote': '出席採簽到。'},
+                {'label': '實作', 'weight': '15%', 'source': page['id'], 'quote': '實作 15%'},
+                {'label': '平時測驗', 'weight': '10%', 'source': late['id'], 'quote': '平時測驗 10%'},
                 {'label': '課堂討論', 'weight': '30 分', 'source': page['id'], 'quote': '課堂討論：三十分鐘。'},
                 {'label': '期中考', 'weight': '30%', 'source': outline['id'], 'quote': '作業：４０％。期末專題：30 percent。'},
             ]})
@@ -356,12 +361,62 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.provider.side_effect = model
         self.refresh()
         self.wait_for_worker()
+        self.assertTrue(self.overview()['needs_scan'])
+        self.assertIn('正在接續讀取教材', self.overview()['overview'])
+        self.provider.assert_not_called()
+        self.refresh()
+        self.wait_for_worker()
+        self.provider.assert_called_once()
+        self.assertFalse(self.overview()['needs_scan'])
         markup = BeautifulSoup(self.overview()['overview'], 'html.parser')
         grades = markup.select('.insight-grades tbody tr')
         self.assertEqual([(row.strong.get_text(), row.select('td')[-1].get_text(strip=True)) for row in grades],
-                         [('作業', '40%'), ('期末專題', '30%'), ('出席', '未列')])
-        self.assertIn('採簽到', grades[-1].get_text())
-        self.assertTrue(grades[-1].find('a')['href'].endswith('/mod/page/view.php?id=77'))
+                         [('作業', '40%'), ('期末專題', '30%'), ('出席', '未列'), ('實作', '15%'), ('平時測驗', '10%')])
+        self.assertIn('採簽到', grades[2].get_text())
+        self.assertTrue(grades[2].find('a')['href'].endswith('/mod/page/view.php?id=77'))
+
+    def test_worker_resumes_selected_archived_semester_for_all_nine_courses(self):
+        archive = '110-1'
+        archived = [{'id': cid, 'title': f'【110上】歷史課程 {cid}', 'semester_key': archive, 'assignments': []}
+                    for cid in range(50, 59)]
+        self.client = self.account(USERNAME, [COURSE, *archived])
+        for entry in archived:
+            course_id = entry['id']
+            self.pages[f'/course/view.php?id={course_id}'] = '<div class="course-content">期中考</div>'
+            self.pages[f'/local/dcpcmail/view.php?c={course_id}&t=inbox'] = '<div class="mail_list">沒有郵件</div>'
+        links = []
+        for index in range(6):
+            path = f'/pluginfile.php/50/mod_resource/content/1/week-{index}.txt'
+            self.pages[path] = http_response('本週課程講義', content_type='text/plain')
+            links.append(f'<a href="{path}">教材 {index}</a>')
+        self.pages['/course/view.php?id=50'] = '<div class="course-content">' + ''.join(links) + '</div>'
+        self.provider.side_effect = lambda *args, **kwargs: model_response({'summary': '課程摘要', 'grading': [], 'events': []})
+
+        response = self.client.post('/api/course-overview/refresh', json={'semester': archive, 'queue': True})
+        self.has_pending_refresh = response.status_code == 202
+        self.assertEqual(response.status_code, 202)
+        self.wait_for_worker()
+        first = self.overview(archive)
+        self.assertEqual(first['ready'], 8)
+        self.assertTrue(first['queued_here'])
+        self.assertTrue(first['needs_scan'])
+        page = BeautifulSoup(self.client.get(f'/courses/overview?semester={archive}').data, 'html.parser')
+        self.assertEqual(page.select_one('#courseOverviewPage')['data-historical'], '1')
+        self.assertEqual(self.client.post('/api/course-overview/refresh', json={'semester': TERM}).get_json()['status'], 'waiting')
+        with self.db._engine.begin() as connection:
+            connection.execute(update(insight_settings).values(retry_at=0))
+
+        self.finished.clear()
+        service = CourseInsightService(self.db, self.app.extensions['e3_course_files'])
+        self.has_pending_refresh = True
+        service.scan_enabled_accounts(self.app)
+        self.wait_for_worker()
+        final = self.overview(archive)
+        self.assertEqual(final['ready'], 9)
+        self.assertFalse(final['queued_here'])
+        self.assertFalse(final['needs_scan'])
+        self.assertEqual(self.overview()['ready'], 0)
+        self.assertEqual(self.provider.call_count, 9)
 
     def test_per_course_errors_do_not_block_other_courses(self):
         courses = [COURSE, {**COURSE, 'id': 43}, {**COURSE, 'id': 44}]
@@ -379,6 +434,35 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.assertEqual(result['course_states'], {'42': 'partial', '43': 'partial', '44': 'ready'})
         self.assertEqual(result['ready'], 1)
         self.assertIn('20%', result['overview'])
+
+    def test_grading_in_a_course_section_and_announcement_attachment_is_read(self):
+        attachment = '/pluginfile.php/42/mod_forum/attachment/7/grading.txt'
+        self.pages['/course/view.php?id=42'] = ('<div class="course-content"><li class="section">'
+            '<a href="/course/section.php?id=12">課程大綱</a></li>'
+            '<div class="block_news_items"><a href="/mod/forum/view.php?id=3">課程公告</a></div></div>')
+        self.pages['/course/section.php?id=12'] = '<div id="region-main">報告配分 30%</div>'
+        self.pages['/mod/forum/view.php?id=3'] = self.news_listing('2026-11-23T10:00:00+08:00').replace('考試異動', '評分方式')
+        self.pages['/mod/forum/discuss.php?d=7'] = (
+            '<article class="forumpost firstpost"><div class="post-content-container">詳見附件</div>'
+            f'<div class="attachments"><a href="{attachment}">配分表</a></div></article>')
+        self.pages[attachment] = http_response('作業配分 70%', content_type='text/plain')
+
+        def model(_, **kwargs):
+            sources = json.loads(kwargs['json']['contents'][0]['parts'][0]['text'])['sources']
+            section = next(source for source in sources if '報告配分 30%' in source['text'])
+            file = next(source for source in sources if '作業配分 70%' in source['text'])
+            return model_response({'summary': '', 'events': [], 'grading': [
+                {'label': '報告', 'weight': '30%', 'source': section['id'], 'quote': '報告配分 30%'},
+                {'label': '作業', 'weight': '70%', 'source': file['id'], 'quote': '作業配分 70%'},
+            ]})
+
+        self.provider.side_effect = model
+        self.refresh()
+        self.wait_for_worker()
+        result = self.overview()
+        self.assertEqual(result['ready'], 1)
+        self.assertIn('作業配分 70%', result['overview'])
+        self.assertIn(attachment, result['overview'])
 
     def test_expired_moodle_session_keeps_schedule_without_spending_gemini_quota(self):
         self.refresh()

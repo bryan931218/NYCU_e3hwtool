@@ -31,12 +31,19 @@ async function loadInsights(config, semester, include, manual = false) {
   if (include) url.searchParams.set("include", include);
   if (include === "overview" && config.overviewVersion) url.searchParams.set("overview_version", config.overviewVersion);
   const result = await courseRequest(url);
-  if (result.configured && result.count && !result.running && (manual || result.retry_at <= Date.now() / 1000)) {
-    const job = await courseRequest(config.refreshUrl, { semester: result.semester, manual }, config.csrf);
-    if (job.status === "running") result.running = true;
+  const queue = include === "overview" && (manual || (result.needs_scan && !result.queued_here));
+  const due = !result.running && result.retry_at <= Date.now() / 1000;
+  if (result.configured && result.count && (queue || due)) {
+    const job = await courseRequest(config.refreshUrl, { semester: result.semester, manual, queue }, config.csrf);
+    if (job.status === "running") {
+      result.running = true;
+      result.running_here = true;
+      result.error = "";
+      result.error_code = "";
+    }
+    if (queue && ["running", "queued"].includes(job.status)) result.queued_here = true;
     if (job.error) result.error = job.error;
     if (job.status === "session_expired") result.error_code = "session_expired";
-    if (manual) result.manualOutcome = job.status;
   }
   return result;
 }
@@ -114,7 +121,7 @@ function setupNavigation(page, cards) {
   const courseSelect = page.querySelector("#insightCourseSelect");
   const title = page.querySelector("#insightScopeTitle");
   const links = new Map([...page.querySelectorAll("#insightCourseNav a")].map(link => [link.dataset.courseOption, link]));
-  let range = "upcoming";
+  let range = page.dataset.historical === "1" ? "all" : "upcoming";
   const target = document.getElementById(location.hash.slice(1));
   if (target?.dataset.scheduleDate && cards.contains(target) && !showScheduleEntry({ range, day: target.dataset.scheduleDate,
     cancelled: target.dataset.scheduleCancelled === "1", today: activeDay() })) {
@@ -215,11 +222,13 @@ function initOverview(page) {
   let renderedOverview;
 
   function renderProgress(result) {
+    const partial = Object.values(result.course_states || {}).filter(state => state === "partial").length;
     const progress = result.count ? "已整理 " + result.ready + "／" + result.count + " 門課" : "尚無課程";
-    status.textContent = result.error || (result.running ? "正在整理・" + progress
-      : result.manualOutcome === "waiting" ? progress + "。剛檢查過，稍後可再試。" : progress);
-    syncButton.disabled = Boolean(result.running);
-    syncButton.textContent = result.running ? "整理中" : "檢查更新";
+    const detail = partial ? progress + " · " + partial + " 門來源未齊" : progress;
+    status.textContent = result.error ? detail + " · " + result.error : result.running_here ? "正在整理 · " + detail
+      : result.queued_here ? "等候接續整理 · " + detail : detail;
+    syncButton.disabled = Boolean(result.running_here || result.queued_here);
+    syncButton.textContent = result.running_here ? "整理中" : result.queued_here ? "等候整理" : "整理本學期";
     const expired = result.error_code === "session_expired";
     action.hidden = !expired && result.error_code !== "key";
     action.textContent = expired ? "重新登入" : "更新金鑰";
@@ -278,7 +287,7 @@ function initOverview(page) {
       renderProgress(result);
       renderCards(result.overview);
       page.dataset.overviewVersion = result.overview_version || "";
-      timer = setTimeout(refresh, result.running ? 9000 : 90000);
+      timer = setTimeout(refresh, result.running_here || result.queued_here ? 9000 : 90000);
     } catch (error) {
       status.textContent = error.message;
       syncButton.disabled = false;

@@ -199,6 +199,12 @@ def _course_semester_catalog(conn):
     from e3_tracker.assignments.persistence.course_files import course_semester_catalog
     course_semester_catalog.create(conn, checkfirst=True)
 
+def _course_insight_queue(conn):
+    _add_columns(conn, 'course_insight_settings', {
+        'requested_semester': "VARCHAR(16) NOT NULL DEFAULT ''",
+        'working_semester': "VARCHAR(16) NOT NULL DEFAULT ''",
+    })
+
 
 MIGRATIONS = (
     ("0001_core_schema", _core_schema),
@@ -223,6 +229,7 @@ MIGRATIONS = (
     ("0020_workbench_onboarding", _workbench_onboarding),
     ("0021_course_insights", _course_insights),
     ("0022_course_semester_catalog", _course_semester_catalog),
+    ("0023_course_insight_queue", _course_insight_queue),
 )
 
 

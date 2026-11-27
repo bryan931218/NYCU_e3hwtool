@@ -7,8 +7,9 @@ from flask import abort, flash, redirect, render_template, request, url_for
 
 from e3_tracker.assignments.domain.course_files import course_display_name
 from e3_tracker.assignments.domain.course_insights import grading_fields
-from e3_tracker.assignments.services.collector import normalize_semester_selection
+from e3_tracker.assignments.services.collector import _semester_from_key, current_semester_key, normalize_semester_selection
 from e3_tracker.assignments.services.course_announcements import AnnouncementSessionExpired
+from e3_tracker.assignments.services.course_insights import ANALYSIS_REVISION
 from e3_tracker.assignments.services.http import E3LoginError
 
 
@@ -25,13 +26,14 @@ ERRORS = {
 def overview_version(courses, snapshots):
     fields = ('analyzed', 'partial', 'document', 'attempt_revision')
     state = [(course['id'], course['title'], course.get('semester_key'),
-              tuple(snapshots.get(course['id'], {}).get(field) for field in fields)) for course in courses]
+              tuple(snapshots.get(course['id'], {}).get(field) for field in fields),
+              bool(snapshots.get(course['id'], {}).get('material_progress'))) for course in courses]
     return hashlib.sha256(repr(state).encode()).hexdigest()[:20]
 
 
 def course_states(snapshots):
-    return {str(cid): 'partial' if row.get('partial') else 'ready'
-            for cid, row in snapshots.items() if row.get('analyzed') or row.get('partial')}
+    return {str(cid): 'pending' if row.get('material_progress') else 'partial' if row.get('partial') else 'ready'
+            for cid, row in snapshots.items() if row.get('analyzed') or row.get('partial') or row.get('material_progress')}
 
 
 def register_course_insight_routes(app, current_user, login_required, service):
@@ -54,11 +56,13 @@ def register_course_insight_routes(app, current_user, login_required, service):
         course = request.values.get('course', '')
         selected = next((row for row in courses if str(row['id']) == course), None)
         snapshots = service.storage.snapshots(name, semester, [row['id'] for row in courses])
+        term = _semester_from_key(semester)
+        historical = term['key'] != 'other' and term['sort_key'] < _semester_from_key(current_semester_key())['sort_key']
         return render_template('assignments/pages/course_overviews.html', semester=semester,
             semesters=semesters, courses=courses, selected_course=course if selected else '',
             selected_name=course_display_name(selected['title']) if selected else '全部課程', configured=bool(settings),
             snapshots=snapshots, course_name=course_display_name, grading_fields=grading_fields,
-            course_states=course_states(snapshots),
+            course_states=course_states(snapshots), historical=historical,
             overview_version=overview_version(courses, snapshots),
             ready=sum(bool(row.get('analyzed')) for row in snapshots.values()),
             setup_requested=request.args.get('setup') == '1' or bool(error),
@@ -135,6 +139,10 @@ def register_course_insight_routes(app, current_user, login_required, service):
             else:
                 added = len({course['semester_key'] for course in courses} - previous - {'other'})
                 flash(f'學期清單已更新，新增 {added} 個學期。' if added else '學期清單已更新。', 'semester-success')
+                if semester and service.storage.settings(name):
+                    selected, scoped_courses, _ = scope(name, semester[0])
+                    if scoped_courses:
+                        service.storage.request_semester(name, selected)
         return redirect(target, code=303)
 
     @app.get('/api/course-overview')
@@ -159,12 +167,19 @@ def register_course_insight_routes(app, current_user, login_required, service):
             overview = render_template('assignments/components/course-overview-cards.html',
                 courses=courses, snapshots=data, configured=True, selected_course='',
                 course_name=course_display_name, grading_fields=grading_fields)
+        running = settings['lease_until'] > time.time()
+        states = course_states(data)
+        needs_scan = any(data.get(cid, {}).get('attempt_revision') != ANALYSIS_REVISION or
+                         data.get(cid, {}).get('material_progress') or data.get(cid, {}).get('retry_once')
+                         for cid in courses_by_id)
         return response({'configured': True, 'semester': semester, 'events': sorted(events, key=lambda row: row['date']),
-            'running': settings['lease_until'] > time.time(), 'retry_at': settings['retry_at'],
+            'running': running, 'running_here': running and settings['working_semester'] == semester,
+            'queued_here': bool(semester and settings['requested_semester'] == semester), 'needs_scan': needs_scan,
+            'retry_at': settings['retry_at'],
             'ready': sum(bool(snapshot.get('analyzed')) for snapshot in data.values()), 'count': len(courses),
             'error': ERRORS.get(settings['error'], ''), 'error_code': settings['error'],
             'overview': overview, 'overview_version': version,
-            'course_states': course_states(data),
+            'course_states': states,
             'courses_ready': [str(cid) for cid, row in data.items() if row.get('analyzed')]})
 
     @app.post('/api/course-overview/refresh')
@@ -181,5 +196,12 @@ def register_course_insight_routes(app, current_user, login_required, service):
             return response({'status': 'empty'})
         if not service.storage.owner.consume_security_limit(f'course-overview:{name}', 18, 900):
             return response({'error': '更新過於頻繁，請稍後再試。'}, 429)
-        status = service.start(app, current_user(), semester, courses, manual=data.get('manual') is True)
+        manual = data.get('manual') is True
+        queued = manual or data.get('queue') is True
+        user = current_user()
+        if queued and (user.get('moodle_session') or user.get('moodle_token')):
+            service.storage.request_semester(name, semester)
+        status = service.start(app, user, semester, courses, manual=manual)
+        if queued and status in {'waiting', 'busy'}:
+            status = 'queued'
         return response({'status': status, 'error': ERRORS.get(status, '')}, 202 if status == 'running' else 200)

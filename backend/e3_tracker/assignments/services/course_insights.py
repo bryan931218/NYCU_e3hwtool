@@ -19,7 +19,7 @@ from e3_tracker.platform.security import production_mode
 
 MODEL = 'gemini-3.1-flash-lite'
 ENDPOINT = f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent'
-ANALYSIS_REVISION = 2
+ANALYSIS_REVISION = 3
 
 
 class CourseAIError(Exception):
@@ -128,7 +128,7 @@ class CourseInsightService:
 
         def run():
             while True:
-                time.sleep(60)
+                time.sleep(12)
                 try:
                     with app.app_context():
                         self.scan_enabled_accounts(app)
@@ -147,9 +147,13 @@ class CourseInsightService:
             user = self.storage.owner.notification_content_user(username, now)
             if not user:
                 continue
+            settings = self.storage.settings(username)
+            requested = (settings or {}).get('requested_semester') or None
             try:
-                semester, courses, _ = self.files.scope(username, prefer_current=True, max_courses=None)
+                semester, courses, _ = self.files.scope(username, requested, prefer_current=True, max_courses=None)
             except ValueError:
+                if requested:
+                    self.storage.discard_semester(username, requested)
                 continue
             if self.start(app, user, semester, courses) == 'busy':
                 break
@@ -162,7 +166,7 @@ class CourseInsightService:
         claim = None
         started = False
         try:
-            claim = self.storage.claim(user['username'])
+            claim = self.storage.claim(user['username'], semester)
             if claim:
                 worker = threading.Thread(target=self._refresh, args=(app, dict(user), semester, courses, claim),
                                           kwargs={'manual': True} if manual else None, daemon=True, name='course-insights')
@@ -181,34 +185,60 @@ class CourseInsightService:
     def _refresh(self, app, user, semester, courses, claim, *, manual=False):
         username = user['username']
         error, pause = '', 90
+        completed_semester = ''
         try:
             previous = self.storage.snapshots(username, semester, [course['id'] for course in courses], include_sources=True)
             ordered = sorted(courses, key=lambda course: previous.get(course['id'], {}).get('checked', 0))
             stop = time.monotonic() + 130
-            touched = 0
+            more = False
             for course in ordered:
-                if time.monotonic() > stop - 28 or not self.storage.active(claim):
-                    break
                 old = previous.get(course['id'], {})
+                age = time.time() - old.get('checked', 0)
                 refresh_interval = 180 if manual else 600 if old.get('partial') else 1800
-                if old.get('attempt_revision') == ANALYSIS_REVISION and time.time() - old.get('checked', 0) < refresh_interval:
-                    continue
+                if old.get('attempt_revision') == ANALYSIS_REVISION and not old.get('material_progress'):
+                    if old.get('retry_once'):
+                        if age < 30:
+                            more = True
+                            continue
+                    elif age < refresh_interval:
+                        continue
+                if time.monotonic() > stop - 28 or not self.storage.active(claim):
+                    more = True
+                    break
                 attempted = {**old, 'attempt_revision': ANALYSIS_REVISION}
+                retry_once = old.get('attempt_revision') != ANALYSIS_REVISION or 'retry_once' not in old
+                material_progress = dict(old.get('material_progress') or {})
                 client = news_client(self.files.base_url, user, deadline=min(stop - 20, time.monotonic() + 38),
                                      courses=[course])
                 try:
+                    discovered_assignments = []
                     sources, partial, has_document = course_sources(client, user, course,
-                        self.files.message_services, old.get('sources', []))
+                        self.files.message_services, old.get('sources', []),
+                        material_progress=material_progress, discovered_assignments=discovered_assignments)
                 except (TimeoutError, ValueError, requests.RequestException):
-                    self.storage.save(username, semester, course['id'], claim, {**attempted, 'partial': True})
+                    self.storage.save(username, semester, course['id'], claim,
+                                      {**attempted, 'partial': True, 'material_progress': {}, 'retry_once': retry_once})
                     error = 'source'
+                    more |= retry_once
                     continue
                 finally:
                     client.close()
-                if not sources:
-                    self.storage.save(username, semester, course['id'], claim, {**attempted, 'partial': True})
+                if material_progress:
+                    if not self.storage.save(username, semester, course['id'], claim, {
+                        **attempted, 'sources': sources, 'material_progress': material_progress,
+                    }):
+                        return
+                    more = True
                     continue
-                refs = assignment_references(course, self.files.base_url)
+                attempted['material_progress'] = {}
+                if not sources:
+                    self.storage.save(username, semester, course['id'], claim,
+                                      {**attempted, 'partial': True, 'retry_once': retry_once})
+                    more |= retry_once
+                    continue
+                refs = assignment_references(
+                    {**course, 'assignments': [*discovered_assignments, *course.get('assignments', [])]},
+                    self.files.base_url)
                 model_sources = numbered_sources(sources)
                 data = {'semester': semester, 'course': compact_text(course['title'], 160),
                         'assignments': list(refs.values())[:150], 'sources': public_sources(model_sources)}
@@ -224,21 +254,24 @@ class CourseInsightService:
                     except CourseAIError as exc:
                         if str(exc) != 'output':
                             raise
-                        if not self.storage.save(username, semester, course['id'], claim, {**attempted, 'partial': True}):
-                            break
+                        if not self.storage.save(username, semester, course['id'], claim,
+                                                 {**attempted, 'partial': True, 'retry_once': retry_once}):
+                            return
                         error = 'output'
+                        more |= retry_once
                         continue
                     snapshot.update(reconcile_analysis(raw, model_sources, old.get('events', {}), refs, semester))
                     if partial:
                         snapshot['grading'] = keep_partial_grading(snapshot['grading'], old.get('grading', []))
                     snapshot['analyzed'] = time.time()
+                snapshot.pop('retry_once', None)
                 if not self.storage.save(username, semester, course['id'], claim, snapshot):
-                    break
-                touched += 1
-                if touched >= 4:
-                    break
-            if not touched and not error:
-                pause = 300
+                    return
+            if more:
+                pause = 5
+            else:
+                completed_semester = semester
+                pause = 90 if error else 300
         except AnnouncementSessionExpired:
             error, pause = 'session_expired', 300
         except CourseAIError as exc:
@@ -248,6 +281,6 @@ class CourseInsightService:
             error, pause = 'source', 300
         finally:
             try:
-                self.storage.finish(claim, error=error, pause=pause)
+                self.storage.finish(claim, error=error, pause=pause, completed_semester=completed_semester)
             finally:
                 self.slots.release()

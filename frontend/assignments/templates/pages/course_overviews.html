@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="{{ url_for('frontend_asset', filename='assignments/css/course-insights.css') }}">
 <script type="module" nonce="{{ csp_nonce() }}" src="{{ url_for('frontend_asset', filename='assignments/js/course-insights.js') }}"></script>
 {% endblock %}
-{% block page_attributes %}id="courseOverviewPage" data-semester="{{ semester }}" data-course="{{ selected_course }}"
+{% block page_attributes %}id="courseOverviewPage" data-semester="{{ semester }}" data-course="{{ selected_course }}" data-historical="{{ 1 if historical else 0 }}"
       data-data-url="{{ url_for('course_overview_data') }}"
       data-refresh-url="{{ url_for('course_overview_refresh') }}" data-login-url="{{ url_for('login') }}"
       data-overview-version="{{ overview_version }}"
@@ -38,7 +38,7 @@
             <p id="overviewStatus" role="status">{{ error or ('已整理 %s／%s 門課'|format(ready, courses|length) if ready else '等候第一次整理') }}</p>
             <a id="overviewSyncAction" href="{{ url_for('login') if error_code == 'session_expired' else '#courseSetup' }}"
                {% if error_code not in ('key', 'session_expired') %}hidden{% endif %}>{{ '重新登入' if error_code == 'session_expired' else '更新金鑰' }}</a>
-            <button type="button" class="insight-sync-button" id="insightRefresh">檢查更新</button>
+            <button type="button" class="insight-sync-button" id="insightRefresh">整理本學期</button>
         </div>
         {% endif %}
     </div>

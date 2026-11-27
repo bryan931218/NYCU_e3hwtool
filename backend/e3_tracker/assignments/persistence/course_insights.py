@@ -4,7 +4,7 @@ import json
 import time
 from uuid import uuid4
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, Table, Text, delete, insert, select, update
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, Table, Text, case, delete, insert, select, update
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 
 from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
@@ -21,6 +21,8 @@ insight_settings = Table(
     Column('lease_until', Float, nullable=False, default=0),
     Column('retry_at', Float, nullable=False, default=0),
     Column('error', String(32), nullable=False, default=''),
+    Column('requested_semester', String(16), nullable=False, default=''),
+    Column('working_semester', String(16), nullable=False, default=''),
 )
 insight_courses = Table(
     'course_insight_courses', metadata,
@@ -41,7 +43,8 @@ class CourseInsightStorage(CourseFileStorage):
     def settings(self, username):
         with self.owner._lock, self.owner._engine.connect() as conn:
             row = conn.execute(select(insight_settings.c.lease_until, insight_settings.c.retry_at,
-                insight_settings.c.error).where(insight_settings.c.user_id == self._user(conn, username))).mappings().first()
+                insight_settings.c.error, insight_settings.c.requested_semester, insight_settings.c.working_semester
+                ).where(insight_settings.c.user_id == self._user(conn, username))).mappings().first()
         return dict(row) if row else None
 
     def configure(self, username, key):
@@ -67,19 +70,36 @@ class CourseInsightStorage(CourseFileStorage):
                 .join(insight_settings, insight_settings.c.user_id == users_table.c.id)
                 .where(users_table.c.is_guest == 0, insight_settings.c.retry_at <= now,
                        insight_settings.c.lease_until <= now, session)
-                .order_by(insight_settings.c.retry_at, insight_settings.c.user_id).limit(12)).scalars())
+                .order_by((insight_settings.c.requested_semester != '').desc(),
+                          insight_settings.c.retry_at, insight_settings.c.user_id).limit(12)).scalars())
 
-    def claim(self, username):
+    def request_semester(self, username, semester):
+        now = time.time()
+        with self.owner._lock, self.owner._engine.begin() as conn:
+            uid = self._user(conn, username, True)
+            conn.execute(update(insight_settings).where(insight_settings.c.user_id == uid,
+                insight_settings.c.requested_semester != semester).values(requested_semester=semester,
+                retry_at=case((~insight_settings.c.error.in_(('key', 'quota', 'session_expired', 'provider')), now),
+                              else_=insight_settings.c.retry_at)))
+
+    def discard_semester(self, username, semester):
+        with self.owner._lock, self.owner._engine.begin() as conn:
+            uid = self._user(conn, username, True)
+            conn.execute(update(insight_settings).where(insight_settings.c.user_id == uid,
+                insight_settings.c.requested_semester == semester).values(requested_semester=''))
+
+    def claim(self, username, semester=''):
         now = time.time()
         with self.owner._lock, self.owner._engine.begin() as conn:
             uid = self._user(conn, username, True)
             row = conn.execute(select(insight_settings).where(insight_settings.c.user_id == uid)).mappings().first()
-            if not row or max(row['lease_until'], row['retry_at']) > now:
+            if not row or max(row['lease_until'], row['retry_at']) > now or (
+                    semester and row['requested_semester'] not in ('', semester)):
                 return None
             lease = uuid4().hex
             key = self.owner._credential_cipher.decrypt(row['secret'], f'course-ai-key:{uid}')
             conn.execute(update(insight_settings).where(insight_settings.c.user_id == uid)
-                .values(lease=lease, lease_until=now + 180))
+                .values(lease=lease, lease_until=now + 180, working_semester=semester, error=''))
             return uid, row['revision'], lease, key
 
     def _claim_filter(self, claim):
@@ -91,10 +111,19 @@ class CourseInsightStorage(CourseFileStorage):
         with self.owner._lock, self.owner._engine.connect() as conn:
             return conn.execute(select(insight_settings.c.user_id).where(*self._claim_filter(claim))).scalar() is not None
 
-    def finish(self, claim, *, error='', pause=45):
+    def finish(self, claim, *, error='', pause=45, completed_semester=''):
+        now = time.time()
+        retry_at = now + pause
+        if error not in {'key', 'quota', 'session_expired', 'provider'}:
+            retry_at = case(((insight_settings.c.requested_semester != '') &
+                             (insight_settings.c.requested_semester != completed_semester), now + min(5, pause)),
+                            else_=retry_at)
         with self.owner._lock, self.owner._engine.begin() as conn:
             conn.execute(update(insight_settings).where(*self._claim_filter(claim))
-                .values(lease='', lease_until=0, retry_at=time.time() + pause, error=error))
+                .values(lease='', lease_until=0, retry_at=retry_at, error=error, working_semester='',
+                        requested_semester=case(
+                            (insight_settings.c.requested_semester == completed_semester, ''),
+                            else_=insight_settings.c.requested_semester)))
 
     def snapshots(self, username, semester, course_ids, *, include_sources=False):
         if not course_ids:
