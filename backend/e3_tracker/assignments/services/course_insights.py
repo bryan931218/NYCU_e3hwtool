@@ -82,6 +82,21 @@ def numbered_sources(sources):
     return [{**source, 'id': str(index + 1)} for index, source in enumerate(sources)]
 
 
+def analysis_sources(sources):
+    remaining = {'file': 32000, 'page': 10000, 'course': 6000, 'announcements': 11000, 'mail': 9000}
+    selected = []
+    seen = set()
+    for source in sources:
+        kind, content = source['kind'], source['text']
+        key = (source['url'], content)
+        if key in seen or len(content) > remaining.get(kind, 0):
+            continue
+        seen.add(key)
+        remaining[kind] -= len(content)
+        selected.append(source)
+    return numbered_sources(selected)
+
+
 def assignment_references(course, base):
     refs = {}
     for item in course.get('assignments', []):
@@ -182,6 +197,18 @@ class CourseInsightService:
                 self.slots.release()
         return 'waiting'
 
+    def _read_sources(self, user, course, old, deadline, progress):
+        client = news_client(self.files.base_url, user, deadline=deadline, courses=[course])
+        try:
+            discovered_assignments = []
+            sources, partial, document = course_sources(client, user, course, self.files.message_services,
+                old.get('sources', []), material_progress=progress, discovered_assignments=discovered_assignments)
+            refs = assignment_references({**course, 'assignments': [*discovered_assignments, *course.get('assignments', [])]},
+                                         self.files.base_url)
+            return sources, partial, document, refs
+        finally:
+            client.close()
+
     def _refresh(self, app, user, semester, courses, claim, *, manual=False):
         username = user['username']
         error, pause = '', 90
@@ -191,12 +218,20 @@ class CourseInsightService:
             ordered = sorted(courses, key=lambda course: previous.get(course['id'], {}).get('checked', 0))
             stop = time.monotonic() + 130
             more = False
+            provider_errors = 0
             for course in ordered:
                 old = previous.get(course['id'], {})
+                pending = old.get('analysis_pending') or {}
                 age = time.time() - old.get('checked', 0)
                 refresh_interval = 180 if manual else 600 if old.get('partial') else 1800
                 if old.get('attempt_revision') == ANALYSIS_REVISION and not old.get('material_progress'):
-                    if old.get('retry_once'):
+                    if pending:
+                        if time.time() < pending.get('retry_at', 0):
+                            more |= pending.get('failures', 0) < 3
+                            continue
+                        if pending.get('failures', 0) >= 3 and age < refresh_interval:
+                            continue
+                    elif old.get('retry_once'):
                         if age < 30:
                             more = True
                             continue
@@ -208,38 +243,33 @@ class CourseInsightService:
                 attempted = {**old, 'attempt_revision': ANALYSIS_REVISION}
                 retry_once = old.get('attempt_revision') != ANALYSIS_REVISION or 'retry_once' not in old
                 material_progress = dict(old.get('material_progress') or {})
-                client = news_client(self.files.base_url, user, deadline=min(stop - 20, time.monotonic() + 38),
-                                     courses=[course])
-                try:
-                    discovered_assignments = []
-                    sources, partial, has_document = course_sources(client, user, course,
-                        self.files.message_services, old.get('sources', []),
-                        material_progress=material_progress, discovered_assignments=discovered_assignments)
-                except (TimeoutError, ValueError, requests.RequestException):
-                    self.storage.save(username, semester, course['id'], claim,
-                                      {**attempted, 'partial': True, 'material_progress': {}, 'retry_once': retry_once})
-                    error = 'source'
-                    more |= retry_once
-                    continue
-                finally:
-                    client.close()
-                if material_progress:
-                    if not self.storage.save(username, semester, course['id'], claim, {
-                        **attempted, 'sources': sources, 'material_progress': material_progress,
-                    }):
-                        return
-                    more = True
-                    continue
+                if pending:
+                    sources, partial, has_document, refs = (old['sources'], pending['partial'],
+                                                            pending['document'], pending['refs'])
+                else:
+                    try:
+                        sources, partial, has_document, refs = self._read_sources(
+                            user, course, old, min(stop - 20, time.monotonic() + 38), material_progress)
+                    except (TimeoutError, ValueError, requests.RequestException):
+                        self.storage.save(username, semester, course['id'], claim,
+                                          {**attempted, 'partial': True, 'material_progress': {}, 'retry_once': retry_once})
+                        error = 'source'
+                        more |= retry_once
+                        continue
+                    if material_progress:
+                        if not self.storage.save(username, semester, course['id'], claim, {
+                            **attempted, 'sources': sources, 'material_progress': material_progress,
+                        }):
+                            return
+                        more = True
+                        continue
                 attempted['material_progress'] = {}
                 if not sources:
                     self.storage.save(username, semester, course['id'], claim,
                                       {**attempted, 'partial': True, 'retry_once': retry_once})
                     more |= retry_once
                     continue
-                refs = assignment_references(
-                    {**course, 'assignments': [*discovered_assignments, *course.get('assignments', [])]},
-                    self.files.base_url)
-                model_sources = numbered_sources(sources)
+                model_sources = analysis_sources(sources)
                 data = {'semester': semester, 'course': compact_text(course['title'], 160),
                         'assignments': list(refs.values())[:150], 'sources': public_sources(model_sources)}
                 signature = hashlib.sha256(json.dumps([ANALYSIS_REVISION, data], sort_keys=True).encode()).hexdigest()
@@ -248,26 +278,41 @@ class CourseInsightService:
                     if not self.storage.active(claim):
                         break
                     try:
-                        raw = gemini(claim[3], ANALYZE, data, timeout=min(20, max(1, stop - time.monotonic())))
+                        raw = gemini(claim[3], ANALYZE, data, timeout=min(35, max(1, stop - time.monotonic())))
                         raw['grading'] = _list_of_records(raw, 'grading')
                         raw['events'] = _list_of_records(raw, 'events')
                     except CourseAIError as exc:
-                        if str(exc) != 'output':
-                            raise
-                        if not self.storage.save(username, semester, course['id'], claim,
-                                                 {**attempted, 'partial': True, 'retry_once': retry_once}):
+                        error = str(exc)
+                        failures = pending.get('failures', 0) + (error == 'provider')
+                        delay = min(30 * failures, 120) if error == 'provider' else 30
+                        pending = {'refs': refs, 'partial': partial, 'document': has_document,
+                                   'failures': failures, 'retry_at': time.time() + delay}
+                        if error == 'output' and not retry_once:
+                            pending = {}
+                        save = {**attempted, 'sources': sources, 'partial': True,
+                                'analysis_pending': pending, 'retry_once': retry_once if error == 'output' else False}
+                        if not self.storage.save(username, semester, course['id'], claim, save):
                             return
-                        error = 'output'
-                        more |= retry_once
+                        if error not in {'output', 'provider'}:
+                            raise
+                        more |= bool(pending) and failures < 3
+                        if error == 'provider':
+                            provider_errors += 1
+                            if provider_errors >= 2:
+                                break
                         continue
+                    provider_errors = 0
                     snapshot.update(reconcile_analysis(raw, model_sources, old.get('events', {}), refs, semester))
                     if partial:
                         snapshot['grading'] = keep_partial_grading(snapshot['grading'], old.get('grading', []))
                     snapshot['analyzed'] = time.time()
                 snapshot.pop('retry_once', None)
+                snapshot.pop('analysis_pending', None)
                 if not self.storage.save(username, semester, course['id'], claim, snapshot):
                     return
-            if more:
+            if provider_errors >= 2:
+                pause = 60
+            elif more:
                 pause = 5
             else:
                 completed_semester = semester

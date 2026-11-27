@@ -27,7 +27,8 @@ def overview_version(courses, snapshots):
     fields = ('analyzed', 'partial', 'document', 'attempt_revision')
     state = [(course['id'], course['title'], course.get('semester_key'),
               tuple(snapshots.get(course['id'], {}).get(field) for field in fields),
-              bool(snapshots.get(course['id'], {}).get('material_progress'))) for course in courses]
+              bool(snapshots.get(course['id'], {}).get('material_progress')),
+              bool(snapshots.get(course['id'], {}).get('analysis_pending'))) for course in courses]
     return hashlib.sha256(repr(state).encode()).hexdigest()[:20]
 
 
@@ -170,7 +171,9 @@ def register_course_insight_routes(app, current_user, login_required, service):
         running = settings['lease_until'] > time.time()
         states = course_states(data)
         needs_scan = any(data.get(cid, {}).get('attempt_revision') != ANALYSIS_REVISION or
-                         data.get(cid, {}).get('material_progress') or data.get(cid, {}).get('retry_once')
+                         data.get(cid, {}).get('material_progress') or data.get(cid, {}).get('retry_once') or
+                         (data.get(cid, {}).get('analysis_pending') and
+                          data[cid]['analysis_pending'].get('failures', 0) < 3)
                          for cid in courses_by_id)
         return response({'configured': True, 'semester': semester, 'events': sorted(events, key=lambda row: row['date']),
             'running': running, 'running_here': running and settings['working_semester'] == semester,

@@ -435,6 +435,30 @@ class CourseInsightPipelineTests(unittest.TestCase):
         self.assertEqual(result['ready'], 1)
         self.assertIn('20%', result['overview'])
 
+    def test_provider_failure_preserves_sources_and_continues_with_other_courses(self):
+        self.client = self.account(USERNAME, [COURSE, {**COURSE, 'id': 43}])
+        self.pages['/course/view.php?id=43'] = '<div class="course-content">另一門課</div>'
+        self.pages['/local/dcpcmail/view.php?c=43&t=inbox'] = '<div class="mail_list">沒有郵件</div>'
+        response = model_response({'summary': '課程摘要', 'grading': [], 'events': []})
+        self.provider.side_effect = [http_response('', 503), response, response]
+        self.refresh()
+        self.wait_for_worker()
+        first = self.overview()
+        self.assertEqual(first['ready'], 1)
+        self.assertIn('教材已讀取，等候分析', first['overview'])
+        read_count = len(self.moodle.call_args_list)
+        with self.db._engine.begin() as connection:
+            connection.execute(update(insight_settings).values(retry_at=0))
+        self.finished.clear()
+        with patch('e3_tracker.assignments.services.course_insights.time.time', return_value=time.time() + 45):
+            retry = self.client.post('/api/course-overview/refresh', json={'semester': TERM, 'queue': True})
+            self.has_pending_refresh = retry.status_code == 202
+            self.assertEqual(retry.status_code, 202)
+            self.wait_for_worker()
+        self.assertEqual(self.overview()['ready'], 2)
+        self.assertEqual(len(self.moodle.call_args_list), read_count)
+        self.assertEqual(self.provider.call_count, 3)
+
     def test_grading_in_a_course_section_and_announcement_attachment_is_read(self):
         attachment = '/pluginfile.php/42/mod_forum/attachment/7/grading.txt'
         self.pages['/course/view.php?id=42'] = ('<div class="course-content"><li class="section">'
