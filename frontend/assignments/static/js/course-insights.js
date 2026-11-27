@@ -120,6 +120,7 @@ function setupNavigation(page, cards) {
   if (!cards) return null;
   const courseSelect = page.querySelector("#insightCourseSelect");
   const title = page.querySelector("#insightScopeTitle");
+  const openE3 = page.querySelector("#insightOpenE3");
   const links = new Map([...page.querySelectorAll("#insightCourseNav a")].map(link => [link.dataset.courseOption, link]));
   let range = page.dataset.historical === "1" ? "all" : "upcoming";
   const target = document.getElementById(location.hash.slice(1));
@@ -129,15 +130,23 @@ function setupNavigation(page, cards) {
   }
   function render() {
     const selected = page.dataset.course;
+    const selectedLink = links.get(selected);
+    cards.dataset.scoped = String(Boolean(selected));
     if (courseSelect) courseSelect.value = selected;
-    if (title) title.textContent = links.get(selected)?.dataset.courseName || "全部課程";
+    if (title) title.textContent = selectedLink?.dataset.courseName || "全部課程";
+    if (openE3) {
+      openE3.hidden = !selectedLink?.dataset.e3Url;
+      if (!openE3.hidden) openE3.href = selectedLink.dataset.e3Url;
+    }
     for (const [id, link] of links) {
       if (id === selected) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     }
     page.querySelectorAll("[data-current-course]").forEach(input => { input.value = selected; });
+    let scanState;
     cards.querySelectorAll("[data-course-info]").forEach(panel => {
       panel.hidden = panel.dataset.courseInfo !== selected;
+      if (!panel.hidden) scanState = panel.dataset.scanState;
     });
     const schedule = cards.querySelector(".insight-schedule");
     if (!schedule) return;
@@ -159,7 +168,10 @@ function setupNavigation(page, cards) {
     if (empty) {
       empty.hidden = rows.some(row => !row.hidden);
       empty.textContent = inScope && range === "upcoming"
-        ? "近期沒有已確認的考試或期限。" : empty.dataset.emptyLabel;
+        ? "近期沒有已確認的考試或期限。"
+        : page.dataset.configured === "1" && scanState === "pending" ? "等候整理考試與期限。"
+        : scanState === "partial" ? "目前讀到的來源還無法確認日期。"
+        : empty.dataset.emptyLabel;
     }
   }
   function select(course) {
@@ -207,13 +219,14 @@ function initOverview(page) {
   window.addEventListener("pageshow", event => {
     if (!event.persisted || !semesterButton) return;
     semesterButton.disabled = false;
-    semesterButton.textContent = "更新學期";
+    semesterButton.textContent = "更新學期清單";
     semesterRefresh.removeAttribute("aria-busy");
   });
   const cards = page.querySelector("#overviewCards");
   const renderNavigation = setupNavigation(page, cards);
   if (page.dataset.configured !== "1" || !page.dataset.semester || !cards) return;
   const status = page.querySelector("#overviewStatus");
+  const progressBar = page.querySelector("#overviewProgress");
   const action = page.querySelector("#overviewSyncAction");
   const syncButton = page.querySelector("#insightRefresh");
   const setupState = page.querySelector(".insight-setup-state");
@@ -224,23 +237,27 @@ function initOverview(page) {
   function renderProgress(result) {
     const partial = Object.values(result.course_states || {}).filter(state => state === "partial").length;
     const progress = result.count ? "已整理 " + result.ready + "／" + result.count + " 門課" : "尚無課程";
+    if (progressBar) {
+      progressBar.max = result.count || 1;
+      progressBar.value = result.ready;
+    }
     const detail = partial ? progress + " · " + partial + " 門來源未齊" : progress;
     status.textContent = result.error ? detail + " · " + result.error : result.running_here ? "正在整理 · " + detail
       : result.queued_here ? "等候接續整理 · " + detail : detail;
     syncButton.disabled = Boolean(result.running_here || result.queued_here);
-    syncButton.textContent = result.running_here ? "整理中" : result.queued_here ? "等候整理" : "整理本學期";
+    syncButton.textContent = result.running_here ? "整理中" : result.queued_here ? "等候整理" : "整理課程資料";
     const expired = result.error_code === "session_expired";
     action.hidden = !expired && result.error_code !== "key";
     action.textContent = expired ? "重新登入" : "更新金鑰";
     action.href = expired ? page.dataset.loginUrl : "#courseSetup";
     if (setupState) setupState.textContent = result.error_code === "key" ? "金鑰需要更新" : "已啟用";
-    const stateLabels = {ready: "已整理", partial: "部分來源尚未讀取", pending: "等候整理"};
+    const stateLabels = {ready: "已整理", partial: "待補資料", pending: "待整理"};
     for (const dot of page.querySelectorAll("[data-course-state]")) {
       const state = result.course_states?.[dot.dataset.courseState] || "pending";
       const label = stateLabels[state];
       dot.dataset.state = state;
-      dot.title = label;
-      dot.setAttribute("aria-label", label);
+      dot.title = state === "partial" ? "部分來源尚未讀取" : label;
+      dot.textContent = label;
     }
   }
 
@@ -255,7 +272,7 @@ function initOverview(page) {
     for (const card of [...fragment.content.children]) {
       const previous = existing.get(card.dataset.viewKey);
       if (!previous) cards.append(card);
-      else if (previous.innerHTML !== card.innerHTML) {
+      else if (previous.innerHTML !== card.innerHTML || previous.dataset.scanState !== card.dataset.scanState) {
         const expanded = new Set([...previous.querySelectorAll("details[open]")].map(detail => detail.textContent));
         for (const detail of card.querySelectorAll("details")) {
           if (expanded.has(detail.textContent)) detail.open = true;

@@ -1,6 +1,7 @@
 {% macro citation(origin) %}
 <details class="insight-source">
-    <summary>查看依據 <span>{{ origin.title }}{% if origin.location %} · {{ origin.location }}{% endif %}</span></summary>
+    <summary>查看來源{% if origin.location %} <span>{{ origin.location }}</span>{% endif %}</summary>
+    <p class="insight-source-title">{{ origin.title }}</p>
     <blockquote>{{ origin.quote }}</blockquote>
     <a href="{{ origin.url | safe_link }}" target="_blank" rel="noopener noreferrer">在 E3 查看原文 ↗</a>
 </details>
@@ -53,6 +54,7 @@
 {% for course in courses %}
 {% set snapshot = snapshots.get(course.id, {}) %}
 <section class="insight-section insight-overview" data-view-key="course-{{ course.id }}" data-course-info="{{ course.id }}"
+         data-scan-state="{{ 'pending' if snapshot.material_progress or (snapshot.analysis_pending and snapshot.analysis_pending.failures < 3) or (not snapshot.analyzed and not snapshot.partial) else 'partial' if snapshot.partial else 'ready' }}"
          aria-labelledby="insightOverview-{{ course.id }}"{% if selected_course != course.id|string %} hidden{% endif %}>
     <header class="insight-section-head">
         <h3 id="insightOverview-{{ course.id }}">課堂概要</h3>

@@ -14,7 +14,8 @@
       data-overview-version="{{ overview_version }}"
       data-csrf="{{ csrf_token() }}" data-configured="{{ 1 if configured else 0 }}"{% endblock %}
 {% block page_content %}
-    <div class="insight-semester-bar">
+    <div class="insight-utility{% if configured and courses %} insight-utility-ready{% endif %}">
+      <div class="insight-semester-bar">
         {% if semesters %}
         <form method="get" action="{{ url_for('course_overviews') }}" id="insightSemesterForm" class="insight-semester">
             <select id="overviewSemester" name="semester" aria-label="選擇學期">{% for entry in semesters %}<option value="{{ entry.key }}"{% if entry.key == semester %} selected{% endif %}>{{ entry.label }}</option>{% endfor %}</select>
@@ -25,23 +26,25 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="semester" value="{{ semester }}">
             <input type="hidden" name="course" data-current-course value="{{ selected_course }}">
-            <button type="submit" class="btn">更新學期</button>
+            <button type="submit" class="btn">更新學期清單</button>
         </form>
+      </div>
+        {% if configured and courses %}
+        <button type="button" class="insight-sync-button" id="insightRefresh">整理課程資料</button>
+        {% endif %}
+        {% include 'assignments/components/course-ai-setup.html' %}
+        {% if configured and courses %}
+        <div class="insight-sync">
+            <progress id="overviewProgress" value="{{ ready }}" max="{{ courses|length }}" aria-label="課程整理進度"></progress>
+            <p id="overviewStatus" role="status">已整理 {{ ready }}／{{ courses|length }} 門課{% if error %} · {{ error }}{% endif %}</p>
+            <a id="overviewSyncAction" href="{{ url_for('login') if error_code == 'session_expired' else '#courseSetup' }}"
+               {% if error_code not in ('key', 'session_expired') %}hidden{% endif %}>{{ '重新登入' if error_code == 'session_expired' else '更新金鑰' }}</a>
+        </div>
+        {% endif %}
     </div>
     {% for category, message in get_flashed_messages(with_categories=true, category_filter=['semester-success', 'semester-error', 'semester-login']) %}
     <p class="insight-semester-notice" data-status="{{ category }}" role="status">{{ message }}{% if category == 'semester-login' %} <a href="{{ url_for('login') }}">重新登入</a>{% endif %}</p>
     {% endfor %}
-    <div class="insight-utility{% if configured and courses %} insight-utility-ready{% endif %}">
-        {% include 'assignments/components/course-ai-setup.html' %}
-        {% if configured and courses %}
-        <div class="insight-sync">
-            <p id="overviewStatus" role="status">{{ error or ('已整理 %s／%s 門課'|format(ready, courses|length) if ready else '等候第一次整理') }}</p>
-            <a id="overviewSyncAction" href="{{ url_for('login') if error_code == 'session_expired' else '#courseSetup' }}"
-               {% if error_code not in ('key', 'session_expired') %}hidden{% endif %}>{{ '重新登入' if error_code == 'session_expired' else '更新金鑰' }}</a>
-            <button type="button" class="insight-sync-button" id="insightRefresh">整理本學期</button>
-        </div>
-        {% endif %}
-    </div>
     {% if courses %}
     <div class="insight-workspace">
         <aside class="insight-rail">
@@ -51,12 +54,12 @@
                     <span>全部課程</span><small>{{ courses|length }}</small>
                 </a>
                 {% for course in courses %}
-                <a data-course-option="{{ course.id }}" data-course-name="{{ course_name(course.title) }}" href="{{ url_for('course_overviews', semester=semester, course=course.id) }}"{% if selected_course == course.id|string %} aria-current="page"{% endif %}>
+                <a data-course-option="{{ course.id }}" data-course-name="{{ course_name(course.title) }}" data-e3-url="{{ e3_course_base }}{{ course.id }}" href="{{ url_for('course_overviews', semester=semester, course=course.id) }}"{% if selected_course == course.id|string %} aria-current="page"{% endif %}>
                     <span>{{ course_name(course.title) }}</span>
                     {% if configured %}
                     {% set state = course_states.get(course.id|string, 'pending') %}
                     {% set status = {'ready': '已整理', 'partial': '部分來源尚未讀取', 'pending': '等候整理'}[state] %}
-                    <span class="insight-course-state" data-course-state="{{ course.id }}" data-state="{{ state }}" role="img" title="{{ status }}" aria-label="{{ status }}"></span>
+                    <small class="insight-course-state" data-course-state="{{ course.id }}" data-state="{{ state }}" title="{{ status }}">{{ {'ready': '已整理', 'partial': '待補資料', 'pending': '待整理'}[state] }}</small>
                     {% endif %}
                 </a>
                 {% endfor %}
@@ -72,16 +75,19 @@
                 </select>
                 <noscript><button type="submit" class="btn">選擇</button></noscript>
             </form>
-            <section class="insight-panel insight-content" aria-labelledby="insightScopeTitle">
-                <header class="insight-panel-head"><h2 id="insightScopeTitle">{{ selected_name }}</h2></header>
-                <div id="overviewCards">{% include 'assignments/components/course-overview-cards.html' %}</div>
+            <section class="insight-content" aria-labelledby="insightScopeTitle">
+                <header class="insight-panel-head">
+                    <h2 id="insightScopeTitle">{{ selected_name }}</h2>
+                    <a id="insightOpenE3" class="btn" href="{{ e3_course_base ~ selected_course if selected_course else '#' }}" target="_blank" rel="noopener noreferrer" {% if not selected_course %}hidden{% endif %}>開啟 E3 課程 <span aria-hidden="true">↗</span></a>
+                </header>
+                <div id="overviewCards" data-scoped="{{ 'true' if selected_course else 'false' }}">{% include 'assignments/components/course-overview-cards.html' %}</div>
             </section>
         </div>
     </div>
     {% elif configured %}
     <section class="insight-empty insight-panel">
         <h2>這個學期還沒有課程</h2>
-        <p>點「更新學期」從 E3 取得修課清單。</p>
+        <p>點「更新學期清單」從 E3 取得修課資料。</p>
     </section>
     {% endif %}
 {% endblock %}

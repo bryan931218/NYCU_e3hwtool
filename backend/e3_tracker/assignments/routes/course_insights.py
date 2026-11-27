@@ -59,11 +59,13 @@ def register_course_insight_routes(app, current_user, login_required, service):
         snapshots = service.storage.snapshots(name, semester, [row['id'] for row in courses])
         term = _semester_from_key(semester)
         historical = term['key'] != 'other' and term['sort_key'] < _semester_from_key(current_semester_key())['sort_key']
+        e3_course_base = service.files.base_url + '/course/view.php?id='
         return render_template('assignments/pages/course_overviews.html', semester=semester,
             semesters=semesters, courses=courses, selected_course=course if selected else '',
             selected_name=course_display_name(selected['title']) if selected else '全部課程', configured=bool(settings),
             snapshots=snapshots, course_name=course_display_name, grading_fields=grading_fields,
             course_states=course_states(snapshots), historical=historical,
+            e3_course_base=e3_course_base,
             overview_version=overview_version(courses, snapshots),
             ready=sum(bool(row.get('analyzed')) for row in snapshots.values()),
             setup_requested=request.args.get('setup') == '1' or bool(error),
