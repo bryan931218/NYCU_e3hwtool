@@ -23,7 +23,7 @@ MAX_BYTES = 8 * 1024 * 1024
 MAX_PAGES = 60
 MAX_MATERIALS = 72
 EXTENSIONS = {'.pdf', '.docx', '.pptx', '.txt'}
-SYLLABUS = re.compile(r'課程(?:大綱|說明|簡介|介紹)|授課|教學大綱|評量|評分|配分|syllabus|course[\s_-]*(?:outline|intro|overview|information|policy)|grading|assessment', re.I)
+SYLLABUS = re.compile(r'課程(?:大綱|說明|簡介|介紹)|授課|教學大綱|評量|評分|配分|學期成績|syllabus|course[\s_-]*(?:outline|intro|overview|information|policy)|grading|assessment', re.I)
 GRADE_CONTEXT = re.compile(r'評分|配分|成績|占比|佔比|比重|百分之|grade|grading|assessment|weight|\d\s*(?:[%％]|percent)', re.I)
 EXAM_CONTEXT = re.compile(r'期中|期末|小考|考試|改期|延後|延期|exam|midterm|final|quiz|deadline|reschedul', re.I)
 PERCENT_HEADER = re.compile(r'(?:%|％|百分比|percent(?:age)?)', re.I)
@@ -354,12 +354,12 @@ def course_sources(client, user, course, services, previous_sources, *, material
         newest = sorted(rows, key=lambda row: row.get('updated_ts') or 0, reverse=True)
         # The first weeks often contain the grading rules, even in an archived course.
         important = [item for item in newest if SYLLABUS.search(item['title']) or EXAM_CONTEXT.search(item['title'])]
-        selected = {item['key']: item for item in [*important[:5], *newest[:10], *newest[-2:]]}
+        selected = {item['key']: item for item in [*important[:12], *newest[:12], *newest[-3:]]}
         for item in selected.values():
             key = f"{kind}:{item['key']}"
             version = item.get('updated_ts') or 0
             old = cached.get(key)
-            if old and version and old.get('listing_version') == version and 'attachment_urls' in old:
+            if old and version and old['url'] == service.item_url(item) and old.get('listing_version') == version and 'attachment_urls' in old:
                 messages[key] = cached[key]
                 continue
             url = service.item_url(item)
@@ -368,21 +368,21 @@ def course_sources(client, user, course, services, previous_sources, *, material
                 continue
             try:
                 html = client.get(url)
-                parsed = service.parse_content(html)
+                parsed = service.parse_content(html, page_url=url)
                 content = parsed.get('content')
-                published = version if kind == 'mail' else 0
+                published = version if kind == 'mail' or '/blocks/dcpc_news/' in url else 0
                 event_version = version
                 if kind == 'announcements':
                     post = BeautifulSoup(html, 'html.parser').select_one('.forumpost.firstpost, .forumpost')
                     if post:
                         header = post.select_one('header, .author')
-                        published = _timestamp(header) or 0
+                        published = _timestamp(header) or published
                         try:
                             event_version = int(post.get('data-post-modified') or published or version)
                         except ValueError:
                             event_version = published or version
                 source = _row(kind, key, item['title'], url, content,
-                              published=published, version=event_version, limit=2200)
+                              published=published, version=event_version, limit=3200)
                 if source:
                     if old and old['text'] == source['text'] and old['title'] == source['title']:
                         source['version'] = old['version']

@@ -17,6 +17,7 @@ from sqlalchemy import update
 
 from e3_tracker.assignments.persistence.course_insights import CourseInsightStorage, insight_courses, insight_settings
 from e3_tracker.assignments.services.course_insights import CourseInsightService, ENDPOINT
+from e3_tracker.assignments.services.course_insight_outline import TIMETABLE, outline_sources
 from e3_tracker.platform.application import create_app
 from tests.security_helpers import csrf_client
 
@@ -191,6 +192,44 @@ class CourseInsightPipelineTests(unittest.TestCase):
     def news_listing(self, latest_post):
         return ('<table><tr><th><a href="/mod/forum/discuss.php?d=7">考試異動</a></th>'
                 f'<td class="lastpost"><time datetime="{latest_post}"></time></td></tr></table>')
+
+    def test_native_e3_announcement_reaches_course_analysis(self):
+        listing = '/blocks/dcpc_news/news/news_items.php?id=42&scopec=1'
+        self.pages['/course/view.php?id=42'] = (
+            '<div class="course-content">課程教材</div><a href="' + listing + '">公告列表</a>')
+        self.pages[listing] = ('<main id="region-main"><div><div class="date">11月 24日,16:03</div>'
+                               '<div class="name">期末考試說明</div><div class="info">'
+                               '<a href="news_view.php?in=1&amp;d=211">更多</a></div></div></main>')
+        self.pages['/blocks/dcpc_news/news/news_view.php?d=211&in=1'] = (
+            '<div class="forumpost firstpost"><div class="posting fullpost">筆試時間：11/27</div></div>')
+        self.provider.side_effect = lambda *args, **kwargs: model_response({'grading': [], 'events': []})
+        self.refresh()
+        self.wait_for_worker()
+        events = self.overview()['events']
+        self.assertEqual([(event['id'], event['date']) for event in events], [('final:written', '2026-11-27')])
+        self.assertTrue(events[0]['origin']['url'].endswith('news_view.php?d=211&in=1'))
+
+    @patch('e3_tracker.assignments.services.course_insight_outline.requests.Session')
+    def test_nycu_outline_uses_public_course_number_and_keeps_grading_lines(self, make_session):
+        session = make_session.return_value.__enter__.return_value
+        session.get.return_value = http_response(
+            '<div class="crsoutline-params"><input name="acy" value="114"><input name="sem" value="2">'
+            '<input name="cos_id" value="535521"><input name="user" value=""><input name="_token" value=""></div>')
+        session.get.return_value.url = TIMETABLE + '?r=main/crsoutline&Acy=114&Sem=2&CrsNo=535521&lang=zh-tw'
+        session.post.return_value = http_response(json.dumps({
+            'crs_exam_score': 'Four homework assignments 64% (=16% x 4)<br>Final project 36%',
+            'crs_outline': '<p>Visual recognition and classification.</p>',
+        }), content_type='application/json')
+        course = {**COURSE, 'title': '【114下】535521深度學習', 'semester_key': '114-2'}
+        rows, failed = outline_sources(BASE, course, [], time.monotonic() + 5)
+        self.assertFalse(failed)
+        self.assertEqual(rows[0]['lines'], ['Four homework assignments 64% (=16% x 4)', 'Final project 36%'])
+        self.assertEqual(session.post.call_args.args, (TIMETABLE,))
+        self.assertEqual(session.post.call_args.kwargs['data'], {
+            'acy': '114', 'sem': '2', 'cos_id': '535521', 'lang': 'zh-tw', 'user': '', '_token': '',
+        })
+        self.assertEqual(outline_sources(BASE, course, rows, time.monotonic() + 5), (rows, False))
+        session.post.assert_called_once()
 
     def add_mail(self):
         self.pages['/local/dcpcmail/view.php?c=42&t=inbox'] = (

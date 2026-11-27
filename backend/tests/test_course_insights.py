@@ -94,6 +94,44 @@ class CourseInsightTests(unittest.TestCase):
         self.assertEqual(items['final']['date'], '2026-12-19')
         self.assertEqual(apply([event(mail, '下週三 23:59', kind='deadline', assignment='55')], [mail], assignments=refs), {})
 
+    def test_archived_exam_notice_keeps_three_assessments_and_later_time(self):
+        notice = source('a', '團體上機考時間：5/29（10:00～22:00） 筆試時間：6/5 個人上機考時間：6/12',
+                        kind='announcements', version=100, title='期末考試相關說明')
+        update = source('b', '個人期末上機考 6/12 10:10', kind='announcements', version=200)
+        corrected = event(update, '6/12 10:10', kind='final', title='個人期末上機考')
+        result = reconcile_analysis({'events': [corrected]}, [notice, update], {}, {}, '114-2')['events']
+        self.assertEqual({key: item['date'] for key, item in result.items()}, {
+            'final:group': '2026-05-29', 'final:written': '2026-06-05',
+            'final:individual': '2026-06-12T10:10:00+08:00',
+        })
+
+    def test_published_weights_recover_nested_percentages_and_newer_teacher_rubrics(self):
+        lines = ['Four homework assignments 64% (=16% x 4)', 'Final project 36%']
+        outline = {**source('syllabus', ' '.join(lines), kind='syllabus'), 'topic': 'grading', 'lines': lines}
+        partial_model = {'summary': 'Unsourced grading information', 'grading': [
+            {'source': 'syllabus', 'label': 'Final project', 'weight': '36%', 'quote': lines[1]},
+        ]}
+        result = reconcile_analysis(partial_model, [outline], {}, {}, '114-2')
+        self.assertEqual([(row['weight'], row['detail']) for row in result['grading']], [('64%', '=16% x 4'), ('36%', '')])
+        self.assertEqual(result['summary'], '')
+        teacher = source('teacher', '分數配比：平時作業25% 期末省思15% 出席15% 期中6% 期末9% 課中提問30%。',
+                         kind='mail', version=200)
+        result = reconcile_analysis(partial_model, [outline, teacher], {}, {}, '114-2')
+        self.assertEqual([row['weight'] for row in result['grading']], ['25%', '15%', '15%', '6%', '9%', '30%'])
+        self.assertTrue(all(row['origin']['kind'] == 'mail' for row in result['grading']))
+
+    def test_tentative_rubric_and_wrong_item_weight_are_rejected(self):
+        outline = {**source('syllabus', 'Tentative grading Assignment 1: 25%', kind='syllabus'), 'topic': 'grading'}
+        file = source('file', '期末筆試 20%；個人上機 30%')
+        raw = {'grading': [
+            {'source': 'syllabus', 'label': 'Assignment 1', 'weight': '25%', 'quote': 'Assignment 1: 25%'},
+            {'source': 'file', 'label': '期末筆試', 'weight': '30%', 'quote': file['text']},
+            {'source': 'file', 'label': '期末筆試', 'weight': '20%', 'quote': file['text']},
+            {'source': 'file', 'label': 'Final (筆試)', 'weight': '20%', 'quote': '期末筆試 20%'},
+        ]}
+        result = reconcile_analysis(raw, [file, outline], {}, {}, '114-2')
+        self.assertEqual([(row['label'], row['weight']) for row in result['grading']], [('期末筆試', '20%')])
+
     def test_only_fixed_moodle_document_paths_and_presentation_positions(self):
         local = BASE + '/pluginfile.php/42/mod_resource/content/1/file.pdf'
         self.assertEqual(_file_url(local, BASE), local)

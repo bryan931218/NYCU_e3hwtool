@@ -35,5 +35,5 @@ class CourseMailService(CourseAnnouncementService):
     def item_url(self, item):
         return mail_url(item['url'], self.base_url, item['course_id'], item['id'])
 
-    def parse_content(self, html):
+    def parse_content(self, html, *, page_url=None):
         return mail_content(html, self.base_url)

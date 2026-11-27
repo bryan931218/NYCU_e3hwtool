@@ -55,7 +55,7 @@
                 </a>
                 {% for course in courses %}
                 <a data-course-option="{{ course.id }}" data-course-name="{{ course_name(course.title) }}" data-e3-url="{{ e3_course_base }}{{ course.id }}" href="{{ url_for('course_overviews', semester=semester, course=course.id) }}"{% if selected_course == course.id|string %} aria-current="page"{% endif %}>
-                    <span>{{ course_name(course.title) }}</span>
+                    <span class="insight-rail-label">{{ course_name(course.title) }}</span>
                     {% if configured %}
                     {% set state = course_states.get(course.id|string, 'pending') %}
                     {% set status = {'ready': '已整理', 'partial': '部分來源尚未讀取', 'pending': '等候整理'}[state] %}

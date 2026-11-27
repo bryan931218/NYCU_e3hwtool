@@ -7,6 +7,11 @@ from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 from bs4 import BeautifulSoup
 
 from e3_tracker.assignments.domain.parsing import parse_due_text_to_dt
+from e3_tracker.platform.constants import TAIPEI_TZ
+
+
+E3_NEWS_LIST = '/blocks/dcpc_news/news/news_items.php'
+E3_NEWS_POST = '/blocks/dcpc_news/news/news_view.php'
 
 
 def moodle_url(value, base_url, path, parameter, *, page_url=None):
@@ -42,6 +47,23 @@ def announcement_forums(html, base_url):
         if url not in forums:
             forums.append(url)
     return forums[:3]
+
+
+def e3_news_list(html, base_url, course_id):
+    soup = BeautifulSoup(html, 'html.parser')
+    for link in soup.select('a[href*="news_items.php"]'):
+        url = moodle_url(link['href'], base_url, E3_NEWS_LIST, 'id',
+                         page_url=base_url.rstrip('/') + '/course/view.php')
+        if url and parse_qs(urlsplit(url).query)['id'] == [str(course_id)]:
+            return url + '&scopec=1'
+    return None
+
+
+def announcement_url(value, base_url, *, page_url=None):
+    native = moodle_url(value, base_url, E3_NEWS_POST, 'd', page_url=page_url)
+    if native:
+        return native + '&in=1'
+    return moodle_url(value, base_url, '/mod/forum/discuss.php', 'd', page_url=page_url)
 
 
 def _timestamp(node):
@@ -92,7 +114,41 @@ def discussion_summaries(html, base_url):
     return list(items.values())[:30]
 
 
-def discussion_content(html, base_url):
+def e3_news_summaries(html, base_url, course, page_url):
+    soup = BeautifulSoup(html, 'html.parser')
+    main = soup.select_one('#region-main')
+    if main is None:
+        raise ValueError('Course announcement list unavailable')
+    rows = {}
+    term = re.fullmatch(r'(\d{3})-([12])', course['semester_key'])
+    for link in main.select('a[href*="news_view.php"]'):
+        url = announcement_url(link['href'], base_url, page_url=page_url)
+        title = None
+        date_box = None
+        for container in (link.parent, link.parent.parent):
+            title = container.select_one(':scope > .name')
+            if title:
+                date_box = container.select_one(':scope > .date')
+                break
+        if not url or not title:
+            continue
+        stamp = _timestamp(date_box)
+        if not stamp and date_box and term:
+            date = re.search(r'(\d{1,2})月\s*(\d{1,2})日\s*[,，]\s*(\d{1,2}):(\d{2})', date_box.get_text(' ', strip=True))
+            if date:
+                month, day, hour, minute = map(int, date.groups())
+                year = int(term[1]) + 1911 + (term[2] == '2' or month < 8)
+                try:
+                    stamp = int(TAIPEI_TZ.localize(datetime(year, month, day, hour, minute)).timestamp())
+                except ValueError:
+                    pass
+        identifier = parse_qs(urlsplit(url).query)['d'][0]
+        rows[identifier] = {'id': identifier, 'title': title.get_text(' ', strip=True)[:500],
+                            'url': url, 'author': '', 'updated_ts': stamp}
+    return list(rows.values())[:30]
+
+
+def discussion_content(html, base_url, *, page_url=None):
     soup = BeautifulSoup(html, 'html.parser')
     post = soup.select_one('.forumpost.firstpost') or soup.select_one('.forumpost, [data-region="post"]')
     if not post:
@@ -103,7 +159,7 @@ def discussion_content(html, base_url):
     if not content:
         raise ValueError('Announcement content unavailable')
     attachments = post.select('.attachments a[href], [data-region="attachments"] a[href], .content-alignment-container a[href*="/pluginfile.php/"], .attachedimages img[src]')
-    result = safe_message_content(content, base_url.rstrip('/') + '/mod/forum/discuss.php', attachments)
+    result = safe_message_content(content, page_url or base_url.rstrip('/') + '/mod/forum/discuss.php', attachments)
     author = post.select_one('[data-region="author-name"], .author a, header a[href*="/user/view.php"], header a[href*="/user/profile.php"]')
     return {**result, 'author': author.get_text(' ', strip=True)[:120] if author else ''}
 

@@ -8,7 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from e3_tracker.assignments.domain.course_announcements import (
-    announcement_forums, discussion_content, discussion_summaries, moodle_url,
+    announcement_forums, announcement_url, discussion_content, discussion_summaries, e3_news_list, e3_news_summaries,
 )
 from e3_tracker.assignments.services.http import apply_cookie
 from e3_tracker.platform.constants import HEADERS
@@ -77,11 +77,15 @@ def collect_course_announcements(client, courses):
         try:
             html = client.get(f'{client.base_url}/course/view.php?id={course_id}')
             summaries = {}
+            if listing := e3_news_list(html, client.base_url, course_id):
+                for item in e3_news_summaries(client.get(listing), client.base_url, course, listing):
+                    summaries[item['id']] = item
             for forum_url in announcement_forums(html, client.base_url):
                 for item in discussion_summaries(client.get(forum_url), client.base_url):
-                    summaries[item['id']] = {**item, 'key': f"{course_id}:{item['id']}",
-                        'course_id': course_id, 'course_title': course['title'], 'semester': course['semester_key']}
-            items.extend(list(summaries.values())[:30])
+                    summaries.setdefault(item['id'], item)
+            items.extend({**item, 'key': f"{course_id}:{item['id']}", 'course_id': course_id,
+                          'course_title': course['title'], 'semester': course['semester_key']}
+                         for item in list(summaries.values())[:30])
             successful.append(course_id)
         except AnnouncementSessionExpired:
             raise
@@ -101,10 +105,10 @@ class CourseAnnouncementService:
         return collect_course_announcements(client, courses)
 
     def item_url(self, item):
-        return moodle_url(item['url'], self.base_url, '/mod/forum/discuss.php', 'd')
+        return announcement_url(item['url'], self.base_url)
 
-    def parse_content(self, html):
-        return discussion_content(html, self.base_url)
+    def parse_content(self, html, *, page_url=None):
+        return discussion_content(html, self.base_url, page_url=page_url)
 
     def start(self, app, user, semester, courses):
         if not (user.get('moodle_session') or user.get('moodle_token')):
@@ -149,7 +153,7 @@ class CourseAnnouncementService:
         client = news_client(self.base_url, user, timeout=self.timeout, deadline=time.monotonic() + 12,
                              courses=[{'id': item['course_id']}])
         try:
-            return self.parse_content(client.get(url))
+            return self.parse_content(client.get(url), page_url=url)
         finally:
             client.close()
             self.slots.release()
