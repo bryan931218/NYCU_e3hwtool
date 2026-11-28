@@ -5,7 +5,8 @@ import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from sqlalchemy import and_, delete, func, insert, or_, select, update
+from sqlalchemy import Integer, and_, cast, delete, func, insert, select, update
+from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by
 from sqlalchemy.exc import IntegrityError
 
 from e3_tracker.study.persistence.schema import (
@@ -662,16 +663,27 @@ class VideosStorage:
                     source.c.updated_at.regexp_match(
                         r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]{1,6})?$"
                     ),
-                    func.pg_input_is_valid(source.c.updated_at, "timestamp without time zone"),
+                    func.pg_input_is_valid(source.c.day, "date"),
                 )
-                classified = select(source, stable_day.label("stable_day")).subquery()
-                partition = (classified.c.day, classified.c.video_id, classified.c.stable_day)
-                ranked = select(
-                    classified,
-                    func.row_number().over(partition_by=partition, order_by=(classified.c.updated_at, classified.c.id)).label("first_position"),
-                    func.row_number().over(partition_by=partition, order_by=(classified.c.updated_at.desc(), classified.c.id.desc())).label("last_position"),
+                classified = select(
+                    source.c.id, source.c.day, source.c.video_id, source.c.updated_at,
+                    stable_day.label("stable_day"),
+                ).cte().prefix_with("MATERIALIZED")
+                grouped = select(
+                    func.array_agg(
+                        aggregate_order_by(classified.c.id, classified.c.updated_at, classified.c.id),
+                        type_=ARRAY(Integer),
+                    ).label("event_ids"),
+                    cast(func.count(), Integer).label("event_count"),
+                ).where(classified.c.stable_day).group_by(classified.c.day, classified.c.video_id).cte()
+                # UNION deduplicates the two endpoints when a group has one row.
+                first_and_last = select(grouped.c.event_ids[1].label("id")).union(
+                    select(grouped.c.event_ids[grouped.c.event_count].label("id")),
                 ).subquery()
-                source = select(ranked).where(or_(~ranked.c.stable_day, ranked.c.first_position == 1, ranked.c.last_position == 1)).subquery()
+                kept = select(first_and_last.c.id).union_all(
+                    select(classified.c.id).where(~classified.c.stable_day),
+                ).subquery()
+                source = select(events).join(kept, events.c.id == kept.c.id).subquery()
             rows = conn.execute(
                 select(source, videos.c.subject, videos.c.sequence, videos.c.title, videos.c.duration_seconds)
                 .join(videos, source.c.video_id == videos.c.id)
