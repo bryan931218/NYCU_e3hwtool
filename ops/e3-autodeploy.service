@@ -1,0 +1,8 @@
+[Unit]
+Description=Deploy validated E3hwtool main commits
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/.e3hwtool-release
+ExecStart=/usr/bin/python3 %h/.e3hwtool-release/gcp_autodeploy.py
+TimeoutStartSec=25min

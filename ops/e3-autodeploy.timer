@@ -1,0 +1,10 @@
+[Unit]
+Description=Check GitHub for a validated E3hwtool release
+
+[Timer]
+OnStartupSec=30s
+OnUnitInactiveSec=90s
+RandomizedDelaySec=10s
+
+[Install]
+WantedBy=timers.target
