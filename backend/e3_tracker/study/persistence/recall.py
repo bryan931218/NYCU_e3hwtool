@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 from fsrs import Card as FSRSCard
 from fsrs import Rating as FSRSRating
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 from e3_tracker.study.domain.source_localization import canonicalize_source_text
 from e3_tracker.study.domain.study_note_quality import (
     is_study_note_process_metadata_card,
@@ -356,29 +356,7 @@ class RecallStorage:
         )
         item["organization_mode"] = str(item.get("organization_mode") or "legacy")
         item["questions"] = self._decode_json_list(item.get("quiz_data"))
-        card_history: Dict[int, List[Dict[str, Any]]] = {}
-        for review in card_review_rows:
-            card_history.setdefault(int(review.concept_index), []).append(
-                {
-                    "rating": int(review.rating),
-                    "interval_days": int(review.interval_days),
-                    "ideal_review_at": review.ideal_review_at or review.next_review_at,
-                    "next_review_at": review.next_review_at,
-                    "created_at": review.created_at,
-                }
-            )
-        for index, concept in enumerate(item["key_concepts"]):
-            if not isinstance(concept, dict):
-                continue
-            history = card_history.get(index, [])
-            latest = history[-1] if history else None
-            concept["review"] = {
-                "history": history[-12:],
-                "last_rating": latest["rating"] if latest else None,
-                "interval_days": latest["interval_days"] if latest else None,
-                "ideal_review_at": latest["ideal_review_at"] if latest else None,
-                "next_review_at": latest["next_review_at"] if latest else None,
-            }
+        self._attach_recall_card_reviews(item["key_concepts"], card_review_rows)
         item["attempts"] = [
             {
                 "score_percent": round(float(attempt.score_percent or 0), 1),
@@ -391,6 +369,31 @@ class RecallStorage:
         ]
         return item
 
+    @staticmethod
+    def _attach_recall_card_reviews(concepts, card_review_rows):
+        card_history: Dict[int, List[Dict[str, Any]]] = {}
+        for review in card_review_rows:
+            card_history.setdefault(int(review.concept_index), []).append(
+                {
+                    "rating": int(review.rating),
+                    "interval_days": int(review.interval_days),
+                    "ideal_review_at": review.ideal_review_at or review.next_review_at,
+                    "next_review_at": review.next_review_at,
+                    "created_at": review.created_at,
+                }
+            )
+        for index, concept in enumerate(concepts):
+            if not isinstance(concept, dict):
+                continue
+            history = card_history.get(index, [])
+            latest = history[-1] if history else None
+            concept["review"] = {
+                "history": history[-12:],
+                "last_rating": latest["rating"] if latest else None,
+                "interval_days": latest["interval_days"] if latest else None,
+                "ideal_review_at": latest["ideal_review_at"] if latest else None,
+                "next_review_at": latest["next_review_at"] if latest else None,
+            }
     def _study_recall_search_documents(self) -> List[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
             signature_rows = conn.execute(
@@ -886,16 +889,37 @@ class RecallStorage:
         today: str,
         limit: int = 18,
         concept_filter: Optional[Callable[[Any], bool]] = None,
+        include_concept_data: bool = False,
     ) -> List[Dict[str, Any]]:
+        sessions = study_recall_sessions_table
+        reviews = study_recall_card_reviews_table
+        eligible_date = func.coalesce(sessions.c.study_date, "") <= today
+        with self._lock, self._engine.connect() as conn:
+            session_rows = conn.execute(
+                select(sessions.c.id, sessions.c.title, sessions.c.subject, sessions.c.key_concepts)
+                .where(eligible_date)
+                .order_by(sessions.c.created_at.desc())
+            ).all()
+            if not session_rows:
+                return []
+            review_rows = conn.execute(
+                select(reviews)
+                .join(sessions, sessions.c.id == reviews.c.session_id)
+                .where(eligible_date)
+                .order_by(reviews.c.id.asc())
+            ).all()
+        reviews_by_session = {}
+        for review in review_rows:
+            reviews_by_session.setdefault(review.session_id, []).append(review)
+
         due_cards: List[Dict[str, Any]] = []
         reviewed_today: set[tuple[int, int]] = set()
-        full_sessions: List[Dict[str, Any]] = []
-        for session in self.list_study_recall_sessions(limit=None):
-            full_session = self.get_study_recall_session(int(session["id"]))
-            if not full_session or str(full_session.get("study_date") or "") > today:
-                continue
-            full_sessions.append(full_session)
-            for index, concept in enumerate(full_session.get("key_concepts") or []):
+        sessions_with_concepts = []
+        for session in session_rows:
+            concepts = self._decode_json_list(session.key_concepts)
+            self._attach_recall_card_reviews(concepts, reviews_by_session.get(session.id, ()))
+            sessions_with_concepts.append((session, concepts))
+            for index, concept in enumerate(concepts):
                 if not isinstance(concept, dict):
                     continue
                 if any(
@@ -905,33 +929,34 @@ class RecallStorage:
                     == today
                     for entry in (concept.get("review") or {}).get("history") or []
                 ):
-                    reviewed_today.add((int(full_session["id"]), index))
+                    reviewed_today.add((session.id, index))
         daily_limit = max(
             0, min(max(1, int(limit)), RECALL_DAILY_CAPACITY) - len(reviewed_today)
         )
         if daily_limit <= 0:
             return []
-        for full_session in full_sessions:
-            for index, concept in enumerate(full_session.get("key_concepts") or []):
+        for session, concepts in sessions_with_concepts:
+            for index, concept in enumerate(concepts):
                 if not isinstance(concept, dict):
-                    continue
-                if concept_filter is not None and not concept_filter(concept):
                     continue
                 review = concept.get("review") or {}
                 next_review_at = review.get("next_review_at")
                 if next_review_at and next_review_at > today:
                     continue
-                due_cards.append(
-                    {
-                        "session_id": int(full_session["id"]),
-                        "concept_index": index,
-                        "session_title": str(full_session.get("title") or ""),
-                        "subject": str(full_session.get("subject") or ""),
-                        "concept": str(concept.get("concept") or ""),
-                        "last_rating": review.get("last_rating"),
-                        "next_review_at": next_review_at,
-                    }
-                )
+                if concept_filter is not None and not concept_filter(concept):
+                    continue
+                card = {
+                    "session_id": int(session.id),
+                    "concept_index": index,
+                    "session_title": str(session.title or ""),
+                    "subject": str(session.subject or ""),
+                    "concept": str(concept.get("concept") or ""),
+                    "last_rating": review.get("last_rating"),
+                    "next_review_at": next_review_at,
+                }
+                if include_concept_data:
+                    card["concept_data"] = concept
+                due_cards.append(card)
         due_cards.sort(
             key=lambda item: (
                 item["next_review_at"] or "0000-00-00",

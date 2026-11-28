@@ -51,7 +51,7 @@ def register_assistant_actions_routes(*,
             status="applied",
             limit=20,
         )
-        videos = storage.list_study_plan_videos_with_records()
+        videos = None
         repaired_any = False
         for action in actions:
             after = action.get("after_state") if isinstance(action.get("after_state"), dict) else {}
@@ -73,12 +73,16 @@ def register_assistant_actions_routes(*,
             source_day = str(payload.get("source_day") or "")
             target_day = str(payload.get("target_day") or "")
             subject = str(payload.get("subject") or "")
+            if moved_seconds <= 0 or not source_day or not target_day:
+                continue
+            if videos is None:
+                videos = storage.list_study_plan_videos_with_records()
             video = next((
                 item for item in videos
                 if str(item.get("subject") or "") == subject
                 and int(item.get("sequence") or 0) == sequence
             ), None)
-            if not video or moved_seconds <= 0 or not source_day or not target_day:
+            if not video:
                 continue
             video_id = int(video.get("id") or 0)
             source_seconds = _study_assistant_activity_seconds(video_id=video_id, day=source_day)

@@ -91,6 +91,7 @@ function renderChannels() {
   byId("lineStatus").textContent = !state.line_ready ? "服務尚未啟用" : state.line_linked ? "已綁定" : "尚未綁定";
   byId("notifyLine").disabled = !state.line_ready || !state.line_linked;
   if (!state.line_ready || !state.line_linked) byId("notifyLine").checked = false;
+  byId("notifySiteAnnouncement").disabled = byId("notifyLine").disabled || !byId("notifyLine").checked;
   byId("linkLine").disabled = !state.line_ready;
   byId("linkLine").hidden = state.line_linked;
   byId("unlinkLine").hidden = !state.line_linked;
@@ -112,6 +113,7 @@ function applyPreferences(prefs) {
   byId("notifyDue").checked = prefs.due_reminder;
   byId("notifyBrowser").checked = prefs.browser_enabled;
   byId("notifyLine").checked = prefs.line_enabled;
+  byId("notifySiteAnnouncement").checked = !!prefs.site_announcement;
   byId("dayInputs").replaceChildren(); prefs.days_before.forEach(addDay);
   updateDayControls();
 }
@@ -132,6 +134,7 @@ async function hashSubscription() {
 }
 
 byId("notifyDue").addEventListener("change", updateDayControls);
+byId("notifyLine").addEventListener("change", renderChannels);
 byId("addDay").addEventListener("click", () => addDay());
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -140,6 +143,7 @@ form.addEventListener("submit", async (event) => {
       new_assignment: byId("notifyNew").checked, due_reminder: byId("notifyDue").checked,
       assignment_graded: byId("notifyGraded").checked,
       new_announcement: byId("notifyAnnouncement").checked, new_mail: byId("notifyMail").checked,
+      site_announcement: byId("notifySiteAnnouncement").checked,
       deadline_changes: byId("notifyDeadlineChanges").checked,
       browser_enabled: byId("notifyBrowser").checked, line_enabled: byId("notifyLine").checked,
       days_before: [...byId("dayInputs").querySelectorAll("input")].map((input) => Number(input.value)),

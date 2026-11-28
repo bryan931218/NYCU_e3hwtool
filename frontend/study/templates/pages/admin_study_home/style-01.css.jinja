@@ -361,11 +361,11 @@
         .pace-panel.behind .race-plan-label { border-color: #edcf93; color: #8f5d04; background: #fff8e7; }
         .pace-panel.early .race-actual-label { border-color: #9bdcdd; color: #087979; background: #ecfbf9; }
         .race-runner { position: absolute; z-index: 7; top: 8px; left: clamp(24px, var(--runner-position), calc(100% - 24px)); width: 48px; height: 48px; transform: translateX(-50%); text-align: center; }
-        .runner-person { position: relative; z-index: 2; display: block; width: 44px; height: 44px; border: 2px solid var(--blue); border-radius: 50%; background: rgba(255,255,255,.96); box-shadow: 0 7px 16px rgba(16,42,67,.20); font-size: 29px; line-height: 40px; animation: runner-stride .72s ease-in-out infinite; }
+        .runner-person { position: relative; z-index: 2; display: block; width: 44px; height: 44px; border: 2px solid var(--blue); border-radius: 50%; background: rgba(255,255,255,.96); box-shadow: 0 7px 16px rgba(16,42,67,.20); font-size: 29px; line-height: 40px; animation: runner-stride .72s ease-in-out 2; }
         .pace-panel.behind .runner-person { border-color: var(--amber); }
         .pace-panel.early .runner-person { border-color: var(--teal); }
         .runner-person > span { display: block; transform: scaleX(-1); }
-        .runner-shadow { position: absolute; z-index: 1; left: 50%; bottom: -3px; width: 30px; height: 7px; transform: translateX(-50%); border-radius: 50%; background: rgba(16,42,67,.18); animation: runner-shadow .72s ease-in-out infinite; }
+        .runner-shadow { position: absolute; z-index: 1; left: 50%; bottom: -3px; width: 30px; height: 7px; transform: translateX(-50%); border-radius: 50%; background: rgba(16,42,67,.18); animation: runner-shadow .72s ease-in-out 2; }
         .race-actual-marker { position: absolute; z-index: 5; top: 54px; left: clamp(24px, var(--runner-position), calc(100% - 24px)); height: 40px; transform: translateX(-50%); border-left: 2px solid var(--blue); }
         .pace-panel.early .race-actual-marker { border-left-color: var(--teal); }
         .race-scale { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 30px; color: var(--muted); font-size: 10px; font-weight: 850; }

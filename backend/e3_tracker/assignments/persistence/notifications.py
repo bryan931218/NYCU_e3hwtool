@@ -6,7 +6,7 @@ import time
 from sqlalchemy import delete, insert, select, update, or_
 from sqlalchemy.exc import IntegrityError
 from urllib.parse import urlencode
-from e3_tracker.platform.persistence.core_schema import users_table, web_sessions_table
+from e3_tracker.platform.persistence.core_schema import announcements_table, users_table, web_sessions_table
 from e3_tracker.platform.guest_privacy import is_guest_identity
 from e3_tracker.platform.moodle_credentials import unpack_moodle_credential
 from e3_tracker.assignments.domain.notifications import (
@@ -16,6 +16,7 @@ from e3_tracker.assignments.domain.notifications import (
     is_assignment_graded,
     digest,
     notification_payload,
+    notification_text,
     course_message_notification_payload,
 )
 from .notification_schema import (
@@ -104,7 +105,8 @@ class NotificationStorage:
                 )
             conn.execute(
                 update(jobs)
-                .where(jobs.c.user_id == uid, jobs.c.state == "pending", ~jobs.c.event_key.like('plan:%'))
+                .where(jobs.c.user_id == uid, jobs.c.state == "pending", ~jobs.c.event_key.like('plan:%'),
+                       ~jobs.c.event_key.like('site_announcement:%'))
                 .values(state="cancelled")
             )
 
@@ -414,6 +416,30 @@ class NotificationStorage:
                     )
                 )
 
+    def _queue_site_announcement_notifications(self, conn, entry):
+        announcement_id = entry["id"]
+        payload = {
+            "kind": "site_announcement",
+            "announcement_id": announcement_id,
+            "title": "E3 作業追蹤｜系統公告",
+            "body": f"{notification_text(entry['title'], 160)}\n\n{notification_text(entry['content'], 800)}",
+            "url": "/#site-announcements",
+        }
+        recipients = conn.execute(
+            select(bindings.c.user_id, bindings.c.target_hash, settings.c.preferences)
+            .join(settings, settings.c.user_id == bindings.c.user_id)
+            .join(users_table, users_table.c.id == bindings.c.user_id)
+            .where(users_table.c.is_guest == 0)
+        ).all()
+        now = time.time()
+        for recipient in recipients:
+            preferences = json.loads(recipient.preferences)
+            if preferences.get("line_enabled") and preferences.get("site_announcement"):
+                self._queue_notification(
+                    conn, recipient.user_id, f"site_announcement:{announcement_id}",
+                    [("line", recipient.target_hash)], payload, now, now + 86400,
+                )
+
     def _observe_course_message_notifications(self, conn, username, uid, kind, semester, items, successful_courses, *, baseline=False):
         from e3_tracker.assignments.services.collector import current_semester_key
         if semester != current_semester_key() or kind not in {'announcements', 'mail'}:
@@ -599,7 +625,8 @@ class NotificationStorage:
                 raw = self._credential_cipher.decrypt(raw, f'notification:{job["id"]}')
             payload = json.loads(raw)
             preference = {'new':'new_assignment', 'due':'due_reminder', 'graded':'assignment_graded',
-                          'new_announcement':'new_announcement', 'new_mail':'new_mail', 'deadline_change':'deadline_changes',
+                          'new_announcement':'new_announcement', 'site_announcement':'site_announcement',
+                          'new_mail':'new_mail', 'deadline_change':'deadline_changes',
                           'scheduled':'scheduled'}.get(payload.get('kind'))
             if (
                 not preference or not prefs.get(f"{job['channel']}_enabled", False)
@@ -607,6 +634,12 @@ class NotificationStorage:
             ):
                 return None
             if payload["kind"] == "due" and payload["days"] not in prefs["days_before"]:
+                return None
+            if payload["kind"] == "site_announcement" and (
+                job["channel"] != "line" or not conn.execute(
+                    select(announcements_table.c.id).where(announcements_table.c.id == payload["announcement_id"])
+                ).scalar()
+            ):
                 return None
             table = subscriptions if job["channel"] == "browser" else bindings
             key = (

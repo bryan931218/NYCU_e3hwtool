@@ -12,6 +12,7 @@ DEFAULT_NOTIFICATION_PREFERENCES = {
     "new_assignment": False,
     "assignment_graded": False,
     "new_announcement": False,
+    "site_announcement": False,
     "new_mail": False,
     "deadline_changes": False,
     "due_reminder": False,
@@ -29,7 +30,9 @@ def validate_preferences(raw):
     if not isinstance(raw, dict):
         raise ValueError("設定格式不正確")
     result = dict(DEFAULT_NOTIFICATION_PREFERENCES)
-    for key in ("new_assignment", "assignment_graded", "new_announcement", "new_mail", "deadline_changes", "due_reminder", "browser_enabled", "line_enabled"):
+    for key, default in DEFAULT_NOTIFICATION_PREFERENCES.items():
+        if not isinstance(default, bool):
+            continue
         value = raw.get(key, result[key])
         if not isinstance(value, bool):
             raise ValueError("通知開關格式不正確")

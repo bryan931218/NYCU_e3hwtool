@@ -2416,65 +2416,55 @@ def register_study_site(
             today=today,
             limit=18,
             concept_filter=_is_recall_concept_eligible,
+            include_concept_data=True,
         )
         cards: List[Dict[str, Any]] = []
-        session_cache: Dict[int, Dict[str, Any]] = {}
         for due_card in due_cards:
-            session_id = int(due_card["session_id"])
-            recall_session = session_cache.get(session_id)
-            if recall_session is None:
-                recall_session = storage.get_study_recall_session(session_id) or {}
-                session_cache[session_id] = recall_session
-            concept_index = int(due_card["concept_index"])
-            concepts = recall_session.get("key_concepts") or []
-            if concept_index >= len(concepts) or not _is_recall_concept_eligible(
-                concepts[concept_index]
-            ):
-                continue
-            concepts[concept_index]["topic"] = _normalize_study_concept_title(
-                concepts[concept_index].get("topic"),
-                recall_session.get("title") or "細分觀念",
+            concept = due_card["concept_data"]
+            concept["topic"] = _normalize_study_concept_title(
+                concept.get("topic"),
+                due_card["session_title"] or "細分觀念",
             )
-            concepts[concept_index]["concept"] = _normalize_study_concept_title(
-                concepts[concept_index].get("concept"),
-                concepts[concept_index].get("topic"),
+            concept["concept"] = _normalize_study_concept_title(
+                concept.get("concept"),
+                concept.get("topic"),
             )
-            concepts[concept_index]["explanation"] = _normalize_study_math_markup(
-                concepts[concept_index].get("explanation")
+            concept["explanation"] = _normalize_study_math_markup(
+                concept.get("explanation")
             )
-            concepts[concept_index]["recall_cue"] = _normalize_study_math_markup(
-                concepts[concept_index].get("recall_cue")
-                or f"先回想「{concepts[concept_index].get('concept') or '這個觀念'}」的條件、核心關係與結論。"
+            concept["recall_cue"] = _normalize_study_math_markup(
+                concept.get("recall_cue")
+                or f"先回想「{concept.get('concept') or '這個觀念'}」的條件、核心關係與結論。"
             )
-            concepts[concept_index]["core_summary"] = _normalize_study_math_markup(
-                concepts[concept_index].get("core_summary")
+            concept["core_summary"] = _normalize_study_math_markup(
+                concept.get("core_summary")
             )
-            concepts[concept_index]["card_type"] = (
+            concept["card_type"] = (
                 "example"
-                if concepts[concept_index].get("card_type") == "example"
+                if concept.get("card_type") == "example"
                 else "concept"
             )
-            concepts[concept_index]["example_problem"] = _normalize_study_math_markup(
-                concepts[concept_index].get("example_problem")
+            concept["example_problem"] = _normalize_study_math_markup(
+                concept.get("example_problem")
             )
-            concepts[concept_index]["example_method"] = _normalize_study_math_markup(
-                concepts[concept_index].get("example_method")
+            concept["example_method"] = _normalize_study_math_markup(
+                concept.get("example_method")
             )
-            concepts[concept_index]["simple_example"] = _normalize_study_math_markup(
-                concepts[concept_index].get("simple_example")
+            concept["simple_example"] = _normalize_study_math_markup(
+                concept.get("simple_example")
             )
-            concepts[concept_index]["reasoning_steps"] = [
+            concept["reasoning_steps"] = [
                 _normalize_study_math_markup(step)
-                for step in (concepts[concept_index].get("reasoning_steps") or [])[:4]
+                for step in (concept.get("reasoning_steps") or [])[:4]
                 if str(step or "").strip()
             ]
-            concepts[concept_index]["common_confusion"] = _normalize_study_math_markup(
-                concepts[concept_index].get("common_confusion")
+            concept["common_confusion"] = _normalize_study_math_markup(
+                concept.get("common_confusion")
             )
-            concepts[concept_index]["memory_hint"] = _normalize_study_math_markup(
-                concepts[concept_index].get("memory_hint")
+            concept["memory_hint"] = _normalize_study_math_markup(
+                concept.get("memory_hint")
             )
-            cards.append({**due_card, "concept_data": concepts[concept_index]})
+            cards.append(due_card)
         return {
             "due_count": len(cards),
             "cards": cards,

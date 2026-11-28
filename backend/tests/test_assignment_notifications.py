@@ -119,6 +119,39 @@ class NotificationTests(unittest.TestCase):
         self.environment.stop()
         self.directory.cleanup()
 
+    def test_site_announcement_only_sends_new_active_posts_to_line_subscribers(self):
+        self.storage.save_web_session("announcement-admin", "operator", is_admin=True)
+        self.storage.save_web_session("announcement-muted", "muted")
+        subscriber = "U" + "a" * 32
+        for username, target in (("student", subscriber), ("muted", "U" + "b" * 32)):
+            code = self.storage.create_line_link_code(username)
+            self.assertTrue(self.storage.consume_line_link_code(code, target))
+            self.storage.save_notification_preferences(username, validate_preferences({"line_enabled": True}))
+
+        with self.client.session_transaction() as session:
+            session["session_token"] = "announcement-admin"
+
+        def publish(title):
+            response = self.client.post("/admin/announcements", data={"title": title, "content": "公告內容"})
+            self.assertEqual(response.status_code, 302)
+            return next(item["id"] for item in self.storage.list_announcements(10) if item["title"] == title)
+
+        publish("舊公告")
+        self.storage.save_notification_preferences("student", validate_preferences({"line_enabled": True, "site_announcement": True}))
+        publish("新公告")
+        self.storage.delete_announcement(publish("撤回公告"))
+        with patch.object(self.storage, "load_user_cache", side_effect=AssertionError("Site announcements do not read E3")), \
+             patch.object(self.service, "line_request") as send:
+            self.service.dispatch()
+            self.service.dispatch()
+        send.assert_called_once()
+        method, payload, retry_key = send.call_args.args
+        self.assertEqual(method, "push")
+        self.assertEqual(payload["to"], subscriber)
+        self.assertIn("新公告", payload["messages"][0]["text"])
+        self.assertIn("/#site-announcements", payload["messages"][0]["text"])
+        self.assertTrue(retry_key)
+
     def item(self, title, *, days=5, **extra):
         return {
             "course_id": 1,

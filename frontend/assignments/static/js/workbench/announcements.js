@@ -62,6 +62,7 @@ export function initialize(ctx) {
       if (closeBtn) {
         closeBtn.addEventListener("click", closeModal);
       }
+      if (window.location.hash === "#site-announcements") openModal();
       modal.addEventListener("click", (evt) => {
         if (backdrop && evt.target === backdrop) {
           closeModal();

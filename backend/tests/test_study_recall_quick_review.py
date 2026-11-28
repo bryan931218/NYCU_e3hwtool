@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bs4 import BeautifulSoup
+from sqlalchemy import event
 
 from e3_tracker.platform.application import create_app
 
@@ -41,6 +42,38 @@ class StudyRecallQuickReviewTests(unittest.TestCase):
             "explanation": f"{subject}觀念 {index} 的完整說明。",
             "card_type": "concept",
         }
+
+    def test_home_reads_recall_history_in_batches_and_keeps_due_card_content(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            _app, storage, client = self._build_client(temp_dir)
+            try:
+                for index in range(4):
+                    storage.create_study_recall_session(
+                        study_date="2025-01-01",
+                        subject="資料結構",
+                        title=f"筆記 {index}",
+                        image_filenames=[],
+                        summary="摘要",
+                        key_concepts=[self._card("資料結構", index)],
+                    )
+
+                queries = []
+
+                def collect_queries(_conn, _cursor, statement, _parameters, _context, _executemany):
+                    if "study_recall_" in statement:
+                        queries.append(statement)
+
+                event.listen(storage._engine, "before_cursor_execute", collect_queries)
+                response = client.get("/admin/study-home")
+                event.remove(storage._engine, "before_cursor_execute", collect_queries)
+
+                self.assertEqual(response.status_code, 200)
+                study_home = BeautifulSoup(response.data, "html.parser", from_encoding="utf-8")
+                self.assertEqual(len(study_home.select("[data-recall-card]")), 4)
+                self.assertIn("資料結構的第 0 個條件與結論", study_home.get_text(" ").replace("資料結構 ", "資料結構"))
+                self.assertEqual(len(queries), 2)
+            finally:
+                storage._engine.dispose()
 
     def test_quick_review_limits_session_and_interleaves_subjects(self):
         with tempfile.TemporaryDirectory() as temp_dir:

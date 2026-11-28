@@ -259,7 +259,7 @@ class NotificationService:
                     ):
                         self.storage.finish_notification_job(job, "cancelled", now=now)
                         continue
-                else:
+                elif payload.get("kind") != "site_announcement":
                     cache = self.storage.load_user_cache(username) or {}
                     result = cache.get("result") or {}
                     annotate_result_semesters(result)

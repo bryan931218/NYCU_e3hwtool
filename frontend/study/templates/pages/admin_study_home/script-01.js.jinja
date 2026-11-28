@@ -336,6 +336,23 @@
                 button.classList.remove('is-copied');
             }, 1400);
         });
+        let mathAssetsReady;
+        const loadStudyMathAssets = () => {
+            if (mathAssetsReady) return mathAssetsReady;
+            const sources = document.getElementById('studyHomeMathAssets').content.children;
+            mathAssetsReady = Promise.all(Array.from(sources, (source) => new Promise((resolve, reject) => {
+                const asset = document.createElement(source.localName);
+                for (const { name, value } of source.attributes) asset.setAttribute(name, value);
+                if (source.localName === 'script') {
+                    asset.async = false;
+                    asset.nonce = source.nonce;
+                }
+                asset.addEventListener('load', resolve, { once: true });
+                asset.addEventListener('error', reject, { once: true });
+                document.head.append(asset);
+            }))).then(() => typeof window.renderMathInElement === 'function', () => false);
+            return mathAssetsReady;
+        };
         window.renderStudyMath = (root = document) => {
             const queryAll = (selector) => [
                 ...(root.matches?.(selector) ? [root] : []),
@@ -354,10 +371,14 @@
                 return false;
             };
             queryAll('.recall-card-title').forEach((element) => { element.dataset.mathContent = ''; });
-            queryAll('[data-math-content]').forEach((element) => {
-                if (isDeferred(element)) return;
+            const pending = queryAll('[data-math-content]').filter((element) => {
+                if (isDeferred(element) || element.dataset.mathRendered === 'true') return false;
                 window.renderStudyCodeBlocks(element);
-                if (!window.renderMathInElement || element.dataset.mathRendered === 'true') return;
+                return /\$|\\[[(]/.test(element.textContent || '');
+            });
+            if (!pending.length) return;
+            const render = () => pending.forEach((element) => {
+                if (!element.isConnected || isDeferred(element) || element.dataset.mathRendered === 'true') return;
                 window.renderMathInElement(element, {
                     delimiters: [
                         { left: '$$', right: '$$', display: true },
@@ -371,7 +392,10 @@
                 });
                 element.dataset.mathRendered = 'true';
             });
+            if (typeof window.renderMathInElement === 'function') render();
+            else loadStudyMathAssets().then((ready) => { if (ready) render(); });
         };
+        window.requestAnimationFrame(() => window.renderStudyMath());
         document.addEventListener('toggle', (event) => {
             const detail = event.target;
             if (detail instanceof HTMLDetailsElement && detail.open) window.renderStudyMath(detail);
@@ -386,7 +410,7 @@
                     answer.hidden = !shouldReveal;
                     reveal.textContent = shouldReveal ? '收起重點' : '揭示重點';
                     reveal.setAttribute('aria-expanded', shouldReveal ? 'true' : 'false');
-                    if (shouldReveal) window.renderStudyMath();
+                    if (shouldReveal) window.renderStudyMath(answer);
                 });
             });
         })();

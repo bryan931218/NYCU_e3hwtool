@@ -30,6 +30,7 @@ class CommunityStorage:
                 )
             )
             conn.execute(announcements_table.insert().values(**record))
+            self._queue_site_announcement_notifications(conn, record)
             ids_to_keep = (
                 conn.execute(
                     select(announcements_table.c.id)
