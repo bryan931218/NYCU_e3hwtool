@@ -1202,6 +1202,8 @@ def register_study_site(
 
     def _study_plan_week_rows(
         videos: List[Dict[str, Any]],
+        *,
+        checkpoint_events: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
         start_day = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
         today = _study_plan_business_date()
@@ -1211,7 +1213,9 @@ def register_study_site(
         use_checkpoint = uses_november_checkpoint(replan_settings)
         checkpoint_day_credit = 0.0
         if use_checkpoint and today_iso >= FIRST_TRACKED_DAY:
-            for event in storage.list_study_plan_activity_events(day=FIRST_TRACKED_DAY):
+            if checkpoint_events is None:
+                checkpoint_events = storage.list_study_plan_activity_events(day=FIRST_TRACKED_DAY)
+            for event in checkpoint_events:
                 seconds = float(event.get("delta_seconds") or 0)
                 if math.isfinite(seconds):
                     checkpoint_day_credit += seconds
@@ -1653,6 +1657,8 @@ def register_study_site(
         week_rows: List[Dict[str, Any]],
         current_week: Dict[str, Any],
         summary: Dict[str, Any],
+        *,
+        activity_events: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         today = _study_plan_business_date()
         plan_start = datetime.strptime(STUDY_PLAN_START, "%Y-%m-%d").date()
@@ -1940,10 +1946,9 @@ def register_study_site(
         tracked_start_day = min(
             [day for day in [STUDY_PLAN_START, week_start_date, recent_days[0]] if day]
         )
-        activity_events = storage.list_study_plan_activity_events(
-            start_day=tracked_start_day,
-            end_day=today.isoformat(),
-        )
+        activity_events = [
+            event for event in activity_events if tracked_start_day <= event["day"] <= today_iso
+        ]
         activity_events_by_day: Dict[str, List[Dict[str, Any]]] = {}
         for event in activity_events:
             event_day = str(event.get("day") or "")
@@ -2363,8 +2368,14 @@ def register_study_site(
                 return copy.deepcopy(cached_context)
 
         videos = storage.list_study_plan_videos_with_records()
-        week_rows, current_week, summary = _study_plan_week_rows(videos)
-        context = _build_study_home_context(videos, week_rows, current_week, summary)
+        today = _study_plan_business_date()
+        activity_events = storage.list_study_plan_activity_events(
+            start_day=min(STUDY_PLAN_START, FIRST_TRACKED_DAY, (today - timedelta(days=6)).isoformat()),
+            end_day=today.isoformat(),
+        )
+        checkpoint_events = [event for event in activity_events if event["day"] == FIRST_TRACKED_DAY]
+        week_rows, current_week, summary = _study_plan_week_rows(videos, checkpoint_events=checkpoint_events)
+        context = _build_study_home_context(videos, week_rows, current_week, summary, activity_events=activity_events)
         with study_progress_context_lock:
             study_progress_context_cache["context"] = context
             study_progress_context_cache["expires_at"] = time.monotonic() + 20.0

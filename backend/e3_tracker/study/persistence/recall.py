@@ -394,6 +394,7 @@ class RecallStorage:
                 "ideal_review_at": latest["ideal_review_at"] if latest else None,
                 "next_review_at": latest["next_review_at"] if latest else None,
             }
+
     def _study_recall_search_documents(self) -> List[Dict[str, Any]]:
         with self._lock, self._engine.connect() as conn:
             signature_rows = conn.execute(

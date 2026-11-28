@@ -5,7 +5,7 @@ import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import and_, delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from e3_tracker.study.persistence.schema import (
@@ -645,35 +645,38 @@ class VideosStorage:
             end_day = day
         if not start_day and not end_day:
             return []
-        stmt = select(
-            study_plan_activity_events_table.c.id,
-            study_plan_activity_events_table.c.video_id,
-            study_plan_activity_events_table.c.previous_watched_seconds,
-            study_plan_activity_events_table.c.watched_seconds,
-            study_plan_activity_events_table.c.delta_seconds,
-            study_plan_activity_events_table.c.updated_at,
-            study_plan_videos_table.c.subject,
-            study_plan_videos_table.c.sequence,
-            study_plan_videos_table.c.title,
-            study_plan_videos_table.c.duration_seconds,
-        ).select_from(
-            study_plan_activity_events_table.join(
-                study_plan_videos_table,
-                study_plan_activity_events_table.c.video_id
-                == study_plan_videos_table.c.id,
-            )
-        )
+        events = study_plan_activity_events_table
+        videos = study_plan_videos_table
+        stmt = select(events)
         if start_day:
-            stmt = stmt.where(study_plan_activity_events_table.c.day >= start_day)
+            stmt = stmt.where(events.c.day >= start_day)
         if end_day:
-            stmt = stmt.where(study_plan_activity_events_table.c.day <= end_day)
-        stmt = stmt.order_by(
-            study_plan_activity_events_table.c.day,
-            study_plan_activity_events_table.c.updated_at,
-            study_plan_activity_events_table.c.id,
-        )
+            stmt = stmt.where(events.c.day <= end_day)
         with self._lock, self._engine.connect() as conn:
-            rows = conn.execute(stmt).fetchall()
+            source = stmt.subquery()
+            if conn.dialect.name == "postgresql" and conn.dialect.server_version_info >= (16,):
+                # A video's daily result uses only its first and last saved positions.
+                # Preserve every exceptional timestamp for the legacy UTC-day parser.
+                stable_day = and_(
+                    func.substr(source.c.updated_at, 1, 10) == source.c.day,
+                    source.c.updated_at.regexp_match(
+                        r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]{1,6})?$"
+                    ),
+                    func.pg_input_is_valid(source.c.updated_at, "timestamp without time zone"),
+                )
+                classified = select(source, stable_day.label("stable_day")).subquery()
+                partition = (classified.c.day, classified.c.video_id, classified.c.stable_day)
+                ranked = select(
+                    classified,
+                    func.row_number().over(partition_by=partition, order_by=(classified.c.updated_at, classified.c.id)).label("first_position"),
+                    func.row_number().over(partition_by=partition, order_by=(classified.c.updated_at.desc(), classified.c.id.desc())).label("last_position"),
+                ).subquery()
+                source = select(ranked).where(or_(~ranked.c.stable_day, ranked.c.first_position == 1, ranked.c.last_position == 1)).subquery()
+            rows = conn.execute(
+                select(source, videos.c.subject, videos.c.sequence, videos.c.title, videos.c.duration_seconds)
+                .join(videos, source.c.video_id == videos.c.id)
+                .order_by(source.c.day, source.c.updated_at, source.c.id)
+            ).all()
 
         by_video: Dict[tuple[str, int], Dict[str, Any]] = {}
         for row in rows:
